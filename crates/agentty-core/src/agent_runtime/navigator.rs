@@ -419,4 +419,67 @@ mod tests {
         assert_eq!(model.rows[0].alias.as_deref(), Some("renamed"));
         assert!(model.rows[0].pinned);
     }
+
+    #[test]
+    fn carrier_replacement_preserves_row_selection_pin_alias_and_order() {
+        let mut model = SessionNavigator::default();
+        model.refresh(&[], &[live("s1", "t", 1), live("s2", "t", 2)]);
+        let s1 = model
+            .rows
+            .iter()
+            .find(|row| row.session_id.as_deref() == Some("s1"))
+            .expect("s1 row")
+            .row_id
+            .clone();
+        let order_before = model
+            .rows
+            .iter()
+            .find(|row| row.row_id == s1)
+            .expect("s1 row")
+            .display_order;
+        model.select(&s1);
+        model.set_pin(&s1, true);
+        model.set_alias(&s1, Some("mine".into()));
+
+        model.refresh(&[], &[live("s2", "t", 2), live("s1", "replaced", 9)]);
+        let row = model
+            .rows
+            .iter()
+            .find(|row| row.row_id == s1)
+            .expect("s1 row survives carrier replacement");
+        assert_eq!(model.selected(), Some(&s1), "selection survives");
+        assert!(row.pinned, "pin survives");
+        assert_eq!(row.alias.as_deref(), Some("mine"), "alias survives");
+        assert_eq!(row.display_order, order_before, "display order survives");
+        assert_eq!(row.carrier.as_ref().unwrap().tab_id, "replaced");
+    }
+
+    #[test]
+    fn metadata_failure_preserves_entity_rows_and_cached_enrichment() {
+        // A refresh whose records lost their metadata (title/cwd) must keep
+        // the entity row and the previously committed enrichment instead of
+        // blanking it.
+        let mut model = SessionNavigator::default();
+        model.refresh(&[history("s1")], &[]);
+        let id = model.rows[0].row_id.clone();
+        assert_eq!(model.rows[0].title.as_deref(), Some("s1"));
+        assert_eq!(model.rows[0].cwd.as_deref(), Some("/repo"));
+
+        let mut degraded = history("s1");
+        degraded.title = None;
+        degraded.cwd = None;
+        model.refresh(&[degraded], &[]);
+        assert_eq!(model.rows.len(), 1, "the entity row is preserved");
+        assert_eq!(model.rows[0].row_id, id);
+        assert_eq!(
+            model.rows[0].title.as_deref(),
+            Some("s1"),
+            "cached title survives a metadata failure"
+        );
+        assert_eq!(
+            model.rows[0].cwd.as_deref(),
+            Some("/repo"),
+            "cached cwd survives a metadata failure"
+        );
+    }
 }

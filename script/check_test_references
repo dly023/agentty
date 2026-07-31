@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 # Every test name referenced from the quality YAMLs (tracker, traceability,
 # asset matrices) must resolve to a real `fn <name>` in src/ or crates/.
-# This keeps evidence references from drifting when tests are renamed.
+# Additionally, every required_fallbacks row in the fallback asset matrix
+# must carry explicit fallback_coverage: mapped tests or a not_applicable
+# rationale, per the matrix quality_gate rule. This keeps evidence
+# references from drifting when tests are renamed.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -58,5 +61,72 @@ if missing:
     for name, refs in sorted(missing.items()):
         print(f"[test-refs] {name} referenced at {', '.join(refs)} has no matching test fn", file=sys.stderr)
     sys.exit(1)
-print(f"test reference checks passed ({len(names)} referenced tests all exist)")
+
+# Fallback coverage pairing: each required_fallbacks block must be followed
+# by a fallback_coverage block that covers exactly its rows, each with
+# tests: or not_applicable:.
+matrix = "docs/quality/ASHIDE_FALLBACK_ASSET_MATRIX.yaml"
+lines = open(matrix, encoding="utf-8").read().splitlines()
+
+def collect_block(start, indent):
+    """Yield (lineno, stripped) for lines nested deeper than `indent`."""
+    i = start
+    while i < len(lines):
+        line = lines[i]
+        stripped = line.strip()
+        ind = len(line) - len(line.lstrip())
+        if stripped and ind <= indent:
+            break
+        yield i + 1, stripped, ind
+        i += 1
+
+errors = []
+i = 0
+while i < len(lines):
+    m = re.match(r"^(\s*)required_fallbacks:\s*$", lines[i])
+    if not m:
+        i += 1
+        continue
+    base = len(m.group(1))
+    required = []
+    end = i + 1
+    for lineno, stripped, _ind in collect_block(i + 1, base):
+        end = lineno
+        item = stripped.lstrip("- ").strip()
+        if ident.match(item):
+            required.append(item)
+    # find the fallback_coverage block belonging to this track
+    coverage = {}
+    j = end
+    while j < len(lines):
+        m2 = re.match(r"^(\s*)fallback_coverage:\s*$", lines[j])
+        if m2 and len(m2.group(1)) == base:
+            for lineno, stripped, ind in collect_block(j + 1, base):
+                km = re.match(r"^([a-z][a-z0-9_]*):\s*$", stripped)
+                if km and ind == base + 2:
+                    coverage.setdefault(km.group(1), {"tests": False, "na": False, "line": lineno})
+                elif coverage and ind > base + 2:
+                    last = next(reversed(coverage.values()))
+                    if stripped.startswith("tests:"):
+                        last["tests"] = True
+                    elif stripped.startswith("not_applicable:"):
+                        last["na"] = True
+            break
+        if lines[j].strip() and (len(lines[j]) - len(lines[j].lstrip())) < base:
+            break
+        j += 1
+    for row in required:
+        if row not in coverage:
+            errors.append(f"[fallback-coverage] {matrix}: required fallback '{row}' has no fallback_coverage entry")
+        elif not (coverage[row]["tests"] or coverage[row]["na"]):
+            errors.append(f"[fallback-coverage] {matrix}: '{row}' needs tests: or not_applicable:")
+    for key, info in coverage.items():
+        if key not in required:
+            errors.append(f"[fallback-coverage] {matrix}:{info['line']}: coverage entry '{key}' matches no required fallback")
+    i = end + 1
+
+if errors:
+    print("\n".join(errors), file=sys.stderr)
+    sys.exit(1)
+print(f"test reference checks passed ({len(names)} referenced tests all exist, fallback coverage complete)")
 PY

@@ -33,6 +33,27 @@ tracks:
       - stale_generation_is_ignored
       - partial_provider_failure_does_not_publish_subset
       - remote_authority_never_falls_back_to_local_rows
+    fallback_coverage:
+      generation_commits_atomically_only_after_complete_success:
+        tests: [complete_scan_atomically_replaces_rows]
+      failed_partial_cancelled_or_source_missing_scan_preserves_last_committed_rows:
+        tests: [failed_scan_preserves_last_committed_rows, cancelled_scan_preserves_rows, source_missing_preserves_rows, partial_provider_failure_does_not_publish_subset]
+      passive_refresh_coalesces_with_inflight_generation:
+        tests: [passive_refresh_coalesces_with_inflight_generation]
+      explicit_refresh_may_supersede_stuck_generation:
+        tests: [explicit_refresh_supersedes_stuck_generation]
+      stale_completion_cannot_overwrite_newer_authority_state:
+        tests: [stale_generation_is_ignored, remote_authority_never_falls_back_to_local_rows]
+      provider_parse_error_fails_closed_instead_of_publishing_a_success_subset:
+        tests: [malformed_jsonl_fails_the_provider_instead_of_returning_a_subset, malformed_provider_source_fails_closed_without_publishing_other_rows, partial_provider_failure_does_not_publish_subset]
+      physical_source_limit_fails_explicitly_instead_of_truncating_by_enumeration_order:
+        tests: [physical_source_limit_is_explicit_not_enumeration_truncation]
+      local_and_remote_authority_partitions_never_cross_enrich_or_cross_publish:
+        tests: [remote_authority_never_falls_back_to_local_rows]
+      metadata_failure_preserves_entity_rows_and_cached_enrichment:
+        tests: [metadata_failure_preserves_entity_rows_and_cached_enrichment]
+      resume_consumes_committed_render_model_without_rescanning_in_click_path:
+        tests: [restore_failure_rolls_back_without_duplicate_row, missing_restore_content_has_zero_side_effects]
   tab_lifecycle:
     required_fallbacks:
       - stable_opaque_row_identity_survives_virtual_restoring_live_transitions
@@ -49,6 +70,23 @@ tracks:
       - coordinate_reuse_after_delete_allocates_new_identity
       - restore_failure_rolls_back_without_duplicate_row
       - closing_live_carrier_hands_off_to_native_history
+    fallback_coverage:
+      stable_opaque_row_identity_survives_virtual_restoring_live_transitions:
+        tests: [opaque_row_identity_survives_carrier_replacement, inline_edit_identity_survives_carrier_replacement]
+      physical_tab_and_leaf_coordinates_are_routing_only_never_identity:
+        tests: [navigator_render_identity_uses_canonical_row_id]
+      carrier_replacement_preserves_row_selection_pin_alias_and_order:
+        tests: [carrier_replacement_preserves_row_selection_pin_alias_and_order]
+      deletion_tombstones_identity_and_coordinate_reuse_gets_a_new_identity:
+        tests: [coordinate_reuse_after_delete_allocates_new_identity]
+      close_of_agent_bound_carrier_triggers_passive_native_history_refresh:
+        tests: [closing_live_carrier_hands_off_to_native_history]
+      restore_finalize_has_typed_success_retryable_cancelled_and_model_broken_outcomes:
+        tests: [restore_failure_rolls_back_without_duplicate_row]
+      missing_restore_content_has_zero_identity_or_persistence_side_effects:
+        tests: [missing_restore_content_has_zero_side_effects]
+      environment_disconnect_preserves_rows_and_authority:
+        tests: [closing_live_carrier_hands_off_to_native_history, remote_disconnect_never_becomes_local]
   completion:
     required_fallbacks:
       - deterministic_sources_remain_available_when_dynamic_generators_fail
@@ -67,6 +105,25 @@ tracks:
       - replacement_ranges_cover_quotes_escapes_and_unicode
       - duplicate_candidate_keeps_best_rank_and_combined_provenance
       - empty_history_does_not_disable_signature_or_filesystem_results
+    fallback_coverage:
+      deterministic_sources_remain_available_when_dynamic_generators_fail:
+        tests: [failed_dynamic_source_preserves_deterministic_candidates]
+      stale_async_generation_cannot_replace_current_input_results:
+        tests: [stale_generation_is_ignored]
+      empty_or_failed_source_does_not_erase_valid_candidates_from_other_sources:
+        tests: [empty_history_does_not_disable_signature_or_filesystem_results]
+      dedup_preserves_highest_confidence_candidate_and_source_provenance:
+        tests: [duplicate_candidate_keeps_best_rank_and_combined_provenance]
+      cursor_quote_escape_unicode_and_replacement_ranges_are_validated:
+        tests: [replacement_ranges_cover_quotes_escapes_and_unicode]
+      remote_filesystem_or_repo_source_failure_does_not_fall_back_to_local_paths:
+        tests: [remote_source_failure_never_reads_local_filesystem]
+      history_ranking_is_contextual_but_never_the_only_source:
+        tests: [history_ranking_is_contextual_but_never_the_only_source]
+      cancellation_timeout_and_candidate_caps_are_explicit:
+        tests: [cancellation_timeout_and_candidate_caps_are_explicit]
+      completion_never_auto_executes_or_mutates_terminal_before_user_acceptance:
+        not_applicable: "structural guarantee: core complete() only reads (read_dir, git status) and returns candidates; terminal text mutation exists solely in the GUI acceptance path, so there is no core auto-execute path to test"
 quality_gate:
   rule: A feature track cannot move from specified to implemented until its Ashide fallback matrix rows have corresponding Agentty tests or an explicit not_applicable rationale.
   remote_helper:
@@ -85,3 +142,18 @@ quality_gate:
       - partial_provider_failure_does_not_publish_subset
       - remote_authority_never_falls_back_to_local_rows
       - typed_resume_keeps_program_and_arguments_separate
+    fallback_coverage:
+      unavailable_capability_is_explicit:
+        tests: [unavailable_capability_is_explicit]
+      local_and_remote_adapters_share_business_core:
+        tests: [codex_and_claude_discovery_uses_one_shared_host_core]
+      failed_cancelled_partial_stale_or_missing_discovery_preserves_committed_generation:
+        tests: [failed_scan_preserves_last_committed_rows, cancelled_scan_preserves_rows, stale_generation_is_ignored]
+      remote_failure_never_falls_back_to_local_authority:
+        tests: [remote_authority_never_falls_back_to_local_rows, remote_source_failure_never_reads_local_filesystem]
+      resume_program_and_arguments_remain_typed:
+        tests: [typed_resume_keeps_program_and_arguments_separate, resume_invocation_is_typed_and_preserves_cwd]
+      cancellation_timeout_limits_and_backpressure_are_explicit:
+        tests: [cancellation_uses_operation_identity, bounded_batch_rejects_overflow_without_dropping_old_items]
+      helper_upgrade_uses_existing_agentty_server_lifecycle:
+        tests: [helper_hello_reports_protocol_and_capabilities]

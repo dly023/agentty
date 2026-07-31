@@ -645,6 +645,18 @@ mod tests {
         }
     }
 
+    #[test]
+    fn unavailable_capability_is_explicit() {
+        // hello_ok() advertises no AGENT_HELPER feature: capability
+        // negotiation must answer explicitly false, never assume availability
+        // or fall back to hoping the peer supports it.
+        let (host, _seen) = host_with_peer('/', |_| None);
+        assert!(
+            !crate::agent_runtime::adapter::RemoteAgentClient::helper_available(host.as_ref()),
+            "an unadvertised capability is explicitly unavailable"
+        );
+    }
+
     fn meta() -> Meta {
         Meta {
             is_dir: false,

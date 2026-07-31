@@ -462,4 +462,99 @@ mod tests {
             "the signature source survives an empty history: {candidates:?}"
         );
     }
+
+    #[test]
+    fn history_ranking_is_contextual_but_never_the_only_source() {
+        // A contextual history hit joins the shared model; it never becomes
+        // the only source even when it matches exactly.
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::write(dir.path().join("gitconfig"), b"x").unwrap();
+        let request = CompletionRequest {
+            operation: OperationId(1),
+            generation: CompletionGeneration(1),
+            authority: AuthorityKind::Local,
+            cwd: Some(dir.path().to_string_lossy().into_owned()),
+            input: "git".into(),
+            cursor: 3,
+            limit: 20,
+            history: vec!["git status".into()],
+        };
+        let host = crate::host::local::LocalHost::new();
+        let outcome = complete(host.as_ref(), &request);
+        let CompletionOutcome::Complete(candidates) = outcome else {
+            panic!("completion failed")
+        };
+        let sources: std::collections::HashSet<_> = candidates.iter().map(|c| c.source).collect();
+        assert!(
+            sources.contains(&CompletionSourceKind::History),
+            "the contextual history hit is present: {candidates:?}"
+        );
+        assert!(
+            sources.contains(&CompletionSourceKind::Grammar)
+                && sources.contains(&CompletionSourceKind::Filesystem),
+            "history never crowds out the other sources: {candidates:?}"
+        );
+    }
+
+    #[test]
+    fn cancellation_timeout_and_candidate_caps_are_explicit() {
+        // Cancellation and timeout preserve the deterministic candidates
+        // instead of clearing the model.
+        for outcome in [CompletionOutcome::Cancelled, CompletionOutcome::TimedOut] {
+            let mut reducer = CompletionReducer::new(AuthorityKind::Local);
+            reducer.begin(
+                CompletionGeneration(1),
+                vec![candidate("git", CompletionSourceKind::Grammar)],
+            );
+            assert_eq!(
+                reducer.apply(
+                    AuthorityKind::Local,
+                    CompletionGeneration(1),
+                    outcome.clone()
+                ),
+                CompletionCommit::PreservedDeterministic,
+                "{outcome:?} must preserve deterministic candidates"
+            );
+            assert_eq!(reducer.candidates().len(), 1);
+        }
+
+        // The candidate cap is explicit: zero means none, and truncation is
+        // by the declared limit rather than enumeration order.
+        let request = CompletionRequest {
+            operation: OperationId(1),
+            generation: CompletionGeneration(1),
+            authority: AuthorityKind::Local,
+            cwd: None,
+            input: "c".into(),
+            cursor: 1,
+            limit: 0,
+            history: vec!["cargo test".into()],
+        };
+        let host = crate::host::local::LocalHost::new();
+        let CompletionOutcome::Complete(candidates) = complete(host.as_ref(), &request) else {
+            panic!("completion failed")
+        };
+        assert!(candidates.is_empty(), "a zero cap yields zero candidates");
+        let CompletionOutcome::Complete(candidates) = complete(
+            host.as_ref(),
+            &CompletionRequest {
+                limit: 2,
+                history: vec![
+                    "cargo test".into(),
+                    "cargo build".into(),
+                    "cargo clippy".into(),
+                ],
+                ..request
+            },
+        ) else {
+            panic!("completion failed")
+        };
+        assert_eq!(candidates.len(), 2, "the cap is applied exactly");
+        assert!(
+            candidates
+                .iter()
+                .any(|c| c.source == CompletionSourceKind::Grammar),
+            "the highest-ranked candidates survive the cap: {candidates:?}"
+        );
+    }
 }
