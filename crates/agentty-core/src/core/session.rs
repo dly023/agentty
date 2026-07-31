@@ -304,18 +304,10 @@ impl EnvironmentWindows {
 
     pub fn from_legacy(legacy: WindowViews) -> Self {
         let active = legacy.active.and_then(|id| {
-            legacy
-                .get(id)
-                .map(|view| {
-                    crate::core::environment::EnvironmentId::for_remote(
-                        &view.host.as_ref().expect("remote handled below").target,
-                    )
-                })
-                .or_else(|| {
-                    legacy
-                        .get(id)
-                        .map(|_| crate::core::environment::EnvironmentId::local())
-                })
+            legacy.get(id).map(|view| match &view.host {
+                Some(remote) => crate::core::environment::EnvironmentId::for_remote(&remote.target),
+                None => crate::core::environment::EnvironmentId::local(),
+            })
         });
         let mut windows = Vec::new();
         for view in legacy.views {
@@ -768,6 +760,45 @@ mod tests {
         let partial: WindowViews = serde_json::from_str(r#"{"views":[{}]}"#).unwrap();
         assert_eq!(partial.views.len(), 1);
         assert!(!partial.views[0].is_remote());
+    }
+
+    #[test]
+    fn legacy_active_local_window_migrates_without_panic() {
+        // Regression: from_legacy used to expect() a remote host while mapping
+        // the active view, so a legacy views.json whose active window was local
+        // panicked during migration on launch.
+        let local = WindowView::default();
+        let local_id = local.id;
+        let legacy = WindowViews {
+            views: vec![local],
+            active: Some(local_id),
+        };
+        let migrated = EnvironmentWindows::from_legacy(legacy);
+        assert_eq!(
+            migrated.active,
+            Some(crate::core::environment::EnvironmentId::local())
+        );
+
+        let remote = WindowView::on_remote(RemoteRef::new(
+            RemoteTarget::Alias {
+                alias: "build".into(),
+            },
+            WorkspaceId::new(),
+        ));
+        let remote_id = remote.id;
+        let legacy = WindowViews {
+            views: vec![remote],
+            active: Some(remote_id),
+        };
+        let migrated = EnvironmentWindows::from_legacy(legacy);
+        assert_eq!(
+            migrated.active,
+            Some(crate::core::environment::EnvironmentId::for_remote(
+                &RemoteTarget::Alias {
+                    alias: "build".into()
+                }
+            ))
+        );
     }
 
     #[test]
