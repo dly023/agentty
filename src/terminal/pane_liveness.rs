@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use gpui::{App, AppContext as _, BorrowAppContext as _};
 
-use crate::core::session::{WindowView, WorkspaceId, WorkspaceStore};
+use crate::core::session::{WorkspaceId, WorkspaceStore};
 use crate::terminal::{PaneRoute, RemoteTerminal};
 use crate::ui::host_ops::{HostId, InFlight};
 
@@ -101,7 +101,7 @@ impl PaneLivenessCache {
     }
 }
 
-pub fn liveness_of(cx: &App, workspace: &WindowView) -> Liveness {
+pub fn liveness_of(cx: &App, workspace: &crate::core::session::EnvironmentWindow) -> Liveness {
     let host = workspace.host_id();
     let Some(ids) = crate::ui::machine_mirror::pane_ids(cx, workspace) else {
         return Liveness::Unknown;
@@ -120,7 +120,7 @@ pub fn sweep(cx: &mut App) {
     LAST_SWEEP.set(Some(now));
 
     let mut targets: Vec<(HostId, WorkspaceId)> = Vec::new();
-    for w in &WorkspaceStore::all(cx).views {
+    for w in &WorkspaceStore::all(cx).windows {
         let host = w.host_id();
         if targets.iter().any(|(seen, _)| *seen == host) {
             continue;
@@ -128,7 +128,7 @@ pub fn sweep(cx: &mut App) {
         if crate::ui::machine_mirror::pane_ids(cx, w).is_none_or(|ids| ids.is_empty()) {
             continue;
         }
-        targets.push((host, w.id));
+        targets.push((host, w.workspace));
     }
     for (host, workspace) in targets {
         probe_host(cx, host, workspace);

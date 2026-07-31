@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+tracker=docs/quality/development-tracker.yaml
+[[ -f "$tracker" ]] || { echo "[tracker] missing $tracker" >&2; exit 1; }
+[[ -f DEVELOPMENT.md ]] || { echo "[tracker] missing root DEVELOPMENT.md" >&2; exit 1; }
+
+for milestone in M0-ARCHITECTURE-RESET M1-SESSION-NAVIGATOR M2-COMPOSER M3-AGENT-ACTIVITY M4-COMPLETION M5-I18N M6-SSH; do
+  rg -q "id: $milestone$" "$tracker" || { echo "[tracker] missing milestone $milestone" >&2; exit 1; }
+done
+
+if rg -n 'status: (todo|done|wip)$' "$tracker"; then
+  echo "[tracker] use only declared lifecycle statuses" >&2
+  exit 1
+fi
+
+if rg -n 'TODO|FIXME|HACK' src crates --glob '*.rs' >/tmp/agentty-debt-markers.$$ 2>/dev/null; then
+  if ! rg -q '^technical_debt:\s*$' "$tracker"; then
+    cat /tmp/agentty-debt-markers.$$ >&2
+    echo "[tracker] source debt markers require technical_debt tracking" >&2
+    rm -f /tmp/agentty-debt-markers.$$
+    exit 1
+  fi
+fi
+rm -f /tmp/agentty-debt-markers.$$
+
+echo "development tracker checks passed"

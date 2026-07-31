@@ -1,0 +1,37 @@
+version: 2
+decision: ADR-ENVIRONMENT-WINDOW-BOUNDARY-001
+status: accepted
+updated: 2026-07-31
+context:
+  problem: Workspace currently conflates persisted window, tab collection, daemon workspace, and remote host authority. Managed SSH can also enter a remote authority without a sufficiently obvious window boundary.
+decision:
+  application: manages_an_environment_registry
+  window: belongs_to_exactly_one_environment
+  environment: canonical_execution_authority
+  tab: inherits_window_environment
+  pane: inherits_window_environment
+  sidebar: window_environment_scoped_agent_session_navigator
+  top_right: environment_indicator_and_open_or_focus_switcher
+  managed_ssh: russh_opens_or_focuses_a_dedicated_environment_window
+  terminal_ssh: openssh_child_process_does_not_change_application_authority
+  workspace_term: retire_from_user_facing_model
+rationale:
+  - A window is a strong, continuously visible boundary for local versus remote execution authority.
+  - One Environment window can contain many repositories and Agent sessions, avoiding the old one-workspace-per-window waste.
+  - Existing windows and tabs must never be silently retargeted to another machine.
+  - OpenSSH inside a PTY and Agentty-managed russh have different filesystem, session, completion, and lifecycle authority and must remain distinguishable.
+  - Remote disconnect must retain remote authority and fail closed rather than silently spawning locally.
+consequences:
+  - Selecting an Environment calls open_or_focus_environment_window instead of switch_active_environment.
+  - The right-side indicator remains visible in local, connecting, connected, disconnected, and error states.
+  - WorkspaceId may remain temporarily for daemon collections and persistence migration, but it is not the product-level Environment identity.
+  - The old switch-current-window-to-workspace path must be deleted after environment-window migration verification.
+  - id: ADR-REMOTE-HELPER-002
+    title: Extend tty7-server instead of adding a second remote Agent daemon
+    status: accepted
+    date: 2026-07-31
+    decision: Local adapters call tty7-core agent_runtime directly and remote adapters use capability-negotiated control RPC to the same core through tty7-server.
+    consequences:
+      - No BYOK, model proxy, new listening port, system service, or second install lifecycle.
+      - Remote discovery, resume, activity, and completion remain under remote Environment authority.
+      - Missing capabilities fail explicitly and never fall back to local data.

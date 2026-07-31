@@ -31,3 +31,6 @@ repomix-output.*
 
 # Lavish review artifacts (design surfaces rendered for a single review pass)
 /.lavish/
+
+# Local reference projects used for comparative development; never ship.
+/refs/

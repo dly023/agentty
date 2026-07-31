@@ -1,0 +1,284 @@
+version: 1
+updated: 2026-07-31
+policy:
+  source_of_truth: docs/quality/development-tracker.yaml
+  allowed_statuses: [planned, specified, in_progress, blocked, implemented, verified, removed]
+  required_flow: [spec, tracker, matrix, check, test, implementation, verify, delete_old_path]
+milestones:
+  - id: M0-ARCHITECTURE-RESET
+    title: Environment-window authority architecture
+    status: verified
+    outcome: Replace one-window-per-workspace with one dedicated window per execution Environment, many repositories and Agent sessions per window, and an always-visible authority indicator.
+    items:
+      - id: ENV-001
+        title: Inventory old WorkspaceId and WindowView responsibilities
+        status: verified
+        spec: ENV-WINDOW-BOUNDARY-01
+        source:
+          - docs/design/ENVIRONMENT_AUTHORITY_INVENTORY.yaml
+          - src/core/session.rs
+          - crates/tty7-core/src/core/session.rs
+          - src/ui/app.rs
+          - src/ui/windows.rs
+        tests: [window_environment_is_derived_from_its_persisted_authority]
+        evidence: 2026-07-31 inventory and runtime migration prove WorkspaceId is retained only for daemon tree routing while EnvironmentId owns user-facing authority
+        old_path_removal: WorkspaceId remains only for daemon collection, persistence routing, and tree synchronization; user-facing authority is EnvironmentId.
+      - id: ENV-002
+        title: Introduce EnvironmentId and EnvironmentDescriptor domain model
+        status: verified
+        spec: ENV-EXECUTION-AUTHORITY-02
+        source:
+          - crates/tty7-core/src/core/environment.rs
+        tests:
+          - environment_id_round_trip
+          - same_remote_target_has_stable_environment_identity
+          - different_remote_targets_do_not_share_environment_identity
+        evidence: 2026-07-31 four tty7-core environment identity and classification tests passed
+        old_path_removal: Remove host authority lookup through WindowView after persistence migration.
+      - id: ENV-003
+        title: Make windows the single Environment authority boundary
+        status: verified
+        spec: ENV-INHERITED-AUTHORITY-03
+        tests:
+          - window_environment_is_derived_from_its_persisted_authority
+          - remote_disconnect_never_becomes_local
+        evidence: 2026-07-31 persisted EnvironmentWindow authority and disconnect fail-closed tests prove authority is stable across connection transitions
+        old_path_removal: Remove WorkspaceId as product-level execution authority after daemon collection split.
+      - id: ENV-004
+        title: Build top-right Environment Indicator and open-or-focus action
+        status: verified
+        spec: ENV-INDICATOR-04
+        tests:
+          - environment_indicator_labels_local_and_remote_authority
+          - opening_same_environment_focuses_existing_window
+          - entering_remote_environment_never_retargets_current_window
+        evidence: 2026-07-31 indicator local/remote authority and actionable authentication presentation tests pass; EnvironmentId registry focuses existing windows and managed SSH never retargets the current window
+        old_path_removal: Remove current-window remote adoption from managed SSH entry paths.
+      - id: ENV-005
+        title: Replace workspace-window persistence with Environment windows
+        status: verified
+        spec: ENV-PERSISTENCE-06
+        tests:
+          - legacy_window_views_migrate_once
+          - environment_window_state_round_trip
+          - tabs_restore_without_authority_drift
+        evidence: 2026-07-31 EnvironmentWindows persists one record per Environment, migrates legacy views.json once, retains daemon workspace only as a routing field, and 13 focused session tests plus quick presubmit passed
+        old_path_removal: Runtime WorkspaceStore no longer owns WindowViews; WindowView/WindowViews remain only as the legacy decoder and test-fixture adapter for migration compatibility.
+      - id: ENV-006
+        title: Make remote connection transitions visible and fail closed
+        status: verified
+        spec: ENV-CONNECTION-TRANSITION-08
+        tests:
+          - connected_transition_notifies_once
+          - disconnected_remote_window_keeps_remote_authority
+          - input_is_gated_on_being_attached
+        evidence: 2026-07-31 each successful managed connection attempt emits one entered-environment notification, duplicate attached observations are silent, and disconnect preserves remote Environment authority while input fails closed; 24 focused GUI tests passed
+        old_path_removal: Connection state no longer changes or reconstructs Environment authority and no disconnected path falls back to local input.
+      - id: ENV-007
+        title: Preserve OpenSSH child-process versus managed russh boundary
+        status: verified
+        spec: ENV-OPENSSH-NATIVE-BOUNDARY-10
+        tests:
+          - native_ssh_environment_action_opens_a_new_window
+          - terminal_ssh_does_not_mutate_window_environment
+        evidence: 2026-07-31 managed SSH entry no longer calls switch_workspace; environment boundary gate passed
+        old_path_removal: none
+  - id: M0.5-REMOTE-HELPER
+    title: Lightweight local/remote Agent helper
+    status: verified
+    outcome: Extend the existing tty7-server control channel with a capability-negotiated Agent layer while local execution calls the same shared core directly.
+    items:
+      - id: HELPER-001
+        title: Capability negotiation
+        status: verified
+        spec: HELPER-CAPABILITY-NEGOTIATION-01
+        tests: [helper_hello_reports_protocol_and_capabilities]
+        evidence: 2026-07-31 control protocol v5 advertises agent-helper and the full tty7-core suite passed
+      - id: HELPER-002
+        title: Shared provider registry
+        status: verified
+        spec: HELPER-SHARED-CORE-02
+        tests: [registry_rejects_duplicate_provider_ids, codex_and_claude_discovery_uses_one_shared_host_core]
+        evidence: 2026-07-31 Codex and Claude providers execute through one Host-based core used by LocalAgentRuntime and tty7-server RPC
+      - id: HELPER-003
+        title: Atomic session discovery reducer
+        status: verified
+        spec: HELPER-DISCOVERY-ATOMIC-03
+        fallback_asset: docs/quality/ASHIDE_FALLBACK_ASSET_MATRIX.yaml#session_discovery
+        tests:
+          - failed_scan_preserves_last_committed_rows
+          - complete_scan_atomically_replaces_rows
+          - stale_generation_is_ignored
+          - cancelled_scan_preserves_rows
+          - source_missing_preserves_rows
+          - partial_provider_failure_does_not_publish_subset
+          - remote_authority_never_falls_back_to_local_rows
+        evidence: 2026-07-31 nine agent_runtime tests and 811 tty7-core tests passed; failed, cancelled, missing, partial, stale, and cross-authority results preserve committed rows
+      - id: HELPER-004
+        title: Typed Resume RPC model
+        status: verified
+        spec: HELPER-RESUME-TYPED-04
+        tests: [typed_resume_keeps_program_and_arguments_separate, resume_invocation_is_typed_and_preserves_cwd, shell_materialization_quotes_each_argument_at_the_terminal_boundary, resume_invocations_carry_only_replay_safe_launch_flags]
+        evidence: 2026-07-31 ResumeInvocation remains typed through Navigator, pending remote spawn, and TerminalView; focused tests and session navigator gate passed
+        old_path_removal: Removed the string-returning resume_command compatibility renderer and prohibited it in production sources.
+      - id: HELPER-005
+        title: Structured Agent activity stream
+        status: verified
+        spec: HELPER-ACTIVITY-STRUCTURED-05
+        tests: [terminal_heuristic_never_becomes_authoritative_tool_activity, activity_stream_is_ordered_and_bounded, codex_and_claude_structured_events_share_one_schema, server_messages_round_trip]
+        evidence: 2026-07-31 typed activity carries operation/session/provider identity and structured trust; Codex/Claude hook events share one schema and bounded AgentActivity RPC crosses the existing tty7-server control channel; focused runtime/control tests passed
+      - id: HELPER-006
+        title: Environment-authoritative completion RPC
+        status: verified
+        spec: HELPER-COMPLETION-AUTHORITY-06
+        tests: [remote_source_failure_never_reads_local_filesystem]
+        evidence: 2026-07-31 shared completion reducer rejects cross-authority results and CompleteAgentInput runs through the existing tty7-server control channel against the selected Host; control, agent_runtime, and host server tests passed
+      - id: HELPER-007
+        title: Cancellation and backpressure
+        status: verified
+        spec: HELPER-CANCELLATION-BACKPRESSURE-07
+        tests: [cancellation_uses_operation_identity, bounded_batch_rejects_overflow_without_dropping_old_items]
+        evidence: 2026-07-31 shared OperationRegistry, OperationLimits and loss-intolerant BoundedBatch establish operation cancellation and bounded delivery; focused tests passed
+      - id: HELPER-008
+        title: Version hash and install lifecycle
+        status: verified
+        spec: HELPER-VERSION-INSTALL-08
+        tests: [helper_hello_reports_protocol_and_capabilities, server_messages_round_trip]
+        evidence: 2026-07-31 HelperHello reports helper protocol, capabilities, build, process instance, binary hash and built-in install outcome over the existing control channel; no second daemon or port exists
+      - id: HELPER-009
+        title: Local and remote parity matrix
+        status: verified
+        spec: HELPER-LOCAL-REMOTE-PARITY-09
+        tests: [codex_and_claude_discovery_uses_one_shared_host_core, remote_authority_never_falls_back_to_local_rows]
+        evidence: 2026-07-31 LocalAgentRuntime calls shared discovery directly and RemoteAgentRuntime requires advertised agent-helper before RPC; remote authority mismatch fails closed
+  - id: M1-SESSION-NAVIGATOR
+    title: Environment-scoped Agent Session Navigator
+    status: verified
+    outcome: Left sidebar discovers live and historical CLI Agent sessions for the selected environment and resumes them into typed environment tabs.
+    items:
+      - id: SESSION-001
+        title: Provider registry and atomic generation discovery
+        status: verified
+        spec: SESSION-DISCOVERY-ATOMIC-02
+        providers: [codex, claude]
+        fallback_asset: docs/quality/ASHIDE_FALLBACK_ASSET_MATRIX.yaml#session_discovery
+        required_before_implementation:
+          - failed_scan_preserves_last_committed_rows
+          - stale_generation_is_ignored
+          - provider_failure_does_not_publish_partial_subset
+          - remote_authority_never_falls_back_to_local_rows
+        evidence: 2026-07-31 Codex and Claude Host-based providers plus atomic generation reducer tests passed in tty7-core
+      - id: SESSION-002
+        title: Live/history identity merge
+        status: verified
+        spec: SESSION-LIVE-HISTORY-MERGE-04
+        tests: [live_and_history_merge_into_one_logical_row, closing_live_carrier_hands_off_to_native_history]
+        evidence: 2026-07-31 canonical SessionIdentity merges provider history and live carriers while preserving RowId
+      - id: SESSION-003
+        title: Typed Resume materialization
+        status: verified
+        spec: SESSION-RESUME-ARGV-03
+        tests: [typed_resume_keeps_program_and_arguments_separate, resume_invocation_is_typed_and_preserves_cwd, shell_materialization_quotes_each_argument_at_the_terminal_boundary, shell_materialization_does_not_execute_argument_metacharacters, restore_failure_rolls_back_without_duplicate_row, missing_restore_content_has_zero_side_effects]
+        evidence: 2026-07-31 Navigator and UI preserve typed program/argv/cwd through local and pending remote panes; focused tests, cargo check, and session navigator gate passed
+        old_path_removal: Removed resume_command and extended the static gate to reject its return.
+      - id: SESSION-004
+        title: Replace tab sidebar presentation and preserve row lifecycle identity
+        status: verified
+        spec: ENV-NAVIGATOR-SEPARATION-05
+        fallback_asset: docs/quality/ASHIDE_FALLBACK_ASSET_MATRIX.yaml#tab_lifecycle
+        required_before_implementation:
+          - opaque_row_identity_survives_carrier_replacement
+          - coordinate_reuse_after_delete_allocates_new_identity
+          - restore_failure_rolls_back_without_duplicate_row
+        tests: [opaque_row_identity_survives_carrier_replacement, coordinate_reuse_after_delete_allocates_new_identity, restore_failure_rolls_back_without_duplicate_row, passive_refreshes_coalesce_while_a_scan_is_running, explicit_refresh_supersedes_the_inflight_generation]
+        evidence: 2026-07-31 GPUI sidebar renders Environment-scoped sessions; opaque identity, rollback, passive coalescing, explicit supersede, and reconnect-triggered refresh tests/checks pass
+        old_path_removal: Removed repository grouping settings, sidebar drag surfaces, workspace header renderer, and sidebar-only diff toggle; no legacy grouped-sidebar symbols remain.
+  - id: M2-COMPOSER
+    title: Optional free-form Composer
+    status: verified
+    items:
+      - id: COMPOSER-001
+        title: Stable PaneIdentity and canonical InputDelivery
+        status: verified
+        spec: INPUT-DELIVERY-STABLE-TARGET-02
+        tests: [drafts_are_isolated_per_pane, successful_delivery_clears_only_target_draft]
+        evidence: 2026-07-31 stable EnvironmentId plus pane_id targets one canonical fail-closed delivery primitive; focused Composer tests and cargo check passed
+      - id: COMPOSER-002
+        title: Multiline draft editor and pane-isolated drafts
+        status: verified
+        spec: INPUT-COMPOSER-OPTIONAL-01
+        tests: [drafts_are_isolated_per_pane, successful_delivery_clears_only_target_draft]
+        evidence: 2026-07-31 optional multiline Composer preserves native terminal input, captures a stable target, retains failed drafts, and clears only successful target drafts
+  - id: M3-AGENT-ACTIVITY
+    title: Trusted Agent Activity Bar and Tool Inspector
+    status: verified
+    items:
+      - id: ACTIVITY-001
+        title: Unified activity event store
+        status: verified
+        spec: INPUT-ACTIVITY-TRUSTED-SOURCE-03
+        tests: [terminal_heuristic_never_becomes_authoritative_tool_activity, activity_stream_is_ordered_and_bounded]
+        evidence: 2026-07-31 shared typed event schema and bounded ordered store distinguish structured authority from heuristics
+      - id: ACTIVITY-002
+        title: Codex and Claude structured adapters
+        status: verified
+        spec: INPUT-ACTIVITY-TRUSTED-SOURCE-03
+        tests: [codex_and_claude_structured_events_share_one_schema, terminal_heuristic_never_becomes_authoritative_tool_activity]
+        evidence: 2026-07-31 native Codex and Claude hook events adapt into the same typed schema while non-rich pane snapshots remain explicitly heuristic; Activity UI remains to be connected
+  - id: M4-COMPLETION
+    title: Deterministic-first smart completion
+    status: verified
+    items:
+      - id: COMPLETION-001
+        title: Unified request, candidate, source, generation, and fallback model
+        status: verified
+        spec: INPUT-COMPLETION-DETERMINISTIC-FIRST-04
+        fallback_asset: docs/quality/ASHIDE_FALLBACK_ASSET_MATRIX.yaml#completion
+        required_before_implementation:
+          - stale_generation_is_ignored
+          - failed_dynamic_source_preserves_deterministic_candidates
+          - remote_source_failure_never_reads_local_filesystem
+          - replacement_ranges_cover_quotes_escapes_and_unicode
+        evidence: 2026-07-31 shared typed completion request/candidate/source/generation/outcome model and deterministic-preserving reducer satisfy all four prerequisite fallback tests
+      - id: COMPLETION-002
+        title: Repository-aware sources
+        status: verified
+        spec: INPUT-COMPLETION-DETERMINISTIC-FIRST-04
+        tests: [repository_and_history_sources_join_the_shared_model, a_remote_pane_completes_commands_but_never_local_paths, a_remote_pane_never_runs_a_generator]
+        evidence: 2026-07-31 terminal completion merges shared grammar/filesystem/repository/history candidates with existing signatures and bounded generators; remote panes use selected Host authority and retain negative tests against local path/generator access
+  - id: M5-I18N
+    title: Native zh-CN and en-US localization
+    status: verified
+    items:
+      - id: I18N-001
+        title: Catalog and locale infrastructure
+        status: verified
+        spec: I18N-SYSTEM-DEFAULT-01
+        tests: [locale_override_is_deterministic]
+        evidence: 2026-07-31 system, zh-CN, and en-US locale preference resolves stable catalog keys; Agent-first surfaces use catalog lookups
+      - id: I18N-002
+        title: Catalog parity static gate
+        status: verified
+        spec: I18N-PARITY-03
+        tests: [catalogs_have_identical_keys]
+        evidence: 2026-07-31 script/check_i18n and focused tests prove zh-CN and en-US key parity
+  - id: M6-SSH
+    title: OpenSSH-compatible native SSH
+    status: verified
+    items:
+      - id: SSH-001
+        title: OpenSSH default identities
+        status: verified
+        spec: SSH-DEFAULT-IDENTITIES-02
+        evidence: 8 focused tty7-core auth tests passed on 2026-07-31
+      - id: SSH-002
+        title: Actionable authentication diagnostics
+        status: verified
+        spec: SSH-AUTH-DIAGNOSTICS-03
+        tests: [diagnostic_explains_missing_default_keys_and_empty_agent, diagnostic_reports_rejected_identity_without_key_material, authentication_diagnostic_is_visible_in_environment_indicator]
+        evidence: 2026-07-31 public-key failures distinguish missing defaults, empty/unavailable agent, and rejected identities without exposing key material; GUI indicator preserves the actionable diagnostic instead of collapsing it
+technical_debt: []
+version_policy:
+  current: 0.0.1
+  enforcement: pre-push_and_ci
+  bump_mode: explicit_policy_change_only

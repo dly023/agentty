@@ -4,6 +4,15 @@ use std::sync::{Arc, OnceLock};
 
 use serde::{Deserialize, Serialize};
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum LocalePreference {
+    #[default]
+    System,
+    ZhCn,
+    EnUs,
+}
+
 #[derive(Default, Clone, Eq, PartialEq, Hash)]
 pub struct FontFeatures(pub Arc<Vec<(String, u32)>>);
 
@@ -111,6 +120,8 @@ impl serde::Serialize for FontFeatures {
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(default)]
 pub struct Config {
+    #[serde(default)]
+    pub locale: LocalePreference,
     pub font_family: String,
     pub font_fallbacks: Vec<String>,
     pub font_family_bold: Option<String>,
@@ -153,10 +164,6 @@ pub struct Config {
     pub right_panel_width: f32,
     #[serde(default, deserialize_with = "de_lenient")]
     pub right_panel_tab: RightPanelTab,
-    #[serde(default, deserialize_with = "de_lenient")]
-    pub sidebar_grouping: SidebarGrouping,
-    #[serde(default = "default_true")]
-    pub sidebar_diff_preview: bool,
     #[serde(default, deserialize_with = "de_lenient")]
     pub notify_on_command_finish: NotifyMode,
     pub check_for_updates: bool,
@@ -302,14 +309,6 @@ pub enum TabBarPosition {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
-pub enum SidebarGrouping {
-    #[default]
-    Repo,
-    None,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize)]
-#[serde(rename_all = "kebab-case")]
 pub enum NotifyMode {
     Never,
     #[default]
@@ -373,6 +372,7 @@ pub fn platform_last_resort_fallbacks() -> &'static [&'static str] {
 impl Default for Config {
     fn default() -> Self {
         Self {
+            locale: LocalePreference::System,
             font_family: "Hack".to_string(),
             font_fallbacks: default_font_fallbacks(),
             font_family_bold: None,
@@ -404,8 +404,6 @@ impl Default for Config {
             right_panel_visible: false,
             right_panel_width: default_right_panel_width(),
             right_panel_tab: RightPanelTab::Info,
-            sidebar_grouping: SidebarGrouping::Repo,
-            sidebar_diff_preview: true,
             notify_on_command_finish: NotifyMode::Unfocused,
             check_for_updates: true,
             install_cli_on_path: true,
@@ -737,24 +735,6 @@ mod tests {
         let back: Config = serde_json::from_str(&json).unwrap();
         assert!(back.ssh_warn_on_close);
         assert_eq!(back.ssh_profile_frecency.get(&id).unwrap().count, 4);
-    }
-
-    #[test]
-    fn sidebar_diff_preview_defaults_on_and_round_trips() {
-        assert!(Config::default().sidebar_diff_preview);
-
-        let old: Config = serde_json::from_str(r#"{"font_size": 15.0}"#).unwrap();
-        assert!(
-            old.sidebar_diff_preview,
-            "absent key means today's behaviour"
-        );
-
-        let off: Config = serde_json::from_str(r#"{"sidebar_diff_preview": false}"#).unwrap();
-        assert!(!off.sidebar_diff_preview);
-        let json = serde_json::to_string(&off).unwrap();
-        assert!(json.contains("\"sidebar_diff_preview\":false"), "persisted");
-        let back: Config = serde_json::from_str(&json).unwrap();
-        assert!(!back.sidebar_diff_preview);
     }
 
     #[test]

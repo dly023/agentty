@@ -850,6 +850,10 @@ impl TerminalView {
         crate::ui::remote_workspace::workspace_accepts_input(cx, ws)
     }
 
+    pub fn pane_id(&self) -> u64 {
+        self.pane_id
+    }
+
     pub fn relink_plan(&self) -> (u64, TermSize, u16, u16) {
         (
             self.pane_id,
@@ -930,13 +934,62 @@ impl TerminalView {
             .filter(|t| !t.trim().is_empty())
     }
 
-    pub fn send_agent_prompt(&self, prompt: &str) {
-        self.terminal
-            .write(crate::core::agent_prompt::submit_bytes(prompt));
+    /// Canonical terminal-boundary delivery. Callers keep typed invocations
+    /// typed until this point and must resolve a stable PaneIdentity first.
+    pub fn deliver_input(
+        &self,
+        delivery: &crate::ui::composer::InputDelivery,
+        cx: &gpui::App,
+    ) -> crate::ui::composer::DeliveryOutcome {
+        if !self.accepts_input(cx) {
+            return crate::ui::composer::DeliveryOutcome::Disconnected;
+        }
+        let bytes = match delivery {
+            crate::ui::composer::InputDelivery::AgentPrompt(prompt) => {
+                crate::core::agent_prompt::submit_bytes(prompt)
+            }
+            crate::ui::composer::InputDelivery::CommandLine(command) => {
+                format!("{command}\r").into_bytes()
+            }
+            crate::ui::composer::InputDelivery::Resume(invocation) => {
+                tty7_core::agent_runtime::shell_line(invocation)
+            }
+        };
+        self.terminal.write(bytes);
+        crate::ui::composer::DeliveryOutcome::Delivered
     }
 
-    pub fn run_command_line(&self, cmd: &str) {
-        self.terminal.write(format!("{cmd}\r").into_bytes());
+    pub fn send_agent_prompt(
+        &self,
+        prompt: &str,
+        cx: &gpui::App,
+    ) -> crate::ui::composer::DeliveryOutcome {
+        self.deliver_input(
+            &crate::ui::composer::InputDelivery::AgentPrompt(prompt.to_owned()),
+            cx,
+        )
+    }
+
+    pub fn run_command_line(
+        &self,
+        cmd: &str,
+        cx: &gpui::App,
+    ) -> crate::ui::composer::DeliveryOutcome {
+        self.deliver_input(
+            &crate::ui::composer::InputDelivery::CommandLine(cmd.to_owned()),
+            cx,
+        )
+    }
+
+    pub fn run_invocation(
+        &self,
+        invocation: &tty7_core::agent_runtime::ResumeInvocation,
+        cx: &gpui::App,
+    ) -> crate::ui::composer::DeliveryOutcome {
+        self.deliver_input(
+            &crate::ui::composer::InputDelivery::Resume(invocation.clone()),
+            cx,
+        )
     }
 
     pub fn shell_spec(&self) -> Option<ShellSpec> {
@@ -2921,6 +2974,78 @@ impl TerminalView {
         self.handoff_line_to_shell(&bytes, cx);
     }
 
+    fn shared_completion_candidates(
+        &self,
+        line: &str,
+        cursor_chars: usize,
+        cx: &gpui::App,
+    ) -> Vec<completion::Candidate> {
+        let Some(host) = self.host(cx) else {
+            return Vec::new();
+        };
+        let cursor = line
+            .char_indices()
+            .nth(cursor_chars)
+            .map(|(offset, _)| offset)
+            .unwrap_or(line.len());
+        let authority = if self.host_id.is_local() {
+            tty7_core::agent_runtime::AuthorityKind::Local
+        } else {
+            tty7_core::agent_runtime::AuthorityKind::Remote
+        };
+        let request = tty7_core::agent_runtime::CompletionRequest {
+            operation: tty7_core::agent_runtime::OperationId(
+                self.completion_generation.wrapping_add(1),
+            ),
+            generation: tty7_core::agent_runtime::CompletionGeneration(
+                self.completion_generation.wrapping_add(1),
+            ),
+            authority,
+            cwd: self.cwd().map(|cwd| cwd.to_string_lossy().into_owned()),
+            input: line.into(),
+            cursor,
+            limit: 400,
+            history: self.history_ranked.iter().take(200).cloned().collect(),
+        };
+        let tty7_core::agent_runtime::CompletionOutcome::Complete(candidates) =
+            tty7_core::agent_runtime::complete(&*host, &request)
+        else {
+            return Vec::new();
+        };
+        candidates
+            .into_iter()
+            .map(|candidate| {
+                let start = line[..candidate.replacement.start.min(line.len())]
+                    .chars()
+                    .count();
+                let end = line[..candidate.replacement.end.min(line.len())]
+                    .chars()
+                    .count();
+                let kind = match candidate.source {
+                    tty7_core::agent_runtime::CompletionSourceKind::Filesystem => {
+                        if candidate.value.ends_with('/') {
+                            CandidateKind::Dir
+                        } else {
+                            CandidateKind::File
+                        }
+                    }
+                    tty7_core::agent_runtime::CompletionSourceKind::Grammar => {
+                        CandidateKind::Command
+                    }
+                    _ => CandidateKind::Value,
+                };
+                completion::Candidate {
+                    text: candidate.value,
+                    kind,
+                    start,
+                    end,
+                    description: Some(format!("{:?}", candidate.source)),
+                    icon: None,
+                }
+            })
+            .collect()
+    }
+
     fn complete_tab(&mut self, forward: bool, cx: &mut Context<Self>) {
         if self.reverse_search.is_some() {
             return;
@@ -2941,19 +3066,31 @@ impl TerminalView {
             .flatten();
         let line = self.cmd.text();
         let cursor = self.cmd.cursor();
-        let Some(comp) = super::completion::complete(&line, cursor, cwd.as_deref()) else {
+        let shared = self.shared_completion_candidates(&line, cursor, cx);
+        let mut comp = super::completion::complete(&line, cursor, cwd.as_deref()).unwrap_or(
+            super::completion::Completion {
+                candidates: Vec::new(),
+                pending: Vec::new(),
+            },
+        );
+        let mut seen: std::collections::BTreeSet<String> = comp
+            .candidates
+            .iter()
+            .map(|candidate| candidate.text.clone())
+            .collect();
+        comp.candidates.extend(
+            shared
+                .into_iter()
+                .filter(|candidate| seen.insert(candidate.text.clone())),
+        );
+        if comp.candidates.is_empty() && comp.pending.is_empty() {
             if self.spawn_remote_path_completion(&line, cursor, forward, cx) {
                 return;
             }
-            log::debug!(
-                target: "tty7::completion",
-                "handing the line to the shell: no candidates for {line:?} at {cursor} \
-                 (local cwd {cwd:?}, remote cwd {:?})",
-                self.remote_ssh_cwd(),
-            );
+            log::debug!(target: "tty7::completion", "handing the line to the shell: no candidates for {line:?} at {cursor}");
             self.handoff_tab_to_shell(!forward, cx);
             return;
-        };
+        }
 
         let has_pending = !comp.pending.is_empty();
 
@@ -5593,6 +5730,7 @@ mod gpui_tests {
     use std::os::unix::net::UnixStream;
 
     fn harness(cx: &mut TestAppContext) -> (gpui::WindowHandle<TerminalView>, UnixStream) {
+        crate::core::config::pin_test_config_dir();
         cx.executor().allow_parking();
         let (client_side, daemon_side) = UnixStream::pair().unwrap();
         cx.update(|cx| {

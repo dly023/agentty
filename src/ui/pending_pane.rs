@@ -19,6 +19,8 @@ pub struct PendingSpawn {
     pub agent: Option<crate::core::cli_agent::CLIAgent>,
     pub agent_session_id: Option<String>,
     pub agent_launch_argv: Option<Vec<String>>,
+    pub resume_invocation: Option<tty7_core::agent_runtime::ResumeInvocation>,
+    pub navigator_row_id: Option<tty7_core::agent_runtime::NavigatorRowId>,
     pub owner: Option<crate::core::session::WorkspaceId>,
     pub font_size: f32,
 }

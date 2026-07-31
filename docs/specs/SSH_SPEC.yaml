@@ -1,0 +1,32 @@
+version: 1
+updated: 2026-07-31
+domain: native_ssh
+contracts:
+  - id: SSH-CONFIG-FIRST-MATCH-01
+    rule: OpenSSH Host options use first-obtained-value semantics while repeatable IdentityFile values accumulate in declaration order.
+    tests:
+      - import_resolves_common_fields_with_first_match_wins
+  - id: SSH-DEFAULT-IDENTITIES-02
+    rule: When no IdentityFile resolves for a profile, native authentication tries existing OpenSSH default identity files before ssh-agent fallback.
+    default_order:
+      - ~/.ssh/id_rsa
+      - ~/.ssh/id_ecdsa
+      - ~/.ssh/id_ecdsa_sk
+      - ~/.ssh/id_ed25519
+      - ~/.ssh/id_ed25519_sk
+      - ~/.ssh/id_dsa
+    explicit_rule: An explicit non-empty IdentityFile list replaces the implicit default list.
+    forbidden:
+      - requiring_a_populated_ssh_agent_for_profiles_without_identityfile
+      - persisting_machine_specific_expanded_default_paths
+    tests:
+      - explicit_identity_files_take_precedence_over_openssh_defaults
+      - openssh_default_identity_order_matches_client_defaults
+      - openssh_defaults_discover_existing_keys_when_identityfile_is_absent
+  - id: SSH-AUTH-DIAGNOSTICS-03
+    rule: Authentication failure reports the attempted mechanism and actionable reason without exposing secrets.
+    status: verified
+    tests:
+      - diagnostic_explains_missing_default_keys_and_empty_agent
+      - diagnostic_reports_rejected_identity_without_key_material
+status: verified

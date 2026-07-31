@@ -2,6 +2,7 @@ pub mod agent_hooks;
 pub mod cli_agent;
 pub mod config;
 pub mod crash;
+pub mod environment;
 pub mod git;
 pub mod gitignore;
 #[allow(dead_code)]

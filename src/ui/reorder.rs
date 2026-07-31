@@ -1,13 +1,11 @@
 use gpui::{Axis, Bounds, Pixels, Point, px};
 use std::cell::{Cell, RefCell};
-use std::path::PathBuf;
 use std::rc::Rc;
 
 pub(crate) type ReorderState = Rc<RefCell<Option<Reorder>>>;
 
 pub(crate) struct Preview {
     pub(crate) order: Vec<usize>,
-    pub(crate) target: usize,
     pub(crate) from: usize,
     pub(crate) generation: usize,
     pub(crate) offsets: Vec<Pixels>,
@@ -26,7 +24,6 @@ pub(crate) fn preview(
     let (generation, prev) = r.begin_frame(target);
     Some(Preview {
         order: r.order(target),
-        target,
         from: r.from,
         generation,
         offsets: (0..len)
@@ -55,8 +52,6 @@ pub(crate) fn take_pending(state: &ReorderState) -> Option<Vec<usize>> {
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub(crate) enum Surface {
     Strip,
-    SidebarRows(Option<PathBuf>),
-    SidebarGroups,
 }
 
 pub(crate) struct Reorder {
@@ -257,7 +252,7 @@ mod tests {
         ];
         let grab = point(px(100.), px(10.));
         let tall = Reorder::new(
-            Surface::SidebarGroups,
+            Surface::Strip,
             1,
             rects.clone(),
             Axis::Vertical,
@@ -268,14 +263,7 @@ mod tests {
         assert_eq!(tall.target(point(px(100.), px(39.))), 0);
         assert_eq!(tall.target(point(px(100.), px(72.))), 1);
 
-        let short = Reorder::new(
-            Surface::SidebarGroups,
-            0,
-            rects,
-            Axis::Vertical,
-            px(2.),
-            grab,
-        );
+        let short = Reorder::new(Surface::Strip, 0, rects, Axis::Vertical, px(2.), grab);
         assert_eq!(short.target(point(px(100.), px(80.))), 0);
         assert_eq!(short.target(point(px(100.), px(84.))), 1);
     }
@@ -295,7 +283,7 @@ mod tests {
 
         clear_pending(&state);
         set_pending(&state, &mine, vec![1, 0, 2]);
-        set_pending(&state, &Surface::SidebarGroups, vec![2, 1, 0]);
+        set_pending(&state, &Surface::Strip, vec![2, 1, 0]);
 
         clear_pending(&state);
         assert_eq!(take_pending(&state), None);

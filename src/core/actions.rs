@@ -86,6 +86,7 @@ actions!(
         ToggleSftp,
         ShowSshForwards,
         ToggleCodePanel,
+        ToggleComposer,
         EditorSave,
         OpenSshProfiles,
         RestartSshSession,

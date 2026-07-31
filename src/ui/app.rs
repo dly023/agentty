@@ -204,7 +204,7 @@ pub(crate) enum OverlayTop {
 }
 
 impl Tab {
-    fn new(pane: Pane) -> Self {
+    pub(crate) fn new(pane: Pane) -> Self {
         Self {
             pane,
             name: None,
@@ -391,6 +391,13 @@ pub struct Tty7App {
     pub(crate) sidebar_scroll: gpui::ScrollHandle,
     pub(crate) reorder: Rc<RefCell<Option<crate::ui::reorder::Reorder>>>,
     pub(crate) sidebar_search: Entity<InputState>,
+    pub(crate) session_navigator: tty7_core::agent_runtime::SessionNavigator,
+    pub(crate) session_history: Vec<tty7_core::agent_runtime::AgentSessionRecord>,
+    pub(crate) session_refresh: crate::ui::session_navigator::SessionRefreshState,
+    pub(crate) session_scan_error: Option<String>,
+    pub(crate) session_scan_started: bool,
+    pub(crate) composer: Option<crate::ui::composer::ComposerState>,
+    pub(crate) composer_drafts: crate::ui::composer::ComposerDraftStore,
     pub(crate) file_search: Entity<InputState>,
     _sidebar_search_sub: Subscription,
     _file_search_sub: Subscription,
@@ -677,6 +684,13 @@ impl Tty7App {
             sidebar_scroll: gpui::ScrollHandle::new(),
             reorder: Rc::new(RefCell::new(None)),
             sidebar_search,
+            session_navigator: tty7_core::agent_runtime::SessionNavigator::default(),
+            session_history: Vec::new(),
+            session_refresh: Default::default(),
+            session_scan_error: None,
+            session_scan_started: false,
+            composer: None,
+            composer_drafts: Default::default(),
             _sidebar_search_sub: sidebar_search_sub,
             file_search,
             _file_search_sub: file_search_sub,
@@ -1955,18 +1969,6 @@ impl Tty7App {
         self.update_config(cx, |cfg| cfg.tab_bar_position = pos);
     }
 
-    pub(crate) fn set_sidebar_grouping(
-        &mut self,
-        grouping: crate::core::config::SidebarGrouping,
-        cx: &mut Context<Self>,
-    ) {
-        self.update_config(cx, |cfg| cfg.sidebar_grouping = grouping);
-    }
-
-    pub(crate) fn set_sidebar_diff_preview(&mut self, on: bool, cx: &mut Context<Self>) {
-        self.update_config(cx, |cfg| cfg.sidebar_diff_preview = on);
-    }
-
     pub(crate) fn toggle_tab_sidebar(&mut self, cx: &mut Context<Self>) {
         let next = match cx.global::<Config>().tab_bar_position {
             TabBarPosition::Top => TabBarPosition::Left,
@@ -2148,7 +2150,16 @@ impl Tty7App {
         let parts = match parts {
             Ok(parts) => parts,
             Err(reason) => {
-                pending.update(cx, |p, cx| p.fail(reason, cx));
+                let navigator_row_id = pending.read(cx).spawn.navigator_row_id.clone();
+                pending.update(cx, |p, cx| p.fail(reason.clone(), cx));
+                if let Some(row_id) = navigator_row_id {
+                    let _ = self.session_navigator.finish_restore(
+                        &row_id,
+                        tty7_core::agent_runtime::RestoreOutcome::Retryable(reason),
+                    );
+                    self.rebuild_session_navigator(cx);
+                    cx.notify();
+                }
                 return;
             }
         };
@@ -2166,20 +2177,26 @@ impl Tty7App {
             return;
         }
         let was_focused = pending.read(cx).focus_handle.contains_focused(window, cx);
-        let resume = (!parts.restored)
-            .then(|| {
-                let spawn = &pending.read(cx).spawn;
-                agent_resume_command(
-                    &spawn.agent,
-                    spawn.agent_session_id.as_deref(),
-                    spawn.agent_launch_argv.as_deref(),
-                    cx,
-                )
-            })
-            .flatten();
+        let (resume, navigator_row_id) = {
+            let spawn = &pending.read(cx).spawn;
+            let resume = (!parts.restored)
+                .then(|| {
+                    spawn.resume_invocation.clone().or_else(|| {
+                        agent_resume_invocation(
+                            &spawn.agent,
+                            spawn.agent_session_id.as_deref(),
+                            spawn.agent_launch_argv.as_deref(),
+                            spawn.working_directory.as_ref(),
+                            cx,
+                        )
+                    })
+                })
+                .flatten();
+            (resume, spawn.navigator_row_id.clone())
+        };
         let view = build_terminal_view(parts, font_size, window, cx);
-        if let Some(cmd) = resume {
-            view.read(cx).run_command_line(&cmd);
+        if let Some(invocation) = resume {
+            view.read(cx).run_invocation(&invocation, cx);
         }
         let slot = PaneSlot::Ready(view.clone());
         self.tabs
@@ -2188,6 +2205,25 @@ impl Tty7App {
         if was_focused {
             self.focus_leaf(&slot, window, cx);
         }
+        if let Some(row_id) = navigator_row_id {
+            let carrier = self.live_session_rows(cx).into_iter().find_map(|live| {
+                (live.carrier.pane_id == view.read(cx).pane_id()).then_some(live.carrier)
+            });
+            if let Some(carrier) = carrier {
+                let _ = self.session_navigator.finish_restore(
+                    &row_id,
+                    tty7_core::agent_runtime::RestoreOutcome::Success(carrier),
+                );
+            } else {
+                let _ = self.session_navigator.finish_restore(
+                    &row_id,
+                    tty7_core::agent_runtime::RestoreOutcome::Retryable(
+                        "Agent session metadata did not materialize".into(),
+                    ),
+                );
+            }
+        }
+        self.rebuild_session_navigator(cx);
         self.save_session(cx);
         cx.notify();
     }
@@ -2198,7 +2234,7 @@ impl Tty7App {
         }
     }
 
-    fn new_tab_insert_at(&self, cx: &App) -> usize {
+    pub(crate) fn new_tab_insert_at(&self, cx: &App) -> usize {
         match cx.global::<Config>().new_tab_position {
             NewTabPosition::AfterCurrent => (self.active + 1).min(self.tabs.len()),
             NewTabPosition::End => self.tabs.len(),
@@ -2825,7 +2861,7 @@ impl Tty7App {
             window.push_notification("Could not fork: the pane is still connecting", cx);
             return;
         };
-        terminal.read(cx).run_command_line(&cmd);
+        terminal.read(cx).run_command_line(&cmd, cx);
 
         match placement {
             ForkPlacement::NewTab => {
@@ -3201,7 +3237,7 @@ impl Tty7App {
         cx.notify();
     }
 
-    fn focused_leaf(&self, window: &Window, cx: &App) -> Option<Entity<TerminalView>> {
+    pub(crate) fn focused_leaf(&self, window: &Window, cx: &App) -> Option<Entity<TerminalView>> {
         self.tabs
             .get(self.active)
             .and_then(|t| t.pane.focused_or_first(window, cx))
@@ -3363,7 +3399,7 @@ impl Tty7App {
             );
             return;
         };
-        target.read(cx).send_agent_prompt(prompt);
+        target.read(cx).send_agent_prompt(prompt, cx);
         if let Some(i) = self
             .tabs
             .iter()
@@ -4873,7 +4909,8 @@ impl Render for Tty7App {
             })
             .when_some(self.render_worktree_prompt_overlay(cx), |this, el| {
                 this.child(el)
-            });
+            })
+            .when_some(self.render_composer(window, cx), |this, el| this.child(el));
 
         let diff_overlay = self.render_diff_overlay(window, cx);
 
@@ -4907,6 +4944,7 @@ impl Render for Tty7App {
             (overlays, Vec::new())
         };
         let panel_px = self.right_panel_px(window, cx);
+        let activity_bar = self.render_activity_bar(window, cx);
         let terminal_column = div()
             .flex_1()
             .min_w_0()
@@ -4915,6 +4953,7 @@ impl Render for Tty7App {
             .relative()
             .when_some(column_title_bar, |this, bar| this.child(bar))
             .child(body_area)
+            .when_some(activity_bar, |this, bar| this.child(bar))
             .children(column_overlays);
         let panel_row = div()
             .flex_1()
@@ -5177,6 +5216,9 @@ impl Render for Tty7App {
                 .on_action(cx.listener(|this, _: &ToggleCodePanel, window, cx| {
                     this.toggle_code_panel(window, cx)
                 }))
+                .on_action(cx.listener(|this, _: &ToggleComposer, window, cx| {
+                    this.toggle_composer(window, cx)
+                }))
                 .on_action(cx.listener(|this, _: &EditorSave, window, cx| {
                     if !this.editor_has_focus(window, cx) {
                         cx.propagate();
@@ -5284,12 +5326,13 @@ fn tab_to_session(tab: &Tab, cx: &App) -> SessionTab {
     }
 }
 
-fn agent_resume_command(
+fn agent_resume_invocation(
     agent: &Option<crate::core::cli_agent::CLIAgent>,
     session_id: Option<&str>,
     launch_argv: Option<&[String]>,
+    cwd: Option<&std::path::PathBuf>,
     cx: &App,
-) -> Option<String> {
+) -> Option<tty7_core::agent_runtime::ResumeInvocation> {
     if !cx.global::<Config>().restore_agent_sessions {
         return None;
     }
@@ -5301,7 +5344,11 @@ fn agent_resume_command(
         );
         return None;
     };
-    agent.resume_command(session_id, launch_argv)
+    agent.resume_invocation(
+        session_id,
+        launch_argv,
+        cwd.map(|path| path.to_string_lossy().into_owned()),
+    )
 }
 
 fn pane_to_session(pane: &Pane, cx: &App) -> SessionPane {
@@ -5476,13 +5523,14 @@ fn session_to_pane(
             };
             match &view {
                 PaneSlot::Ready(terminal) if !terminal.read(cx).restored() => {
-                    if let Some(cmd) = agent_resume_command(
+                    if let Some(invocation) = agent_resume_invocation(
                         agent,
                         agent_session_id.as_deref(),
                         agent_launch_argv.as_deref(),
+                        cwd.as_ref(),
                         cx,
                     ) {
-                        terminal.read(cx).run_command_line(&cmd);
+                        terminal.read(cx).run_invocation(&invocation, cx);
                     }
                 }
                 PaneSlot::Ready(_) => {}
@@ -5547,6 +5595,8 @@ pub(crate) fn new_terminal(
         agent: None,
         agent_session_id: None,
         agent_launch_argv: None,
+        resume_invocation: None,
+        navigator_row_id: None,
         owner,
         font_size,
     };
@@ -6134,6 +6184,8 @@ mod tests {
                         agent: Some(CLIAgent::Claude),
                         agent_session_id: Some("sid-abc".to_string()),
                         agent_launch_argv: Some(vec!["claude".to_string()]),
+                        resume_invocation: None,
+                        navigator_row_id: None,
                         owner: None,
                         font_size: 14.0,
                     },

@@ -150,8 +150,8 @@ impl Tty7App {
         {
             let app: &App = cx;
             let store = WorkspaceStore::all(app);
-            for w in &store.views {
-                let (key, label, target) = match w.host.as_ref() {
+            for w in &store.windows {
+                let (key, label, target) = match w.remote_ref().as_ref() {
                     None => (String::new(), "This Computer".to_string(), None),
                     Some(r) => {
                         let key = r.target.to_string();
@@ -173,7 +173,7 @@ impl Tty7App {
                     groups.len() - 1
                 });
                 groups[slot].rows.push(Row {
-                    id: w.id,
+                    id: w.workspace,
                     name: crate::ui::machine_mirror::display_name(app, w)
                         .unwrap_or_else(|| "Untitled".to_string()),
                     path: crate::ui::machine_mirror::subject_path(app, w)
@@ -182,9 +182,9 @@ impl Tty7App {
                     when: crate::ui::home::relative_time(now, w.last_active),
                     live: crate::terminal::pane_liveness::liveness_of(app, w),
                     open: w.open,
-                    current: w.id == current,
+                    current: w.workspace == current,
                     adopt: None,
-                    remote_id: w.host.as_ref().map(|r| r.workspace),
+                    remote_id: w.remote_workspace,
                 });
             }
         }

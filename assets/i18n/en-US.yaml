@@ -1,0 +1,32 @@
+app.name: Agentty
+environment.local.label: This Mac
+environment.local.detail: Local environment
+environment.remote.detail: Remote environment
+environment.connecting: Connecting
+environment.disconnected: Disconnected
+environment.ssh: SSH
+environment.execution: Execution environment
+session.title: Agent Sessions
+session.default_name: Agent session
+session.live: Live
+session.restoring: Restoring…
+session.resume: Resume
+session.discovering: Discovering Agent sessions…
+session.empty: No Codex or Claude sessions found in this environment.
+session.no_match: No matching Agent sessions.
+session.refresh: Refresh Agent sessions
+sidebar.hide: Hide Sidebar
+sidebar.show: Show Sidebar
+composer.placeholder: Write a prompt…  Shift+Enter for newline
+composer.target_missing: Composer target no longer exists; draft preserved.
+composer.environment_mismatch: Composer target belongs to another environment; draft preserved.
+composer.disconnected: Remote environment is disconnected; draft preserved.
+activity.title: Agent Activity
+activity.idle: No Agent activity
+activity.working: Agent is working
+activity.waiting: Agent needs input
+activity.done: Agent turn finished
+activity.structured: Structured
+activity.heuristic: Heuristic
+activity.rich: Structured Agent event
+activity.inferred: Inferred from terminal state

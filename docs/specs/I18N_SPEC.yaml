@@ -1,0 +1,11 @@
+version: 1
+updated: 2026-07-31
+domain: localization
+contracts:
+  - id: I18N-SYSTEM-DEFAULT-01
+    rule: Language defaults to system locale and can be overridden with system, zh-CN, or en-US.
+  - id: I18N-STABLE-KEYS-02
+    rule: User-visible product strings use stable translation keys; source identifiers, commands, and raw server errors remain unchanged.
+  - id: I18N-PARITY-03
+    rule: zh-CN and en-US catalogs contain the same required keys, checked statically.
+status: verified

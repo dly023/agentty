@@ -96,7 +96,12 @@ body_of() {
         /^mod [A-Za-z_]/     { if (attr == NR - 1) { print NR - 1; exit } }
     ' "$file")
     if [ -n "$cut" ]; then
-        head -n "$((cut - 1))" "$file"
+        # BSD head rejects GNU's `head -n -1`; an empty production body is valid.
+        if [ "$cut" -le 1 ]; then
+            :
+        else
+            sed -n "1,$((cut - 1))p" "$file"
+        fi
     else
         cat "$file"
     fi

@@ -400,26 +400,32 @@ async fn try_publickeys(
     spec: &NativeSshSpec,
     broker: &Arc<PromptBroker>,
 ) -> Outcome {
+    let identities = identity_files_to_try(spec);
+    let mut diagnostic = PublicKeyDiagnostic::new(spec, &identities);
     let mut last: Option<MethodSet> = None;
 
     if spec.auth_mode != SshAuthMode::Agent {
-        for path in &spec.identity_files {
+        for path in &identities {
             match try_identity_file(handle, spec, broker, path).await {
                 Outcome::Authenticated => return Outcome::Authenticated,
                 Outcome::Failed {
-                    remaining_methods, ..
+                    remaining_methods,
+                    reason,
                 } => {
+                    diagnostic.note_identity_failure(path, reason.as_deref());
                     if remaining_methods.is_some() {
                         last = remaining_methods;
                     }
                 }
-                Outcome::Skipped => {}
+                Outcome::Skipped => diagnostic.note_identity_skipped(path),
             }
         }
     }
 
     if spec.auth_mode != SshAuthMode::PublicKey {
-        match try_agent(handle, spec).await {
+        let agent = try_agent(handle, spec).await;
+        diagnostic.note_agent_outcome(&agent);
+        match agent {
             Outcome::Authenticated => return Outcome::Authenticated,
             Outcome::Failed {
                 remaining_methods, ..
@@ -434,8 +440,139 @@ async fn try_publickeys(
 
     Outcome::Failed {
         remaining_methods: last,
-        reason: Some("no public key was accepted".to_string()),
+        reason: Some(diagnostic.message()),
     }
+}
+
+#[derive(Debug)]
+struct PublicKeyDiagnostic {
+    explicit_identities: bool,
+    identity_candidates: Vec<String>,
+    identity_failures: Vec<String>,
+    identity_skipped: Vec<String>,
+    agent_attempted: bool,
+    agent_reason: Option<String>,
+    agent_unavailable: bool,
+}
+
+impl PublicKeyDiagnostic {
+    fn new(spec: &NativeSshSpec, identities: &[String]) -> Self {
+        Self {
+            explicit_identities: !spec.identity_files.is_empty(),
+            identity_candidates: identities.to_vec(),
+            identity_failures: Vec::new(),
+            identity_skipped: Vec::new(),
+            agent_attempted: false,
+            agent_reason: None,
+            agent_unavailable: false,
+        }
+    }
+
+    fn note_identity_failure(&mut self, path: &str, reason: Option<&str>) {
+        self.identity_failures.push(match reason {
+            Some(reason) => format!("{path}: {reason}"),
+            None => path.to_string(),
+        });
+    }
+
+    fn note_identity_skipped(&mut self, path: &str) {
+        self.identity_skipped.push(path.to_string());
+    }
+
+    fn note_agent_outcome(&mut self, outcome: &Outcome) {
+        self.agent_attempted = true;
+        match outcome {
+            Outcome::Authenticated => {}
+            Outcome::Failed { reason, .. } => self.agent_reason = reason.clone(),
+            Outcome::Skipped => self.agent_unavailable = true,
+        }
+    }
+
+    fn message(&self) -> String {
+        let mut parts = Vec::new();
+        if self.identity_candidates.is_empty() {
+            if self.explicit_identities {
+                parts.push("no usable IdentityFile candidate was configured".to_string());
+            } else {
+                parts.push(
+                    "no OpenSSH default identity file exists (~/.ssh/id_rsa, id_ecdsa, id_ecdsa_sk, id_ed25519, id_ed25519_sk, or id_dsa)"
+                        .to_string(),
+                );
+            }
+        } else if !self.identity_failures.is_empty() {
+            parts.push(format!(
+                "identity files tried: {}",
+                self.identity_failures.join("; ")
+            ));
+        } else if !self.identity_skipped.is_empty() {
+            parts.push(format!(
+                "identity files were unusable or cancelled: {}",
+                self.identity_skipped.join(", ")
+            ));
+        }
+
+        if self.agent_attempted {
+            if let Some(reason) = &self.agent_reason {
+                parts.push(format!("ssh-agent: {reason}"));
+            } else if self.agent_unavailable {
+                parts.push("ssh-agent is unavailable or contains no usable identities".to_string());
+            }
+        }
+
+        if parts.is_empty() {
+            parts.push("the server rejected every public-key identity".to_string());
+        }
+        parts.push(
+            "Add the correct IdentityFile to the SSH profile/config, or load a key with `ssh-add` and retry"
+                .to_string(),
+        );
+        format!("public-key authentication failed: {}", parts.join(". "))
+    }
+}
+
+const OPENSSH_DEFAULT_IDENTITY_FILES: &[&str] = &[
+    "~/.ssh/id_rsa",
+    "~/.ssh/id_ecdsa",
+    "~/.ssh/id_ecdsa_sk",
+    "~/.ssh/id_ed25519",
+    "~/.ssh/id_ed25519_sk",
+    "~/.ssh/id_dsa",
+];
+
+fn identity_files_to_try(spec: &NativeSshSpec) -> Vec<String> {
+    identity_files_to_try_with_home(spec, home_dir().as_deref())
+}
+
+fn identity_files_to_try_with_home(spec: &NativeSshSpec, home: Option<&str>) -> Vec<String> {
+    if !spec.identity_files.is_empty() {
+        return spec.identity_files.clone();
+    }
+
+    // OpenSSH supplies this default identity set when no IdentityFile option is
+    // present. Imported profiles previously lost that implicit behaviour, so a
+    // host that worked with `ssh alias` had no key candidates in tty7 unless an
+    // ssh-agent happened to be populated. Preserve OpenSSH semantics at the
+    // authentication boundary without persisting machine-specific defaults.
+    OPENSSH_DEFAULT_IDENTITY_FILES
+        .iter()
+        .filter(|path| identity_path_with_home(path, &spec.host, &spec.user, home).is_file())
+        .map(|path| (*path).to_string())
+        .collect()
+}
+
+fn identity_path_with_home(
+    path: &str,
+    host: &str,
+    user: &str,
+    home: Option<&str>,
+) -> std::path::PathBuf {
+    let substituted = path.replace("%h", host).replace("%r", user);
+    if let Some(rest) = substituted.strip_prefix("~/")
+        && let Some(home) = home
+    {
+        return std::path::Path::new(home).join(rest);
+    }
+    std::path::PathBuf::from(substituted)
 }
 
 async fn try_identity_file(
@@ -719,13 +856,9 @@ fn rsa_hash_alg(algorithm: &Algorithm) -> Option<HashAlg> {
 }
 
 fn expand_identity_path(path: &str, host: &str, user: &str) -> String {
-    let substituted = path.replace("%h", host).replace("%r", user);
-    if let Some(rest) = substituted.strip_prefix("~/") {
-        if let Some(home) = home_dir() {
-            return format!("{home}/{rest}");
-        }
-    }
-    substituted
+    identity_path_with_home(path, host, user, home_dir().as_deref())
+        .to_string_lossy()
+        .into_owned()
 }
 
 #[cfg(unix)]
@@ -746,6 +879,101 @@ mod tests {
     fn identity_path_expands_tokens_and_tilde() {
         let p = expand_identity_path("/keys/%r@%h/id", "example.com", "deploy");
         assert_eq!(p, "/keys/deploy@example.com/id");
+    }
+
+    #[test]
+    fn explicit_identity_files_take_precedence_over_openssh_defaults() {
+        let spec = test_spec(vec!["~/.ssh/custom".to_string()]);
+        assert_eq!(identity_files_to_try(&spec), vec!["~/.ssh/custom"]);
+    }
+
+    #[test]
+    fn openssh_defaults_discover_existing_keys_when_identityfile_is_absent() {
+        let root =
+            std::env::temp_dir().join(format!("tty7-default-identities-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join(".ssh")).unwrap();
+        std::fs::write(root.join(".ssh/id_ed25519"), "fixture").unwrap();
+        std::fs::write(root.join(".ssh/id_rsa"), "fixture").unwrap();
+
+        let spec = test_spec(Vec::new());
+        assert_eq!(
+            identity_files_to_try_with_home(&spec, root.to_str()),
+            vec!["~/.ssh/id_rsa", "~/.ssh/id_ed25519"]
+        );
+
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn diagnostic_explains_missing_default_keys_and_empty_agent() {
+        let spec = test_spec(Vec::new());
+        let mut diagnostic = PublicKeyDiagnostic::new(&spec, &[]);
+        diagnostic.note_agent_outcome(&Outcome::Skipped);
+        let message = diagnostic.message();
+        assert!(message.contains("no OpenSSH default identity file exists"));
+        assert!(message.contains("ssh-agent is unavailable or contains no usable identities"));
+        assert!(message.contains("IdentityFile"));
+        assert!(message.contains("ssh-add"));
+    }
+
+    #[test]
+    fn diagnostic_reports_rejected_identity_without_key_material() {
+        let spec = test_spec(vec!["~/.ssh/work".into()]);
+        let mut diagnostic = PublicKeyDiagnostic::new(&spec, &["~/.ssh/work".into()]);
+        diagnostic.note_identity_failure("~/.ssh/work", Some("server rejected key ~/.ssh/work"));
+        diagnostic.note_agent_outcome(&Outcome::Failed {
+            remaining_methods: None,
+            reason: Some("no agent key was accepted".into()),
+        });
+        let message = diagnostic.message();
+        assert!(message.contains("~/.ssh/work"));
+        assert!(message.contains("server rejected key"));
+        assert!(message.contains("no agent key was accepted"));
+        assert!(!message.contains("PRIVATE KEY"));
+    }
+
+    #[test]
+    fn openssh_default_identity_order_matches_client_defaults() {
+        assert_eq!(
+            OPENSSH_DEFAULT_IDENTITY_FILES,
+            &[
+                "~/.ssh/id_rsa",
+                "~/.ssh/id_ecdsa",
+                "~/.ssh/id_ecdsa_sk",
+                "~/.ssh/id_ed25519",
+                "~/.ssh/id_ed25519_sk",
+                "~/.ssh/id_dsa",
+            ]
+        );
+    }
+
+    fn test_spec(identity_files: Vec<String>) -> NativeSshSpec {
+        NativeSshSpec {
+            host: "example.com".to_string(),
+            port: 22,
+            user: "deploy".to_string(),
+            auth_mode: SshAuthMode::Auto,
+            identity_files,
+            agent_forward: false,
+            password: None,
+            key_passphrases: None,
+            proxy: crate::daemon::protocol::SshProxy::None,
+            jump: None,
+            forwards: Vec::new(),
+            keepalive_interval_s: None,
+            keepalive_count_max: None,
+            connect_timeout_s: None,
+            algorithms: Default::default(),
+            x11: false,
+            term: "xterm-256color".to_string(),
+            verify_host_keys: true,
+            skip_banner: false,
+            shell_integration: true,
+            login_script: Vec::new(),
+            display_name: None,
+            profile_id: None,
+        }
     }
 
     #[test]

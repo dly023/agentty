@@ -1,0 +1,32 @@
+app.name: Agentty
+environment.local.label: 本机
+environment.local.detail: 本地环境
+environment.remote.detail: 远程环境
+environment.connecting: 正在连接
+environment.disconnected: 已断开
+environment.ssh: SSH
+environment.execution: 执行环境
+session.title: Agent 会话
+session.default_name: Agent 会话
+session.live: 运行中
+session.restoring: 正在恢复…
+session.resume: 恢复
+session.discovering: 正在发现 Agent 会话…
+session.empty: 当前环境中没有发现 Codex 或 Claude 会话。
+session.no_match: 没有匹配的 Agent 会话。
+session.refresh: 刷新 Agent 会话
+sidebar.hide: 隐藏侧边栏
+sidebar.show: 显示侧边栏
+composer.placeholder: 输入提示词…  Shift+Enter 换行
+composer.target_missing: Composer 目标已不存在，草稿已保留。
+composer.environment_mismatch: Composer 目标属于其他环境，草稿已保留。
+composer.disconnected: 远程环境已断开，草稿已保留。
+activity.title: Agent 活动
+activity.idle: 暂无 Agent 活动
+activity.working: Agent 正在工作
+activity.waiting: Agent 正在等待输入
+activity.done: Agent 本轮已完成
+activity.structured: 结构化事件
+activity.heuristic: 推断状态
+activity.rich: 结构化 Agent 事件
+activity.inferred: 根据终端状态推断

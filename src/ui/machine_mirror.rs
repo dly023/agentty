@@ -238,15 +238,15 @@ fn apply(machine: &mut Machine, workspace: WorkspaceId, delta: &LayoutDelta) -> 
 
 fn view_of<'a>(
     cx: &'a App,
-    entry: &crate::core::session::WindowView,
+    entry: &crate::core::session::EnvironmentWindow,
 ) -> Option<(&'a Workspace, &'a [PaneRecord])> {
     let machine = MachineMirrors::machine(cx, entry.host_id())?;
-    let machine_ws = entry.host.as_ref().map(|r| r.workspace).unwrap_or(entry.id);
+    let machine_ws = entry.remote_workspace.unwrap_or(entry.workspace);
     let ws = machine.workspaces.iter().find(|w| w.id == machine_ws)?;
     Some((ws, &machine.panes))
 }
 
-pub fn display_name(cx: &App, entry: &crate::core::session::WindowView) -> Option<String> {
+pub fn display_name(cx: &App, entry: &crate::core::session::EnvironmentWindow) -> Option<String> {
     match view_of(cx, entry) {
         Some((ws, panes)) => Some(display_name_of(ws, panes)),
         None => entry.label.clone(),
@@ -294,7 +294,7 @@ pub fn display_name_for(cx: &App, client_ws: WorkspaceId) -> Option<String> {
     display_name(cx, entry)
 }
 
-pub fn subject_path(cx: &App, entry: &crate::core::session::WindowView) -> Option<String> {
+pub fn subject_path(cx: &App, entry: &crate::core::session::EnvironmentWindow) -> Option<String> {
     match view_of(cx, entry) {
         Some((ws, panes)) => subject_path_of(ws, panes).or_else(|| entry.subject.clone()),
         None => entry.subject.clone(),
@@ -303,13 +303,13 @@ pub fn subject_path(cx: &App, entry: &crate::core::session::WindowView) -> Optio
 
 pub fn display_hint(
     cx: &App,
-    entry: &crate::core::session::WindowView,
+    entry: &crate::core::session::EnvironmentWindow,
 ) -> Option<(String, Option<String>)> {
     let (ws, panes) = view_of(cx, entry)?;
     Some((display_name_of(ws, panes), subject_path_of(ws, panes)))
 }
 
-pub fn pane_ids(cx: &App, entry: &crate::core::session::WindowView) -> Option<Vec<u64>> {
+pub fn pane_ids(cx: &App, entry: &crate::core::session::EnvironmentWindow) -> Option<Vec<u64>> {
     let (ws, _) = match view_of(cx, entry) {
         Some(view) => view,
         None if MachineMirrors::ready(cx, entry.host_id()) => return Some(Vec::new()),
@@ -318,7 +318,7 @@ pub fn pane_ids(cx: &App, entry: &crate::core::session::WindowView) -> Option<Ve
     Some(ws.tabs.iter().flat_map(|t| t.root.pane_ids()).collect())
 }
 
-pub fn pane_count(cx: &App, entry: &crate::core::session::WindowView) -> Option<usize> {
+pub fn pane_count(cx: &App, entry: &crate::core::session::EnvironmentWindow) -> Option<usize> {
     pane_ids(cx, entry).map(|ids| ids.len())
 }
 
@@ -348,7 +348,6 @@ mod tests {
             view.label = Some("api".into());
             view.subject = Some("/repo/api".into());
             let id = view.id;
-            let entry = view.clone();
             WorkspaceStore::install_for_test(
                 cx,
                 WindowViews {
@@ -356,11 +355,12 @@ mod tests {
                     active: None,
                 },
             );
+            let entry = WorkspaceStore::all(cx).get(id).unwrap();
 
-            assert_eq!(display_name(cx, &entry).as_deref(), Some("api"));
-            assert_eq!(subject_path(cx, &entry).as_deref(), Some("/repo/api"));
+            assert_eq!(display_name(cx, entry).as_deref(), Some("api"));
+            assert_eq!(subject_path(cx, entry).as_deref(), Some("/repo/api"));
             assert!(
-                display_hint(cx, &entry).is_none(),
+                display_hint(cx, entry).is_none(),
                 "and a machine that has not answered contributes no new hint"
             );
 
@@ -371,9 +371,10 @@ mod tests {
             };
             tree.tabs = vec![leaf_tab(1)];
             MachineMirrors::install(cx, HostId::LOCAL, machine_with(tree));
-            assert_eq!(display_name(cx, &entry).as_deref(), Some("web"));
+            let entry = WorkspaceStore::all(cx).get(id).unwrap();
+            assert_eq!(display_name(cx, entry).as_deref(), Some("web"));
             assert_eq!(
-                display_hint(cx, &entry).map(|(label, _)| label).as_deref(),
+                display_hint(cx, entry).map(|(label, _)| label).as_deref(),
                 Some("web"),
                 "which is what the next save stamps"
             );

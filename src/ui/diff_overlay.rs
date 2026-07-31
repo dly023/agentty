@@ -33,16 +33,6 @@ pub(crate) struct DiffOverlayState {
 }
 
 impl Tty7App {
-    pub(crate) fn toggle_diff_overlay(
-        &mut self,
-        host: crate::ui::host_ops::HostId,
-        cwd: PathBuf,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        self.toggle_diff_overlay_at(host, cwd, None, window, cx)
-    }
-
     pub(crate) fn toggle_diff_overlay_at(
         &mut self,
         host: crate::ui::host_ops::HostId,

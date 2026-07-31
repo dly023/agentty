@@ -115,27 +115,53 @@ impl CLIAgent {
         }
     }
 
-    pub fn resume_command(
+    pub fn resume_invocation(
         self,
         session_id: &str,
         launch_argv: Option<&[String]>,
-    ) -> Option<String> {
+        cwd: Option<String>,
+    ) -> Option<crate::agent_runtime::ResumeInvocation> {
         if launch_argv.is_some_and(|argv| self.opts_out_of_sessions(argv)) {
             return None;
         }
         let flags = self.session_command_flags(session_id, launch_argv)?;
+        let (program, mut args): (&str, Vec<String>) = match self {
+            CLIAgent::Claude => ("claude", flags),
+            CLIAgent::Codex => {
+                let mut args = vec!["resume".into(), session_id.into()];
+                args.extend(flags);
+                ("codex", args)
+            }
+            CLIAgent::Gemini => ("gemini", flags),
+            CLIAgent::OpenCode => ("opencode", flags),
+            CLIAgent::Amp => {
+                let mut args = vec!["threads".into(), "continue".into(), session_id.into()];
+                args.extend(flags);
+                ("amp", args)
+            }
+            CLIAgent::Cursor => ("cursor-agent", flags),
+            CLIAgent::Copilot => ("copilot", flags),
+            CLIAgent::Grok => ("grok", flags),
+            CLIAgent::Pi => ("pi", flags),
+            _ => return None,
+        };
         match self {
-            CLIAgent::Claude => Some(format!("claude{flags} --resume {session_id}")),
-            CLIAgent::Codex => Some(format!("codex resume {session_id}{flags}")),
-            CLIAgent::Gemini => Some(format!("gemini{flags} --resume {session_id}")),
-            CLIAgent::OpenCode => Some(format!("opencode{flags} --session {session_id}")),
-            CLIAgent::Amp => Some(format!("amp threads continue {session_id}{flags}")),
-            CLIAgent::Cursor => Some(format!("cursor-agent{flags} --resume {session_id}")),
-            CLIAgent::Copilot => Some(format!("copilot{flags} --resume {session_id}")),
-            CLIAgent::Grok => Some(format!("grok{flags} --resume {session_id}")),
-            CLIAgent::Pi => Some(format!("pi{flags} --session {session_id}")),
-            _ => None,
+            CLIAgent::Claude
+            | CLIAgent::Gemini
+            | CLIAgent::Cursor
+            | CLIAgent::Copilot
+            | CLIAgent::Grok => {
+                args.push("--resume".into());
+                args.push(session_id.into());
+            }
+            CLIAgent::OpenCode | CLIAgent::Pi => {
+                args.push("--session".into());
+                args.push(session_id.into());
+            }
+            CLIAgent::Codex | CLIAgent::Amp => {}
+            _ => unreachable!(),
         }
+        crate::agent_runtime::ResumeInvocation::new(program, args, cwd)
     }
 
     fn opts_out_of_sessions(self, argv: &[String]) -> bool {
@@ -147,7 +173,14 @@ impl CLIAgent {
     }
 
     pub fn fork_command(self, session_id: &str, launch_argv: Option<&[String]>) -> Option<String> {
-        let flags = self.session_command_flags(session_id, launch_argv)?;
+        let flags = self
+            .session_command_flags(session_id, launch_argv)?
+            .into_iter()
+            .fold(String::new(), |mut rendered, flag| {
+                rendered.push(' ');
+                rendered.push_str(&flag);
+                rendered
+            });
         match self {
             CLIAgent::Codex => Some(format!("codex fork {session_id}{flags}")),
             CLIAgent::Claude => Some(format!(
@@ -172,7 +205,7 @@ impl CLIAgent {
         self,
         session_id: &str,
         launch_argv: Option<&[String]>,
-    ) -> Option<String> {
+    ) -> Option<Vec<String>> {
         if session_id.is_empty()
             || !session_id
                 .bytes()
@@ -183,13 +216,6 @@ impl CLIAgent {
         Some(
             launch_argv
                 .and_then(|argv| self.replay_flags(argv))
-                .map(|flags| {
-                    flags.iter().fold(String::new(), |mut s, f| {
-                        s.push(' ');
-                        s.push_str(f);
-                        s
-                    })
-                })
                 .unwrap_or_default(),
         )
     }
@@ -966,230 +992,225 @@ mod tests {
         assert_eq!(s.cwd, None, "session end releases the cwd claim");
     }
 
-    #[test]
-    fn resume_commands_are_shell_safe() {
-        assert_eq!(
-            CLIAgent::Claude.resume_command("abc-123", None).as_deref(),
-            Some("claude --resume abc-123")
-        );
-        assert_eq!(
-            CLIAgent::Codex.resume_command("th_read.9", None).as_deref(),
-            Some("codex resume th_read.9")
-        );
-        assert_eq!(
-            CLIAgent::Pi
-                .resume_command("0199c3f2-1b0e-7c3a-9f21-6d4b8e2a5c17", None)
-                .as_deref(),
-            Some("pi --session 0199c3f2-1b0e-7c3a-9f21-6d4b8e2a5c17")
-        );
-        assert_eq!(CLIAgent::Aider.resume_command("abc", None), None);
-        assert_eq!(CLIAgent::Claude.resume_command("abc; rm -rf /", None), None);
-        assert_eq!(CLIAgent::Claude.resume_command("$(boom)", None), None);
-        assert_eq!(CLIAgent::Claude.resume_command("", None), None);
+    fn invocation(
+        agent: CLIAgent,
+        session_id: &str,
+        launch_argv: Option<&[String]>,
+    ) -> Option<(String, Vec<String>)> {
+        agent
+            .resume_invocation(session_id, launch_argv, None)
+            .map(|invocation| (invocation.program, invocation.args))
     }
 
     #[test]
-    fn resume_carries_launch_flags() {
-        let argv = |parts: &[&str]| parts.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+    fn resume_invocations_reject_unsafe_or_unsupported_sessions() {
+        assert_eq!(
+            invocation(CLIAgent::Claude, "abc-123", None),
+            Some(("claude".into(), vec!["--resume".into(), "abc-123".into()]))
+        );
+        assert_eq!(
+            invocation(CLIAgent::Codex, "th_read.9", None),
+            Some(("codex".into(), vec!["resume".into(), "th_read.9".into()]))
+        );
+        assert_eq!(
+            invocation(CLIAgent::Pi, "0199c3f2-1b0e-7c3a-9f21-6d4b8e2a5c17", None,),
+            Some((
+                "pi".into(),
+                vec![
+                    "--session".into(),
+                    "0199c3f2-1b0e-7c3a-9f21-6d4b8e2a5c17".into(),
+                ],
+            ))
+        );
+        assert_eq!(invocation(CLIAgent::Aider, "abc", None), None);
+        for unsafe_id in ["abc; rm -rf /", "$(boom)", "", "a b"] {
+            assert_eq!(invocation(CLIAgent::Claude, unsafe_id, None), None);
+        }
+    }
 
-        assert_eq!(
-            CLIAgent::Claude
-                .resume_command(
-                    "abc-123",
-                    Some(&argv(&["claude", "--dangerously-skip-permissions"]))
-                )
-                .as_deref(),
-            Some("claude --dangerously-skip-permissions --resume abc-123")
-        );
-        assert_eq!(
-            CLIAgent::Claude
-                .resume_command("abc", Some(&argv(&["claude", "--model", "opus"])))
-                .as_deref(),
-            Some("claude --model opus --resume abc")
-        );
-        assert_eq!(
-            CLIAgent::Claude
-                .resume_command(
-                    "abc",
-                    Some(&argv(&[
-                        "node",
-                        "/x/node_modules/@anthropic-ai/claude-code/cli.js",
-                        "--dangerously-skip-permissions",
-                    ]))
-                )
-                .as_deref(),
-            Some("claude --dangerously-skip-permissions --resume abc")
-        );
-        assert_eq!(
-            CLIAgent::Claude
-                .resume_command(
-                    "new-id",
-                    Some(&argv(&["claude", "--resume", "old-id", "--model", "opus"]))
-                )
-                .as_deref(),
-            Some("claude --model opus --resume new-id")
-        );
-        assert_eq!(
-            CLIAgent::Codex
-                .resume_command("id-1", Some(&argv(&["codex", "--yolo"])))
-                .as_deref(),
-            Some("codex resume id-1 --yolo")
-        );
-        assert_eq!(
-            CLIAgent::Codex
-                .resume_command("id-2", Some(&argv(&["codex", "resume", "id-1", "--yolo"])))
-                .as_deref(),
-            Some("codex resume id-2 --yolo")
-        );
-        assert_eq!(
-            CLIAgent::Claude
-                .resume_command(
-                    "abc",
-                    Some(&argv(&["claude", "--allowedTools", "Bash(git:*)"]))
-                )
-                .as_deref(),
-            Some("claude --resume abc")
-        );
-        assert_eq!(
-            CLIAgent::Claude
-                .resume_command("abc", Some(&argv(&["claude", "fix-the-bug"])))
-                .as_deref(),
-            Some("claude --resume abc")
-        );
-        assert_eq!(
-            CLIAgent::Claude
-                .resume_command(
-                    "abc",
-                    Some(&argv(&[
-                        "CLAUDE_CONFIG_DIR=/opt/claude",
-                        "claude",
-                        "--dangerously-skip-permissions",
-                    ]))
-                )
-                .as_deref(),
-            Some("claude --dangerously-skip-permissions --resume abc")
-        );
-        assert_eq!(
-            CLIAgent::Claude
-                .resume_command(
-                    "abc",
-                    Some(&argv(&["claude", "--model", "opus", "review", "this"]))
-                )
-                .as_deref(),
-            Some("claude --resume abc")
-        );
-        assert_eq!(
-            CLIAgent::Codex
-                .resume_command(
-                    "id-3",
-                    Some(&argv(&["codex", "resume", "--last", "--yolo"]))
-                )
-                .as_deref(),
-            Some("codex resume id-3 --yolo")
-        );
-        assert_eq!(
-            CLIAgent::Pi
-                .resume_command("id-a", Some(&argv(&["pi", "--model", "opus"])))
-                .as_deref(),
-            Some("pi --model opus --session id-a")
-        );
-        assert_eq!(
-            CLIAgent::Pi
-                .resume_command(
-                    "id-b",
-                    Some(&argv(&[
-                        "pi",
-                        "--session",
-                        "old-id",
-                        "--fork",
-                        "old",
-                        "-c",
-                        "--model",
-                        "opus"
-                    ]))
-                )
-                .as_deref(),
-            Some("pi --model opus --session id-b")
-        );
-        assert_eq!(
-            CLIAgent::Pi.resume_command(
-                "id-x",
-                Some(&argv(&["pi", "--no-session", "--model", "opus"]))
+    #[test]
+    fn resume_invocations_carry_only_replay_safe_launch_flags() {
+        let argv = |parts: &[&str]| parts.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        let cases: &[(CLIAgent, &str, &[&str], Option<(&str, &[&str])>)] = &[
+            (
+                CLIAgent::Claude,
+                "abc-123",
+                &["claude", "--dangerously-skip-permissions"],
+                Some((
+                    "claude",
+                    &["--dangerously-skip-permissions", "--resume", "abc-123"],
+                )),
             ),
-            None
-        );
-        assert_eq!(
-            CLIAgent::Pi
-                .resume_command(
-                    "id-c",
-                    Some(&argv(&[
-                        "pi",
-                        "--session-dir",
-                        "/w/.sessions",
-                        "--fork",
-                        "old"
-                    ]))
+            (
+                CLIAgent::Claude,
+                "abc",
+                &["claude", "--model", "opus"],
+                Some(("claude", &["--model", "opus", "--resume", "abc"])),
+            ),
+            (
+                CLIAgent::Claude,
+                "abc",
+                &[
+                    "node",
+                    "/x/node_modules/@anthropic-ai/claude-code/cli.js",
+                    "--dangerously-skip-permissions",
+                ],
+                Some((
+                    "claude",
+                    &["--dangerously-skip-permissions", "--resume", "abc"],
+                )),
+            ),
+            (
+                CLIAgent::Claude,
+                "new-id",
+                &["claude", "--resume", "old-id", "--model", "opus"],
+                Some(("claude", &["--model", "opus", "--resume", "new-id"])),
+            ),
+            (
+                CLIAgent::Codex,
+                "id-1",
+                &["codex", "--yolo"],
+                Some(("codex", &["resume", "id-1", "--yolo"])),
+            ),
+            (
+                CLIAgent::Codex,
+                "id-2",
+                &["codex", "resume", "id-1", "--yolo"],
+                Some(("codex", &["resume", "id-2", "--yolo"])),
+            ),
+            (
+                CLIAgent::Claude,
+                "abc",
+                &["claude", "--allowedTools", "Bash(git:*)"],
+                Some(("claude", &["--resume", "abc"])),
+            ),
+            (
+                CLIAgent::Claude,
+                "abc",
+                &["claude", "fix-the-bug"],
+                Some(("claude", &["--resume", "abc"])),
+            ),
+            (
+                CLIAgent::Claude,
+                "abc",
+                &[
+                    "CLAUDE_CONFIG_DIR=/opt/claude",
+                    "claude",
+                    "--dangerously-skip-permissions",
+                ],
+                Some((
+                    "claude",
+                    &["--dangerously-skip-permissions", "--resume", "abc"],
+                )),
+            ),
+            (
+                CLIAgent::Claude,
+                "abc",
+                &["claude", "--model", "opus", "review", "this"],
+                Some(("claude", &["--resume", "abc"])),
+            ),
+            (
+                CLIAgent::Codex,
+                "id-3",
+                &["codex", "resume", "--last", "--yolo"],
+                Some(("codex", &["resume", "id-3", "--yolo"])),
+            ),
+            (
+                CLIAgent::Pi,
+                "id-a",
+                &["pi", "--model", "opus"],
+                Some(("pi", &["--model", "opus", "--session", "id-a"])),
+            ),
+            (
+                CLIAgent::Pi,
+                "id-b",
+                &[
+                    "pi",
+                    "--session",
+                    "old-id",
+                    "--fork",
+                    "old",
+                    "-c",
+                    "--model",
+                    "opus",
+                ],
+                Some(("pi", &["--model", "opus", "--session", "id-b"])),
+            ),
+            (
+                CLIAgent::Pi,
+                "id-x",
+                &["pi", "--no-session", "--model", "opus"],
+                None,
+            ),
+            (
+                CLIAgent::Pi,
+                "id-c",
+                &["pi", "--session-dir", "/w/.sessions", "--fork", "old"],
+                Some((
+                    "pi",
+                    &["--session-dir", "/w/.sessions", "--session", "id-c"],
+                )),
+            ),
+            (
+                CLIAgent::Claude,
+                "abc",
+                &["cc", "--dangerously-skip-permissions"],
+                Some(("claude", &["--resume", "abc"])),
+            ),
+            (
+                CLIAgent::Amp,
+                "t-1",
+                &["amp", "--dangerously-allow-all"],
+                Some((
+                    "amp",
+                    &["threads", "continue", "t-1", "--dangerously-allow-all"],
+                )),
+            ),
+            (
+                CLIAgent::Amp,
+                "t-2",
+                &["amp", "threads", "continue", "t-1"],
+                Some(("amp", &["threads", "continue", "t-2"])),
+            ),
+            (
+                CLIAgent::Copilot,
+                "s-9",
+                &["copilot", "--resume", "s-1", "--allow-all-tools"],
+                Some(("copilot", &["--allow-all-tools", "--resume", "s-9"])),
+            ),
+            (
+                CLIAgent::Grok,
+                "g-2",
+                &["grok", "--model", "grok-code"],
+                Some(("grok", &["--model", "grok-code", "--resume", "g-2"])),
+            ),
+            (
+                CLIAgent::Grok,
+                "g-2",
+                &["grok", "--resume", "g-1", "--fork-session"],
+                Some(("grok", &["--resume", "g-2"])),
+            ),
+            (
+                CLIAgent::Grok,
+                "g-3",
+                &["grok", "-w", "--worktree-ref", "main", "--yolo"],
+                Some(("grok", &["--yolo", "--resume", "g-3"])),
+            ),
+        ];
+        for (agent, session_id, launch, expected) in cases {
+            let launch = argv(launch);
+            let actual = invocation(*agent, session_id, Some(&launch));
+            let expected = expected.map(|(program, args)| {
+                (
+                    program.to_string(),
+                    args.iter().map(|arg| arg.to_string()).collect::<Vec<_>>(),
                 )
-                .as_deref(),
-            Some("pi --session-dir /w/.sessions --session id-c")
-        );
+            });
+            assert_eq!(actual, expected, "{agent:?} {session_id}");
+        }
         assert_eq!(
-            CLIAgent::Claude
-                .resume_command(
-                    "abc",
-                    Some(&argv(&["cc", "--dangerously-skip-permissions"]))
-                )
-                .as_deref(),
-            Some("claude --resume abc")
-        );
-        assert_eq!(
-            CLIAgent::Amp
-                .resume_command("t-1", Some(&argv(&["amp", "--dangerously-allow-all"])))
-                .as_deref(),
-            Some("amp threads continue t-1 --dangerously-allow-all")
-        );
-        assert_eq!(
-            CLIAgent::Amp
-                .resume_command("t-2", Some(&argv(&["amp", "threads", "continue", "t-1"])))
-                .as_deref(),
-            Some("amp threads continue t-2")
-        );
-        assert_eq!(
-            CLIAgent::Copilot
-                .resume_command(
-                    "s-9",
-                    Some(&argv(&["copilot", "--resume", "s-1", "--allow-all-tools"]))
-                )
-                .as_deref(),
-            Some("copilot --allow-all-tools --resume s-9")
-        );
-        assert_eq!(
-            CLIAgent::Copilot.resume_command("s-9", None).as_deref(),
-            Some("copilot --resume s-9")
-        );
-        assert_eq!(
-            CLIAgent::Grok
-                .resume_command("g-2", Some(&argv(&["grok", "--model", "grok-code"])))
-                .as_deref(),
-            Some("grok --model grok-code --resume g-2")
-        );
-        assert_eq!(
-            CLIAgent::Grok
-                .resume_command(
-                    "g-2",
-                    Some(&argv(&["grok", "--resume", "g-1", "--fork-session"]))
-                )
-                .as_deref(),
-            Some("grok --resume g-2")
-        );
-        assert_eq!(
-            CLIAgent::Grok
-                .resume_command(
-                    "g-3",
-                    Some(&argv(&["grok", "-w", "--worktree-ref", "main", "--yolo"]))
-                )
-                .as_deref(),
-            Some("grok --yolo --resume g-3")
+            invocation(CLIAgent::Copilot, "s-9", None),
+            Some(("copilot".into(), vec!["--resume".into(), "s-9".into()]))
         );
     }
 
@@ -1305,28 +1326,31 @@ mod tests {
         );
 
         assert_eq!(
-            CLIAgent::Codex
-                .resume_command("id-2", Some(&argv(&["codex", "fork", "id-1", "--yolo"])))
-                .as_deref(),
-            Some("codex resume id-2 --yolo")
+            invocation(
+                CLIAgent::Codex,
+                "id-2",
+                Some(&argv(&["codex", "fork", "id-1", "--yolo"])),
+            ),
+            Some((
+                "codex".into(),
+                vec!["resume".into(), "id-2".into(), "--yolo".into()],
+            ))
         );
         assert_eq!(
-            CLIAgent::Claude
-                .resume_command(
-                    "new",
-                    Some(&argv(&["claude", "--resume", "old", "--fork-session"]))
-                )
-                .as_deref(),
-            Some("claude --resume new")
+            invocation(
+                CLIAgent::Claude,
+                "new",
+                Some(&argv(&["claude", "--resume", "old", "--fork-session"])),
+            ),
+            Some(("claude".into(), vec!["--resume".into(), "new".into()]))
         );
         assert_eq!(
-            CLIAgent::OpenCode
-                .resume_command(
-                    "s-2",
-                    Some(&argv(&["opencode", "--session", "s-1", "--fork"]))
-                )
-                .as_deref(),
-            Some("opencode --session s-2")
+            invocation(
+                CLIAgent::OpenCode,
+                "s-2",
+                Some(&argv(&["opencode", "--session", "s-1", "--fork"])),
+            ),
+            Some(("opencode".into(), vec!["--session".into(), "s-2".into()],))
         );
     }
 

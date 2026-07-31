@@ -1,0 +1,21 @@
+version: 1
+updated: 2026-07-31
+product:
+  name: Agentty
+  promise: lightweight_terminal_first_agent_workspace
+  goals:
+    - discover_and_resume_existing_cli_agent_sessions
+    - preserve_terminal_as_the_agent_runtime_surface
+    - isolate_local_and_remote_environment_state
+    - provide_native_simplified_chinese_and_english_ui
+  non_goals:
+    - model_provider_byok
+    - embedded_model_router
+    - replacing_cli_agent_authentication
+contracts:
+  - id: PRODUCT-AGENT-RUNTIME-01
+    rule: Agentty launches and observes real CLI agents; it does not impersonate their chat protocol.
+  - id: PRODUCT-NO-MODEL-BYOK-02
+    rule: Model API credentials remain owned by each CLI agent. SSH credentials and key passphrases are a separate required subsystem.
+  - id: PRODUCT-QUALITY-GATE-03
+    rule: Architecture changes follow SPEC -> MATRIX -> CHECK -> TEST -> IMPLEMENTATION -> VERIFY.

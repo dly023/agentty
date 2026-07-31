@@ -24,6 +24,19 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  architecture-contracts:
+    name: architecture contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ripgrep
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+      - run: ./script/check_agent_harness
+      - run: ./script/check_spec_matrix
+      - run: ./script/check_development_tracker
+      - run: ./script/check_version_policy
+
   fmt:
     name: rustfmt
     runs-on: ubuntu-latest

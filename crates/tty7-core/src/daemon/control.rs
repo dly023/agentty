@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use super::protocol::{MAX_FRAME, read_frame, write_frame};
 
-pub const CONTROL_VERSION: u32 = 4;
+pub const CONTROL_VERSION: u32 = 6;
 
 const DIALECT_MARKER: &str = "speaks control v";
 
@@ -61,6 +61,7 @@ pub mod feature {
     pub const HOST_RPC: &str = "host-rpc";
     pub const MACHINE_TREE: &str = "machine-tree";
     pub const STDIO_BRIDGE: &str = "stdio-bridge";
+    pub const AGENT_HELPER: &str = "agent-helper";
 }
 
 pub use crate::host::{Entry, MTime, Meta, Output, SearchHit};
@@ -74,6 +75,19 @@ pub use crate::core::session::WorkspaceId;
 #[serde(rename_all = "snake_case")]
 pub enum ControlRequest {
     Ping,
+    HelperHello,
+    CompleteAgentInput {
+        request: crate::agent_runtime::CompletionRequest,
+    },
+    DiscoverAgentSessions {
+        operation: crate::agent_runtime::OperationId,
+        generation: crate::agent_runtime::ScanGeneration,
+        authority: crate::agent_runtime::AuthorityKind,
+        roots: crate::agent_runtime::AgentStoreRoots,
+        providers: Vec<String>,
+        logical_limit: u64,
+        physical_source_limit: u64,
+    },
 
     ReadDir {
         dir: String,
@@ -232,9 +246,29 @@ pub enum ControlRequest {
         new: PaneSeed,
     },
 
+    AgentActivity {
+        operation: crate::agent_runtime::OperationId,
+        limit: u64,
+    },
     AgentStates,
     Routes,
     Status,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HelperHello {
+    pub protocol_version: u32,
+    pub capabilities: Vec<String>,
+    pub build: String,
+    pub instance: String,
+    pub binary_hash: String,
+    pub install: HelperInstallOutcome,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HelperInstallOutcome {
+    BuiltIn,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -269,7 +303,8 @@ impl ControlRequest {
     pub fn deadline(&self) -> Duration {
         use ControlRequest::*;
         match self {
-            Ping => Duration::from_secs(5),
+            Ping | HelperHello => Duration::from_secs(5),
+            DiscoverAgentSessions { .. } | CompleteAgentInput { .. } => Duration::from_secs(30),
             ReadDir { .. }
             | Stat { .. }
             | Exists { .. }
@@ -302,7 +337,7 @@ impl ControlRequest {
             | PaneSetRatio { .. }
             | PaneMove { .. }
             | PaneReplace { .. } => Duration::from_secs(10),
-            AgentStates | Routes | Status => Duration::from_secs(5),
+            AgentActivity { .. } | AgentStates | Routes | Status => Duration::from_secs(5),
         }
     }
 
@@ -337,6 +372,9 @@ impl ControlReply {
 pub enum ReplyOk {
     Unit,
     Pong,
+    HelperHello(HelperHello),
+    AgentSessionDiscovery(crate::agent_runtime::DiscoveryOutcome),
+    AgentCompletion(crate::agent_runtime::CompletionOutcome),
     Entries(Vec<Entry>),
     Meta(Meta),
     Bool(bool),
@@ -352,6 +390,7 @@ pub enum ReplyOk {
     WorkspaceTree(Box<crate::core::machine::Workspace>),
     TabTree(Box<Tab>),
     Panes(Vec<u64>),
+    AgentActivity(Vec<crate::agent_runtime::AgentActivityEvent>),
     AgentStates(Vec<PaneAgentState>),
     Routes(Vec<RouteInfo>),
     Status(ServerStatus),
@@ -1338,6 +1377,28 @@ mod tests {
     fn every_request() -> Vec<ControlRequest> {
         vec![
             ControlRequest::Ping,
+            ControlRequest::HelperHello,
+            ControlRequest::CompleteAgentInput {
+                request: crate::agent_runtime::CompletionRequest {
+                    operation: crate::agent_runtime::OperationId(8),
+                    generation: crate::agent_runtime::CompletionGeneration(3),
+                    authority: crate::agent_runtime::AuthorityKind::Remote,
+                    cwd: Some("/home/me/proj".into()),
+                    input: "git ch".into(),
+                    cursor: 6,
+                    limit: 20,
+                    history: Vec::new(),
+                },
+            },
+            ControlRequest::DiscoverAgentSessions {
+                operation: crate::agent_runtime::OperationId(7),
+                generation: crate::agent_runtime::ScanGeneration(9),
+                authority: crate::agent_runtime::AuthorityKind::Remote,
+                roots: crate::agent_runtime::AgentStoreRoots::for_home("/home/me".into()),
+                providers: vec!["codex".into(), "claude".into()],
+                logical_limit: 40,
+                physical_source_limit: 2_000,
+            },
             ControlRequest::ReadDir {
                 dir: "/home/me/proj/src".into(),
                 root: Some("/home/me/proj".into()),
@@ -1399,6 +1460,10 @@ mod tests {
                 dirs: vec!["/home/me/proj".into(), "/home/me/proj/src".into()],
             },
             ControlRequest::WatchClose { id: 7 },
+            ControlRequest::AgentActivity {
+                operation: crate::agent_runtime::OperationId(10),
+                limit: 100,
+            },
             ControlRequest::AgentStates,
             ControlRequest::Routes,
             ControlRequest::Status,
@@ -1409,6 +1474,20 @@ mod tests {
         vec![
             ControlReply::Ok(ReplyOk::Unit),
             ControlReply::Ok(ReplyOk::Pong),
+            ControlReply::Ok(ReplyOk::HelperHello(HelperHello {
+                protocol_version: crate::agent_runtime::HELPER_PROTOCOL_VERSION,
+                capabilities: crate::agent_runtime::capabilities(),
+                build: "0.0.1".into(),
+                instance: "server-1".into(),
+                binary_hash: "hash-1".into(),
+                install: HelperInstallOutcome::BuiltIn,
+            })),
+            ControlReply::Ok(ReplyOk::AgentCompletion(
+                crate::agent_runtime::CompletionOutcome::Cancelled,
+            )),
+            ControlReply::Ok(ReplyOk::AgentSessionDiscovery(
+                crate::agent_runtime::DiscoveryOutcome::Cancelled,
+            )),
             ControlReply::Ok(ReplyOk::Entries(vec![
                 Entry {
                     name: "src".into(),
@@ -1448,6 +1527,7 @@ mod tests {
                 stderr: vec![0x00, 0xff, 0xfe, b'\n'],
             })),
             ControlReply::Ok(ReplyOk::WatchId(42)),
+            ControlReply::Ok(ReplyOk::AgentActivity(Vec::new())),
             ControlReply::Ok(ReplyOk::AgentStates(vec![PaneAgentState {
                 pane_id: 9,
                 agent: Some(crate::core::cli_agent::CLIAgent::Claude),
@@ -2035,6 +2115,34 @@ mod tests {
         let s = Duration::from_secs;
         let cases: Vec<(R, Duration)> = vec![
             (R::Ping, s(5)),
+            (R::HelperHello, s(5)),
+            (
+                R::CompleteAgentInput {
+                    request: crate::agent_runtime::CompletionRequest {
+                        operation: crate::agent_runtime::OperationId(2),
+                        generation: crate::agent_runtime::CompletionGeneration(1),
+                        authority: crate::agent_runtime::AuthorityKind::Remote,
+                        cwd: Some("/repo".into()),
+                        input: "gi".into(),
+                        cursor: 2,
+                        limit: 10,
+                        history: Vec::new(),
+                    },
+                },
+                s(30),
+            ),
+            (
+                R::DiscoverAgentSessions {
+                    operation: crate::agent_runtime::OperationId(1),
+                    generation: crate::agent_runtime::ScanGeneration(1),
+                    authority: crate::agent_runtime::AuthorityKind::Remote,
+                    roots: crate::agent_runtime::AgentStoreRoots::for_home("/home/me".into()),
+                    providers: vec!["codex".into(), "claude".into()],
+                    logical_limit: 40,
+                    physical_source_limit: 2_000,
+                },
+                s(30),
+            ),
             (
                 R::ReadDir {
                     dir: "/".into(),
@@ -2108,6 +2216,13 @@ mod tests {
                     show_hidden: true,
                 },
                 s(20),
+            ),
+            (
+                R::AgentActivity {
+                    operation: crate::agent_runtime::OperationId(1),
+                    limit: 100,
+                },
+                s(5),
             ),
             (R::AgentStates, s(5)),
             (R::Routes, s(5)),

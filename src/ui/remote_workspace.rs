@@ -4,8 +4,8 @@ use std::time::{Duration, Instant};
 
 use gpui::{Context, PromptLevel, Window};
 use gpui_component::WindowExt as _;
-use tty7_core::host::HostId;
 use tty7_core::host::remote::RemoteHost;
+use tty7_core::host::{Host as _, HostId};
 
 use crate::core::session::{RemoteRef, RemoteTarget, WorkspaceId, WorkspaceStore};
 use crate::daemon::control::{ControlEvent, ControlRequest, ReplyOk};
@@ -370,7 +370,9 @@ impl Tty7App {
                         rows: rows.clone(),
                     },
                 );
+                let host_id = connected.host.id();
                 remote_connect::HostLinks::insert(cx, connected.host, home.clone());
+                RemoteLinks::mark_connected(cx, host_id, &choice.label);
                 self.prompt_remote_daemon_mismatch_later(cx);
                 self.connect = None;
             }
@@ -413,18 +415,13 @@ impl Tty7App {
     fn enter_remote_workspace(
         &mut self,
         id: WorkspaceId,
-        window: &mut Window,
+        _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         self.connect = None;
         RemoteLinks::ensure_running(cx);
-        if self.tabs.is_empty() {
-            let previous = self.spawn_host(cx);
-            self.switch_workspace(id, window, cx);
-            self.rebind_host(previous, cx);
-        } else {
-            crate::ui::windows::open(cx, Some(id));
-        }
+        let target = WorkspaceStore::remote_ref(cx, id).map(|remote| remote.target);
+        crate::ui::windows::open_or_focus_environment(cx, target, Some(id));
         cx.notify();
     }
 
@@ -734,6 +731,39 @@ enum LinkState {
     Failed(String),
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct ConnectionTransition {
+    attempt: u64,
+    notified_attempt: Option<u64>,
+    attached: bool,
+}
+
+impl ConnectionTransition {
+    fn begin_attempt(&mut self) {
+        if !self.attached {
+            return;
+        }
+        self.attempt = self.attempt.saturating_add(1);
+        self.attached = false;
+    }
+
+    fn connected(&mut self) -> bool {
+        let notify = !self.attached && self.notified_attempt != Some(self.attempt);
+        self.attached = true;
+        if notify {
+            self.notified_attempt = Some(self.attempt);
+        }
+        notify
+    }
+
+    fn disconnected(&mut self) {
+        if self.attached {
+            self.attempt = self.attempt.saturating_add(1);
+        }
+        self.attached = false;
+    }
+}
+
 #[derive(Default)]
 pub(crate) struct RemoteLinks {
     machines: std::collections::HashMap<HostId, MachineLink>,
@@ -741,6 +771,7 @@ pub(crate) struct RemoteLinks {
     reclaiming: std::collections::HashSet<WorkspaceId>,
     suspended: std::collections::HashSet<HostId>,
     instances: std::collections::HashMap<HostId, String>,
+    transitions: std::collections::HashMap<HostId, ConnectionTransition>,
     #[allow(
         dead_code,
         reason = "read by the prompt relay's drain, which lands with the routed auth sheet"
@@ -812,6 +843,34 @@ impl RemoteLinks {
             },
             None => RemoteStatus::Disconnected,
         })
+    }
+
+    fn begin_attempt(cx: &mut gpui::App, host: HostId) {
+        cx.default_global::<RemoteLinks>()
+            .transitions
+            .entry(host)
+            .or_default()
+            .begin_attempt();
+    }
+
+    fn mark_disconnected(cx: &mut gpui::App, host: HostId) {
+        cx.default_global::<RemoteLinks>()
+            .transitions
+            .entry(host)
+            .or_default()
+            .disconnected();
+    }
+
+    fn mark_connected(cx: &mut gpui::App, host: HostId, label: &str) {
+        let notify = cx
+            .default_global::<RemoteLinks>()
+            .transitions
+            .entry(host)
+            .or_default()
+            .connected();
+        if notify {
+            notify_entered_environment(cx, host, label);
+        }
     }
 
     pub(crate) fn retry_now(cx: &mut gpui::App, workspace: WorkspaceId) {
@@ -962,8 +1021,8 @@ fn prune_suspended(
 
 fn bound_machines(cx: &gpui::App) -> Vec<(HostId, RemoteTarget)> {
     let mut out: Vec<(HostId, RemoteTarget)> = Vec::new();
-    for workspace in &WorkspaceStore::all(cx).views {
-        let Some(host) = workspace.host.as_ref() else {
+    for workspace in &WorkspaceStore::all(cx).windows {
+        let Some(host) = workspace.remote_ref() else {
             continue;
         };
         if !workspace.open {
@@ -979,12 +1038,12 @@ fn bound_machines(cx: &gpui::App) -> Vec<(HostId, RemoteTarget)> {
 
 fn workspaces_on(cx: &gpui::App, host: HostId) -> Vec<(WorkspaceId, String)> {
     WorkspaceStore::all(cx)
-        .views
+        .windows
         .iter()
         .filter(|w| w.open)
         .filter_map(|w| {
-            let remote = w.host.as_ref()?;
-            (remote.host_id() == host).then(|| (w.id, remote.store_key()))
+            let remote = w.remote_ref()?;
+            (remote.host_id() == host).then(|| (w.workspace, remote.store_key()))
         })
         .collect()
 }
@@ -1052,6 +1111,7 @@ fn client_id_for(cx: &gpui::App, host: HostId, store_key: &str) -> Option<Worksp
 }
 
 fn launch_attempt(cx: &mut gpui::App, host: HostId, target: RemoteTarget) {
+    RemoteLinks::begin_attempt(cx, host);
     let label = target.to_string();
     let header = match remote_connect::control_route(&target, cx) {
         Ok(header) => header,
@@ -1122,6 +1182,7 @@ fn finish_attempt(
                     crate::ui::tree_sync::hydrate_window_from_tree(cx, id);
                 }
                 refresh_window_shells(cx, id);
+                refresh_window_agent_sessions(cx, id);
             }
             RemoteLinks::mark(cx, host, |link| {
                 link.state = LinkState::Attached;
@@ -1129,9 +1190,11 @@ fn finish_attempt(
                 link.next_attempt = None;
                 link.attempting = false;
             });
+            RemoteLinks::mark_connected(cx, host, label);
             log::info!("reconnected to {label}");
         }
         Err(e) => {
+            RemoteLinks::mark_disconnected(cx, host);
             log::warn!("reconnect to {label} failed: {e}");
             RemoteLinks::mark(cx, host, |link| {
                 link.attempting = false;
@@ -1208,6 +1271,26 @@ fn note_instance(
         }
         _ => false,
     }
+}
+
+fn notify_entered_environment(cx: &mut gpui::App, host: HostId, label: &str) {
+    for (workspace, _) in workspaces_on(cx, host) {
+        let Some(handle) = crate::ui::windows::WindowRegistry::window_for(cx, workspace) else {
+            continue;
+        };
+        let _ = handle.update(cx, |_, window, cx| {
+            window.push_notification(format!("Entered remote environment: {label}"), cx);
+        });
+    }
+}
+
+fn refresh_window_agent_sessions(cx: &mut gpui::App, workspace: WorkspaceId) {
+    let Some(app) =
+        crate::ui::windows::WindowRegistry::app_for(cx, workspace).and_then(|app| app.upgrade())
+    else {
+        return;
+    };
+    app.update(cx, |app, cx| app.refresh_session_navigator_passive(cx));
 }
 
 fn refresh_window_shells(cx: &mut gpui::App, workspace: WorkspaceId) {
@@ -1492,6 +1575,47 @@ mod tests {
             error: "no route to host".into(),
         };
         assert_eq!(flow.choice(), Some(&choice));
+    }
+
+    #[test]
+    fn connected_transition_notifies_once() {
+        let mut transition = ConnectionTransition::default();
+        assert!(
+            transition.connected(),
+            "first attachment enters the environment"
+        );
+        assert!(
+            !transition.connected(),
+            "duplicate attached observations are silent"
+        );
+        transition.disconnected();
+        assert!(
+            transition.connected(),
+            "a new connection attempt notifies once"
+        );
+        assert!(!transition.connected());
+    }
+
+    #[test]
+    fn disconnected_remote_window_keeps_remote_authority() {
+        let target = RemoteTarget::Alias {
+            alias: "build-box".into(),
+        };
+        let window = crate::core::session::EnvironmentWindow::remote(
+            target.clone(),
+            WorkspaceId::new(),
+            WorkspaceId::new(),
+        );
+        let mut transition = ConnectionTransition::default();
+        assert!(transition.connected());
+        transition.disconnected();
+        assert_eq!(
+            window.environment.id,
+            tty7_core::core::environment::EnvironmentId::for_remote(&target),
+        );
+        assert!(window.remote_ref().is_some());
+        assert!(!window.environment.id.is_local());
+        assert!(!RemoteStatus::Disconnected.accepts_input());
     }
 
     #[test]

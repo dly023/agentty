@@ -1,31 +1,36 @@
 pub use tty7_core::core::session::{
-    RemoteRef, RemoteTarget, Session, SessionAxis, SessionPane, SessionTab, WindowView,
-    WindowViews, WorkspaceId,
+    EnvironmentWindow, EnvironmentWindows, RemoteRef, RemoteTarget, Session, SessionAxis,
+    SessionPane, SessionTab, WorkspaceId,
 };
 pub use tty7_core::host::HostId;
 
+#[cfg(test)]
+pub use tty7_core::core::session::{WindowView, WindowViews};
+
 pub struct WorkspaceStore {
-    views: WindowViews,
+    views: EnvironmentWindows,
 }
 
 impl gpui::Global for WorkspaceStore {}
 
 impl WorkspaceStore {
     pub fn init(cx: &mut gpui::App) {
-        let views = WindowViews::load().unwrap_or_default();
+        let views = EnvironmentWindows::load().unwrap_or_default();
         cx.set_global(Self { views });
     }
 
     #[cfg(test)]
     pub fn install_for_test(cx: &mut gpui::App, views: WindowViews) {
-        cx.set_global(Self { views });
+        cx.set_global(Self {
+            views: EnvironmentWindows::from_legacy(views),
+        });
     }
 
-    pub fn all(cx: &gpui::App) -> &WindowViews {
-        static EMPTY: std::sync::OnceLock<WindowViews> = std::sync::OnceLock::new();
+    pub fn all(cx: &gpui::App) -> &EnvironmentWindows {
+        static EMPTY: std::sync::OnceLock<EnvironmentWindows> = std::sync::OnceLock::new();
         match cx.try_global::<Self>() {
             Some(store) => &store.views,
-            None => EMPTY.get_or_init(WindowViews::default),
+            None => EMPTY.get_or_init(EnvironmentWindows::default),
         }
     }
 
@@ -37,18 +42,18 @@ impl WorkspaceStore {
         let Some(store) = Self::try_store(cx) else {
             return WorkspaceId::new();
         };
-        let id = id.filter(|id| store.views.get(*id).is_some());
+        let id = id.filter(|id| store.views.get_workspace(*id).is_some());
         let view = match id {
-            Some(id) => store.views.get_mut(id).expect("filtered above"),
+            Some(id) => store.views.get_workspace_mut(id).expect("filtered above"),
             None => {
-                store.views.views.push(WindowView::default());
-                store.views.views.last_mut().expect("just pushed")
+                store.views.windows.push(EnvironmentWindow::default());
+                store.views.windows.last_mut().expect("just pushed")
             }
         };
         view.open = true;
         view.touch();
-        let claimed = view.id;
-        store.views.active = Some(claimed);
+        let claimed = view.workspace;
+        store.views.active = Some(view.environment.id.clone());
         store.views.save();
         claimed
     }
@@ -59,12 +64,12 @@ impl WorkspaceStore {
         window: crate::core::window_state::WindowState,
     ) {
         let hint = Self::all(cx)
-            .get(id)
+            .get_workspace(id)
             .and_then(|view| crate::ui::machine_mirror::display_hint(cx, view));
         let Some(store) = Self::try_store(cx) else {
             return;
         };
-        let Some(view) = store.views.get_mut(id) else {
+        let Some(view) = store.views.get_workspace_mut(id) else {
             return;
         };
         view.window = Some(window);
@@ -79,10 +84,10 @@ impl WorkspaceStore {
         let Some(store) = Self::try_store(cx) else {
             return;
         };
-        if let Some(view) = store.views.get_mut(id) {
+        if let Some(view) = store.views.get_workspace_mut(id) {
             view.touch();
+            store.views.active = Some(view.environment.id.clone());
         }
-        store.views.active = Some(id);
         store.views.save();
         crate::ui::tree_sync::fire_workspace_op(cx, id, |ws| {
             tty7_core::daemon::control::ControlRequest::WorkspaceTouch { workspace: ws }
@@ -92,15 +97,21 @@ impl WorkspaceStore {
     pub fn restore_one(cx: &mut gpui::App) -> Option<WorkspaceId> {
         let store = Self::try_store(cx)?;
         let keep = store.views.workspace_to_restore()?;
-        let reattaching = store.views.get(keep).is_some_and(|view| !view.open);
+        let reattaching = store
+            .views
+            .get_workspace(keep)
+            .is_some_and(|view| !view.open);
         let mut detached = 0usize;
-        for view in &mut store.views.views {
-            if view.open && view.id != keep {
+        for view in &mut store.views.windows {
+            if view.open && view.workspace != keep {
                 view.open = false;
                 detached += 1;
             }
         }
-        store.views.active = Some(keep);
+        store.views.active = store
+            .views
+            .get_workspace(keep)
+            .map(|view| view.environment.id.clone());
         store.views.save();
         if reattaching {
             log::info!("launch: no window was open at quit; reattaching the last one closed");
@@ -112,12 +123,12 @@ impl WorkspaceStore {
 
     pub fn close_window(cx: &mut gpui::App, id: WorkspaceId) {
         let hint = Self::all(cx)
-            .get(id)
+            .get_workspace(id)
             .and_then(|view| crate::ui::machine_mirror::display_hint(cx, view));
         let Some(store) = Self::try_store(cx) else {
             return;
         };
-        if let Some(view) = store.views.get_mut(id) {
+        if let Some(view) = store.views.get_workspace_mut(id) {
             view.open = false;
             view.touch();
             if let Some((label, subject)) = hint {
@@ -132,19 +143,47 @@ impl WorkspaceStore {
         let Some(store) = Self::try_store(cx) else {
             return;
         };
-        store.views.views.retain(|w| w.id != id);
-        if store.views.active == Some(id) {
+        let removed_environment = store
+            .views
+            .get_workspace(id)
+            .map(|w| w.environment.id.clone());
+        store.views.windows.retain(|w| w.workspace != id);
+        if store.views.active == removed_environment {
             store.views.active = None;
         }
         store.views.save();
     }
 
     pub fn host_of(cx: &gpui::App, id: WorkspaceId) -> HostId {
-        host_for(Self::all(cx), id)
+        Self::all(cx)
+            .get(id)
+            .map(EnvironmentWindow::host_id)
+            .unwrap_or(HostId::LOCAL)
     }
 
     pub fn remote_ref(cx: &gpui::App, id: WorkspaceId) -> Option<RemoteRef> {
-        Self::all(cx).get(id).and_then(|w| w.host.clone())
+        Self::all(cx)
+            .get_workspace(id)
+            .and_then(EnvironmentWindow::remote_ref)
+    }
+
+    pub fn environment_id(
+        cx: &gpui::App,
+        id: WorkspaceId,
+    ) -> tty7_core::core::environment::EnvironmentId {
+        Self::all(cx)
+            .get_workspace(id)
+            .map(|window| window.environment.id.clone())
+            .unwrap_or_default()
+    }
+
+    pub fn environment_workspace(
+        cx: &gpui::App,
+        environment: &tty7_core::core::environment::EnvironmentId,
+    ) -> Option<WorkspaceId> {
+        Self::all(cx)
+            .get_environment(environment)
+            .map(|view| view.workspace)
     }
 
     pub fn machine_is_connected(cx: &mut gpui::App, id: WorkspaceId) -> bool {
@@ -158,18 +197,17 @@ impl WorkspaceStore {
         let Some(store) = Self::try_store(cx) else {
             return WorkspaceId::new();
         };
+        let environment = tty7_core::core::environment::EnvironmentId::for_remote(&host.target);
         let existing = store
             .views
-            .views
-            .iter()
-            .find(|w| w.host.as_ref() == Some(&host))
-            .map(|w| w.id);
+            .get_environment(&environment)
+            .map(|w| w.workspace);
         let id = match existing {
             Some(id) => id,
             None => {
-                let view = WindowView::on_remote(host);
-                let id = view.id;
-                store.views.views.push(view);
+                let id = WorkspaceId::new();
+                let view = EnvironmentWindow::remote(host.target, id, host.workspace);
+                store.views.windows.push(view);
                 id
             }
         };
@@ -178,8 +216,12 @@ impl WorkspaceStore {
     }
 }
 
-pub(crate) fn host_for(views: &WindowViews, id: WorkspaceId) -> HostId {
-    views.get(id).map(|w| w.host_id()).unwrap_or(HostId::LOCAL)
+#[cfg(test)]
+fn host_for(views: &WindowViews, workspace: WorkspaceId) -> HostId {
+    views
+        .get(workspace)
+        .map(WindowView::host_id)
+        .unwrap_or(HostId::LOCAL)
 }
 
 pub(crate) fn crosses_machines(previous: HostId, current: HostId) -> bool {
@@ -189,6 +231,7 @@ pub(crate) fn crosses_machines(previous: HostId, current: HostId) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tty7_core::core::session::{WindowView, WindowViews};
 
     #[test]
     fn a_window_binds_to_exactly_one_machine() {

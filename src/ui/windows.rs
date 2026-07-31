@@ -5,9 +5,10 @@ use gpui::{
 use gpui_component::{Root, TitleBar};
 
 use crate::core::config::{Config, StartupMode};
-use crate::core::session::{WorkspaceId, WorkspaceStore};
+use crate::core::session::{RemoteRef, RemoteTarget, WorkspaceId, WorkspaceStore};
 use crate::core::window_state::{WindowGeometry as _, WindowState};
 use crate::ui::app::Tty7App;
+use tty7_core::core::environment::EnvironmentId;
 
 const CASCADE_STEP: f32 = 28.0;
 
@@ -15,6 +16,7 @@ const DEFAULT_SIZE: (f32, f32) = (1440.0, 900.0);
 
 struct WindowEntry {
     workspace: WorkspaceId,
+    environment: EnvironmentId,
     handle: AnyWindowHandle,
     app: WeakEntity<Tty7App>,
 }
@@ -54,9 +56,25 @@ impl WindowRegistry {
             .map(|w| w.handle)
     }
 
+    pub fn window_for_environment(
+        cx: &mut App,
+        environment: &EnvironmentId,
+    ) -> Option<AnyWindowHandle> {
+        Self::sweep(cx);
+        cx.global::<Self>()
+            .windows
+            .iter()
+            .find(|w| &w.environment == environment)
+            .map(|w| w.handle)
+    }
+
     pub fn most_recent(cx: &mut App) -> Option<WorkspaceId> {
         Self::sweep(cx);
-        let active = WorkspaceStore::all(cx).active;
+        let active = WorkspaceStore::all(cx)
+            .active
+            .as_ref()
+            .and_then(|environment| WorkspaceStore::all(cx).get_environment(environment))
+            .map(|window| window.workspace);
         let registry = cx.global::<Self>();
         active
             .filter(|id| registry.windows.iter().any(|w| w.workspace == *id))
@@ -88,8 +106,10 @@ impl WindowRegistry {
         handle: AnyWindowHandle,
         app: WeakEntity<Tty7App>,
     ) {
+        let environment = WorkspaceStore::environment_id(cx, workspace);
         cx.global_mut::<Self>().windows.push(WindowEntry {
             workspace,
+            environment,
             handle,
             app,
         });
@@ -102,6 +122,7 @@ impl WindowRegistry {
     }
 
     pub fn rebind(cx: &mut App, from: WorkspaceId, to: WorkspaceId) {
+        let environment = WorkspaceStore::environment_id(cx, to);
         if let Some(entry) = cx
             .global_mut::<Self>()
             .windows
@@ -109,6 +130,7 @@ impl WindowRegistry {
             .find(|w| w.workspace == from)
         {
             entry.workspace = to;
+            entry.environment = environment;
         }
     }
 
@@ -127,6 +149,49 @@ impl WindowRegistry {
             .windows
             .retain(|w| !dead.contains(&w.workspace));
     }
+}
+
+fn workspace_for_environment_target(
+    views: &crate::core::session::EnvironmentWindows,
+    target: Option<&RemoteTarget>,
+) -> Option<WorkspaceId> {
+    let environment = target.map(EnvironmentId::for_remote).unwrap_or_default();
+    views
+        .get_environment(&environment)
+        .map(|view| view.workspace)
+}
+
+pub fn open_or_focus_environment(
+    cx: &mut App,
+    target: Option<RemoteTarget>,
+    remote_workspace: Option<WorkspaceId>,
+) -> WorkspaceId {
+    let environment = target
+        .as_ref()
+        .map(EnvironmentId::for_remote)
+        .unwrap_or_default();
+    if let Some(handle) = WindowRegistry::window_for_environment(cx, &environment) {
+        let _ = handle.update(cx, |_, window, _| window.activate_window());
+        return WorkspaceStore::environment_workspace(cx, &environment)
+            .or(remote_workspace)
+            .unwrap_or_else(WorkspaceId::new);
+    }
+
+    let workspace = match target {
+        Some(target) => match remote_workspace {
+            Some(daemon_workspace) => {
+                WorkspaceStore::claim_remote(cx, RemoteRef::new(target, daemon_workspace))
+            }
+            None => workspace_for_environment_target(WorkspaceStore::all(cx), Some(&target))
+                .unwrap_or_else(|| {
+                    WorkspaceStore::claim_remote(cx, RemoteRef::new(target, WorkspaceId::new()))
+                }),
+        },
+        None => workspace_for_environment_target(WorkspaceStore::all(cx), None)
+            .unwrap_or_else(|| WorkspaceStore::claim(cx, None)),
+    };
+    open(cx, Some(workspace));
+    workspace
 }
 
 pub fn open(cx: &mut App, workspace: Option<WorkspaceId>) {
@@ -170,13 +235,13 @@ pub const MENU_SLOTS: usize = 9;
 
 pub fn menu_order(cx: &App) -> Vec<(WorkspaceId, bool)> {
     let all = WorkspaceStore::all(cx);
-    let mut open: Vec<_> = all.views.iter().filter(|w| w.open).collect();
-    let mut closed: Vec<_> = all.views.iter().filter(|w| !w.open).collect();
+    let mut open: Vec<_> = all.windows.iter().filter(|w| w.open).collect();
+    let mut closed: Vec<_> = all.windows.iter().filter(|w| !w.open).collect();
     open.sort_by(|a, b| b.last_active.cmp(&a.last_active));
     closed.sort_by(|a, b| b.last_active.cmp(&a.last_active));
     open.into_iter()
-        .map(|w| (w.id, true))
-        .chain(closed.into_iter().map(|w| (w.id, false)))
+        .map(|w| (w.workspace, true))
+        .chain(closed.into_iter().map(|w| (w.workspace, false)))
         .take(MENU_SLOTS)
         .collect()
 }
@@ -353,7 +418,7 @@ fn delete_from_tree(cx: &mut App, workspace: WorkspaceId) -> Vec<u64> {
 
 fn release_unused_hosts(cx: &mut App) {
     let live: Vec<_> = WorkspaceStore::all(cx)
-        .views
+        .windows
         .iter()
         .filter(|w| w.is_remote())
         .map(|w| w.host_id())
@@ -573,5 +638,55 @@ mod tests {
                  the list must be read first"
             );
         });
+    }
+}
+
+#[cfg(test)]
+mod environment_tests {
+    use super::*;
+    use crate::core::session::{EnvironmentWindows, WindowView, WindowViews};
+
+    #[test]
+    fn window_environment_is_derived_from_its_persisted_authority() {
+        let local = WindowView::default();
+        let remote_target = RemoteTarget::Alias {
+            alias: "build".into(),
+        };
+        let remote =
+            WindowView::on_remote(RemoteRef::new(remote_target.clone(), WorkspaceId::new()));
+        let local_id = local.id;
+        let remote_id = remote.id;
+        let views = EnvironmentWindows::from_legacy(WindowViews {
+            views: vec![local, remote],
+            active: None,
+        });
+
+        assert_eq!(
+            workspace_for_environment_target(&views, None),
+            Some(local_id)
+        );
+        assert_eq!(
+            workspace_for_environment_target(&views, Some(&remote_target)),
+            Some(remote_id)
+        );
+    }
+
+    #[test]
+    fn different_remote_targets_never_retarget_the_same_persisted_window() {
+        let build = RemoteTarget::Alias {
+            alias: "build".into(),
+        };
+        let gpu = RemoteTarget::Alias {
+            alias: "gpu".into(),
+        };
+        let remote = WindowView::on_remote(RemoteRef::new(build.clone(), WorkspaceId::new()));
+        let views = EnvironmentWindows::from_legacy(WindowViews {
+            views: vec![remote],
+            active: None,
+        });
+
+        assert!(workspace_for_environment_target(&views, Some(&build)).is_some());
+        assert_eq!(workspace_for_environment_target(&views, Some(&gpu)), None);
+        assert_eq!(workspace_for_environment_target(&views, None), None);
     }
 }

@@ -311,6 +311,7 @@ fn handshake<R: Read>(
         feature::CONTROL.to_string(),
         feature::HOST_RPC.to_string(),
         feature::STDIO_BRIDGE.to_string(),
+        feature::AGENT_HELPER.to_string(),
     ];
     if services.machine.is_some() {
         features.push(feature::MACHINE_TREE.to_string());
@@ -487,6 +488,51 @@ fn run_request(
 
     Ok(match req {
         ControlRequest::Ping => (ReplyOk::Pong, Vec::new()),
+        ControlRequest::HelperHello => (
+            ReplyOk::HelperHello(crate::daemon::control::HelperHello {
+                protocol_version: crate::agent_runtime::HELPER_PROTOCOL_VERSION,
+                capabilities: crate::agent_runtime::capabilities(),
+                build: env!("CARGO_PKG_VERSION").to_string(),
+                instance: crate::daemon::control::server_instance().to_string(),
+                binary_hash: crate::agent_runtime::helper_binary_hash(),
+                install: crate::daemon::control::HelperInstallOutcome::BuiltIn,
+            }),
+            Vec::new(),
+        ),
+        ControlRequest::CompleteAgentInput { request } => {
+            let outcome = crate::agent_runtime::complete(h, &request);
+            (ReplyOk::AgentCompletion(outcome), Vec::new())
+        }
+        ControlRequest::DiscoverAgentSessions {
+            authority,
+            roots,
+            providers,
+            logical_limit,
+            physical_source_limit,
+            ..
+        } => {
+            let server_authority = if h.id() == crate::host::HostId::LOCAL {
+                crate::agent_runtime::AuthorityKind::Local
+            } else {
+                crate::agent_runtime::AuthorityKind::Remote
+            };
+            let outcome = if authority != server_authority {
+                crate::agent_runtime::DiscoveryOutcome::Failed {
+                    message: "requested authority does not match helper host".into(),
+                }
+            } else {
+                crate::agent_runtime::discover(
+                    h,
+                    &crate::agent_runtime::DiscoveryRequest {
+                        roots,
+                        providers,
+                        logical_limit: clamp_usize(logical_limit),
+                        physical_source_limit: clamp_usize(physical_source_limit),
+                    },
+                )
+            };
+            (ReplyOk::AgentSessionDiscovery(outcome), Vec::new())
+        }
 
         ControlRequest::ReadDir { dir, root } => {
             let root = root.map(|r| p(&r));
@@ -732,6 +778,26 @@ fn run_request(
             (ReplyOk::Unit, Vec::new())
         }
 
+        ControlRequest::AgentActivity { operation, limit } => {
+            let limit = clamp_usize(limit).min(1024);
+            let events = conn
+                .panes
+                .as_ref()
+                .map(|panes| panes.agent_states())
+                .unwrap_or_default()
+                .iter()
+                .enumerate()
+                .filter_map(|(index, pane)| {
+                    crate::agent_runtime::activity_from_pane_state(
+                        index.saturating_add(1) as u64,
+                        operation,
+                        pane,
+                    )
+                })
+                .take(limit)
+                .collect();
+            (ReplyOk::AgentActivity(events), Vec::new())
+        }
         ControlRequest::AgentStates => (
             ReplyOk::AgentStates(
                 conn.panes

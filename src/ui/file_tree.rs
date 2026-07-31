@@ -1117,7 +1117,7 @@ impl Tty7App {
             return;
         };
         leaf.read(cx)
-            .run_command_line(&format!("cd {}", shell_quote(dir)));
+            .run_command_line(&format!("cd {}", shell_quote(dir)), cx);
         self.focus_active(window, cx);
     }
 

@@ -213,90 +213,6 @@ pub(crate) fn select_workspace_action(index: usize) -> Option<Box<dyn gpui::Acti
 }
 
 impl Tty7App {
-    pub(crate) const AVATAR_PX: f32 = 20.0;
-
-    pub(crate) fn workspace_head(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
-        if let Some(rename) = self.workspace_rename.as_ref() {
-            return h_flex()
-                .id("workspace-rename")
-                .flex_shrink_0()
-                .items_center()
-                .h(px(30.))
-                .w_full()
-                .px(px(7.))
-                .rounded_md()
-                .bg(cx.theme().sidebar_accent)
-                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                .child(Input::new(&rename.input).appearance(false).xsmall())
-                .into_any_element();
-        }
-
-        crate::terminal::pane_liveness::sweep(cx);
-        let current = crate::ui::machine_mirror::display_name_for(cx, self.workspace)
-            .unwrap_or_else(|| "tty7".to_string());
-        let monogram: String = current
-            .chars()
-            .next()
-            .map(|c| c.to_uppercase().to_string())
-            .unwrap_or_else(|| "~".to_string());
-
-        div()
-            .occlude()
-            .w_full()
-            .capture_any_mouse_down(|ev: &gpui::MouseDownEvent, _window, cx| {
-                if ev.button == MouseButton::Right {
-                    cx.stop_propagation();
-                }
-            })
-            .child(
-                Button::new("rail-workspace-head")
-                    .custom(chrome_tile_variant(cx))
-                    .child(
-                        h_flex()
-                            .w_full()
-                            .items_center()
-                            .gap(px(6.))
-                            .child(
-                                div()
-                                    .flex()
-                                    .flex_shrink_0()
-                                    .items_center()
-                                    .justify_center()
-                                    .size(px(Self::AVATAR_PX))
-                                    .rounded_full()
-                                    .bg(cx.theme().secondary)
-                                    .text_size(px(10.))
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .child(monogram),
-                            )
-                            .child(
-                                div()
-                                    .flex_shrink(1.)
-                                    .min_w_0()
-                                    .truncate()
-                                    .text_size(px(12.5))
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .child(SharedString::from(current.clone())),
-                            )
-                            .child(
-                                Icon::new(IconName::ChevronDown)
-                                    .size(px(11.))
-                                    .flex_shrink_0()
-                                    .text_color(cx.theme().muted_foreground),
-                            ),
-                    )
-                    .xsmall()
-                    .w_full()
-                    .h(px(30.))
-                    .rounded_md()
-                    .tooltip(SharedString::from(current))
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.toggle_switcher(window, cx);
-                    })),
-            )
-            .into_any_element()
-    }
-
     pub(crate) fn app_menu_tile(
         &self,
         window: &Window,
@@ -328,6 +244,114 @@ impl Tty7App {
         )
     }
 
+    fn environment_indicator_state(
+        remote: Option<&crate::core::session::RemoteRef>,
+        status: Option<&crate::ui::remote_workspace::RemoteStatus>,
+    ) -> (String, String, u32) {
+        match remote {
+            None => ("This Mac".into(), "Local environment".into(), 0x22C55E),
+            Some(remote) => {
+                let state = match status {
+                    Some(crate::ui::remote_workspace::RemoteStatus::Attached) => "SSH".into(),
+                    Some(crate::ui::remote_workspace::RemoteStatus::Connecting)
+                    | Some(crate::ui::remote_workspace::RemoteStatus::Reconnecting { .. }) => {
+                        "Connecting".into()
+                    }
+                    Some(crate::ui::remote_workspace::RemoteStatus::Failed(error)) => {
+                        format!("Authentication error — {error}")
+                    }
+                    Some(crate::ui::remote_workspace::RemoteStatus::Preempted { .. })
+                    | Some(crate::ui::remote_workspace::RemoteStatus::Disconnected)
+                    | None => "Disconnected".into(),
+                };
+                let color = match status {
+                    Some(crate::ui::remote_workspace::RemoteStatus::Attached) => 0x22C55E,
+                    Some(crate::ui::remote_workspace::RemoteStatus::Connecting)
+                    | Some(crate::ui::remote_workspace::RemoteStatus::Reconnecting { .. }) => {
+                        0xEAB308
+                    }
+                    Some(crate::ui::remote_workspace::RemoteStatus::Failed(_)) => 0xEF4444,
+                    _ => UNKNOWN_DOT,
+                };
+                (remote.target.to_string(), state, color)
+            }
+        }
+    }
+
+    fn environment_indicator_label(&self, cx: &App) -> (String, String, u32) {
+        let remote = crate::core::session::WorkspaceStore::remote_ref(cx, self.workspace);
+        let status = remote.as_ref().and_then(|_| self.remote_status(cx));
+        Self::environment_indicator_state(remote.as_ref(), status.as_ref())
+    }
+
+    pub(crate) fn environment_indicator(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        let (label, state, dot) = self.environment_indicator_label(cx);
+        let current_environment =
+            crate::core::session::WorkspaceStore::environment_id(cx, self.workspace);
+        let current_id = current_environment.clone();
+        let hosts = crate::ui::remote_connect::available_hosts(cx);
+        let app_for_menu = cx.entity().downgrade();
+        Button::new("titlebar-environment-indicator")
+            .child(
+                h_flex()
+                    .items_center()
+                    .gap_1p5()
+                    .child(div().size(px(7.)).rounded_full().bg(gpui::rgb(dot)))
+                    .child(div().max_w(px(150.)).truncate().text_xs().child(label))
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(cx.theme().muted_foreground)
+                            .child(state),
+                    )
+                    .child(Icon::new(IconName::ChevronDown).size(px(10.))),
+            )
+            .custom(chrome_tile_variant(cx))
+            .rounded_lg()
+            .tooltip("Execution environment")
+            .dropdown_menu(move |menu, _window, _cx| {
+                let mut menu = menu.min_w(px(230.)).item(
+                    PopupMenuItem::new("This Mac")
+                        .disabled(current_id.is_local())
+                        .on_click(move |_, _window, cx| {
+                            crate::ui::windows::open_or_focus_environment(cx, None, None);
+                        }),
+                );
+                for host in &hosts {
+                    let target = host.target.clone();
+                    let id = tty7_core::core::environment::EnvironmentId::for_remote(&target);
+                    let selected = id == current_environment;
+                    let target_for_click = target.clone();
+                    menu = menu.item(
+                        PopupMenuItem::new(host.label.clone())
+                            .disabled(selected)
+                            .on_click(move |_, _window, cx| {
+                                crate::ui::windows::open_or_focus_environment(
+                                    cx,
+                                    Some(target_for_click.clone()),
+                                    None,
+                                );
+                            }),
+                    );
+                }
+                menu.separator()
+                    .item(PopupMenuItem::new("Manage SSH Environments…").on_click({
+                        let app = app_for_menu.clone();
+                        move |_, window, cx| {
+                            if let Some(app) = app.upgrade() {
+                                app.update(cx, |this, cx| {
+                                    this.open_settings_section(
+                                        crate::ui::settings::SettingsSection::Ssh,
+                                        window,
+                                        cx,
+                                    );
+                                });
+                            }
+                        }
+                    }))
+            })
+    }
+
     pub(crate) fn window_chrome(
         &self,
         window: &Window,
@@ -340,6 +364,12 @@ impl Tty7App {
             .gap(px(2.))
             .pr(px(tile_trailing_inset()))
             .when(!cfg!(target_os = "macos"), |this| this.pr_1())
+            .child(
+                div()
+                    .occlude()
+                    .flex_shrink_0()
+                    .child(self.environment_indicator(cx)),
+            )
             .child(
                 div().occlude().flex_shrink_0().child(
                     chrome_tile(
@@ -1105,6 +1135,49 @@ mod tests {
         assert_eq!(short_title("user@host:~"), "~");
         assert_eq!(short_title("~"), "~");
         assert_eq!(short_title("a/b/c/"), "a/b/c");
+    }
+
+    #[test]
+    fn environment_indicator_labels_local_and_remote_authority() {
+        let (label, state, color) = Tty7App::environment_indicator_state(None, None);
+        assert_eq!(
+            (label.as_str(), state.as_str(), color),
+            ("This Mac", "Local environment", 0x22C55E)
+        );
+
+        let remote = crate::core::session::RemoteRef::new(
+            crate::core::session::RemoteTarget::Alias {
+                alias: "build".into(),
+            },
+            crate::core::session::WorkspaceId::new(),
+        );
+        let (label, state, color) = Tty7App::environment_indicator_state(
+            Some(&remote),
+            Some(&crate::ui::remote_workspace::RemoteStatus::Attached),
+        );
+        assert_eq!(label, "build");
+        assert_eq!(state, "SSH");
+        assert_eq!(color, 0x22C55E);
+    }
+
+    #[test]
+    fn authentication_diagnostic_is_visible_in_environment_indicator() {
+        let remote = crate::core::session::RemoteRef::new(
+            crate::core::session::RemoteTarget::Alias {
+                alias: "build".into(),
+            },
+            crate::core::session::WorkspaceId::new(),
+        );
+        let detail = "no default identity files and SSH agent has no identities";
+        let (_, state, color) = Tty7App::environment_indicator_state(
+            Some(&remote),
+            Some(&crate::ui::remote_workspace::RemoteStatus::Failed(
+                detail.into(),
+            )),
+        );
+        assert!(state.contains(detail));
+        assert_ne!(state, "Authentication error");
+        assert_eq!(color, 0xEF4444);
     }
 
     #[test]

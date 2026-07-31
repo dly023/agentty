@@ -3737,11 +3737,6 @@ impl Tty7App {
             TabBarPosition::Top => 0,
             TabBarPosition::Left => 1,
         };
-        let sidebar_diff_preview = cfg.sidebar_diff_preview;
-        let sidebar_grouping_idx = match cfg.sidebar_grouping {
-            crate::core::config::SidebarGrouping::Repo => 0,
-            crate::core::config::SidebarGrouping::None => 1,
-        };
         let notify_idx = match cfg.notify_on_command_finish {
             NotifyMode::Never => 0,
             NotifyMode::Unfocused => 1,
@@ -3841,24 +3836,6 @@ impl Tty7App {
                 this.set_tab_bar_position(pos, cx);
             },
         );
-        let sidebar_diff_switch = crate::ui::theme::switch("wt-sidebar-diff-preview", cx)
-            .checked(sidebar_diff_preview)
-            .on_click(cx.listener(|this, on: &bool, _w, cx| this.set_sidebar_diff_preview(*on, cx)))
-            .into_any_element();
-        let sidebar_grouping_radio = self.segmented(
-            "wt-sidebar-grouping",
-            &["By repo", "Flat"],
-            sidebar_grouping_idx,
-            cx,
-            |this, ix, _w, cx| {
-                let grouping = if ix == 0 {
-                    crate::core::config::SidebarGrouping::Repo
-                } else {
-                    crate::core::config::SidebarGrouping::None
-                };
-                this.set_sidebar_grouping(grouping, cx);
-            },
-        );
 
         v_flex()
             .child(self.section_header("Window", cx))
@@ -3906,20 +3883,6 @@ impl Tty7App {
                 "Tab bar position",
                 "Show tabs as a horizontal strip on top or a vertical sidebar on the left.",
                 tab_bar_radio,
-                cx,
-            ))
-            .child(self.settings_row(
-                "Sidebar grouping",
-                "Group sidebar tabs under a header per git repository, with non-repo tabs \
-                 in a Scratch section. Only applies to the left sidebar.",
-                sidebar_grouping_radio,
-                cx,
-            ))
-            .child(self.settings_row(
-                "Open diff preview from sidebar counts",
-                "Click a row's +N −N to open the working-tree diff in an overlay. Off keeps the \
-                 branch and the counts on the row and just stops them being clickable.",
-                sidebar_diff_switch,
                 cx,
             ))
             .child(self.section_rule(cx))

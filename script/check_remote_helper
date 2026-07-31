@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+required=(
+  docs/specs/REMOTE_HELPER_SPEC.yaml
+  crates/tty7-core/src/agent_runtime/mod.rs
+  crates/tty7-core/src/agent_runtime/discovery.rs
+  crates/tty7-core/src/agent_runtime/provider.rs
+  crates/tty7-core/src/agent_runtime/resume.rs
+  crates/tty7-core/src/agent_runtime/parse.rs
+  crates/tty7-core/src/agent_runtime/stores.rs
+  crates/tty7-core/src/agent_runtime/service.rs
+  crates/tty7-core/src/agent_runtime/adapter.rs
+  crates/tty7-core/src/agent_runtime/navigator.rs
+)
+for path in "${required[@]}"; do
+  [[ -f "$path" ]] || { echo "[remote-helper] missing $path" >&2; exit 1; }
+done
+rg -q 'pub const AGENT_HELPER' crates/tty7-core/src/daemon/control.rs
+rg -q 'HelperHello' crates/tty7-core/src/daemon/control.rs
+rg -q 'DiscoverAgentSessions' crates/tty7-core/src/daemon/control.rs
+rg -q 'ResumeInvocation' crates/tty7-core/src/agent_runtime/resume.rs
+rg -q 'physical_source_limit_is_explicit_not_enumeration_truncation' crates/tty7-core/src/agent_runtime/*.rs
+rg -q 'codex_and_claude_discovery_uses_one_shared_host_core' crates/tty7-core/src/agent_runtime/*.rs
+rg -q 'RemoteAgentRuntime' crates/tty7-core/src/agent_runtime/*.rs
+rg -q 'LocalAgentRuntime' crates/tty7-core/src/agent_runtime/*.rs
+rg -q 'SessionNavigator' crates/tty7-core/src/agent_runtime/*.rs
+rg -q 'opaque_row_identity_survives_carrier_replacement' crates/tty7-core/src/agent_runtime/*.rs
+rg -q 'coordinate_reuse_after_delete_allocates_new_identity' crates/tty7-core/src/agent_runtime/*.rs
+rg -q 'restore_failure_rolls_back_without_duplicate_row' crates/tty7-core/src/agent_runtime/*.rs
+if rg -n 'fallback.*local|LocalHost::shared' crates/tty7-core/src/agent_runtime crates/tty7-core/src/host/server.rs; then
+  echo '[remote-helper] remote helper must not contain a local fallback path' >&2
+  exit 1
+fi
+echo 'remote helper checks passed'

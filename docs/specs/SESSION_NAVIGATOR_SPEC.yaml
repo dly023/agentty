@@ -1,0 +1,13 @@
+version: 1
+updated: 2026-07-31
+domain: agent_session_navigator
+contracts:
+  - id: SESSION-ENVIRONMENT-AUTHORITY-01
+    rule: The visible session collection belongs to the active local or remote environment; local history must never appear as remote history.
+  - id: SESSION-DISCOVERY-ATOMIC-02
+    rule: A provider scan commits a complete generation atomically; parse failure preserves the previous committed generation.
+  - id: SESSION-RESUME-ARGV-03
+    rule: Resume uses a typed program and argv vector with an optional cwd, never an interpolated shell command.
+  - id: SESSION-LIVE-HISTORY-MERGE-04
+    rule: A live pane and native history record for the same provider session form one logical row.
+status: verified

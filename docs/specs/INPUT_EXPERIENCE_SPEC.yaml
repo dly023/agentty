@@ -1,0 +1,16 @@
+version: 1
+updated: 2026-07-31
+domain: terminal_input_experience
+contracts:
+  - id: INPUT-COMPOSER-OPTIONAL-01
+    rule: The free-form composer is optional and overlays the terminal; native terminal input remains available.
+    status: verified
+  - id: INPUT-DELIVERY-STABLE-TARGET-02
+    rule: Composer submission targets a stable pane identity through one canonical delivery primitive.
+    status: verified
+  - id: INPUT-ACTIVITY-TRUSTED-SOURCE-03
+    rule: Tool activity uses structured provider events when available and never presents terminal-text heuristics as authoritative tool calls.
+    status: verified
+  - id: INPUT-COMPLETION-DETERMINISTIC-FIRST-04
+    rule: Smart completion prioritizes local deterministic grammar, signatures, filesystem, generators, history, and repository context before optional prediction.
+    status: verified

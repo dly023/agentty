@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+set -euo pipefail
+./script/check_version_policy
+./script/presubmit quick

@@ -1,0 +1,48 @@
+version: 2
+updated: 2026-07-31
+domain: environment_and_window_model
+contracts:
+  - id: ENV-WINDOW-BOUNDARY-01
+    rule: Every managed execution Environment owns an application window. A local window and each managed remote Environment are separate authority surfaces, while one Environment window may contain many repositories, tabs, panes, and Agent sessions.
+    migration: Replace user-facing workspace switching with open_or_focus_environment_window. WorkspaceId may remain temporarily as daemon collection identity but must not define the product model.
+    forbidden:
+      - retargeting_an_existing_window_to_another_environment
+      - mixing_multiple_environment_authorities_in_one_window
+  - id: ENV-EXECUTION-AUTHORITY-02
+    rule: Environment is the canonical execution authority for process launch, filesystem, completion, sessions, Composer delivery, and activity events.
+    kinds:
+      - local
+      - ssh
+      - wsl
+      - local_stdio
+  - id: ENV-INHERITED-AUTHORITY-03
+    rule: Every application window has exactly one EnvironmentId. Tabs and panes inherit the window EnvironmentId, and splits cannot silently introduce another authority.
+    forbidden:
+      - deriving_execution_host_from_incidental_application_focus
+      - silently_mixing_local_and_remote_panes_in_one_window
+  - id: ENV-INDICATOR-04
+    rule: The top-right Environment Indicator is always visible and displays the window authority, connection health, and open-or-focus actions for other environments.
+    display:
+      - icon_and_short_name
+      - local_or_remote_kind
+      - connected_connecting_disconnected_error
+    actions:
+      - open_or_focus_environment_window
+      - connect_or_reconnect
+      - open_environment_management
+    forbidden:
+      - changing_the_current_window_authority_in_place
+  - id: ENV-NAVIGATOR-SEPARATION-05
+    rule: The left Agent Session Navigator lists sessions for the window Environment and does not replace the Environment Indicator.
+  - id: ENV-PERSISTENCE-06
+    rule: Persistence stores Environment windows and their tabs without duplicating execution authority in unrelated view records. Multiple repository workspaces on one Environment must not require multiple application windows.
+  - id: ENV-AUTHORITY-VISIBLE-07
+    rule: Local and managed remote windows continuously identify their execution authority. Remote connection success also produces one explicit entered-remote-environment notification.
+  - id: ENV-CONNECTION-TRANSITION-08
+    rule: A managed remote Environment has explicit connecting, connected, disconnected, and error states. A transition into connected emits the entered notification exactly once per connection attempt.
+  - id: ENV-DISCONNECT-FAIL-CLOSED-09
+    rule: When a remote Environment disconnects, its window remains remote and input, process launch, filesystem, sessions, and completion must fail closed or request reconnect. It must never fall back to the local host.
+  - id: ENV-OPENSSH-NATIVE-BOUNDARY-10
+    rule: Running ssh inside a terminal remains an OpenSSH child process in that window and does not change Agentty Environment authority. Selecting an SSH Environment through Agentty uses the managed russh path and opens or focuses a dedicated Environment window.
+  - id: ENV-OPEN-OR-FOCUS-11
+    rule: Opening a managed Environment deduplicates by EnvironmentId. If its window is already open Agentty activates that window; otherwise Agentty creates a new window bound to that Environment.

@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+required=(
+  AGENTS.md
+  docs/README.md
+  docs/quality/traceability.yaml
+  .agents/skills/README.md
+  .agents/skills/agentty-architecture-change/SKILL.md
+  .agents/skills/agentty-rust-check/SKILL.md
+)
+for path in "${required[@]}"; do
+  [[ -f "$path" ]] || { echo "[agent-harness] missing required file: $path" >&2; exit 1; }
+done
+
+for marker in "SPEC → MATRIX" "不得创建 feature-memory skill" "script/check_agent_harness"; do
+  grep -Fq "$marker" AGENTS.md || { echo "[agent-harness] AGENTS.md missing marker: $marker" >&2; exit 1; }
+done
+
+for skill in .agents/skills/*/SKILL.md; do
+  dir=$(basename "$(dirname "$skill")")
+  name=$(sed -n 's/^name: //p' "$skill" | head -1)
+  [[ "$name" == "$dir" ]] || { echo "[agent-harness] $skill name must match directory" >&2; exit 1; }
+  grep -q '^description: .*Use when' "$skill" || { echo "[agent-harness] $skill needs a Use when trigger" >&2; exit 1; }
+done
+
+[[ -f docs/quality/ASHIDE_FALLBACK_ASSET_MATRIX.yaml ]] || { echo "[harness] missing Ashide fallback asset matrix" >&2; exit 1; }
+echo "agent harness checks passed"

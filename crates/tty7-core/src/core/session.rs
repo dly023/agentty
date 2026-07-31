@@ -214,6 +214,250 @@ impl RemoteRef {
     }
 }
 
+/// Persisted application window keyed by execution Environment rather than by
+/// the daemon workspace collection hosted inside that window.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EnvironmentWindow {
+    pub environment: crate::core::environment::EnvironmentDescriptor,
+    /// Temporary routing key for the daemon tree collection. This is not the
+    /// product-level identity of the window.
+    #[serde(default)]
+    pub workspace: WorkspaceId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub remote_workspace: Option<WorkspaceId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window: Option<crate::core::window_state::WindowState>,
+    #[serde(default)]
+    pub open: bool,
+    #[serde(default)]
+    pub last_active: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subject: Option<String>,
+}
+
+impl Default for EnvironmentWindow {
+    fn default() -> Self {
+        Self {
+            environment: crate::core::environment::EnvironmentDescriptor::local(),
+            workspace: WorkspaceId::new(),
+            remote_workspace: None,
+            window: None,
+            open: true,
+            last_active: now_secs(),
+            label: None,
+            subject: None,
+        }
+    }
+}
+
+impl EnvironmentWindow {
+    pub fn remote(
+        target: RemoteTarget,
+        workspace: WorkspaceId,
+        remote_workspace: WorkspaceId,
+    ) -> Self {
+        Self {
+            environment: crate::core::environment::EnvironmentDescriptor::remote(target),
+            workspace,
+            remote_workspace: Some(remote_workspace),
+            ..Self::default()
+        }
+    }
+
+    pub fn touch(&mut self) {
+        self.last_active = now_secs();
+    }
+
+    pub fn is_remote(&self) -> bool {
+        !self.environment.id.is_local()
+    }
+
+    pub fn remote_ref(&self) -> Option<RemoteRef> {
+        Some(RemoteRef::new(
+            self.environment.target.clone()?,
+            self.remote_workspace?,
+        ))
+    }
+
+    pub fn host_id(&self) -> crate::host::HostId {
+        self.environment
+            .target
+            .as_ref()
+            .map(RemoteTarget::host_id)
+            .unwrap_or(crate::host::HostId::LOCAL)
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct EnvironmentWindows {
+    pub version: u32,
+    pub windows: Vec<EnvironmentWindow>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active: Option<crate::core::environment::EnvironmentId>,
+}
+
+impl EnvironmentWindows {
+    pub const VERSION: u32 = 1;
+
+    pub fn from_legacy(legacy: WindowViews) -> Self {
+        let active = legacy.active.and_then(|id| {
+            legacy
+                .get(id)
+                .map(|view| {
+                    crate::core::environment::EnvironmentId::for_remote(
+                        &view.host.as_ref().expect("remote handled below").target,
+                    )
+                })
+                .or_else(|| {
+                    legacy
+                        .get(id)
+                        .map(|_| crate::core::environment::EnvironmentId::local())
+                })
+        });
+        let mut windows = Vec::new();
+        for view in legacy.views {
+            let environment = view
+                .host
+                .as_ref()
+                .map(|remote| {
+                    crate::core::environment::EnvironmentDescriptor::remote(remote.target.clone())
+                })
+                .unwrap_or_else(crate::core::environment::EnvironmentDescriptor::local);
+            let candidate = EnvironmentWindow {
+                environment,
+                workspace: view.id,
+                remote_workspace: view.host.as_ref().map(|remote| remote.workspace),
+                window: view.window,
+                open: view.open,
+                last_active: view.last_active,
+                label: view.label,
+                subject: view.subject,
+            };
+            if let Some(existing) = windows.iter_mut().find(|window: &&mut EnvironmentWindow| {
+                window.environment.id == candidate.environment.id
+            }) {
+                if candidate.last_active > existing.last_active {
+                    *existing = candidate;
+                } else {
+                    existing.open |= candidate.open;
+                }
+            } else {
+                windows.push(candidate);
+            }
+        }
+        Self {
+            version: Self::VERSION,
+            windows,
+            active,
+        }
+    }
+
+    pub fn get(&self, workspace: WorkspaceId) -> Option<&EnvironmentWindow> {
+        self.get_workspace(workspace)
+    }
+
+    pub fn get_environment(
+        &self,
+        id: &crate::core::environment::EnvironmentId,
+    ) -> Option<&EnvironmentWindow> {
+        self.windows
+            .iter()
+            .find(|window| &window.environment.id == id)
+    }
+
+    pub fn get_environment_mut(
+        &mut self,
+        id: &crate::core::environment::EnvironmentId,
+    ) -> Option<&mut EnvironmentWindow> {
+        self.windows
+            .iter_mut()
+            .find(|window| &window.environment.id == id)
+    }
+
+    pub fn get_workspace(&self, workspace: WorkspaceId) -> Option<&EnvironmentWindow> {
+        self.windows
+            .iter()
+            .find(|window| window.workspace == workspace)
+    }
+
+    pub fn get_workspace_mut(&mut self, workspace: WorkspaceId) -> Option<&mut EnvironmentWindow> {
+        self.windows
+            .iter_mut()
+            .find(|window| window.workspace == workspace)
+    }
+
+    pub fn open_windows(&self) -> impl Iterator<Item = &EnvironmentWindow> {
+        self.windows.iter().filter(|window| window.open)
+    }
+
+    pub fn workspace_to_restore(&self) -> Option<WorkspaceId> {
+        let focused = self
+            .active
+            .as_ref()
+            .and_then(|id| self.get_environment(id))
+            .filter(|w| w.open);
+        focused
+            .or_else(|| self.open_windows().max_by_key(|w| w.last_active))
+            .or_else(|| self.windows.iter().max_by_key(|w| w.last_active))
+            .map(|w| w.workspace)
+    }
+
+    pub fn load() -> Option<Self> {
+        let path = Self::path()?;
+        if let Ok(text) = std::fs::read_to_string(&path) {
+            match serde_json::from_str::<Self>(crate::core::config::strip_bom(&text)) {
+                Ok(loaded) if loaded.version == Self::VERSION => return Some(loaded),
+                Ok(loaded) => log::warn!(
+                    "unsupported environment window version {} at {}; ignoring",
+                    loaded.version,
+                    path.display()
+                ),
+                Err(e) => log::warn!(
+                    "failed to parse environment windows at {}: {e}; ignoring",
+                    path.display()
+                ),
+            }
+        }
+        let legacy = WindowViews::load()?;
+        let migrated = Self::from_legacy(legacy);
+        migrated.save();
+        Some(migrated)
+    }
+
+    pub fn save(&self) {
+        let Some(path) = Self::path() else {
+            return;
+        };
+        if let Some(parent) = path.parent()
+            && let Err(e) = std::fs::create_dir_all(parent)
+        {
+            log::warn!(
+                "failed to create environment windows dir {}: {e}",
+                parent.display()
+            );
+            return;
+        }
+        match serde_json::to_string_pretty(self) {
+            Ok(json) => {
+                if let Err(e) = crate::core::config::write_atomic(&path, json.as_bytes()) {
+                    log::warn!(
+                        "failed to write environment windows to {}: {e}",
+                        path.display()
+                    );
+                }
+            }
+            Err(e) => log::warn!("failed to serialize environment windows: {e}"),
+        }
+    }
+
+    fn path() -> Option<PathBuf> {
+        crate::core::config::config_path("environment-windows.json")
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WindowView {
     #[serde(default)]
@@ -390,6 +634,104 @@ mod tests {
             },
             WorkspaceId::new(),
         ))
+    }
+
+    #[test]
+    fn legacy_window_views_migrate_once() {
+        let _file = lock_session_file();
+        let dir = pin_config_dir();
+        let _ = std::fs::remove_file(dir.join("environment-windows.json"));
+        let mut local = view();
+        local.open = false;
+        local.last_active = 10;
+        let mut older_duplicate = view();
+        older_duplicate.last_active = 5;
+        let remote = remote_view("build-box");
+        let remote_environment = crate::core::environment::EnvironmentId::for_remote(
+            &remote.host.as_ref().unwrap().target,
+        );
+        let legacy = WindowViews {
+            active: Some(remote.id),
+            views: vec![local, older_duplicate, remote.clone()],
+        };
+        legacy.save();
+
+        let migrated = EnvironmentWindows::load().expect("legacy views should migrate");
+        assert_eq!(migrated.version, EnvironmentWindows::VERSION);
+        assert_eq!(migrated.windows.len(), 2, "one window per Environment");
+        assert_eq!(migrated.active, Some(remote_environment.clone()));
+        assert_eq!(
+            migrated
+                .get_environment(&remote_environment)
+                .unwrap()
+                .remote_workspace,
+            Some(remote.host.unwrap().workspace),
+        );
+        assert!(dir.join("environment-windows.json").exists());
+
+        // Once the new file exists, edits to the legacy file cannot retarget it.
+        WindowViews::default().save();
+        let loaded = EnvironmentWindows::load().unwrap();
+        assert_eq!(loaded.windows.len(), 2);
+        assert_eq!(loaded.active, Some(remote_environment));
+    }
+
+    #[test]
+    fn environment_window_state_round_trip() {
+        let _file = lock_session_file();
+        let dir = pin_config_dir();
+        let _ = std::fs::remove_file(dir.join("environment-windows.json"));
+        let target = RemoteTarget::direct("me", "build.local", 2222);
+        let workspace = WorkspaceId::new();
+        let remote_workspace = WorkspaceId::new();
+        let mut window = EnvironmentWindow::remote(target.clone(), workspace, remote_workspace);
+        window.window = Some(crate::core::window_state::WindowState {
+            x: 12.0,
+            y: 24.0,
+            width: 1400.0,
+            height: 900.0,
+        });
+        window.open = false;
+        window.last_active = 42;
+        let environment = window.environment.id.clone();
+        EnvironmentWindows {
+            version: EnvironmentWindows::VERSION,
+            windows: vec![window],
+            active: Some(environment.clone()),
+        }
+        .save();
+
+        let loaded = EnvironmentWindows::load().unwrap();
+        let window = loaded.get_environment(&environment).unwrap();
+        assert_eq!(window.workspace, workspace);
+        assert_eq!(window.remote_workspace, Some(remote_workspace));
+        assert_eq!(window.environment.target.as_ref(), Some(&target));
+        assert_eq!(window.window.unwrap().width, 1400.0);
+        assert!(!window.open);
+        assert_eq!(loaded.active, Some(environment));
+    }
+
+    #[test]
+    fn tabs_restore_without_authority_drift() {
+        let local = EnvironmentWindow::default();
+        let target = RemoteTarget::Alias {
+            alias: "gpu".into(),
+        };
+        let remote =
+            EnvironmentWindow::remote(target.clone(), WorkspaceId::new(), WorkspaceId::new());
+        let remote_workspace = remote.workspace;
+        let remote_environment = remote.environment.id.clone();
+        let windows = EnvironmentWindows {
+            version: EnvironmentWindows::VERSION,
+            windows: vec![local, remote],
+            active: Some(remote_environment.clone()),
+        };
+
+        assert_eq!(windows.workspace_to_restore(), Some(remote_workspace));
+        let restored = windows.get(remote_workspace).unwrap();
+        assert_eq!(restored.environment.id, remote_environment);
+        assert_eq!(restored.environment.target.as_ref(), Some(&target));
+        assert!(!restored.environment.id.is_local());
     }
 
     #[test]

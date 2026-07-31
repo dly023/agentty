@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+required=(
+  src/ui/session_navigator.rs
+  src/ui/tab_sidebar.rs
+  crates/tty7-core/src/agent_runtime/navigator.rs
+  crates/tty7-core/src/agent_runtime/resume.rs
+)
+for path in "${required[@]}"; do
+  [[ -f "$path" ]] || { echo "[session-navigator] missing $path" >&2; exit 1; }
+done
+rg -q 'RemoteAgentRuntime::new' src/ui/session_navigator.rs
+rg -q 'run_invocation\(&invocation, cx\)' src/ui/session_navigator.rs src/ui/app.rs
+rg -q 'navigator_row_id' src/ui/pending_pane.rs src/ui/app.rs src/ui/session_navigator.rs
+rg -q 'agent-session-navigator-list' src/ui/tab_sidebar.rs
+rg -q 'RestoreOutcome::Retryable' src/ui/app.rs src/ui/session_navigator.rs
+if rg -n 'std::iter::once\(invocation\.program\)|invocation\.args.*join|resume_command\(' crates/tty7-core/src src/ui src/terminal; then
+  echo '[session-navigator] typed resume must not be interpolated by the UI' >&2
+  exit 1
+fi
+if rg -n 'sidebar_sections|SidebarGrouping|sidebar_group_keys|DragGroup|SidebarRows|SidebarGroups|workspace_head\(|AVATAR_PX' src/ui; then
+  echo '[session-navigator] legacy repository-grouped sidebar path still exists' >&2
+  exit 1
+fi
+echo 'session navigator checks passed'

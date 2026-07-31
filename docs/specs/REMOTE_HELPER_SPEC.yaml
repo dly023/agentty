@@ -1,0 +1,28 @@
+version: 1
+updated: 2026-07-31
+domain: remote_agent_helper
+architecture:
+  deployment: extend_existing_tty7_server_control_channel
+  local_path: direct_call_to_shared_agent_runtime
+  remote_path: control_rpc_to_same_agent_runtime
+  exclusions: [byok, model_proxy, chat_backend, new_listening_port, second_daemon]
+contracts:
+  - id: HELPER-CAPABILITY-NEGOTIATION-01
+    rule: Client and helper negotiate named capabilities and protocol version before using Agent features; an unavailable capability is explicit and never inferred from build labels.
+  - id: HELPER-SHARED-CORE-02
+    rule: Local and remote execution use the same provider registry, discovery reducer, identity model, resume materialization, activity schema, and completion model; only the transport adapter differs.
+  - id: HELPER-DISCOVERY-ATOMIC-03
+    rule: Discovery publishes only a complete current generation; failed, cancelled, source-missing, partial, stale, or over-limit results preserve the previous committed generation.
+  - id: HELPER-RESUME-TYPED-04
+    rule: Resume is represented as a typed program, argv, and optional cwd and is never transported as an interpolated shell command.
+  - id: HELPER-ACTIVITY-STRUCTURED-05
+    rule: Agent activity crosses the helper boundary as typed events with operation and session identity, not terminal-text heuristics alone.
+  - id: HELPER-COMPLETION-AUTHORITY-06
+    rule: Completion sources execute in the selected Environment authority; remote failure never reads or publishes local filesystem, repository, history, or process data.
+  - id: HELPER-CANCELLATION-BACKPRESSURE-07
+    rule: Long-running helper operations have operation identity, cancellation, timeout, source limits, and bounded event or candidate delivery.
+  - id: HELPER-VERSION-INSTALL-08
+    rule: Helper version, protocol, capabilities, instance identity, binary hash, and install outcome are observable through the existing tty7-server lifecycle without a second daemon or listening port.
+  - id: HELPER-LOCAL-REMOTE-PARITY-09
+    rule: Every helper contract has local and remote parity tests, including explicit negative tests proving that remote failures cannot fall back to local authority.
+status: verified

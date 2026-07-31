@@ -1,0 +1,296 @@
+version: 1
+updated: 2026-07-31
+entries:
+  - id: QG-HARNESS-001
+    spec: PRODUCT-QUALITY-GATE-03
+    source:
+      - AGENTS.md
+      - script/check_agent_harness
+      - script/check_spec_matrix
+      - script/presubmit
+    static_check: script/check_agent_harness
+    tests:
+      - script/tests/quality_gate_contract.sh
+    evidence: "2026-07-31: quality gate contract test and quick presubmit passed"
+  - id: SSH-DEFAULT-IDENTITIES-002
+    spec: SSH-DEFAULT-IDENTITIES-02
+    source:
+      - crates/tty7-core/src/daemon/ssh/auth.rs
+    static_check: script/check_spec_matrix
+    tests:
+      - explicit_identity_files_take_precedence_over_openssh_defaults
+      - openssh_default_identity_order_matches_client_defaults
+      - openssh_defaults_discover_existing_keys_when_identityfile_is_absent
+    verification: cargo test -p tty7-core daemon::ssh::auth::tests --lib --locked
+    evidence: "2026-07-31 macOS: 8 focused auth tests passed"
+  - id: SESSION-NAVIGATOR-003
+    spec: SESSION-DISCOVERY-ATOMIC-02
+    source:
+      - docs/specs/SESSION_NAVIGATOR_SPEC.yaml
+      - crates/tty7-core/src/agent_runtime/discovery.rs
+      - crates/tty7-core/src/agent_runtime/service.rs
+    static_check: script/check_remote_helper
+    tests: [failed_scan_preserves_last_committed_rows, stale_generation_is_ignored, partial_provider_failure_does_not_publish_subset, physical_source_limit_is_explicit_not_enumeration_truncation]
+    evidence: "2026-07-31: atomic reducer and Codex/Claude provider fallback tests passed"
+  - id: I18N-PARITY-004
+    spec: I18N-PARITY-03
+    source: [docs/specs/I18N_SPEC.yaml, assets/i18n/en-US.yaml, assets/i18n/zh-CN.yaml, src/core/i18n.rs]
+    static_check: script/check_i18n
+    tests: [catalogs_have_identical_keys]
+    evidence: "2026-07-31: static catalog parity and focused runtime test passed"
+  - id: PRODUCT-BOUNDARY-005
+    spec: PRODUCT-AGENT-RUNTIME-01
+    source:
+      - docs/specs/PRODUCT_SPEC.yaml
+    static_check: script/check_spec_matrix
+    tests: []
+    evidence: documented
+  - id: PRODUCT-NO-BYOK-006
+    spec: PRODUCT-NO-MODEL-BYOK-02
+    source:
+      - docs/specs/PRODUCT_SPEC.yaml
+    static_check: script/check_spec_matrix
+    tests: []
+    evidence: "2026-07-31: source and dependency audit found no model credential, BYOK, model proxy, or chat-backend path"
+  - id: SSH-CONFIG-007
+    spec: SSH-CONFIG-FIRST-MATCH-01
+    source:
+      - src/core/ssh_config.rs
+    static_check: script/check_spec_matrix
+    tests:
+      - import_resolves_common_fields_with_first_match_wins
+    evidence: existing_test
+  - id: SSH-DIAGNOSTICS-008
+    spec: SSH-AUTH-DIAGNOSTICS-03
+    source:
+      - crates/tty7-core/src/daemon/ssh/auth.rs
+      - src/ui/remote_workspace.rs
+    static_check: script/check_spec_matrix
+    tests: [diagnostic_explains_missing_default_keys_and_empty_agent, diagnostic_reports_rejected_identity_without_key_material]
+    verification: cargo test -p tty7-core daemon::ssh::auth::tests --lib --locked
+    evidence: "2026-07-31: focused auth tests prove actionable missing-key, empty-agent, and rejected-key diagnostics; GUI formatting remains tracked"
+  - id: SESSION-AUTHORITY-009
+    spec: SESSION-ENVIRONMENT-AUTHORITY-01
+    source: [docs/specs/SESSION_NAVIGATOR_SPEC.yaml, src/ui/session_navigator.rs, crates/tty7-core/src/agent_runtime/discovery.rs]
+    static_check: script/check_session_navigator
+    tests: [remote_authority_never_falls_back_to_local_rows]
+    evidence: "2026-07-31: Environment-authoritative discovery fails closed and never publishes local rows remotely"
+  - id: SESSION-RESUME-010
+    spec: SESSION-RESUME-ARGV-03
+    source:
+      - docs/specs/SESSION_NAVIGATOR_SPEC.yaml
+      - crates/tty7-core/src/agent_runtime/resume.rs
+      - crates/tty7-core/src/agent_runtime/navigator.rs
+    static_check: script/check_session_navigator
+    tests: [typed_resume_keeps_program_and_arguments_separate, shell_materialization_quotes_each_argument_at_the_terminal_boundary, shell_materialization_does_not_execute_argument_metacharacters, restore_failure_rolls_back_without_duplicate_row, missing_restore_content_has_zero_side_effects]
+    verification: cargo test -p tty7-core agent_runtime --lib --locked
+    evidence: "2026-07-31: committed Navigator rows retain typed program/argv/cwd through TerminalView; string resume_command path was deleted and statically prohibited"
+  - id: SESSION-MERGE-011
+    spec: SESSION-LIVE-HISTORY-MERGE-04
+    source:
+      - docs/specs/SESSION_NAVIGATOR_SPEC.yaml
+      - crates/tty7-core/src/agent_runtime/navigator.rs
+    static_check: script/check_remote_helper
+    tests: [live_and_history_merge_into_one_logical_row, closing_live_carrier_hands_off_to_native_history, opaque_row_identity_survives_carrier_replacement]
+    evidence: "2026-07-31: stable SessionIdentity and opaque RowId lifecycle tests passed"
+  - id: I18N-SYSTEM-012
+    spec: I18N-SYSTEM-DEFAULT-01
+    source: [docs/specs/I18N_SPEC.yaml, src/core/i18n.rs, crates/tty7-core/src/core/config.rs]
+    static_check: script/check_i18n
+    tests: [locale_override_is_deterministic]
+    evidence: "2026-07-31: system locale default and explicit zh-CN/en-US overrides implemented"
+  - id: I18N-KEYS-013
+    spec: I18N-STABLE-KEYS-02
+    source: [docs/specs/I18N_SPEC.yaml, src/core/i18n.rs, src/ui/tab_sidebar.rs, src/ui/composer.rs]
+    static_check: script/check_i18n
+    tests: [catalogs_have_identical_keys]
+    evidence: "2026-07-31: Agent-first product strings use stable keys while raw errors and identifiers remain unchanged"
+  - id: INPUT-COMPOSER-PLAN-014
+    spec: INPUT-COMPOSER-OPTIONAL-01
+    source: [docs/design/AGENTTY_DEVELOPMENT_PLAN.md, src/ui/composer.rs]
+    static_check: script/check_spec_matrix
+    tests: [drafts_are_isolated_per_pane, successful_delivery_clears_only_target_draft]
+    evidence: "2026-07-31: optional multiline overlay and pane-isolated draft lifecycle implemented"
+  - id: INPUT-DELIVERY-PLAN-015
+    spec: INPUT-DELIVERY-STABLE-TARGET-02
+    source: [docs/design/AGENTTY_DEVELOPMENT_PLAN.md, src/ui/composer.rs, src/terminal/view.rs]
+    static_check: script/check_spec_matrix
+    tests: [drafts_are_isolated_per_pane, successful_delivery_clears_only_target_draft]
+    evidence: "2026-07-31: stable PaneIdentity resolves before canonical fail-closed delivery"
+  - id: INPUT-ACTIVITY-PLAN-016
+    spec: INPUT-ACTIVITY-TRUSTED-SOURCE-03
+    source: [docs/design/AGENTTY_DEVELOPMENT_PLAN.md, crates/tty7-core/src/agent_runtime/activity.rs, src/ui/activity_bar.rs]
+    static_check: script/check_remote_helper
+    tests: [terminal_heuristic_never_becomes_authoritative_tool_activity, heuristic_activity_is_visibly_not_structured, rich_activity_is_presented_as_structured]
+    evidence: "2026-07-31: typed activity store and visible trust presentation distinguish structured events from heuristics"
+  - id: INPUT-COMPLETION-PLAN-017
+    spec: INPUT-COMPLETION-DETERMINISTIC-FIRST-04
+    source: [docs/design/AGENTTY_DEVELOPMENT_PLAN.md, crates/tty7-core/src/agent_runtime/completion.rs, src/terminal/completion.rs]
+    static_check: script/check_remote_helper
+    tests: [stale_generation_is_ignored, failed_dynamic_source_preserves_deterministic_candidates, a_remote_pane_completes_commands_but_never_local_paths, a_remote_pane_never_runs_a_generator]
+    evidence: "2026-07-31: shared deterministic-first completion model and 34 focused GUI completion tests passed"
+  - id: ENV-WINDOW-BOUNDARY-018
+    spec: ENV-WINDOW-BOUNDARY-01
+    source:
+      - docs/specs/ENVIRONMENT_MODEL_SPEC.yaml
+      - docs/quality/development-tracker.yaml
+      - docs/quality/architecture-decision.yaml
+      - docs/design/ENVIRONMENT_AUTHORITY_INVENTORY.yaml
+      - src/ui/windows.rs
+    static_check: script/check_environment_boundary
+    tests:
+      - opening_same_environment_focuses_existing_window
+      - entering_remote_environment_never_retargets_current_window
+    evidence: "2026-07-31: environment boundary gate, cargo check, and focused GUI tests passed"
+  - id: ENV-AUTHORITY-019
+    spec: ENV-EXECUTION-AUTHORITY-02
+    source:
+      - docs/specs/ENVIRONMENT_MODEL_SPEC.yaml
+      - crates/tty7-core/src/core/environment.rs
+    static_check: script/check_environment_boundary
+    tests:
+      - environment_id_round_trip
+      - same_remote_target_has_stable_environment_identity
+    evidence: "2026-07-31 four tty7-core environment tests passed"
+  - id: ENV-INHERITANCE-020
+    spec: ENV-INHERITED-AUTHORITY-03
+    source:
+      - docs/specs/ENVIRONMENT_MODEL_SPEC.yaml
+      - src/ui/windows.rs
+      - src/ui/remote_workspace.rs
+    static_check: script/check_environment_boundary
+    tests:
+      - window_environment_is_derived_from_its_persisted_authority
+      - remote_disconnect_never_becomes_local
+    evidence: "2026-07-31: implementation verified by the listed focused tests and static boundary gate"
+  - id: ENV-INDICATOR-021
+    spec: ENV-INDICATOR-04
+    source:
+      - docs/specs/ENVIRONMENT_MODEL_SPEC.yaml
+      - src/ui/tab_strip.rs
+    static_check: script/check_environment_boundary
+    tests:
+      - environment_indicator_labels_local_and_remote_authority
+    evidence: "2026-07-31: implementation verified by the listed focused tests and static boundary gate"
+  - id: ENV-NAVIGATOR-022
+    spec: ENV-NAVIGATOR-SEPARATION-05
+    source:
+      - docs/specs/ENVIRONMENT_MODEL_SPEC.yaml
+      - docs/quality/development-tracker.yaml
+    static_check: script/check_spec_matrix
+    tests: []
+    evidence: "2026-07-31: Navigator is Environment-scoped and repository-grouped workspace sidebar paths were removed"
+  - id: ENV-PERSISTENCE-023
+    spec: ENV-PERSISTENCE-06
+    source:
+      - crates/tty7-core/src/core/session.rs
+      - src/core/session.rs
+      - src/ui/windows.rs
+    static_check: script/check_environment_boundary
+    tests: [legacy_window_views_migrate_once, environment_window_state_round_trip, tabs_restore_without_authority_drift]
+    verification: cargo test -p tty7-core core::session::tests --lib --locked
+    evidence: "2026-07-31: EnvironmentWindows migration and authority-preserving round trip passed 13 focused tests"
+  - id: ENV-VISIBILITY-024
+    spec: ENV-AUTHORITY-VISIBLE-07
+    source:
+      - src/ui/tab_strip.rs
+      - src/ui/remote_workspace.rs
+    static_check: script/check_environment_boundary
+    tests:
+      - environment_indicator_labels_local_and_remote_authority
+      - connected_transition_notifies_once
+    evidence: "2026-07-31: implementation verified by the listed focused tests and static boundary gate"
+  - id: ENV-TRANSITION-025
+    spec: ENV-CONNECTION-TRANSITION-08
+    source:
+      - src/ui/remote_workspace.rs
+      - src/ui/tab_strip.rs
+    static_check: script/check_environment_boundary
+    tests: [connected_transition_notifies_once]
+    verification: cargo test -p tty7 remote_workspace --locked
+    evidence: "2026-07-31: transition reducer emits one entered-environment notification per successful attempt; 24 focused GUI tests passed"
+  - id: ENV-FAIL-CLOSED-026
+    spec: ENV-DISCONNECT-FAIL-CLOSED-09
+    source:
+      - src/ui/remote_workspace.rs
+      - src/terminal/view.rs
+      - crates/tty7-core/src/core/session.rs
+    static_check: script/check_environment_boundary
+    tests: [disconnected_remote_window_keeps_remote_authority, input_is_gated_on_being_attached]
+    verification: cargo test -p tty7 remote_workspace --locked
+    evidence: "2026-07-31: disconnected windows retain persisted remote Environment authority and reject input; focused GUI tests passed"
+  - id: ENV-SSH-BOUNDARY-027
+    spec: ENV-OPENSSH-NATIVE-BOUNDARY-10
+    source:
+      - src/ui/ssh_connect.rs
+      - src/ui/remote_workspace.rs
+      - src/ui/windows.rs
+    static_check: script/check_environment_boundary
+    tests:
+      - native_ssh_environment_action_opens_a_new_window
+      - terminal_ssh_does_not_mutate_window_environment
+    evidence: "2026-07-31: implementation verified by the listed focused tests and static boundary gate"
+  - id: ENV-DEDUP-028
+    spec: ENV-OPEN-OR-FOCUS-11
+    source:
+      - src/ui/windows.rs
+      - crates/tty7-core/src/core/environment.rs
+    static_check: script/check_environment_boundary
+    tests:
+      - opening_same_environment_focuses_existing_window
+    evidence: "2026-07-31: implementation verified by the listed focused tests and static boundary gate"
+  - id: HELPER-CAPABILITY-023
+    spec: HELPER-CAPABILITY-NEGOTIATION-01
+    source: [docs/specs/REMOTE_HELPER_SPEC.yaml, crates/tty7-core/src/daemon/control.rs, crates/tty7-core/src/host/server.rs]
+    static_check: script/check_remote_helper
+    tests: [client_messages_round_trip, server_messages_round_trip, the_handshake_describes_this_server]
+    verification: cargo test -p tty7-core --lib --locked
+    evidence: "2026-07-31: control v5 and agent-helper capability covered by 811 passing tty7-core tests"
+  - id: HELPER-SHARED-CORE-024
+    spec: HELPER-SHARED-CORE-02
+    source: [docs/specs/REMOTE_HELPER_SPEC.yaml, crates/tty7-core/src/agent_runtime/service.rs, crates/tty7-core/src/agent_runtime/adapter.rs]
+    static_check: script/check_remote_helper
+    tests: [registry_rejects_duplicate_provider_ids, codex_and_claude_discovery_uses_one_shared_host_core]
+    evidence: "2026-07-31: Codex and Claude discovery uses one Host-based core for local and remote adapters"
+  - id: HELPER-DISCOVERY-025
+    spec: HELPER-DISCOVERY-ATOMIC-03
+    source: [docs/specs/REMOTE_HELPER_SPEC.yaml, crates/tty7-core/src/agent_runtime/discovery.rs]
+    static_check: script/check_remote_helper
+    tests: [failed_scan_preserves_last_committed_rows, complete_scan_atomically_replaces_rows, stale_generation_is_ignored, cancelled_scan_preserves_rows, source_missing_preserves_rows, partial_provider_failure_does_not_publish_subset, remote_authority_never_falls_back_to_local_rows]
+    evidence: "2026-07-31: seven reducer fallback tests passed"
+  - id: HELPER-RESUME-026
+    spec: HELPER-RESUME-TYPED-04
+    source: [docs/specs/REMOTE_HELPER_SPEC.yaml, crates/tty7-core/src/agent_runtime/resume.rs]
+    static_check: script/check_remote_helper
+    tests: [typed_resume_keeps_program_and_arguments_separate, resume_invocation_is_typed_and_preserves_cwd]
+    evidence: "2026-07-31: typed resume tests passed and compatibility string renderer was removed"
+  - id: HELPER-ACTIVITY-027
+    spec: HELPER-ACTIVITY-STRUCTURED-05
+    source: [docs/specs/REMOTE_HELPER_SPEC.yaml, crates/tty7-core/src/agent_runtime/activity.rs, crates/tty7-core/src/daemon/control.rs, src/ui/activity_bar.rs]
+    static_check: script/check_remote_helper
+    tests: [terminal_heuristic_never_becomes_authoritative_tool_activity, activity_stream_is_ordered_and_bounded, codex_and_claude_structured_events_share_one_schema, server_messages_round_trip]
+    evidence: "2026-07-31: typed activity RPC, bounded store, provider adapters, and visible trust UI verified"
+  - id: HELPER-COMPLETION-028
+    spec: HELPER-COMPLETION-AUTHORITY-06
+    source: [docs/specs/REMOTE_HELPER_SPEC.yaml, crates/tty7-core/src/agent_runtime/completion.rs, crates/tty7-core/src/daemon/control.rs]
+    static_check: script/check_remote_helper
+    tests: [remote_source_failure_never_reads_local_filesystem, a_remote_pane_completes_commands_but_never_local_paths, a_remote_pane_never_runs_a_generator]
+    evidence: "2026-07-31: Environment-authoritative completion RPC and remote negative tests passed"
+  - id: HELPER-CANCELLATION-029
+    spec: HELPER-CANCELLATION-BACKPRESSURE-07
+    source: [docs/specs/REMOTE_HELPER_SPEC.yaml, crates/tty7-core/src/agent_runtime/operation.rs]
+    static_check: script/check_remote_helper
+    tests: [cancellation_uses_operation_identity, bounded_batch_rejects_overflow_without_dropping_old_items]
+    evidence: "2026-07-31: operation cancellation identity and loss-intolerant bounded delivery tests passed"
+  - id: HELPER-LIFECYCLE-030
+    spec: HELPER-VERSION-INSTALL-08
+    source: [docs/specs/REMOTE_HELPER_SPEC.yaml, crates/tty7-core/src/daemon/control.rs, crates/tty7-core/src/host/server.rs]
+    static_check: script/check_remote_helper
+    tests: [helper_hello_reports_protocol_and_capabilities, server_messages_round_trip]
+    evidence: "2026-07-31: built-in helper reports protocol, capabilities, build, instance, hash, and install outcome without a second daemon"
+  - id: HELPER-PARITY-031
+    spec: HELPER-LOCAL-REMOTE-PARITY-09
+    source: [docs/specs/REMOTE_HELPER_SPEC.yaml, docs/quality/ASHIDE_FALLBACK_ASSET_MATRIX.yaml, crates/tty7-core/src/agent_runtime/adapter.rs]
+    static_check: script/check_remote_helper
+    tests: [codex_and_claude_discovery_uses_one_shared_host_core, remote_authority_never_falls_back_to_local_rows]
+    evidence: "2026-07-31: local direct adapter and capability-gated remote RPC share the same discovery core"

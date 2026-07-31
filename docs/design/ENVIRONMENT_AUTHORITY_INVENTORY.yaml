@@ -1,0 +1,60 @@
+version: 1
+updated: 2026-07-31
+scope: current_runtime_authority_inventory
+identities:
+  WorkspaceId:
+    current_responsibilities:
+      - persisted WindowView identity
+      - daemon workspace collection identity
+      - window registry key
+      - tree synchronization key
+      - remote forward lifecycle owner
+      - terminal owner_workspace routing
+    target_responsibilities:
+      - daemon_collection_identity_until_split
+    must_stop_being:
+      - user_facing_environment_identity
+      - implicit_window_authority
+  WindowView:
+    current_responsibilities:
+      - window geometry
+      - open_and_last_active_state
+      - optional RemoteRef authority
+      - user label and subject
+    target: migrate_to_environment_window_persistence
+  RemoteRef:
+    current_responsibilities:
+      - RemoteTarget connection authority
+      - remote daemon WorkspaceId
+    target: split_into_environment_descriptor_and_daemon_collection_id
+  HostId:
+    current_responsibilities:
+      - filesystem_and_git_backend_routing
+      - remote host connection deduplication
+    target: backend_routing_key_derived_from_environment
+  PaneRoute:
+    current_responsibilities:
+      - local_or_remote_terminal_protocol_route
+    target: derived_from_window_environment_and_daemon_collection
+runtime_paths:
+  managed_environment_entry:
+    source:
+      - src/ui/remote_workspace.rs
+      - src/ui/ssh_connect.rs
+    target_behavior: always_open_or_focus_environment_window
+  terminal_ssh_entry:
+    source:
+      - terminal_shell_process
+    target_behavior: remain_an_openssh_child_process_without_mutating_environment_authority
+  indicator:
+    source:
+      - src/ui/tab_strip.rs
+    target_behavior: always_visible_window_authority_and_connection_state
+migration_order:
+  - introduce EnvironmentId and EnvironmentDescriptor
+  - derive EnvironmentId from existing WindowView authority
+  - make WindowRegistry deduplicate and focus by EnvironmentId
+  - route managed remote entry through dedicated windows
+  - render persistent indicator and explicit connection transition
+  - migrate persistence away from WorkspaceId window ownership
+  - delete current-window workspace switching

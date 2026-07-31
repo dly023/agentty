@@ -51,8 +51,7 @@ fn classify_tree_link(client: Option<Arc<ControlClient>>) -> TreeLink {
 fn tree_workspace_id(cx: &App, client_ws: WorkspaceId) -> WorkspaceId {
     WorkspaceStore::all(cx)
         .get(client_ws)
-        .and_then(|w| w.host.as_ref())
-        .map(|r| r.workspace)
+        .and_then(|w| w.remote_workspace)
         .unwrap_or(client_ws)
 }
 
@@ -1298,14 +1297,13 @@ pub(crate) fn on_layout_delta(cx: &mut App, host: HostId, key: &str, delta: Layo
         key.parse::<WorkspaceId>().ok()
     } else {
         WorkspaceStore::all(cx)
-            .views
+            .windows
             .iter()
             .find(|w| {
-                w.host
-                    .as_ref()
+                w.remote_ref()
                     .is_some_and(|r| r.host_id() == host && r.workspace.to_string() == key)
             })
-            .map(|w| w.id)
+            .map(|w| w.workspace)
     };
     let Some(client_ws) = client_ws else {
         return;

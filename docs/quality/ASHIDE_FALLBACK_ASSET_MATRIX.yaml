@@ -1,0 +1,87 @@
+version: 1
+updated: 2026-07-31
+purpose: Extract production fallback semantics and tests from Ashide without copying its heavy implementation architecture.
+source_policy:
+  authoritative_assets:
+    - /Users/admin/ashide/docs/SESSION_NAVIGATOR_SPEC.yaml
+    - /Users/admin/ashide/docs/LOCAL_REMOTE_PARITY_SPEC.yaml
+    - /Users/admin/ashide/app/src/workspace/view/session_navigator_reducer_tests.rs
+    - /Users/admin/ashide/app/src/workspace/view/session_navigator_scan_tests.rs
+    - /Users/admin/ashide/app/src/workspace/view/vertical_tabs_tests.rs
+    - /Users/admin/ashide/app/src/terminal/cli_agent_sessions/mod_tests.rs
+    - /Users/admin/ashide/app/src/terminal/cli_agent_sessions/plugin_manager
+    - /Users/admin/ashide/app/src/input_suggestions_test.rs
+  copy_policy: copy_invariants_failure_semantics_and_test_cases_not_framework_or_byok_layers
+tracks:
+  session_discovery:
+    required_fallbacks:
+      - generation_commits_atomically_only_after_complete_success
+      - failed_partial_cancelled_or_source_missing_scan_preserves_last_committed_rows
+      - passive_refresh_coalesces_with_inflight_generation
+      - explicit_refresh_may_supersede_stuck_generation
+      - stale_completion_cannot_overwrite_newer_authority_state
+      - provider_parse_error_fails_closed_instead_of_publishing_a_success_subset
+      - physical_source_limit_fails_explicitly_instead_of_truncating_by_enumeration_order
+      - local_and_remote_authority_partitions_never_cross_enrich_or_cross_publish
+      - metadata_failure_preserves_entity_rows_and_cached_enrichment
+      - resume_consumes_committed_render_model_without_rescanning_in_click_path
+    minimum_tests:
+      - session_refresh_scan_failure_preserves_cached_rows
+      - session_refresh_complete_scan_replaces_cached_rows
+      - passive_refresh_coalesces_with_inflight_generation
+      - explicit_refresh_supersedes_stuck_generation
+      - stale_scan_result_is_ignored
+      - parse_failure_does_not_publish_partial_provider_rows
+      - remote_scan_never_falls_back_to_local_rows
+  tab_lifecycle:
+    required_fallbacks:
+      - stable_opaque_row_identity_survives_virtual_restoring_live_transitions
+      - physical_tab_and_leaf_coordinates_are_routing_only_never_identity
+      - carrier_replacement_preserves_row_selection_pin_alias_and_order
+      - deletion_tombstones_identity_and_coordinate_reuse_gets_a_new_identity
+      - close_of_agent_bound_carrier_triggers_passive_native_history_refresh
+      - restore_finalize_has_typed_success_retryable_cancelled_and_model_broken_outcomes
+      - missing_restore_content_has_zero_identity_or_persistence_side_effects
+      - environment_disconnect_preserves_rows_and_authority
+    minimum_tests:
+      - navigator_render_identity_uses_canonical_row_id
+      - inline_edit_identity_survives_carrier_replacement
+      - coordinate_reuse_after_delete_allocates_new_row_id
+      - restore_failure_rolls_back_without_duplicate_row
+      - closing_live_carrier_hands_off_to_native_history
+  completion:
+    required_fallbacks:
+      - deterministic_sources_remain_available_when_dynamic_generators_fail
+      - stale_async_generation_cannot_replace_current_input_results
+      - empty_or_failed_source_does_not_erase_valid_candidates_from_other_sources
+      - dedup_preserves_highest_confidence_candidate_and_source_provenance
+      - cursor_quote_escape_unicode_and_replacement_ranges_are_validated
+      - remote_filesystem_or_repo_source_failure_does_not_fall_back_to_local_paths
+      - history_ranking_is_contextual_but_never_the_only_source
+      - cancellation_timeout_and_candidate_caps_are_explicit
+      - completion_never_auto_executes_or_mutates_terminal_before_user_acceptance
+    minimum_tests:
+      - stale_generation_is_ignored
+      - failed_dynamic_generator_preserves_deterministic_candidates
+      - remote_source_failure_never_reads_local_filesystem
+      - replacement_ranges_cover_quotes_escapes_and_unicode
+      - duplicate_candidate_keeps_best_rank_and_combined_provenance
+      - empty_history_does_not_disable_signature_or_filesystem_results
+quality_gate:
+  rule: A feature track cannot move from specified to implemented until its Ashide fallback matrix rows have corresponding Agentty tests or an explicit not_applicable rationale.
+  remote_helper:
+    required_fallbacks:
+      - unavailable_capability_is_explicit
+      - local_and_remote_adapters_share_business_core
+      - failed_cancelled_partial_stale_or_missing_discovery_preserves_committed_generation
+      - remote_failure_never_falls_back_to_local_authority
+      - resume_program_and_arguments_remain_typed
+      - cancellation_timeout_limits_and_backpressure_are_explicit
+      - helper_upgrade_uses_existing_tty7_server_lifecycle
+    minimum_tests:
+      - helper_hello_reports_protocol_and_capabilities
+      - failed_scan_preserves_last_committed_rows
+      - stale_generation_is_ignored
+      - partial_provider_failure_does_not_publish_subset
+      - remote_authority_never_falls_back_to_local_rows
+      - typed_resume_keeps_program_and_arguments_separate

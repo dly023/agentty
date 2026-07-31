@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+mode=${1:-quick}
+
+./script/check_agent_harness
+./script/check_spec_matrix
+./script/check_development_tracker
+./script/check_environment_boundary
+./script/check_remote_helper
+./script/check_session_navigator
+./script/check_i18n
+bash .github/scripts/check-host-boundary.sh
+cargo fmt --check
+
+case "$mode" in
+  quick)
+    ;;
+  full)
+    cargo test --workspace --locked
+    ;;
+  *)
+    echo "usage: $0 [quick|full]" >&2
+    exit 2
+    ;;
+esac
+
+echo "presubmit ($mode) passed"

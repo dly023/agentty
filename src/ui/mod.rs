@@ -1,6 +1,8 @@
+pub mod activity_bar;
 pub mod app;
 pub mod assets;
 pub mod code_editor;
+pub mod composer;
 pub mod diff_overlay;
 pub mod file_tree;
 pub mod forwards;
@@ -36,3 +38,5 @@ pub mod tray;
 pub mod tree_sync;
 pub mod windows;
 pub mod worktree_prompt;
+
+mod session_navigator;
