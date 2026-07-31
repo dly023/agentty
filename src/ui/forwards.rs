@@ -45,15 +45,19 @@ impl AgenttyApp {
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(theme.foreground)
                     .child(if host.is_empty() {
-                        "Disconnected".to_string()
+                        crate::core::i18n::current(cx, "ssh.disconnected").to_string()
                     } else {
-                        format!("Disconnected from {host}")
+                        crate::core::i18n::current_format(
+                            cx,
+                            "ssh.disconnected_from",
+                            &[("host", host.as_str())],
+                        )
                     }),
             )
             .child(div().child("· ⌘⇧R"))
             .child(
                 Button::new("ssh-reconnect")
-                    .label("Reconnect")
+                    .label(crate::core::i18n::current(cx, "common.reconnect"))
                     .primary()
                     .small()
                     .on_click(
@@ -92,13 +96,13 @@ impl AgenttyApp {
             .child(
                 div()
                     .font_weight(FontWeight::SEMIBOLD)
-                    .child("Close this SSH connection?"),
+                    .child(crate::core::i18n::current(cx, "ssh.close_confirm_title")),
             )
             .child(
                 div()
                     .text_sm()
                     .text_color(theme.muted_foreground)
-                    .child("The connection is live. Closing will end it."),
+                    .child(crate::core::i18n::current(cx, "ssh.close_confirm_body")),
             )
             .child(
                 h_flex()
@@ -106,7 +110,7 @@ impl AgenttyApp {
                     .gap_2()
                     .child(
                         Button::new("ssh-close-cancel")
-                            .label("Keep")
+                            .label(crate::core::i18n::current(cx, "common.keep"))
                             .small()
                             .on_click(
                                 cx.listener(|this, _, _window, cx| this.cancel_ssh_close(cx)),
@@ -114,7 +118,7 @@ impl AgenttyApp {
                     )
                     .child(
                         Button::new("ssh-close-confirm")
-                            .label("Close")
+                            .label(crate::core::i18n::current(cx, "common.close"))
                             .primary()
                             .small()
                             .on_click(cx.listener(|this, _, window, cx| {
@@ -181,7 +185,7 @@ impl AgenttyApp {
                             .py(px(2.))
                             .text_size(px(12.))
                             .text_color(cx.theme().muted_foreground)
-                            .child("None."),
+                            .child(crate::core::i18n::current(cx, "common.none")),
                     )
                 })
                 .when(!managed.is_empty(), |this| this.child(list))
@@ -293,7 +297,7 @@ impl AgenttyApp {
                         .w(px(18.))
                         .h(px(18.))
                         .rounded(px(4.))
-                        .tooltip("Remove")
+                        .tooltip(crate::core::i18n::current(cx, "common.remove"))
                         .on_click(cx.listener(
                             move |this, _, _window, cx| {
                                 this.remove_managed_forward(pane_id, forward_id, cx)
@@ -377,7 +381,7 @@ impl AgenttyApp {
                     .pt(px(1.))
                     .child(
                         Button::new(("ssh-managed-forward-cancel", pane_id))
-                            .label("Cancel")
+                            .label(crate::core::i18n::current(cx, "common.cancel"))
                             .ghost()
                             .xsmall()
                             .on_click(cx.listener(move |this, _, window, cx| {

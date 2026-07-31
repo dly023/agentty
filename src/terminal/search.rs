@@ -55,7 +55,7 @@ impl TerminalView {
                 .unwrap_or_else(|| self.search_last_query.clone());
             let input = cx.new(|cx| {
                 InputState::new(window, cx)
-                    .placeholder("Find")
+                    .placeholder(crate::core::i18n::current(cx, "search.find_placeholder"))
                     .default_value(seed)
             });
             let subs = vec![cx.subscribe_in(&input, window, Self::on_search_event)];
@@ -288,7 +288,7 @@ impl TerminalView {
             .ghost()
             .small()
             .selected(case_on)
-            .tooltip("Match case")
+            .tooltip(crate::core::i18n::current(cx, "search.match_case"))
             .on_click(cx.listener(|this, _, _window, cx| {
                 this.toggle_search_case(cx);
             }));
@@ -297,7 +297,7 @@ impl TerminalView {
             .ghost()
             .small()
             .selected(regex_on)
-            .tooltip("Use regular expression")
+            .tooltip(crate::core::i18n::current(cx, "search.use_regex"))
             .on_click(cx.listener(|this, _, _window, cx| {
                 this.toggle_search_regex(cx);
             }));

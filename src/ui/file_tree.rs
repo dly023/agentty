@@ -1053,15 +1053,20 @@ impl AgenttyApp {
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| path.display().to_string());
         let detail = if is_dir {
-            "The folder and everything inside it will be deleted."
+            crate::core::i18n::current(cx, "file_tree.delete_dir_detail")
         } else {
-            "The file will be deleted."
+            crate::core::i18n::current(cx, "file_tree.delete_file_detail")
         };
+        let title =
+            crate::core::i18n::current_format(cx, "file_tree.delete_confirm", &[("name", &name)]);
         let answer = window.prompt(
             PromptLevel::Warning,
-            &format!("Delete \"{name}\"?"),
+            &title,
             Some(detail),
-            &["Cancel", "Delete"],
+            &[
+                crate::core::i18n::current(cx, "common.cancel"),
+                crate::core::i18n::current(cx, "common.delete"),
+            ],
             cx,
         );
         cx.spawn_in(window, async move |app, cx| {
@@ -1101,7 +1106,9 @@ impl AgenttyApp {
                             }
                             Err(e) => {
                                 app.file_tree.rollback(id, &parent, rollback);
-                                HostOps::notify_err(window, cx, "Delete failed", &e);
+                                let context =
+                                    crate::core::i18n::current(cx, "notify.delete_failed");
+                                HostOps::notify_err(window, cx, context, &e);
                             }
                         }
                         cx.notify();
@@ -1317,6 +1324,7 @@ impl AgenttyApp {
                         show_hidden,
                         danger,
                         &app,
+                        cx,
                     )
                 }
             });
@@ -1353,91 +1361,116 @@ impl AgenttyApp {
         show_hidden: bool,
         danger: gpui::Hsla,
         app: &gpui::WeakEntity<Self>,
+        cx: &gpui::App,
     ) -> PopupMenu {
         let mut menu = menu.min_w(px(200.));
         let p = path.to_path_buf();
 
         if !is_dir {
-            menu = menu.item(PopupMenuItem::new("Open").on_click({
-                let app = app.clone();
-                let p = p.clone();
-                move |_, window, cx| {
-                    let _ = app.update(cx, |this, cx| this.open_file_in_editor(&p, window, cx));
-                }
-            }));
+            menu = menu.item(
+                PopupMenuItem::new(crate::core::i18n::current(cx, "menu.open")).on_click({
+                    let app = app.clone();
+                    let p = p.clone();
+                    move |_, window, cx| {
+                        let _ = app.update(cx, |this, cx| this.open_file_in_editor(&p, window, cx));
+                    }
+                }),
+            );
         }
         if is_dir {
-            menu = menu.item(PopupMenuItem::new("cd Here").on_click({
-                let app = app.clone();
-                let p = p.clone();
-                move |_, window, cx| {
-                    let _ = app.update(cx, |this, cx| this.file_tree_cd(&p, window, cx));
-                }
-            }));
+            menu = menu.item(
+                PopupMenuItem::new(crate::core::i18n::current(cx, "menu.cd_here")).on_click({
+                    let app = app.clone();
+                    let p = p.clone();
+                    move |_, window, cx| {
+                        let _ = app.update(cx, |this, cx| this.file_tree_cd(&p, window, cx));
+                    }
+                }),
+            );
         }
         menu = menu
-            .item(PopupMenuItem::new("Insert Path in Terminal").on_click({
-                let app = app.clone();
-                let p = p.clone();
-                move |_, window, cx| {
-                    let _ = app.update(cx, |this, cx| {
-                        if let Some(leaf) = this
-                            .tabs
-                            .get(this.active)
-                            .and_then(|t| t.pane.focused_or_first(window, cx))
-                        {
-                            leaf.update(cx, |view, cx| view.paste(shell_quote(&p), cx));
-                        }
-                    });
-                }
-            }))
-            .item(PopupMenuItem::new("Attach to Agent").on_click({
-                let app = app.clone();
-                let p = p.clone();
-                move |_, _window, cx| {
-                    let _ = app.update(cx, |this, cx| this.file_tree_attach_to_agent(&p, cx));
-                }
-            }))
+            .item(
+                PopupMenuItem::new(crate::core::i18n::current(cx, "menu.insert_path")).on_click({
+                    let app = app.clone();
+                    let p = p.clone();
+                    move |_, window, cx| {
+                        let _ = app.update(cx, |this, cx| {
+                            if let Some(leaf) = this
+                                .tabs
+                                .get(this.active)
+                                .and_then(|t| t.pane.focused_or_first(window, cx))
+                            {
+                                leaf.update(cx, |view, cx| view.paste(shell_quote(&p), cx));
+                            }
+                        });
+                    }
+                }),
+            )
+            .item(
+                PopupMenuItem::new(crate::core::i18n::current(cx, "menu.attach_agent")).on_click({
+                    let app = app.clone();
+                    let p = p.clone();
+                    move |_, _window, cx| {
+                        let _ = app.update(cx, |this, cx| this.file_tree_attach_to_agent(&p, cx));
+                    }
+                }),
+            )
             .separator()
-            .item(PopupMenuItem::new("New File").on_click({
-                let app = app.clone();
-                let p = p.clone();
-                move |_, window, cx| {
-                    let _ = app.update(cx, |this, cx| {
-                        this.file_tree_begin_edit(TreeEditKind::NewFile, &p, is_dir, window, cx)
-                    });
-                }
-            }))
-            .item(PopupMenuItem::new("New Folder").on_click({
-                let app = app.clone();
-                let p = p.clone();
-                move |_, window, cx| {
-                    let _ = app.update(cx, |this, cx| {
-                        this.file_tree_begin_edit(TreeEditKind::NewFolder, &p, is_dir, window, cx)
-                    });
-                }
-            }));
+            .item(
+                PopupMenuItem::new(crate::core::i18n::current(cx, "menu.new_file")).on_click({
+                    let app = app.clone();
+                    let p = p.clone();
+                    move |_, window, cx| {
+                        let _ = app.update(cx, |this, cx| {
+                            this.file_tree_begin_edit(TreeEditKind::NewFile, &p, is_dir, window, cx)
+                        });
+                    }
+                }),
+            )
+            .item(
+                PopupMenuItem::new(crate::core::i18n::current(cx, "menu.new_folder")).on_click({
+                    let app = app.clone();
+                    let p = p.clone();
+                    move |_, window, cx| {
+                        let _ = app.update(cx, |this, cx| {
+                            this.file_tree_begin_edit(
+                                TreeEditKind::NewFolder,
+                                &p,
+                                is_dir,
+                                window,
+                                cx,
+                            )
+                        });
+                    }
+                }),
+            );
 
         if !is_root {
-            menu = menu.item(PopupMenuItem::new("Rename").on_click({
-                let app = app.clone();
-                let p = p.clone();
-                move |_, window, cx| {
-                    let _ = app.update(cx, |this, cx| {
-                        this.file_tree_begin_edit(TreeEditKind::Rename, &p, is_dir, window, cx)
-                    });
-                }
-            }));
+            menu = menu.item(
+                PopupMenuItem::new(crate::core::i18n::current(cx, "menu.rename_plain")).on_click({
+                    let app = app.clone();
+                    let p = p.clone();
+                    move |_, window, cx| {
+                        let _ = app.update(cx, |this, cx| {
+                            this.file_tree_begin_edit(TreeEditKind::Rename, &p, is_dir, window, cx)
+                        });
+                    }
+                }),
+            );
         }
 
         menu = menu
             .separator()
-            .item(PopupMenuItem::new("Copy Path").on_click({
-                let p = p.clone();
-                move |_, _window, cx| {
-                    cx.write_to_clipboard(gpui::ClipboardItem::new_string(p.display().to_string()));
-                }
-            }))
+            .item(
+                PopupMenuItem::new(crate::core::i18n::current(cx, "menu.copy_path")).on_click({
+                    let p = p.clone();
+                    move |_, _window, cx| {
+                        cx.write_to_clipboard(gpui::ClipboardItem::new_string(
+                            p.display().to_string(),
+                        ));
+                    }
+                }),
+            )
             .item(
                 PopupMenuItem::new(crate::ui::right_panel::reveal_label()).on_click({
                     let p = p.clone();
@@ -1452,7 +1485,9 @@ impl AgenttyApp {
         if !is_root {
             menu = menu.separator().item(
                 PopupMenuItem::element(move |_window, _cx| {
-                    div().text_color(danger).child("Delete")
+                    div()
+                        .text_color(danger)
+                        .child(crate::core::i18n::current(_cx, "common.delete"))
                 })
                 .on_click({
                     let app = app.clone();

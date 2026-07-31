@@ -1,0 +1,11 @@
+.*
+..
+/path/to/directory
+127.0.0.1
+80
+8080
+Aa
+agentty
+github.com/dly023/agentty
+none
+· ⌘⇧R

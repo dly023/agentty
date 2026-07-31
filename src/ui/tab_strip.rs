@@ -1,3 +1,4 @@
+use crate::core::i18n::ResolveLocale as _;
 use gpui::{
     Animation, AnimationExt as _, AnyElement, App, Axis, Bounds, Context, FontWeight, MouseButton,
     MouseDownEvent, Pixels, SharedString, Window, canvas, deferred, div, ease_out_quint,
@@ -233,7 +234,7 @@ impl AgenttyApp {
                 cx,
             )
             .rounded_lg()
-            .tooltip("More")
+            .tooltip(crate::core::i18n::current(cx, "common.more"))
             .dropdown_menu_with_anchor(
                 gpui::Anchor::TopRight,
                 move |menu, _window, _cx| {
@@ -249,22 +250,30 @@ impl AgenttyApp {
     fn environment_indicator_state(
         remote: Option<&crate::core::session::RemoteRef>,
         status: Option<&crate::ui::remote_workspace::RemoteStatus>,
+        locale: crate::core::i18n::Locale,
     ) -> (String, String, u32) {
+        use crate::core::i18n::{tr, trf};
         match remote {
-            None => ("This Mac".into(), "Local environment".into(), 0x22C55E),
+            None => (
+                tr(locale, "environment.local.label").into(),
+                tr(locale, "environment.local.detail").into(),
+                0x22C55E,
+            ),
             Some(remote) => {
                 let state = match status {
-                    Some(crate::ui::remote_workspace::RemoteStatus::Attached) => "SSH".into(),
+                    Some(crate::ui::remote_workspace::RemoteStatus::Attached) => {
+                        tr(locale, "environment.ssh").into()
+                    }
                     Some(crate::ui::remote_workspace::RemoteStatus::Connecting)
                     | Some(crate::ui::remote_workspace::RemoteStatus::Reconnecting { .. }) => {
-                        "Connecting".into()
+                        tr(locale, "environment.connecting").into()
                     }
                     Some(crate::ui::remote_workspace::RemoteStatus::Failed(error)) => {
-                        format!("Authentication error — {error}")
+                        trf(locale, "environment.auth_error", &[("error", error)])
                     }
                     Some(crate::ui::remote_workspace::RemoteStatus::Preempted { .. })
                     | Some(crate::ui::remote_workspace::RemoteStatus::Disconnected)
-                    | None => "Disconnected".into(),
+                    | None => tr(locale, "environment.disconnected").into(),
                 };
                 let color = match status {
                     Some(crate::ui::remote_workspace::RemoteStatus::Attached) => 0x22C55E,
@@ -283,7 +292,11 @@ impl AgenttyApp {
     fn environment_indicator_label(&self, cx: &App) -> (String, String, u32) {
         let remote = crate::core::session::WorkspaceStore::remote_ref(cx, self.workspace);
         let status = remote.as_ref().and_then(|_| self.remote_status(cx));
-        Self::environment_indicator_state(remote.as_ref(), status.as_ref())
+        Self::environment_indicator_state(
+            remote.as_ref(),
+            status.as_ref(),
+            cx.global::<crate::core::config::Config>().locale.resolve(),
+        )
     }
 
     pub(crate) fn environment_indicator(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
@@ -314,10 +327,14 @@ impl AgenttyApp {
             )
             .custom(chrome_tile_variant(cx))
             .rounded_lg()
-            .tooltip(format!("Execution environment — {state}"))
+            .tooltip(crate::core::i18n::current_format(
+                cx,
+                "environment.tooltip",
+                &[("state", &state)],
+            ))
             .dropdown_menu(move |menu, _window, _cx| {
                 let mut menu = menu.min_w(px(230.)).item(
-                    PopupMenuItem::new("This Mac")
+                    PopupMenuItem::new(crate::core::i18n::current(_cx, "menu.this_mac"))
                         .disabled(current_id.is_local())
                         .on_click(move |_, _window, cx| {
                             crate::ui::windows::open_or_focus_environment(cx, None, None);
@@ -340,21 +357,23 @@ impl AgenttyApp {
                             }),
                     );
                 }
-                menu.separator()
-                    .item(PopupMenuItem::new("Manage SSH Environments…").on_click({
-                        let app = app_for_menu.clone();
-                        move |_, window, cx| {
-                            if let Some(app) = app.upgrade() {
-                                app.update(cx, |this, cx| {
-                                    this.open_settings_section(
-                                        crate::ui::settings::SettingsSection::Ssh,
-                                        window,
-                                        cx,
-                                    );
-                                });
+                menu.separator().item(
+                    PopupMenuItem::new(crate::core::i18n::current(_cx, "menu.manage_ssh_envs"))
+                        .on_click({
+                            let app = app_for_menu.clone();
+                            move |_, window, cx| {
+                                if let Some(app) = app.upgrade() {
+                                    app.update(cx, |this, cx| {
+                                        this.open_settings_section(
+                                            crate::ui::settings::SettingsSection::Ssh,
+                                            window,
+                                            cx,
+                                        );
+                                    });
+                                }
                             }
-                        }
-                    }))
+                        }),
+                )
             })
     }
 
@@ -552,7 +571,11 @@ impl AgenttyApp {
         let raw = tab.leaf_title(window, cx);
         let label = short_title(&raw);
         if label.trim().is_empty() {
-            format!("Shell {}", index + 1)
+            crate::core::i18n::current_format(
+                cx,
+                "tab.shell_default",
+                &[("index", &(index + 1).to_string())],
+            )
         } else {
             label
         }
@@ -587,7 +610,7 @@ impl AgenttyApp {
                             .child(
                                 div()
                                     .text_color(cx.theme().muted_foreground)
-                                    .child("default"),
+                                    .child(crate::core::i18n::current(cx, "common.default")),
                             )
                     })
                 } else {
@@ -604,11 +627,13 @@ impl AgenttyApp {
             if shells.is_empty() {
                 let open_default = app.clone();
                 menu = menu.item(
-                    PopupMenuItem::new("New Tab").on_click(move |_, window, cx| {
-                        if let Some(app) = open_default.upgrade() {
-                            app.update(cx, |this, cx| this.new_tab(window, cx));
-                        }
-                    }),
+                    PopupMenuItem::new(crate::core::i18n::current(_cx, "menu.new_tab")).on_click(
+                        move |_, window, cx| {
+                            if let Some(app) = open_default.upgrade() {
+                                app.update(cx, |this, cx| this.new_tab(window, cx));
+                            }
+                        },
+                    ),
                 );
             }
             menu
@@ -632,19 +657,21 @@ impl AgenttyApp {
         let has_cwd = cwd.is_some();
         let mut menu = menu.min_w(px(200.));
 
-        menu = menu.item(PopupMenuItem::new("Rename Tab").on_click({
-            let app = app.clone();
-            move |_, window, cx| {
-                let _ = app.update(cx, |this, cx| this.start_rename(index, window, cx));
-            }
-        }));
+        menu = menu.item(
+            PopupMenuItem::new(crate::core::i18n::current(cx, "menu.rename_tab")).on_click({
+                let app = app.clone();
+                move |_, window, cx| {
+                    let _ = app.update(cx, |this, cx| this.start_rename(index, window, cx));
+                }
+            }),
+        );
 
         let tab = this.tabs.get(index);
         if tab.is_some_and(|t| t.agent(cx).is_some()) {
             let done = tab.and_then(|t| t.agent_status(cx))
                 == Some(crate::core::cli_agent::AgentStatus::Done);
             menu = menu.item(
-                PopupMenuItem::new("Mark as Unread")
+                PopupMenuItem::new(crate::core::i18n::current(cx, "menu.mark_unread"))
                     .disabled(!done)
                     .on_click({
                         let app = app.clone();
@@ -657,14 +684,16 @@ impl AgenttyApp {
 
         let in_repo = this.tab_is_in_repo(index, window, cx);
         if in_repo {
-            menu = menu
-                .separator()
-                .item(PopupMenuItem::new("New Worktree Tab").on_click({
-                    let app = app.clone();
-                    move |_, window, cx| {
-                        let _ = app.update(cx, |this, cx| this.new_worktree_tab(index, window, cx));
-                    }
-                }));
+            menu = menu.separator().item(
+                PopupMenuItem::new(crate::core::i18n::current(cx, "menu.new_worktree_tab"))
+                    .on_click({
+                        let app = app.clone();
+                        move |_, window, cx| {
+                            let _ =
+                                app.update(cx, |this, cx| this.new_worktree_tab(index, window, cx));
+                        }
+                    }),
+            );
         }
 
         let agent_session = this.tab_agent_session(index, window, cx);
@@ -695,27 +724,31 @@ impl AgenttyApp {
 
         menu = menu
             .separator()
-            .item(PopupMenuItem::new("Split Right").on_click({
-                let app = app.clone();
-                move |_, window, cx| {
-                    let _ = app.update(cx, |this, cx| {
-                        this.activate(index, window, cx);
-                        this.split(Axis::Horizontal, window, cx);
-                    });
-                }
-            }))
-            .item(PopupMenuItem::new("Split Down").on_click({
-                let app = app.clone();
-                move |_, window, cx| {
-                    let _ = app.update(cx, |this, cx| {
-                        this.activate(index, window, cx);
-                        this.split(Axis::Vertical, window, cx);
-                    });
-                }
-            }));
+            .item(
+                PopupMenuItem::new(crate::core::i18n::current(cx, "menu.split_right")).on_click({
+                    let app = app.clone();
+                    move |_, window, cx| {
+                        let _ = app.update(cx, |this, cx| {
+                            this.activate(index, window, cx);
+                            this.split(Axis::Horizontal, window, cx);
+                        });
+                    }
+                }),
+            )
+            .item(
+                PopupMenuItem::new(crate::core::i18n::current(cx, "menu.split_down")).on_click({
+                    let app = app.clone();
+                    move |_, window, cx| {
+                        let _ = app.update(cx, |this, cx| {
+                            this.activate(index, window, cx);
+                            this.split(Axis::Vertical, window, cx);
+                        });
+                    }
+                }),
+            );
 
         menu = menu.separator().item(
-            PopupMenuItem::new("Copy Working Directory")
+            PopupMenuItem::new(crate::core::i18n::current(cx, "menu.copy_cwd"))
                 .disabled(!has_cwd)
                 .on_click(move |_, _window, cx| {
                     if let Some(cwd) = cwd.as_ref() {
@@ -728,7 +761,7 @@ impl AgenttyApp {
 
         if let Some(session_id) = agent_session.map(|(_, s)| s.session_id) {
             menu = menu.item(
-                PopupMenuItem::new("Copy Session ID")
+                PopupMenuItem::new(crate::core::i18n::current(cx, "menu.copy_session_id"))
                     .disabled(session_id.is_none())
                     .on_click(move |_, _window, cx| {
                         if let Some(id) = session_id.as_ref() {
@@ -739,14 +772,16 @@ impl AgenttyApp {
         }
 
         menu.separator()
-            .item(PopupMenuItem::new("Close Tab").on_click({
-                let app = app.clone();
-                move |_, window, cx| {
-                    let _ = app.update(cx, |this, cx| this.close_tab(index, window, cx));
-                }
-            }))
             .item(
-                PopupMenuItem::new("Close Other Tabs")
+                PopupMenuItem::new(crate::core::i18n::current(cx, "menu.close_tab")).on_click({
+                    let app = app.clone();
+                    move |_, window, cx| {
+                        let _ = app.update(cx, |this, cx| this.close_tab(index, window, cx));
+                    }
+                }),
+            )
+            .item(
+                PopupMenuItem::new(crate::core::i18n::current(cx, "menu.close_other_tabs"))
                     .disabled(tab_count <= 1)
                     .on_click({
                         let app = app.clone();
@@ -1076,7 +1111,7 @@ impl AgenttyApp {
                             cx,
                         )
                         .rounded_lg()
-                        .tooltip("Show Sidebar")
+                        .tooltip(crate::core::i18n::current(cx, "sidebar.show"))
                         .on_click(cx.listener(|this, _, _window, cx| this.toggle_left_panel(cx))),
                     ),
                 )
@@ -1153,7 +1188,8 @@ mod tests {
 
     #[test]
     fn environment_indicator_labels_local_and_remote_authority() {
-        let (label, state, color) = AgenttyApp::environment_indicator_state(None, None);
+        let (label, state, color) =
+            AgenttyApp::environment_indicator_state(None, None, crate::core::i18n::Locale::EnUs);
         assert_eq!(
             (label.as_str(), state.as_str(), color),
             ("This Mac", "Local environment", 0x22C55E)
@@ -1168,6 +1204,7 @@ mod tests {
         let (label, state, color) = AgenttyApp::environment_indicator_state(
             Some(&remote),
             Some(&crate::ui::remote_workspace::RemoteStatus::Attached),
+            crate::core::i18n::Locale::EnUs,
         );
         assert_eq!(label, "build");
         assert_eq!(state, "SSH");
@@ -1188,6 +1225,7 @@ mod tests {
             Some(&crate::ui::remote_workspace::RemoteStatus::Failed(
                 detail.into(),
             )),
+            crate::core::i18n::Locale::EnUs,
         );
         assert!(state.contains(detail));
         assert_ne!(state, "Authentication error");

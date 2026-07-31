@@ -803,11 +803,14 @@ impl ListDelegate for PaletteDelegate {
             .items_center()
             .text_sm()
             .text_color(cx.theme().muted_foreground)
-            .child("No matching commands")
+            .child(crate::core::i18n::current(
+                cx,
+                "palette.no_matching_commands",
+            ))
             .child(
                 div()
                     .text_xs()
-                    .child("Type user@host to connect over SSH instead."),
+                    .child(crate::core::i18n::current(cx, "palette.ssh_hint")),
             )
     }
 
@@ -840,7 +843,12 @@ impl ListDelegate for PaletteDelegate {
             .justify_between()
             .child(left);
         if cmd.kind.edit_variant().is_some() {
-            row = row.child(div().text_xs().text_color(muted).child("→ edit"));
+            row = row.child(
+                div()
+                    .text_xs()
+                    .text_color(muted)
+                    .child(crate::core::i18n::current(cx, "palette.edit_arrow")),
+            );
         }
         if let Some(tokens) = keys {
             row = row.child(h_flex().gap_1().children(tokens.into_iter().map(move |t| {

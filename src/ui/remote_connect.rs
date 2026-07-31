@@ -1,3 +1,4 @@
+use crate::core::i18n::ResolveLocale as _;
 use std::collections::HashMap;
 use std::io;
 use std::path::PathBuf;
@@ -622,27 +623,47 @@ pub(crate) fn claim_mailbox() -> std::sync::MutexGuard<'static, ()> {
 
 pub const MISMATCH_ANSWERS: [&str; 2] = ["Cancel", "Restart Server"];
 
-pub fn mismatch_detail(m: &MismatchedRemoteDaemon) -> String {
-    let running = match (&m.running_version, &m.running_exe) {
-        (Some(v), Some(exe)) => format!("{v} (from {exe})"),
-        (Some(v), None) => v.clone(),
-        (None, Some(exe)) => format!("an unknown build (from {exe})"),
-        (None, None) => "an unknown build".to_string(),
-    };
-    format!(
-        "{host} is serving agentty sessions from {running}, which speaks a protocol \
-         this client ({wanted}) cannot. agentty has installed a matching server there, \
-         but the one already running is the one your sessions are on.\n\
-         \n\
-         Restart Server\u{2003}starts {wanted} there and ends every session it is hosting.\n\
-         Cancel\u{2003}leaves {host} exactly as it is. This window will not connect.",
-        host = m.host,
-        wanted = m.wanted_version,
+pub fn mismatch_detail(m: &MismatchedRemoteDaemon, cx: &gpui::App) -> String {
+    mismatch_detail_loc(
+        m,
+        cx.global::<crate::core::config::Config>().locale.resolve(),
     )
 }
 
-pub fn mismatch_title(m: &MismatchedRemoteDaemon) -> String {
-    format!("Restart agentty's server on \u{201c}{}\u{201d}?", m.host)
+fn mismatch_detail_loc(m: &MismatchedRemoteDaemon, locale: crate::core::i18n::Locale) -> String {
+    use crate::core::i18n::{tr, trf};
+    let running = match (&m.running_version, &m.running_exe) {
+        (Some(v), Some(exe)) => trf(
+            locale,
+            "mismatch.running_from",
+            &[("version", v), ("exe", exe)],
+        ),
+        (Some(v), None) => v.clone(),
+        (None, Some(exe)) => trf(locale, "mismatch.unknown_from", &[("exe", exe)]),
+        (None, None) => tr(locale, "mismatch.unknown").to_string(),
+    };
+    trf(
+        locale,
+        "mismatch.detail",
+        &[
+            ("host", &m.host),
+            ("running", &running),
+            ("wanted", &m.wanted_version),
+            ("answer_restart", tr(locale, "common.restart_server")),
+            ("answer_cancel", tr(locale, "common.cancel")),
+        ],
+    )
+}
+
+pub fn mismatch_title(m: &MismatchedRemoteDaemon, cx: &gpui::App) -> String {
+    mismatch_title_loc(
+        m,
+        cx.global::<crate::core::config::Config>().locale.resolve(),
+    )
+}
+
+fn mismatch_title_loc(m: &MismatchedRemoteDaemon, locale: crate::core::i18n::Locale) -> String {
+    crate::core::i18n::trf(locale, "rw.restart_confirm_title", &[("label", &m.host)])
 }
 
 pub fn mismatch_target(m: &MismatchedRemoteDaemon) -> Option<RemoteTarget> {
@@ -870,28 +891,36 @@ mod tests {
             running_exe: Some("/home/me/.local/share/agentty/bin/agentty-server-0.8.0".into()),
             wanted_version: "0.9.1".into(),
         };
-        let detail = mismatch_detail(&m);
+        let detail = mismatch_detail_loc(&m, crate::core::i18n::Locale::EnUs);
         assert!(detail.contains("0.8.0"), "{detail}");
         assert!(detail.contains("0.9.1"), "{detail}");
         assert!(detail.contains("me@build-box:22"), "{detail}");
-        assert!(mismatch_title(&m).contains("me@build-box:22"));
+        assert!(
+            mismatch_title_loc(&m, crate::core::i18n::Locale::EnUs).contains("me@build-box:22")
+        );
 
         let unknown = MismatchedRemoteDaemon {
             running_version: None,
             running_exe: None,
             ..m
         };
-        assert!(mismatch_detail(&unknown).contains("an unknown build"));
+        assert!(
+            mismatch_detail_loc(&unknown, crate::core::i18n::Locale::EnUs)
+                .contains("an unknown build")
+        );
     }
 
     #[test]
     fn the_mismatch_detail_explains_every_answer_the_prompt_offers() {
-        let detail = mismatch_detail(&MismatchedRemoteDaemon {
-            host: "me@build-box:22".into(),
-            running_version: Some("0.8.0".into()),
-            running_exe: None,
-            wanted_version: "0.9.1".into(),
-        });
+        let detail = mismatch_detail_loc(
+            &MismatchedRemoteDaemon {
+                host: "me@build-box:22".into(),
+                running_version: Some("0.8.0".into()),
+                running_exe: None,
+                wanted_version: "0.9.1".into(),
+            },
+            crate::core::i18n::Locale::EnUs,
+        );
         for answer in MISMATCH_ANSWERS {
             assert!(detail.contains(answer), "{answer} is unexplained: {detail}");
         }

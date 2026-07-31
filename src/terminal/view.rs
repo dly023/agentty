@@ -1,3 +1,4 @@
+use crate::core::i18n::ResolveLocale as _;
 use alacritty_terminal::event::Event as AlacEvent;
 use alacritty_terminal::grid::{Dimensions, Scroll};
 use alacritty_terminal::index::{Column, Direction, Line, Point, Side};
@@ -280,20 +281,32 @@ fn integration_notice_message(wrapper: Option<&str>) -> String {
     }
 }
 
-fn notify_command_finished(label: &str, elapsed: std::time::Duration) {
-    let secs = elapsed.as_secs();
+fn notify_command_finished(
+    label: &str,
+    elapsed: std::time::Duration,
+    locale: crate::core::i18n::Locale,
+) {
+    let secs = elapsed.as_secs().to_string();
     let label = label.trim();
     let body = if label.is_empty() {
-        format!("Command finished after {secs}s")
+        crate::core::i18n::trf(locale, "notify.command_finished", &[("secs", &secs)])
     } else {
-        format!("{label} — finished after {secs}s")
+        crate::core::i18n::trf(
+            locale,
+            "notify.command_finished_labeled",
+            &[("label", label), ("secs", &secs)],
+        )
     };
     super::remote::notify_desktop(Some("agentty"), &body);
 }
 
-fn notify_agent_finished(agent: crate::core::cli_agent::CLIAgent, elapsed: std::time::Duration) {
-    let secs = elapsed.as_secs();
-    let body = format!("Finished after {secs}s");
+fn notify_agent_finished(
+    agent: crate::core::cli_agent::CLIAgent,
+    elapsed: std::time::Duration,
+    locale: crate::core::i18n::Locale,
+) {
+    let secs = elapsed.as_secs().to_string();
+    let body = crate::core::i18n::trf(locale, "notify.agent_finished", &[("secs", &secs)]);
     super::remote::notify_desktop(Some(agent.display_name()), &body);
 }
 
@@ -2105,6 +2118,7 @@ impl TerminalView {
             cx.notify();
         }
 
+        let locale = cx.global::<Config>().locale.resolve();
         let notify_allowed = match cx.global::<Config>().notify_on_command_finish {
             NotifyMode::Never => false,
             NotifyMode::Unfocused => !window.is_window_active(),
@@ -2130,13 +2144,13 @@ impl TerminalView {
                 if notify_allowed {
                     match agent {
                         Some(_) if self.agent_was_rich => {}
-                        Some(agent) => notify_agent_finished(agent, elapsed),
+                        Some(agent) => notify_agent_finished(agent, elapsed, locale),
                         None => {
                             let threshold = std::time::Duration::from_secs(
                                 cx.global::<Config>().notify_threshold_secs,
                             );
                             if elapsed >= threshold {
-                                notify_command_finished(&title, elapsed);
+                                notify_command_finished(&title, elapsed, locale);
                             }
                         }
                     }
@@ -2385,8 +2399,12 @@ impl TerminalView {
                     ) =>
             {
                 let body = match self.agent_turn_started.take() {
-                    Some(start) => format!("Finished after {}s", start.elapsed().as_secs()),
-                    None => "Turn finished".to_string(),
+                    Some(start) => crate::core::i18n::current_format(
+                        cx,
+                        "notify.agent_finished",
+                        &[("secs", &start.elapsed().as_secs().to_string())],
+                    ),
+                    None => crate::core::i18n::current(cx, "notify.turn_finished").to_string(),
                 };
                 super::remote::notify_desktop(Some(agent_name), &body);
             }
@@ -3735,7 +3753,14 @@ impl TerminalView {
             Ok(forward) => LoopbackOpen::Forwarded(loopback.forwarded_url(forward.local_port)),
             Err(e) => {
                 log::warn!("failed to forward loopback URL {url}: {e}");
-                LoopbackOpen::ForwardFailed(format!("Couldn't forward :{} — {e}", loopback.port))
+                LoopbackOpen::ForwardFailed(crate::core::i18n::current_format(
+                    cx,
+                    "loopback.forward_failed",
+                    &[
+                        ("port", &loopback.port.to_string()),
+                        ("error", &e.to_string()),
+                    ],
+                ))
             }
         }
     }

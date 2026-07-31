@@ -8,4 +8,6 @@ contracts:
     rule: User-visible product strings use stable translation keys; source identifiers, commands, and raw server errors remain unchanged.
   - id: I18N-PARITY-03
     rule: zh-CN and en-US catalogs contain the same required keys, checked statically.
+  - id: I18N-FULL-COVERAGE-04
+    rule: Every user-visible string in interactive surfaces (settings, menus, dialogs, prompts, notifications, tooltips) resolves through the catalog; hardcoded literals outside the allowlist fail the static gate. Parameterized messages use named placeholders.
 status: verified

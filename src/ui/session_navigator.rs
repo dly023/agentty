@@ -64,20 +64,27 @@ impl SessionRefreshState {
     }
 }
 
-fn discovery_message(outcome: &DiscoveryOutcome) -> String {
+fn discovery_message(outcome: &DiscoveryOutcome, cx: &gpui::App) -> String {
+    use crate::core::i18n::{current, current_format};
     match outcome {
-        DiscoveryOutcome::Complete(_) => "Session scan completed".into(),
+        DiscoveryOutcome::Complete(_) => current(cx, "navigator.scan_completed").into(),
         DiscoveryOutcome::Failed { message } => message.clone(),
-        DiscoveryOutcome::SourceMissing { source } => format!("Session source not found: {source}"),
+        DiscoveryOutcome::SourceMissing { source } => {
+            current_format(cx, "navigator.source_missing", &[("source", source)])
+        }
         DiscoveryOutcome::Partial {
             failed_providers: failed,
-        } => {
-            format!("Session scan was incomplete: {}", failed.join(", "))
-        }
-        DiscoveryOutcome::Cancelled => "Session scan was cancelled".into(),
-        DiscoveryOutcome::SourceLimitExceeded { source, limit } => {
-            format!("Session source limit exceeded for {source} ({limit})")
-        }
+        } => current_format(
+            cx,
+            "navigator.scan_incomplete",
+            &[("failed", &failed.join(", "))],
+        ),
+        DiscoveryOutcome::Cancelled => current(cx, "navigator.scan_cancelled").into(),
+        DiscoveryOutcome::SourceLimitExceeded { source, limit } => current_format(
+            cx,
+            "navigator.source_limit",
+            &[("source", source), ("limit", &limit.to_string())],
+        ),
     }
 }
 
@@ -153,7 +160,7 @@ impl AgenttyApp {
                         app.session_scan_error = None;
                     }
                     Ok(other) => {
-                        app.session_scan_error = Some(discovery_message(&other));
+                        app.session_scan_error = Some(discovery_message(&other, cx));
                     }
                     Err(error) => {
                         app.session_scan_error = Some(error.to_string());

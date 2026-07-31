@@ -262,6 +262,12 @@ milestones:
         spec: I18N-PARITY-03
         tests: [catalogs_have_identical_keys]
         evidence: 2026-07-31 script/check_i18n and focused tests prove zh-CN and en-US key parity
+      - id: I18N-003
+        title: Full user-facing coverage with zh-CN translations
+        status: verified
+        spec: I18N-FULL-COVERAGE-04
+        tests: [catalogs_have_identical_keys, format_replaces_named_placeholders, option_labels_translate_and_fall_back, escaped_newlines_render_as_real_newlines, locale_override_is_deterministic]
+        evidence: 2026-08-01 428-key catalog replaces ~260 hardcoded strings across settings, menus, dialogs, SSH prompts, notifications, tooltips, and remote-status surfaces; check_i18n now gates used-key existence and rejects new hardcoded literals outside docs/quality/i18n-hardcoded-allowlist.txt; full workspace tests green
   - id: M6-SSH
     title: OpenSSH-compatible native SSH
     status: verified

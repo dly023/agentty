@@ -113,7 +113,14 @@ impl AgenttyApp {
                     if let Some(p) = this.worktree_prompt.as_mut() {
                         p.busy = false;
                     }
-                    window.push_notification(format!("New worktree failed: {e}"), cx);
+                    window.push_notification(
+                        crate::core::i18n::current_format(
+                            cx,
+                            "worktree.failed",
+                            &[("error", &e.to_string())],
+                        ),
+                        cx,
+                    );
                     cx.notify();
                 }
             },
@@ -162,7 +169,7 @@ impl AgenttyApp {
                 div()
                     .text_sm()
                     .font_weight(gpui::FontWeight::SEMIBOLD)
-                    .child("New Worktree Tab"),
+                    .child(crate::core::i18n::current(cx, "worktree.new_tab")),
             )
             .child(field("Worktree Name", &p.name))
             .child(
@@ -189,7 +196,7 @@ impl AgenttyApp {
                     )
                     .child(
                         Button::new("worktree-cancel")
-                            .label("Cancel")
+                            .label(crate::core::i18n::current(cx, "common.cancel"))
                             .small()
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.cancel_worktree_prompt(window, cx)

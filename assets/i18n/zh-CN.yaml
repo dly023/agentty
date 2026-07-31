@@ -1,32 +1,429 @@
+activity.done: Agent 本轮已完成
+activity.heuristic: 推断状态
+activity.idle: 暂无 Agent 活动
+activity.inferred: 根据终端状态推断
+activity.rich: 结构化 Agent 事件
+activity.structured: 结构化事件
+activity.title: Agent 活动
+activity.waiting: Agent 正在等待输入
+activity.working: Agent 正在工作
 app.name: Agentty
-environment.local.label: 本机
-environment.local.detail: 本地环境
-environment.remote.detail: 远程环境
-environment.connecting: 正在连接
-environment.disconnected: 已断开
-environment.ssh: SSH
-environment.execution: 执行环境
-session.default_name: Agent 会话
-session.live: 运行中
-session.restoring: 正在恢复…
-session.resume: 恢复
-session.discovering: 正在发现 Agent 会话…
-session.empty: 当前环境中没有发现 Codex 或 Claude 会话。
-session.no_match: 没有匹配的 Agent 会话。
-session.search_placeholder: 搜索会话…
-session.refresh: 刷新 Agent 会话
-sidebar.hide: 隐藏侧边栏
-sidebar.show: 显示侧边栏
+common.abort: 中止
+common.cancel: 取消
+common.close: 关闭
+common.connect: 连接
+common.copy_path: 复制路径
+common.default: 默认
+common.delete: 删除
+common.discard: 放弃更改
+common.dismiss: 忽略
+common.download: 下载
+common.keep: 保留
+common.link: 关联
+common.more: 更多
+common.none: 暂无。
+common.ok: 确定
+common.override: 强制覆盖
+common.reconnect: 重新连接
+common.refresh: 刷新
+common.reload: 重新加载
+common.remove: 移除
+common.reset: 重置
+common.restart_server: 重启服务
+common.retry: 重试
+common.save: 保存
+common.search_files: 搜索文件…
+common.trust: 信任
+common.uninstall: 卸载
+composer.disconnected: 远程环境已断开，草稿已保留。
+composer.environment_mismatch: Composer 目标属于其他环境，草稿已保留。
 composer.placeholder: 输入提示词…  Shift+Enter 换行
 composer.target_missing: Composer 目标已不存在，草稿已保留。
-composer.environment_mismatch: Composer 目标属于其他环境，草稿已保留。
-composer.disconnected: 远程环境已断开，草稿已保留。
-activity.title: Agent 活动
-activity.idle: 暂无 Agent 活动
-activity.working: Agent 正在工作
-activity.waiting: Agent 正在等待输入
-activity.done: Agent 本轮已完成
-activity.structured: 结构化事件
-activity.heuristic: 推断状态
-activity.rich: 结构化 Agent 事件
-activity.inferred: 根据终端状态推断
+diff.binary: 二进制
+diff.close_esc: 关闭 Diff（Esc）
+diff.refreshing: 刷新中…
+diff.untracked: 未跟踪文件（{total}）
+editor.back_to_terminal: 返回终端（Esc）
+editor.cant_open: 无法打开 {path}:{error}
+editor.cant_read: 无法读取 {path}:{error}
+editor.color_n: 颜色 {i}
+editor.file_changed: 文件已在磁盘上被修改
+editor.keep_mine: 保留我的版本
+editor.line_col: 行 {line}，列 {col}
+editor.looks_binary: “{path}” 看起来是二进制文件
+editor.open_from_file_tree: 从文件树中打开一个文件
+editor.unsaved_changes: “{name}” 有未保存的更改
+environment.auth_error: 认证失败——{error}
+environment.connecting: 正在连接
+environment.disconnected: 已断开
+environment.execution: 执行环境
+environment.local.detail: 本地环境
+environment.local.label: 本机
+environment.remote.detail: 远程环境
+environment.ssh: SSH
+environment.tooltip: 执行环境——{state}
+file_tree.delete_confirm: 删除 “{name}”？
+file_tree.delete_dir_detail: 该文件夹及其全部内容都将被删除。
+file_tree.delete_file_detail: 该文件将被删除。
+home.reopen_tab: 重新打开 “{name}”
+home.shortcut.new_tab: 新建标签
+home.shortcut.palette: 命令面板
+home.shortcut.reopen_closed: 恢复关闭的标签
+home.shortcut.settings: 设置…
+home.shortcut.split_down: 向下分屏
+home.shortcut.split_right: 向右分屏
+home.shortcut.switch_workspace: 切换工作区
+loopback.forward_failed: 无法转发 :{port}——{error}
+menu.attach_agent: 关联到 Agent
+menu.cd_here: 在此 cd
+menu.chmod: chmod…
+menu.close_other_tabs: 关闭其他标签
+menu.close_tab: 关闭标签
+menu.connect: 连接
+menu.copy_address: 复制地址
+menu.copy_cwd: 复制工作目录
+menu.copy_path: 复制路径
+menu.copy_session_id: 复制会话 ID
+menu.delete_workspace: 删除工作区…
+menu.disconnect: 断开连接
+menu.duplicate: 创建副本
+menu.expand_groups: 展开全部分组
+menu.follow_symlink: 跟随符号链接
+menu.forget_password: 忘记密码
+menu.import_ssh_config: 从 ~/.ssh/config 导入
+menu.insert_path: 在终端中插入路径
+menu.manage_ssh_envs: 管理 SSH 环境…
+menu.mark_unread: 标记为未读
+menu.new_file: 新建文件
+menu.new_folder: 新建文件夹
+menu.new_tab: 新建标签
+menu.new_workspace: 新建工作区
+menu.new_worktree_tab: 新建 Worktree 标签
+menu.open: 打开
+menu.open_in_new_window: 在新窗口中打开
+menu.rename: 重命名…
+menu.rename_plain: 重命名
+menu.rename_tab: 重命名标签
+menu.restart_server: 重启服务…
+menu.split_down: 向下分屏
+menu.split_right: 向右分屏
+menu.stop_workspace: 停止工作区…
+menu.this_mac: 这台 Mac
+mismatch.detail: {host} 正在从 {running} 提供 agentty 会话，其协议版本与此客户端（{wanted}）不兼容。agentty 已在那里安装了匹配的服务端，但当前运行的才是你的会话所在。\n{answer_restart}：在那里启动 {wanted}，并结束它托管的所有会话。\n{answer_cancel}：保持 {host} 原样，此窗口将不会连接。
+mismatch.running_from: {version}（来自 {exe}）
+mismatch.unknown: 未知构建
+mismatch.unknown_from: 未知构建（来自 {exe}）
+navigator.scan_cancelled: 会话扫描已取消
+navigator.scan_completed: 会话扫描完成
+navigator.scan_incomplete: 会话扫描不完整:{failed}
+navigator.source_limit: 会话来源 {source} 超出数量限制（{limit}）
+navigator.source_missing: 未找到会话来源:{source}
+notify.agent_finished: 已完成，耗时 {secs} 秒
+notify.command_finished: 命令已完成，耗时 {secs} 秒
+notify.command_finished_labeled: {label}——已完成，耗时 {secs} 秒
+notify.delete_failed: 删除失败
+notify.no_fork_command: agentty 没有 {name} 的 fork 命令
+notify.save_failed: 保存失败
+notify.session_id_not_token: {name} 的会话 ID 不是纯文本标识
+notify.split_failed: 无法分屏:{error}
+notify.ssh_failed: SSH 连接失败:{error}
+notify.ssh_reconnect_failed: SSH 重连失败:{error}
+notify.terminal_open_failed: 无法打开终端:{error}
+notify.turn_finished: 本轮已完成
+opt.after_current: 当前之后
+opt.agent: Agent
+opt.always: 总是
+opt.at_end: 末尾
+opt.audible: 声音
+opt.auto: 自动
+opt.bar: 竖线
+opt.block: 块状
+opt.custom: 自定义
+opt.default: 默认
+opt.fullscreen: 全屏
+opt.home: 主目录
+opt.inherit: 继承
+opt.key: 密钥
+opt.left: 左侧
+opt.maximized: 最大化
+opt.never: 从不
+opt.normal: 正常
+opt.off: 关闭
+opt.on: 开启
+opt.password: 密码
+opt.top: 顶部
+opt.underline: 下划线
+opt.visual: 闪烁
+opt.when_unfocused: 失焦时
+palette.edit_arrow: → 编辑
+palette.no_matching_commands: 没有匹配的命令
+palette.ssh_hint: 输入 user@host 可改为通过 SSH 连接。
+pending.unreachable: 无法连接到 {machine}
+rw.action_retry: 立即重试
+rw.action_retry_short: 重试
+rw.action_take_back: 在此接管
+rw.connecting: 正在连接 {machine}…
+rw.entered_environment: 已进入远程环境:{label}
+rw.failed: 未连接到 {machine}——{error}
+rw.input_notice_disconnected: 未连接——输入无效
+rw.input_notice_preempted: 已在别处打开——输入无效
+rw.no_connection_details: 此窗口是 {machine} 上的工作区，但 agentty 已没有它的连接信息——请检查对应的 SSH 配置或 ~/.ssh/config 条目是否仍然存在。
+rw.not_connected: 未连接到 {machine}
+rw.preempted: 此工作区已在 {by} 上打开
+rw.reconnecting: 正在重新连接 {machine}…
+rw.reconnecting_attempt: 正在重新连接 {machine}…（第 {attempt} 次尝试）
+rw.replace_confirm_body: {label} 上运行的 agentty-server 使用的协议版本与此客户端不兼容。agentty 会将那里的服务重启到兼容版本，若 {label} 尚未安装则会先安装。\n{label} 上的所有会话都会结束，包括此窗口未连接的会话。
+rw.restart_confirm_body: 这会停止 {label} 上的所有 shell——仍在运行的内容都会被终止，包括此窗口未显示的 shell。工作区和布局会保留，并以全新的 shell 恢复。
+rw.restart_confirm_title: 重启 “{label}” 上的 agentty 服务？
+search.find_placeholder: 查找
+search.match_case: 区分大小写
+search.use_regex: 使用正则表达式
+session.default_name: Agent 会话
+session.discovering: 正在发现 Agent 会话…
+session.empty: 当前环境中没有发现 Codex 或 Claude 会话。
+session.live: 运行中
+session.no_match: 没有匹配的 Agent 会话。
+session.refresh: 刷新 Agent 会话
+session.restoring: 正在恢复…
+session.resume: 恢复
+session.search_placeholder: 搜索会话…
+settings.about_stack: 纯 Rust · 基于 Zed gpui 的 GPU 渲染 · 来自 Alacritty 的 VT 内核
+settings.about_tagline: 一个终端工作台:shell、工作区、SSH 与 coding agent。
+settings.add_rule: + 添加规则
+settings.agent_forwarding: Agent 转发
+settings.agent_forwarding.desc: 将本地 ssh-agent 转发到该连接。
+settings.agents_intro: Agent
+settings.agents_intro.desc: Hook 集成让运行这些 agent 的面板在标签栏中显示实时会话状态（工作中 / 等待输入 / 完成）。仅在 agentty 内生效。
+settings.aliases_many: 已关联 {n} 个别名。
+settings.aliases_none: 还没有关联任何别名。
+settings.aliases_one: 已关联 1 个别名。
+settings.arguments: 参数
+settings.arguments.desc: 空格分隔的启动参数，例如 -l 表示登录 shell。
+settings.background_image: 背景图片
+settings.background_image.desc: 叠加在背景色之上、文字之下。
+settings.blur: 背景模糊
+settings.blur.desc: 模糊半透明窗口背后的内容（macOS）。
+settings.bold_font: 粗体字体
+settings.bold_font.desc: 粗体文字的字形；默认由主字体合成。
+settings.change_theme: 更换主题
+settings.check_updates_launch: 启动时检查更新
+settings.command_line: 命令行
+settings.confirm_close_last: 关闭最后一个窗口前确认
+settings.confirm_close_last.desc: 先询问，因为该操作同时会退出 agentty。关闭后直接退出——无论哪种方式，你的 shell 都会在后台继续运行。
+settings.conn_auth: 认证方式
+settings.conn_auth.desc: 认证方法。Auto 会依次尝试所有适用的方法。
+settings.conn_host: 主机
+settings.conn_host.desc: 主机名或 IP 地址。
+settings.conn_name: 名称
+settings.conn_name.desc: 此连接的标签。
+settings.conn_user: 用户
+settings.conn_user.desc: 登录用户（留空 = 连接时解析）。
+settings.connected_suffix: · 已连接
+settings.copy_on_select: 选择即复制
+settings.copy_on_select.desc: 用鼠标选择文本后立即复制到剪贴板，无需 ⌘C。
+settings.cursor_blink: 光标闪烁
+settings.cursor_blink.desc: 终端聚焦时让光标脉动闪烁。
+settings.cursor_shape: 光标形状
+settings.cursor_shape.desc: 终端光标的绘制方式。
+settings.custom_path: 自定义路径
+settings.custom_path.desc: 新 shell 的启动目录。
+settings.custom_themes: 自定义主题
+settings.custom_themes.desc: 复制一个主题即可在此编辑颜色，或把你自己的主题放进主题文件夹：agentty YAML 主题或 iTerm2 .itermcolors 配色。
+settings.default_follows: 默认跟随全局默认值:{value}。
+settings.detect_urls: 识别 URL
+settings.detect_urls.desc: 悬停时为链接加下划线，{modifier}+点击打开。
+settings.dim_inactive: 调暗非活动面板
+settings.dim_inactive.desc: 在分屏中淡化未聚焦的面板，让当前面板更突出。
+settings.duplicate_to_edit: 创建副本以编辑
+settings.edit_theme: 编辑主题
+settings.edit_theme.desc: 你正在编辑一个副本，修改会实时保存到主题文件夹中的对应文件。
+settings.filter_hosts: 筛选主机…
+settings.focus_follows_mouse: 焦点跟随鼠标
+settings.focus_follows_mouse.desc: 悬停即聚焦面板，无需点击。
+settings.follow_theme: 跟随主题
+settings.font_family: 字体
+settings.font_family.desc: 从系统已安装的字体中选择。
+settings.font_ligatures: 字体连字
+settings.font_ligatures.desc: 为终端文字启用常见编程连字特性。
+settings.font_size: 字体大小
+settings.font_size.desc: 终端文字大小（像素）。
+settings.forgot_password: 已忘记 {endpoint} 保存的密码
+settings.forgot_password_failed: 无法忘记 {endpoint} 的密码:{error}
+settings.forward_d_hint: D——动态 SOCKS 代理
+settings.forward_description_placeholder: 描述
+settings.forward_l_hint: L——本地端口映射到远端
+settings.forward_loopback: 转发 SSH 本地链接
+settings.forward_loopback.desc: 当面板处于 SSH 中时，通过临时端口转发打开 localhost 链接。
+settings.forward_r_hint: R——远端端口映射到本机
+settings.fwd_rules_many: {n} 条规则，随连接开启
+settings.fwd_rules_none: 无
+settings.fwd_rules_one: 1 条规则，随连接开启
+settings.h.about: 关于
+settings.h.ansi_colors: ANSI 颜色
+settings.h.bell: 响铃
+settings.h.cursor: 光标
+settings.h.keyboard: 键盘
+settings.h.links: 链接
+settings.h.mouse: 鼠标
+settings.h.notifications: 通知
+settings.h.scrolling: 滚动
+settings.h.selection_clipboard: 选择与剪贴板
+settings.h.tabs: 标签
+settings.h.transparency: 透明度
+settings.h.typography: 排版
+settings.h.window: 窗口
+settings.hide_mouse: 输入时隐藏鼠标
+settings.hide_mouse.desc: 打字时隐藏指针，下次移动时恢复。
+settings.history_search: 历史搜索
+settings.history_search.desc: 在提示符下按 ⌃R 打开 agentty 的模糊历史菜单。关闭后 ⌃R 交给 shell——它自己的 reverse-i-search，或你绑定的工具（fzf、percol）。
+settings.image_opacity: 图片不透明度
+settings.image_opacity.desc: 背景图片在背景色上的显示强度。
+settings.import_aliases: 导入别名
+settings.import_aliases.desc: 重新读取文件并添加新条目。你在这里做的修改由 agentty 保存——原文件不会被写入。
+settings.import_now: 立即导入
+settings.install_cli: 将 `agentty` 命令安装到 PATH
+settings.italic_font: 斜体字体
+settings.italic_font.desc: 斜体文字的字形；默认由主字体合成。
+settings.jump_host: 跳板机
+settings.jump_host.desc: 用于中转的另一个配置名（留空 = 直连）。
+settings.keybindings_intro: 快捷键
+settings.keybindings_intro.desc: 点击一个快捷键，然后按下新按键——稍作停顿即保存。可链式组合，如 Ctrl-B 再按 X。Esc 取消；Backspace 删除最后一个按键，若最先按下则恢复默认。
+settings.line_height: 行高
+settings.line_height.desc: 行间距，以字体大小的倍数表示。
+settings.nav.about: 关于
+settings.nav.agents: Agent
+settings.nav.appearance: 外观
+settings.nav.input: 输入
+settings.nav.keybindings: 快捷键
+settings.nav.terminal: 终端
+settings.nav.window_tabs: 窗口与标签
+settings.new_tab_position: 新标签位置
+settings.new_tab_position.desc: 新打开标签的插入位置。
+settings.no_saved_hosts: 还没有保存的主机。
+settings.nothing_matches: 没有匹配 “{query}” 的结果。
+settings.notify_finish: 命令完成时通知
+settings.notify_finish.desc: 长时间运行的前台命令完成后发出桌面提醒。
+settings.notify_threshold: 通知阈值
+settings.notify_threshold.desc: 命令运行多久才算“长时间”。
+settings.opacity: 不透明度
+settings.opacity.desc: 窗口背景的不透明度，对所有主题生效。低于 100% 时会透出桌面。
+settings.open_default_app_placeholder: 用默认应用打开
+settings.open_themes_folder: 打开主题文件夹
+settings.option_meta: Option (⌥) 作为 Meta
+settings.option_meta.desc: ⌥+按键 发送 shell 期望的转义序列（⌥B = 回退一个词），而不是输入特殊字符（∫）。
+settings.pause_to_save: 停顿即保存 · Esc
+settings.port_forwarding: 端口转发
+settings.prefix: 前缀
+settings.preset: 预设
+settings.press_keys: 请按按键…
+settings.program: 程序
+settings.program.desc: PATH 上的可执行名或绝对路径，例如 zsh、fish、pwsh。
+settings.prompt: 提示符
+settings.prompt.desc: agentty 在 shell 提示符上的自有菜单。关掉一个即可把按键还给 shell。
+settings.reading_agent_config: 正在读取本机的 agent 配置…
+settings.remember_window: 记住窗口大小和位置
+settings.remember_window.desc: 以 agentty 上次退出时的大小和位置重新打开。关闭后则以默认大小居中打开。
+settings.report_mouse: 向应用报告鼠标
+settings.report_mouse.desc: 让全屏应用（vim、tmux）处理点击与滚动；按住 Shift 可保留本地手势。
+settings.restart_server: 重启服务…
+settings.restart_server_body: 重启本机服务以应用新授予的 macOS 权限、在无响应时恢复，或从干净状态重新开始。这会结束本机所有运行中的 shell；标签和布局会以全新的 shell 重新打开。远程机器的服务可从工作区切换器中它自己的菜单重启。
+settings.restore_all_defaults: 全部恢复默认
+settings.restore_layout: 恢复上次布局
+settings.restore_layout.desc: 启动时恢复上次窗口的标签、分屏和目录。关闭后则打开一个全新的终端。
+settings.scroll_speed: 滚动速度
+settings.scroll_speed.desc: 应用于鼠标滚轮滚动的倍率。
+settings.scrollback: 回滚行数
+settings.scrollback.desc: 每个面板保留的历史行数，对新面板生效。
+settings.search_settings: 搜索设置…
+settings.search_themes: 搜索主题…
+settings.security: 安全
+settings.security.desc: 主机可以在自己的“高级”设置中覆盖这两项。
+settings.server: 服务
+settings.shell_integration: Shell 集成
+settings.shell_integration.desc: 让远端 shell 上报提示符、退出码和目录。
+settings.shell_section: Shell
+settings.shell_section.desc: 每个新终端启动的程序。程序留空则使用平台默认值（{platform_default}）。
+settings.skip_banner: 跳过横幅
+settings.skip_banner.desc: 抑制服务器登录横幅。
+settings.smart_selection: 智能选择
+settings.smart_selection.desc: 双击选中光标下的整个 URL、文件路径、邮箱或括号对。
+settings.ssh_group_local: agentty 内
+settings.start_in: 启动目录
+settings.start_in.desc: 新 shell 的启动位置：agentty 的启动目录、用户主目录或固定路径。
+settings.startup_window: 启动窗口
+settings.startup_window.desc: agentty 启动时的窗口状态。
+settings.sync_system: 跟随系统
+settings.sync_system.desc: 跟随系统外观，分别为浅色和深色模式设置主题。
+settings.tab_bar_position: 标签栏位置
+settings.tab_bar_position.desc: 标签显示为顶部横向条或左侧纵向栏。
+settings.tab_completion: Tab 补全
+settings.tab_completion.desc: 在提示符下按 Tab 打开 agentty 的补全菜单。关闭后 Tab 交给 shell 自身的补全。
+settings.terminal_bell: 终端响铃
+settings.terminal_bell.desc: 响铃（^G）的提示方式：静音、短暂闪烁或系统声音。
+settings.theme: 主题
+settings.theme.desc: 选择一个配色主题，每个主题自带浅色或深色外观。
+settings.theme_caption_dark: 深色模式 · {kind}
+settings.theme_caption_dark_active: 深色模式 · {kind} · 当前使用
+settings.theme_caption_light: 浅色模式 · {kind}
+settings.theme_caption_light_active: 浅色模式 · {kind} · 当前使用
+settings.theme_caption_manual: {kind} · {mode}
+settings.theme_kind_builtin: 内置
+settings.theme_kind_custom: 自定义
+settings.theme_mode_dark: 深色
+settings.theme_mode_light: 浅色
+settings.theme_subtitle_dark: 选择深色模式使用的主题。
+settings.theme_subtitle_light: 选择浅色模式使用的主题。
+settings.theme_subtitle_manual: 更改当前使用的主题。
+settings.themes: 主题
+settings.title: 设置
+settings.tray_icon: 显示托盘图标
+settings.tray_icon.desc: 在系统托盘/菜单栏保留状态项：当 coding agent 需要你输入时给出提示，其菜单可跳转到 agent 面板。
+settings.trim_spaces: 复制时去除行尾空格
+settings.trim_spaces.desc: 去除每行复制内容末尾的空白。
+settings.update_available: 新版本 {version} 已发布。
+settings.updates: 更新
+settings.verify_host_keys: 校验主机密钥
+settings.verify_host_keys.desc: 连接前对照 known_hosts 检查服务器密钥，并确认未知或已变更的密钥。关闭后不检查，伪装的服务器不会被发现。
+settings.via_suffix: · 经由 {name}
+settings.warn_before_closing: 关闭前警告
+settings.warn_before_closing.desc: 关闭带有活动 SSH 会话的标签或面板前请求确认。
+settings.x11_forwarding: X11 转发
+settings.x11_forwarding.desc: 请求 X11 转发（macOS 需要 XQuartz）。
+sftp.new_file_name: 新建文件名称
+sftp.new_file_title: 新建文件
+sftp.new_folder_name: 新建文件夹名称
+sftp.new_folder_title: 新建文件夹
+sftp.no_transfers: 暂无传输任务。
+sftp.permissions: 权限 · {readable}
+sftp.rename_title: 重命名
+sftp.search_placeholder: 搜索
+sidebar.hide: 隐藏侧边栏
+sidebar.show: 显示侧边栏
+ssh.close_confirm_body: 连接仍然活跃，关闭后将被终止。
+ssh.close_confirm_title: 关闭此 SSH 连接？
+ssh.connect: 连接
+ssh.disconnected: 已断开
+ssh.disconnected_from: 已与 {host} 断开
+ssh.fingerprint_new: 新 {fingerprint}
+ssh.fingerprint_old: 旧 {fingerprint}
+ssh.host_input_placeholder: user@host  或  user@host:port
+ssh.host_key_changed: 主机密钥已变更——可能存在中间人攻击
+ssh.host_key_differs: 主机密钥与此前信任的不一致，这可能是攻击行为。
+ssh.passphrase_for: {key_path} 的私钥口令
+ssh.password_for: {user}@{host} 的密码
+ssh.password_rejected: 已保存的密码被拒绝，请输入新密码。
+ssh.remember_keychain: 记住（钥匙串）
+ssh.submit: 提交
+ssh.two_factor: 两步验证
+ssh.type_yes_override: 输入 "yes" 以覆盖并信任新密钥，或按 Esc 中止。
+ssh.unknown_host: 未知主机 {host}
+ssh.unlock: 解锁
+switcher.add_ssh_host: 添加 SSH 主机…
+switcher.new_window_hint: 点击打开新窗口
+switcher.no_match: 没有匹配的工作区或机器。
+switcher.other_machines: 其他机器
+switcher.search_placeholder: 搜索工作区和机器
+tab.shell_default: Shell {index}
+worktree.failed: 创建 worktree 失败:{error}
+worktree.new_tab: 新建 Worktree 标签
+worktree.removal_failed: 移除 worktree 失败:{error}

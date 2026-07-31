@@ -146,7 +146,10 @@ pub(crate) struct SftpPanelState {
 
 impl SftpPanelState {
     pub(crate) fn new(window: &mut Window, cx: &mut Context<AgenttyApp>) -> Self {
-        let filter_input = cx.new(|cx| InputState::new(window, cx).placeholder("Search"));
+        let filter_input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder(crate::core::i18n::current(cx, "sftp.search_placeholder"))
+        });
         let sub = cx.subscribe_in(&filter_input, window, |_this, _input, ev, _w, cx| {
             if matches!(ev, gpui_component::input::InputEvent::Change) {
                 cx.notify();
@@ -595,13 +598,19 @@ impl AgenttyApp {
     }
 
     pub(crate) fn sftp_begin_new_folder(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let input = cx.new(|cx| InputState::new(window, cx).placeholder("New folder name"));
+        let input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder(crate::core::i18n::current(cx, "sftp.new_folder_name"))
+        });
         self.sftp_panel.editing = Some(SftpEdit::NewFolder(input));
         cx.notify();
     }
 
     pub(crate) fn sftp_begin_new_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let input = cx.new(|cx| InputState::new(window, cx).placeholder("New file name"));
+        let input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder(crate::core::i18n::current(cx, "sftp.new_file_name"))
+        });
         self.sftp_panel.editing = Some(SftpEdit::NewFile(input));
         cx.notify();
     }
@@ -885,7 +894,7 @@ impl AgenttyApp {
                         false,
                         cx,
                     )
-                    .tooltip("Refresh")
+                    .tooltip(crate::core::i18n::current(cx, "common.refresh"))
                     .on_click(cx.listener(|this, _, _w, cx| this.sftp_refresh(cx))),
                 ),
             )
@@ -897,7 +906,7 @@ impl AgenttyApp {
                         false,
                         cx,
                     )
-                    .tooltip("More")
+                    .tooltip(crate::core::i18n::current(cx, "common.more"))
                     .dropdown_menu_with_anchor(gpui::Anchor::TopRight, {
                         let app = cx.entity().downgrade();
                         move |menu, _window, _cx| {
@@ -1027,12 +1036,28 @@ impl AgenttyApp {
         let border = cx.theme().border;
         let foreground = cx.theme().foreground;
         let (title, input): (String, _) = match self.sftp_panel.editing.as_ref()? {
-            SftpEdit::NewFolder(input) => ("New folder".to_string(), input),
-            SftpEdit::NewFile(input) => ("New file".to_string(), input),
-            SftpEdit::Rename { input, .. } => ("Rename".to_string(), input),
+            SftpEdit::NewFolder(input) => (
+                crate::core::i18n::current(cx, "sftp.new_folder_title").to_string(),
+                input,
+            ),
+            SftpEdit::NewFile(input) => (
+                crate::core::i18n::current(cx, "sftp.new_file_title").to_string(),
+                input,
+            ),
+            SftpEdit::Rename { input, .. } => (
+                crate::core::i18n::current(cx, "sftp.rename_title").to_string(),
+                input,
+            ),
             SftpEdit::Chmod {
                 readable, input, ..
-            } => (format!("Permissions · {readable}"), input),
+            } => (
+                crate::core::i18n::current_format(
+                    cx,
+                    "sftp.permissions",
+                    &[("readable", readable)],
+                ),
+                input,
+            ),
         };
         Some(
             v_flex()
@@ -1058,14 +1083,14 @@ impl AgenttyApp {
                         .justify_end()
                         .child(
                             Button::new("sftp-edit-cancel")
-                                .label("Cancel")
+                                .label(crate::core::i18n::current(cx, "common.cancel"))
                                 .ghost()
                                 .xsmall()
                                 .on_click(cx.listener(|this, _, _w, cx| this.sftp_cancel_edit(cx))),
                         )
                         .child(
                             Button::new("sftp-edit-ok")
-                                .label("OK")
+                                .label(crate::core::i18n::current(cx, "common.ok"))
                                 .xsmall()
                                 .primary()
                                 .on_click(cx.listener(|this, _, _w, cx| this.sftp_commit_edit(cx))),
@@ -1205,7 +1230,15 @@ impl AgenttyApp {
             .child(div().flex_none().text_xs().text_color(muted).child(size))
             .context_menu(move |menu, _window, cx| {
                 let danger = cx.theme().danger;
-                Self::sftp_row_context_menu(menu, &menu_entry, dir_like, is_symlink, danger, &app)
+                Self::sftp_row_context_menu(
+                    menu,
+                    &menu_entry,
+                    dir_like,
+                    is_symlink,
+                    danger,
+                    &app,
+                    cx,
+                )
             })
             .into_any_element()
     }
@@ -1217,6 +1250,7 @@ impl AgenttyApp {
         is_symlink: bool,
         danger: gpui::Hsla,
         app: &gpui::WeakEntity<Self>,
+        cx: &gpui::App,
     ) -> gpui_component::menu::PopupMenu {
         let mut menu = menu.min_w(px(180.));
 
@@ -1231,45 +1265,57 @@ impl AgenttyApp {
         }));
 
         if is_symlink {
-            menu = menu.item(PopupMenuItem::new("Follow symlink").on_click({
+            menu = menu.item(
+                PopupMenuItem::new(crate::core::i18n::current(cx, "menu.follow_symlink")).on_click(
+                    {
+                        let app = app.clone();
+                        let entry = entry.clone();
+                        move |_, _window, cx| {
+                            let entry = entry.clone();
+                            let _ = app.update(cx, |this, cx| this.sftp_follow_symlink(entry, cx));
+                        }
+                    },
+                ),
+            );
+        }
+
+        menu = menu
+            .item(
+                PopupMenuItem::new(crate::core::i18n::current(cx, "menu.rename_plain")).on_click({
+                    let app = app.clone();
+                    let name = entry.name.clone();
+                    move |_, window, cx| {
+                        let name = name.clone();
+                        let _ = app.update(cx, |this, cx| this.sftp_begin_rename(name, window, cx));
+                    }
+                }),
+            )
+            .item(
+                PopupMenuItem::new(crate::core::i18n::current(cx, "menu.chmod")).on_click({
+                    let app = app.clone();
+                    let entry = entry.clone();
+                    move |_, window, cx| {
+                        let entry = entry.clone();
+                        let _ = app.update(cx, |this, cx| this.sftp_begin_chmod(entry, window, cx));
+                    }
+                }),
+            )
+            .separator();
+
+        menu.item(
+            PopupMenuItem::element(move |_window, _cx| {
+                div()
+                    .text_color(danger)
+                    .child(crate::core::i18n::current(_cx, "common.delete"))
+            })
+            .on_click({
                 let app = app.clone();
                 let entry = entry.clone();
                 move |_, _window, cx| {
                     let entry = entry.clone();
-                    let _ = app.update(cx, |this, cx| this.sftp_follow_symlink(entry, cx));
+                    let _ = app.update(cx, |this, cx| this.sftp_delete_entry(entry, cx));
                 }
-            }));
-        }
-
-        menu = menu
-            .item(PopupMenuItem::new("Rename").on_click({
-                let app = app.clone();
-                let name = entry.name.clone();
-                move |_, window, cx| {
-                    let name = name.clone();
-                    let _ = app.update(cx, |this, cx| this.sftp_begin_rename(name, window, cx));
-                }
-            }))
-            .item(PopupMenuItem::new("chmod…").on_click({
-                let app = app.clone();
-                let entry = entry.clone();
-                move |_, window, cx| {
-                    let entry = entry.clone();
-                    let _ = app.update(cx, |this, cx| this.sftp_begin_chmod(entry, window, cx));
-                }
-            }))
-            .separator();
-
-        menu.item(
-            PopupMenuItem::element(move |_window, _cx| div().text_color(danger).child("Delete"))
-                .on_click({
-                    let app = app.clone();
-                    let entry = entry.clone();
-                    move |_, _window, cx| {
-                        let entry = entry.clone();
-                        let _ = app.update(cx, |this, cx| this.sftp_delete_entry(entry, cx));
-                    }
-                }),
+            }),
         )
     }
 
@@ -1363,7 +1409,7 @@ impl AgenttyApp {
                         .w(px(18.))
                         .h(px(18.))
                         .rounded(px(4.))
-                        .tooltip("Dismiss")
+                        .tooltip(crate::core::i18n::current(cx, "common.dismiss"))
                         .on_click(cx.listener(|this, _, _w, cx| this.sftp_dismiss_tray(cx))),
                     ),
             );
@@ -1383,7 +1429,7 @@ impl AgenttyApp {
                         .py(px(3.))
                         .text_size(px(11.5))
                         .text_color(muted)
-                        .child("No transfers yet."),
+                        .child(crate::core::i18n::current(cx, "sftp.no_transfers")),
                 )
             } else {
                 let mut list = v_flex().px(px(CONTENT_INSET)).pb(px(6.)).gap(px(6.));

@@ -491,7 +491,7 @@ impl AgenttyApp {
                     cx,
                 )
                 .rounded_md()
-                .tooltip("Copy Path")
+                .tooltip(crate::core::i18n::current(cx, "common.copy_path"))
                 .on_click(move |_, _window, cx| {
                     cx.write_to_clipboard(gpui::ClipboardItem::new_string(
                         cwd.display().to_string(),

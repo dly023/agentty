@@ -579,7 +579,7 @@ impl AgenttyApp {
             .child(div().flex_1().text_sm().child(text.to_string()))
             .child(
                 Button::new(("ssh-banner-dismiss", ix))
-                    .label("Dismiss")
+                    .label(crate::core::i18n::current(cx, "common.dismiss"))
                     .small()
                     .ghost()
                     .on_click(cx.listener(move |this, _, _w, cx| this.dismiss_ssh_banner(ix, cx))),
@@ -590,23 +590,36 @@ impl AgenttyApp {
     fn render_ssh_sheet(&self, model: &PromptModel, cx: &mut Context<Self>) -> AnyElement {
         let danger = cx.theme().danger;
         let (title, danger_sheet) = match model {
-            PromptModel::Password { user, host, .. } => {
-                (format!("Password for {user}@{host}"), false)
-            }
-            PromptModel::KeyPassphrase { key_path, .. } => {
-                (format!("Passphrase for {key_path}"), false)
-            }
+            PromptModel::Password { user, host, .. } => (
+                crate::core::i18n::current_format(
+                    cx,
+                    "ssh.password_for",
+                    &[("user", user), ("host", host)],
+                ),
+                false,
+            ),
+            PromptModel::KeyPassphrase { key_path, .. } => (
+                crate::core::i18n::current_format(
+                    cx,
+                    "ssh.passphrase_for",
+                    &[("key_path", key_path)],
+                ),
+                false,
+            ),
             PromptModel::KeyboardInteractive { name, .. } => {
                 let label = if name.is_empty() {
-                    "Two-factor authentication".to_string()
+                    crate::core::i18n::current(cx, "ssh.two_factor").to_string()
                 } else {
                     name.clone()
                 };
                 (label, false)
             }
-            PromptModel::HostKeyUnknown { host, .. } => (format!("Unknown host {host}"), false),
+            PromptModel::HostKeyUnknown { host, .. } => (
+                crate::core::i18n::current_format(cx, "ssh.unknown_host", &[("host", host)]),
+                false,
+            ),
             PromptModel::HostKeyChanged { .. } => (
-                "Host key CHANGED — possible man-in-the-middle".to_string(),
+                crate::core::i18n::current(cx, "ssh.host_key_changed").to_string(),
                 true,
             ),
         };
@@ -649,12 +662,12 @@ impl AgenttyApp {
                         div()
                             .text_xs()
                             .text_color(danger)
-                            .child("The stored password was rejected. Enter a new one."),
+                            .child(crate::core::i18n::current(cx, "ssh.password_rejected")),
                     );
                 }
                 c.child(self.render_ssh_input(0))
                     .child(self.render_ssh_remember(cx))
-                    .child(self.render_ssh_actions("Connect", cx))
+                    .child(self.render_ssh_actions("ssh.connect", cx))
             }
             PromptModel::KeyPassphrase { comment, .. } => {
                 let mut c = card;
@@ -668,7 +681,7 @@ impl AgenttyApp {
                 }
                 c.child(self.render_ssh_input(0))
                     .child(self.render_ssh_remember(cx))
-                    .child(self.render_ssh_actions("Unlock", cx))
+                    .child(self.render_ssh_actions("ssh.unlock", cx))
             }
             PromptModel::KeyboardInteractive {
                 instructions,
@@ -683,7 +696,7 @@ impl AgenttyApp {
                     c = c.child(div().text_xs().child(row.text.clone()));
                     c = c.child(self.render_ssh_input(i));
                 }
-                c.child(self.render_ssh_actions("Submit", cx))
+                c.child(self.render_ssh_actions("ssh.submit", cx))
             }
             PromptModel::HostKeyUnknown {
                 algorithm,
@@ -703,16 +716,21 @@ impl AgenttyApp {
                         .gap_2()
                         .child(
                             Button::new("ssh-hk-trust")
-                                .label("Trust")
+                                .label(crate::core::i18n::current(cx, "common.trust"))
                                 .small()
                                 .primary()
                                 .on_click(cx.listener(|this, _, window, cx| {
                                     this.trust_ssh_host_key(window, cx)
                                 })),
                         )
-                        .child(Button::new("ssh-hk-abort").label("Abort").small().on_click(
-                            cx.listener(|this, _, window, cx| this.cancel_ssh_prompt(window, cx)),
-                        )),
+                        .child(
+                            Button::new("ssh-hk-abort")
+                                .label(crate::core::i18n::current(cx, "common.abort"))
+                                .small()
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.cancel_ssh_prompt(window, cx)
+                                })),
+                        ),
                 ),
             PromptModel::HostKeyChanged {
                 algorithm,
@@ -721,27 +739,35 @@ impl AgenttyApp {
                 port,
                 host,
             } => card
-                .child(div().text_xs().text_color(danger).child(
-                    "The host key differs from the one previously trusted. This may be an attack.",
-                ))
-                .child(div().text_xs().child(format!("{host}:{port}  {algorithm}")))
                 .child(
                     div()
                         .text_xs()
-                        .font_family("monospace")
-                        .child(format!("new {fingerprint}")),
+                        .text_color(danger)
+                        .child(crate::core::i18n::current(cx, "ssh.host_key_differs")),
                 )
+                .child(div().text_xs().child(format!("{host}:{port}  {algorithm}")))
+                .child(div().text_xs().font_family("monospace").child(
+                    crate::core::i18n::current_format(
+                        cx,
+                        "ssh.fingerprint_new",
+                        &[("fingerprint", fingerprint)],
+                    ),
+                ))
                 .child(
                     div()
                         .text_xs()
                         .font_family("monospace")
                         .text_color(cx.theme().muted_foreground)
-                        .child(format!("old {old_fingerprint}")),
+                        .child(crate::core::i18n::current_format(
+                            cx,
+                            "ssh.fingerprint_old",
+                            &[("fingerprint", old_fingerprint)],
+                        )),
                 )
                 .child(
                     div()
                         .text_xs()
-                        .child("Type \"yes\" to override and trust the new key, or Esc to abort."),
+                        .child(crate::core::i18n::current(cx, "ssh.type_yes_override")),
                 )
                 .child(self.render_ssh_input(0))
                 .child(
@@ -749,7 +775,7 @@ impl AgenttyApp {
                         .gap_2()
                         .child(
                             Button::new("ssh-hkc-abort")
-                                .label("Abort")
+                                .label(crate::core::i18n::current(cx, "common.abort"))
                                 .small()
                                 .primary()
                                 .on_click(cx.listener(|this, _, window, cx| {
@@ -758,7 +784,7 @@ impl AgenttyApp {
                         )
                         .child(
                             Button::new("ssh-hkc-override")
-                                .label("Override")
+                                .label(crate::core::i18n::current(cx, "common.override"))
                                 .small()
                                 .on_click(cx.listener(|this, _, window, cx| {
                                     this.submit_ssh_prompt(window, cx)
@@ -781,15 +807,15 @@ impl AgenttyApp {
         h_flex()
             .child(
                 Checkbox::new("ssh-remember")
-                    .label("Remember (keychain)")
+                    .label(crate::core::i18n::current(cx, "ssh.remember_keychain"))
                     .checked(self.ssh_prompt.remember)
                     .on_click(cx.listener(|this, _, _w, cx| this.toggle_ssh_remember(cx))),
             )
             .into_any_element()
     }
 
-    fn render_ssh_actions(&self, submit_label: &str, cx: &mut Context<Self>) -> AnyElement {
-        let submit_label = submit_label.to_string();
+    fn render_ssh_actions(&self, submit_key: &'static str, cx: &mut Context<Self>) -> AnyElement {
+        let submit_label = crate::core::i18n::current(cx, submit_key).to_string();
         h_flex()
             .gap_2()
             .child(
@@ -802,9 +828,12 @@ impl AgenttyApp {
                     ),
             )
             .child(
-                Button::new("ssh-cancel").label("Cancel").small().on_click(
-                    cx.listener(|this, _, window, cx| this.cancel_ssh_prompt(window, cx)),
-                ),
+                Button::new("ssh-cancel")
+                    .label(crate::core::i18n::current(cx, "common.cancel"))
+                    .small()
+                    .on_click(
+                        cx.listener(|this, _, window, cx| this.cancel_ssh_prompt(window, cx)),
+                    ),
             )
             .into_any_element()
     }

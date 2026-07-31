@@ -1,12 +1,39 @@
 #!/usr/bin/env bash
+# i18n quality gate:
+#  1. zh-CN / en-US catalogs exist and have identical keys.
+#  2. Locale infrastructure is wired (system preference + embedded catalogs).
+#  3. Every statically referenced catalog key in src/ exists in the catalog.
+#  4. No new hardcoded user-facing strings outside the allowlist.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 for f in assets/i18n/en-US.yaml assets/i18n/zh-CN.yaml; do [[ -f "$f" ]] || exit 1; done
-cut -d: -f1 assets/i18n/en-US.yaml | sort -u > /tmp/agentty-i18n-en.$$
-cut -d: -f1 assets/i18n/zh-CN.yaml | sort -u > /tmp/agentty-i18n-zh.$$
-trap 'rm -f /tmp/agentty-i18n-en.$$ /tmp/agentty-i18n-zh.$$' EXIT
+cut -d: -f1 assets/i18n/en-US.yaml | sed 's/ *$//' | sort -u > /tmp/agentty-i18n-en.$$
+cut -d: -f1 assets/i18n/zh-CN.yaml | sed 's/ *$//' | sort -u > /tmp/agentty-i18n-zh.$$
+trap 'rm -f /tmp/agentty-i18n-en.$$ /tmp/agentty-i18n-zh.$$ /tmp/agentty-i18n-used.$$ /tmp/agentty-i18n-hard.$$ /tmp/agentty-i18n-hard-filt.$$' EXIT
 diff -u /tmp/agentty-i18n-en.$$ /tmp/agentty-i18n-zh.$$
 rg -q 'LocalePreference.*System|System,' crates/agentty-core/src/core/config.rs
 rg -q 'include_str!.*zh-CN.yaml' src/core/i18n.rs
 rg -q 'include_str!.*en-US.yaml' src/core/i18n.rs
+
+# 3. referenced keys must exist
+rg -o 'i18n::(?:current|current_format|tr|trf|current_opt)\( *[a-z_]*, *"([a-z0-9_.]+)"' -r '$1' src/ --no-filename | sort -u > /tmp/agentty-i18n-used.$$
+missing=$(comm -23 /tmp/agentty-i18n-used.$$ /tmp/agentty-i18n-en.$$)
+if [[ -n "$missing" ]]; then
+  echo "catalog keys referenced but missing:" >&2
+  echo "$missing" >&2
+  exit 1
+fi
+
+# 4. hardcoded user-facing strings lint
+rg -o '\.(tooltip|child|label|title|placeholder|description)\("([^"]{2,80})"' -r '$2' src/ --no-filename | sort -u > /tmp/agentty-i18n-hard.$$
+if [[ -f docs/quality/i18n-hardcoded-allowlist.txt ]]; then
+  comm -23 /tmp/agentty-i18n-hard.$$ <(sort -u docs/quality/i18n-hardcoded-allowlist.txt) > /tmp/agentty-i18n-hard-filt.$$
+else
+  cp /tmp/agentty-i18n-hard.$$ /tmp/agentty-i18n-hard-filt.$$
+fi
+if [[ -s /tmp/agentty-i18n-hard-filt.$$ ]]; then
+  echo "hardcoded user-facing strings outside docs/quality/i18n-hardcoded-allowlist.txt:" >&2
+  cat /tmp/agentty-i18n-hard-filt.$$ >&2
+  exit 1
+fi
 echo 'i18n checks passed'

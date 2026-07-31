@@ -396,7 +396,7 @@ impl AgenttyApp {
                         div()
                             .text_xs()
                             .text_color(cx.theme().muted_foreground)
-                            .child("refreshing…"),
+                            .child(crate::core::i18n::current(cx, "diff.refreshing")),
                     )
                 },
             )
@@ -411,7 +411,7 @@ impl AgenttyApp {
                         cx,
                     )
                     .rounded_lg()
-                    .tooltip("Close Diff (Esc)")
+                    .tooltip(crate::core::i18n::current(cx, "diff.close_esc"))
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.close_diff_overlay(window, cx);
                     })),
@@ -597,7 +597,7 @@ impl AgenttyApp {
                     .flex_shrink_0()
                     .text_xs()
                     .text_color(cx.theme().muted_foreground)
-                    .child("binary"),
+                    .child(crate::core::i18n::current(cx, "diff.binary")),
             );
         }
         if file.added > 0 {
@@ -768,7 +768,11 @@ impl AgenttyApp {
                     .bg(cx.theme().secondary)
                     .text_xs()
                     .text_color(cx.theme().muted_foreground)
-                    .child(format!("Untracked files ({total})")),
+                    .child(crate::core::i18n::current_format(
+                        cx,
+                        "diff.untracked",
+                        &[("total", &total.to_string())],
+                    )),
             );
         for path in untracked {
             section = section.child(

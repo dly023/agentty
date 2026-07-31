@@ -750,17 +750,17 @@ impl AgenttyApp {
 
         let nav_body = SidebarMenu::new()
             .child(nav_item(
-                "Appearance",
+                crate::core::i18n::current(cx, "settings.nav.appearance"),
                 SettingsSection::Appearance,
                 Icon::new(IconName::Palette),
             ))
             .child(nav_item(
-                "Terminal",
+                crate::core::i18n::current(cx, "settings.nav.terminal"),
                 SettingsSection::Terminal,
                 Icon::new(IconName::SquareTerminal),
             ))
             .child(nav_item(
-                "Input",
+                crate::core::i18n::current(cx, "settings.nav.input"),
                 SettingsSection::Input,
                 Icon::new(IconName::Settings2),
             ))
@@ -770,22 +770,22 @@ impl AgenttyApp {
                 Icon::new(IconName::Globe),
             ))
             .child(nav_item(
-                "Agents",
+                crate::core::i18n::current(cx, "settings.nav.agents"),
                 SettingsSection::Agents,
                 Icon::new(IconName::Bot),
             ))
             .child(nav_item(
-                "Window & Tabs",
+                crate::core::i18n::current(cx, "settings.nav.window_tabs"),
                 SettingsSection::WindowTabs,
                 Icon::new(IconName::WindowRestore),
             ))
             .child(nav_item(
-                "Keybindings",
+                crate::core::i18n::current(cx, "settings.nav.keybindings"),
                 SettingsSection::Keybindings,
                 Icon::new(IconName::CaseSensitive),
             ))
             .child(nav_item(
-                "About",
+                crate::core::i18n::current(cx, "settings.nav.about"),
                 SettingsSection::About,
                 Icon::empty().path("icons/circle-info.svg"),
             ));
@@ -805,7 +805,7 @@ impl AgenttyApp {
                             .text_xs()
                             .font_weight(FontWeight::MEDIUM)
                             .text_color(header_muted)
-                            .child("SETTINGS"),
+                            .child(crate::core::i18n::current(cx, "settings.title")),
                     )
                     .child(
                         h_flex()
@@ -1051,7 +1051,7 @@ impl AgenttyApp {
                             .hover(|h| h.bg(gpui::rgb(sf.hover)))
                     })
                     .active(|s| s.bg(gpui::rgb(sf.pressed)))
-                    .child(*label)
+                    .child(crate::core::i18n::current_opt(cx, *label))
                     .on_click(cx.listener(move |this, _, window, cx| {
                         on_pick(this, i, window, cx);
                     }))
@@ -1142,7 +1142,7 @@ impl AgenttyApp {
             step("font-inc", "+", 2)
                 .on_click(cx.listener(|this, _, _w, cx| this.change_font_size(FONT_SIZE_STEP, cx))),
             Button::new("font-reset")
-                .label("Reset")
+                .label(crate::core::i18n::current(cx, "common.reset"))
                 .ghost()
                 .small()
                 .on_click(cx.listener(|this, _, _w, cx| this.reset_font_size(cx))),
@@ -1158,7 +1158,7 @@ impl AgenttyApp {
                 cx.listener(|this, _, _w, cx| this.change_line_height(LINE_HEIGHT_STEP, cx)),
             ),
             Button::new("lh-reset")
-                .label("Reset")
+                .label(crate::core::i18n::current(cx, "common.reset"))
                 .ghost()
                 .small()
                 .on_click(cx.listener(|this, _, _w, cx| this.reset_line_height(cx))),
@@ -1207,8 +1207,8 @@ impl AgenttyApp {
 
         v_flex()
             .child(self.section_intro(
-                "Theme",
-                "Pick a color theme. Each one sets its own light or dark look.",
+                crate::core::i18n::current(cx, "settings.theme"),
+                crate::core::i18n::current(cx, "settings.theme.desc"),
                 cx,
             ))
             .child(self.render_theme_selection(cx))
@@ -1216,54 +1216,54 @@ impl AgenttyApp {
             .child(self.section_rule(cx))
             .child(self.render_window_section(cx))
             .child(self.section_rule(cx))
-            .child(self.section_header("Typography", cx))
+            .child(self.section_header(crate::core::i18n::current(cx, "settings.h.typography"), cx))
             .child(self.settings_row(
-                "Font size",
-                "Terminal text size in pixels.",
+                crate::core::i18n::current(cx, "settings.font_size"),
+                crate::core::i18n::current(cx, "settings.font_size.desc"),
                 font_size_control,
                 cx,
             ))
             .child(self.settings_row(
-                "Line height",
-                "Row spacing as a multiple of the font size.",
+                crate::core::i18n::current(cx, "settings.line_height"),
+                crate::core::i18n::current(cx, "settings.line_height.desc"),
                 line_height_control,
                 cx,
             ))
             .child(self.settings_row(
-                "Font family",
-                "Pick from fonts installed on your system.",
+                crate::core::i18n::current(cx, "settings.font_family"),
+                crate::core::i18n::current(cx, "settings.font_family.desc"),
                 font_family_control,
                 cx,
             ))
             .child(self.settings_row(
-                "Bold font",
-                "Face for bold text; Default synthesizes it from the primary.",
+                crate::core::i18n::current(cx, "settings.bold_font"),
+                crate::core::i18n::current(cx, "settings.bold_font.desc"),
                 font_bold_control,
                 cx,
             ))
             .child(self.settings_row(
-                "Italic font",
-                "Face for italic text; Default synthesizes it from the primary.",
+                crate::core::i18n::current(cx, "settings.italic_font"),
+                crate::core::i18n::current(cx, "settings.italic_font.desc"),
                 font_italic_control,
                 cx,
             ))
             .child(self.settings_row(
-                "Font ligatures",
-                "Enable common programming ligature features for terminal text.",
+                crate::core::i18n::current(cx, "settings.font_ligatures"),
+                crate::core::i18n::current(cx, "settings.font_ligatures.desc"),
                 ligature_switch,
                 cx,
             ))
             .child(self.section_rule(cx))
-            .child(self.section_header("Cursor", cx))
+            .child(self.section_header(crate::core::i18n::current(cx, "settings.h.cursor"), cx))
             .child(self.settings_row(
-                "Cursor shape",
-                "How the terminal cursor is drawn.",
+                crate::core::i18n::current(cx, "settings.cursor_shape"),
+                crate::core::i18n::current(cx, "settings.cursor_shape.desc"),
                 cursor_style_control,
                 cx,
             ))
             .child(self.settings_row(
-                "Cursor blink",
-                "Pulse the cursor while the terminal is focused.",
+                crate::core::i18n::current(cx, "settings.cursor_blink"),
+                crate::core::i18n::current(cx, "settings.cursor_blink.desc"),
                 blink_switch,
                 cx,
             ))
@@ -1309,17 +1309,19 @@ impl AgenttyApp {
             .into_any_element();
 
         v_flex()
-            .child(self.section_header("Transparency", cx))
+            .child(self.section_header(
+                crate::core::i18n::current(cx, "settings.h.transparency"),
+                cx,
+            ))
             .child(self.settings_row(
-                "Opacity",
-                "How opaque the window background is, for every theme. Below \
-                 100% the desktop shows through.",
+                crate::core::i18n::current(cx, "settings.opacity"),
+                crate::core::i18n::current(cx, "settings.opacity.desc"),
                 opacity_control,
                 cx,
             ))
             .child(self.settings_row(
-                "Blur",
-                "Blur whatever is behind a translucent window (macOS).",
+                crate::core::i18n::current(cx, "settings.blur"),
+                crate::core::i18n::current(cx, "settings.blur.desc"),
                 blur_switch,
                 cx,
             ))
@@ -1327,7 +1329,7 @@ impl AgenttyApp {
                 this.child(
                     h_flex().mt_2().child(
                         Button::new("follow-theme-window")
-                            .label("Follow theme")
+                            .label(crate::core::i18n::current(cx, "settings.follow_theme"))
                             .small()
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.reset_window_overrides(window, cx)
@@ -1336,8 +1338,8 @@ impl AgenttyApp {
                 )
             })
             .child(self.settings_row(
-                "Dim inactive panes",
-                "Fade unfocused panes in a split so the active one stands out.",
+                crate::core::i18n::current(cx, "settings.dim_inactive"),
+                crate::core::i18n::current(cx, "settings.dim_inactive.desc"),
                 dim_switch,
                 cx,
             ))
@@ -1348,7 +1350,10 @@ impl AgenttyApp {
         let editor = self.active_settings().and_then(|s| s.theme_editor.as_ref());
 
         let folder_button = Button::new("open-themes-folder")
-            .label("Open themes folder")
+            .label(crate::core::i18n::current(
+                cx,
+                "settings.open_themes_folder",
+            ))
             .small()
             .on_click(cx.listener(|this, _, _w, cx| this.open_themes_folder(cx)));
 
@@ -1399,7 +1404,7 @@ impl AgenttyApp {
                     )
                     .child(
                         Button::new("remove-theme-image")
-                            .label("Remove")
+                            .label(crate::core::i18n::current(cx, "common.remove"))
                             .small()
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.remove_theme_image(window, cx)
@@ -1423,8 +1428,8 @@ impl AgenttyApp {
                     )
                     .into_any_element();
                 self.settings_row(
-                    "Image opacity",
-                    "How strongly the image shows over the background color.",
+                    crate::core::i18n::current(cx, "settings.image_opacity"),
+                    crate::core::i18n::current(cx, "settings.image_opacity.desc"),
                     control,
                     cx,
                 )
@@ -1433,9 +1438,8 @@ impl AgenttyApp {
             return v_flex()
                 .mt_5()
                 .child(self.section_intro(
-                    "Edit theme",
-                    "You're editing a copy. Changes save to its file in the themes \
-                     folder and apply live.",
+                    crate::core::i18n::current(cx, "settings.edit_theme"),
+                    crate::core::i18n::current(cx, "settings.edit_theme.desc"),
                     cx,
                 ))
                 .children(
@@ -1443,13 +1447,18 @@ impl AgenttyApp {
                         .map(|(label, state)| self.render_theme_color_row(label, state, cx)),
                 )
                 .child(self.settings_row(
-                    "Background image",
-                    "Composited over the background color, under the text.",
+                    crate::core::i18n::current(cx, "settings.background_image"),
+                    crate::core::i18n::current(cx, "settings.background_image.desc"),
                     image_control,
                     cx,
                 ))
                 .children(image_opacity_row)
-                .child(self.section_header("ANSI colors", cx))
+                .child(
+                    self.section_header(
+                        crate::core::i18n::current(cx, "settings.h.ansi_colors"),
+                        cx,
+                    ),
+                )
                 .children(
                     ansi.into_iter()
                         .map(|(label, state)| self.render_theme_color_row(label, state, cx)),
@@ -1461,9 +1470,8 @@ impl AgenttyApp {
         v_flex()
             .mt_5()
             .child(self.section_intro(
-                "Custom themes",
-                "Duplicate a theme to edit its colors here, or drop your own in the \
-                 themes folder: a agentty YAML theme or an iTerm2 .itermcolors scheme.",
+                crate::core::i18n::current(cx, "settings.custom_themes"),
+                crate::core::i18n::current(cx, "settings.custom_themes.desc"),
                 cx,
             ))
             .child(
@@ -1471,7 +1479,7 @@ impl AgenttyApp {
                     .gap_3()
                     .child(
                         Button::new("duplicate-theme")
-                            .label("Duplicate to edit")
+                            .label(crate::core::i18n::current(cx, "settings.duplicate_to_edit"))
                             .small()
                             .on_click(cx.listener(|this, _, window, cx| {
                                 this.fork_active_theme(window, cx)
@@ -1583,7 +1591,7 @@ impl AgenttyApp {
                                 .dropdown_menu_with_anchor(
                                     gpui::Anchor::TopRight,
                                     move |menu, _window, _cx| {
-                                        Self::ssh_master_menu(menu, &menu_app)
+                                        Self::ssh_master_menu(menu, &menu_app, _cx)
                                     },
                                 ),
                         ),
@@ -1622,16 +1630,16 @@ impl AgenttyApp {
                     .py_4()
                     .text_sm()
                     .text_color(muted)
-                    .child("No saved hosts yet."),
+                    .child(crate::core::i18n::current(cx, "settings.no_saved_hosts")),
             );
         } else if groups.is_empty() {
-            list = list.child(
-                div()
-                    .py_4()
-                    .text_sm()
-                    .text_color(muted)
-                    .child(format!("Nothing matches {query}.")),
-            );
+            list = list.child(div().py_4().text_sm().text_color(muted).child(
+                crate::core::i18n::current_format(
+                    cx,
+                    "settings.nothing_matches",
+                    &[("query", query.as_str())],
+                ),
+            ));
         }
 
         for (key, bucket) in groups {
@@ -1667,25 +1675,32 @@ impl AgenttyApp {
             .into_any_element()
     }
 
-    fn ssh_master_menu(menu: PopupMenu, app: &gpui::WeakEntity<Self>) -> PopupMenu {
+    fn ssh_master_menu(menu: PopupMenu, app: &gpui::WeakEntity<Self>, cx: &gpui::App) -> PopupMenu {
         menu.min_w(px(200.))
-            .item(PopupMenuItem::new("Import from ~/.ssh/config").on_click({
-                let app = app.clone();
-                move |_, _window, cx| {
-                    let _ = app.update(cx, |this, cx| this.import_ssh_config_profiles(cx));
-                }
-            }))
-            .item(PopupMenuItem::new("Expand all groups").on_click({
-                let app = app.clone();
-                move |_, _window, cx| {
-                    let _ = app.update(cx, |this, cx| {
-                        if let Some(s) = this.active_settings_mut() {
-                            s.ssh_collapsed_groups.clear();
+            .item(
+                PopupMenuItem::new(crate::core::i18n::current(cx, "menu.import_ssh_config"))
+                    .on_click({
+                        let app = app.clone();
+                        move |_, _window, cx| {
+                            let _ = app.update(cx, |this, cx| this.import_ssh_config_profiles(cx));
                         }
-                        cx.notify();
-                    });
-                }
-            }))
+                    }),
+            )
+            .item(
+                PopupMenuItem::new(crate::core::i18n::current(cx, "menu.expand_groups")).on_click(
+                    {
+                        let app = app.clone();
+                        move |_, _window, cx| {
+                            let _ = app.update(cx, |this, cx| {
+                                if let Some(s) = this.active_settings_mut() {
+                                    s.ssh_collapsed_groups.clear();
+                                }
+                                cx.notify();
+                            });
+                        }
+                    },
+                ),
+            )
     }
 
     fn render_ssh_group_header(
@@ -1725,7 +1740,11 @@ impl AgenttyApp {
                 }),
             )
             .child(Icon::new(chevron).size(px(10.)))
-            .child(div().truncate().child(ssh_group_label(key).to_string()))
+            .child(div().truncate().child(if key.is_empty() {
+                crate::core::i18n::current(cx, "settings.ssh_group_local").to_string()
+            } else {
+                ssh_group_label(key).to_string()
+            }))
             .child(div().child(format!("· {count}")))
             .child(div().flex_1())
             .when(collapsed && live_here > 0, |row| {
@@ -1870,13 +1889,19 @@ impl AgenttyApp {
                         .dropdown_menu_with_anchor(
                             gpui::Anchor::TopRight,
                             move |menu, _window, cx| {
-                                Self::ssh_profile_row_menu(menu, id, cx.theme().danger, &menu_app)
+                                Self::ssh_profile_row_menu(
+                                    menu,
+                                    id,
+                                    cx.theme().danger,
+                                    &menu_app,
+                                    cx,
+                                )
                             },
                         ),
                 ),
         )
         .context_menu(move |menu, _window, cx| {
-            Self::ssh_profile_row_menu(menu, id, cx.theme().danger, &ctx_app)
+            Self::ssh_profile_row_menu(menu, id, cx.theme().danger, &ctx_app, cx)
         })
         .into_any_element()
     }
@@ -1993,7 +2018,7 @@ impl AgenttyApp {
                         .child(div().w(px(320.)).child(Input::new(&input).small()))
                         .child(
                             Button::new("ssh-quick-connect")
-                                .label("Connect")
+                                .label(crate::core::i18n::current(cx, "common.connect"))
                                 .primary()
                                 .small()
                                 .disabled(parsed.is_none())
@@ -2032,7 +2057,7 @@ impl AgenttyApp {
                     )
                     .child(
                         Button::new("ssh-empty-import")
-                            .label("Link")
+                            .label(crate::core::i18n::current(cx, "common.link"))
                             .small()
                             .on_click(
                                 cx.listener(|this, _, _w, cx| this.import_ssh_config_profiles(cx)),
@@ -2071,19 +2096,22 @@ impl AgenttyApp {
             .child(self.section_intro(
                 "~/.ssh/config",
                 match imported {
-                    0 => "No aliases linked yet.".to_string(),
-                    1 => "1 alias linked.".to_string(),
-                    n => format!("{n} aliases linked."),
+                    0 => crate::core::i18n::current(cx, "settings.aliases_none").to_string(),
+                    1 => crate::core::i18n::current(cx, "settings.aliases_one").to_string(),
+                    n => crate::core::i18n::current_format(
+                        cx,
+                        "settings.aliases_many",
+                        &[("n", &n.to_string())],
+                    ),
                 },
                 cx,
             ))
             .child(
                 self.settings_row(
-                    "Import aliases",
-                    "Re-reads the file and adds anything new. Edits you make here are \
-                 stored by agentty — the file itself is never written.",
+                    crate::core::i18n::current(cx, "settings.import_aliases"),
+                    crate::core::i18n::current(cx, "settings.import_aliases.desc"),
                     Button::new("ssh-defaults-import")
-                        .label("Import now")
+                        .label(crate::core::i18n::current(cx, "settings.import_now"))
                         .small()
                         .on_click(
                             cx.listener(|this, _, _w, cx| this.import_ssh_config_profiles(cx)),
@@ -2115,52 +2143,66 @@ impl AgenttyApp {
         id: Uuid,
         danger: gpui::Hsla,
         app: &gpui::WeakEntity<Self>,
+        cx: &gpui::App,
     ) -> PopupMenu {
         let menu = menu
             .min_w(px(180.))
-            .item(PopupMenuItem::new("Connect").on_click({
-                let app = app.clone();
-                move |_, window, cx| {
-                    let _ = app.update(cx, |this, cx| {
-                        this.close_settings(window, cx);
-                        this.connect_ssh_profile(id, window, cx);
-                    });
-                }
-            }))
-            .item(PopupMenuItem::new("Copy address").on_click({
-                let app = app.clone();
-                move |_, _window, cx| {
-                    let _ = app.update(cx, |this, cx| this.copy_profile_connect_string(id, cx));
-                }
-            }))
-            .item(PopupMenuItem::new("Duplicate").on_click({
-                let app = app.clone();
-                move |_, window, cx| {
-                    let _ = app.update(cx, |this, cx| this.duplicate_profile(id, window, cx));
-                }
-            }))
-            .item(PopupMenuItem::new("Forget password").on_click({
-                let app = app.clone();
-                move |_, window, cx| {
-                    if let Some(msg) = app
-                        .update(cx, |this, cx| this.forget_profile_password(id, cx))
-                        .ok()
-                        .flatten()
-                    {
-                        window.push_notification(msg, cx);
+            .item(
+                PopupMenuItem::new(crate::core::i18n::current(cx, "menu.connect")).on_click({
+                    let app = app.clone();
+                    move |_, window, cx| {
+                        let _ = app.update(cx, |this, cx| {
+                            this.close_settings(window, cx);
+                            this.connect_ssh_profile(id, window, cx);
+                        });
                     }
-                }
-            }))
+                }),
+            )
+            .item(
+                PopupMenuItem::new(crate::core::i18n::current(cx, "menu.copy_address")).on_click({
+                    let app = app.clone();
+                    move |_, _window, cx| {
+                        let _ = app.update(cx, |this, cx| this.copy_profile_connect_string(id, cx));
+                    }
+                }),
+            )
+            .item(
+                PopupMenuItem::new(crate::core::i18n::current(cx, "menu.duplicate")).on_click({
+                    let app = app.clone();
+                    move |_, window, cx| {
+                        let _ = app.update(cx, |this, cx| this.duplicate_profile(id, window, cx));
+                    }
+                }),
+            )
+            .item(
+                PopupMenuItem::new(crate::core::i18n::current(cx, "menu.forget_password"))
+                    .on_click({
+                        let app = app.clone();
+                        move |_, window, cx| {
+                            if let Some(msg) = app
+                                .update(cx, |this, cx| this.forget_profile_password(id, cx))
+                                .ok()
+                                .flatten()
+                            {
+                                window.push_notification(msg, cx);
+                            }
+                        }
+                    }),
+            )
             .separator();
 
         menu.item(
-            PopupMenuItem::element(move |_window, _cx| div().text_color(danger).child("Delete"))
-                .on_click({
-                    let app = app.clone();
-                    move |_, _window, cx| {
-                        let _ = app.update(cx, |this, cx| this.delete_profile(id, cx));
-                    }
-                }),
+            PopupMenuItem::element(move |_window, _cx| {
+                div()
+                    .text_color(danger)
+                    .child(crate::core::i18n::current(_cx, "common.delete"))
+            })
+            .on_click({
+                let app = app.clone();
+                move |_, _window, cx| {
+                    let _ = app.update(cx, |this, cx| this.delete_profile(id, cx));
+                }
+            }),
         )
     }
 
@@ -2179,22 +2221,19 @@ impl AgenttyApp {
 
         v_flex()
             .child(self.section_intro(
-                "Security",
-                "A host can override either of these under its own Advanced.",
+                crate::core::i18n::current(cx, "settings.security"),
+                crate::core::i18n::current(cx, "settings.security.desc"),
                 cx,
             ))
             .child(self.settings_row(
-                "Verify host keys",
-                "Check each server's key against known_hosts and confirm unknown or \
-                 changed keys before connecting. Off connects without checking, so a \
-                 spoofed server would go unnoticed.",
+                crate::core::i18n::current(cx, "settings.verify_host_keys"),
+                crate::core::i18n::current(cx, "settings.verify_host_keys.desc"),
                 verify_switch,
                 cx,
             ))
             .child(self.settings_row(
-                "Warn before closing",
-                "Ask for confirmation before closing a tab or pane with a live SSH \
-                 session.",
+                crate::core::i18n::current(cx, "settings.warn_before_closing"),
+                crate::core::i18n::current(cx, "settings.warn_before_closing.desc"),
                 warn_switch,
                 cx,
             ))
@@ -2511,8 +2550,16 @@ impl AgenttyApp {
         let endpoint = format!("{user}@{host}:{port}");
         Some(
             match OsCredentialStore.delete_password(&user, &host, port) {
-                Ok(()) => format!("Forgot saved password for {endpoint}"),
-                Err(e) => format!("Couldn't forget password for {endpoint}: {e}"),
+                Ok(()) => crate::core::i18n::current_format(
+                    cx,
+                    "settings.forgot_password",
+                    &[("endpoint", &endpoint)],
+                ),
+                Err(e) => crate::core::i18n::current_format(
+                    cx,
+                    "settings.forgot_password_failed",
+                    &[("endpoint", &endpoint), ("error", &e.to_string())],
+                ),
             },
         )
     }
@@ -2578,10 +2625,16 @@ impl AgenttyApp {
                             .text_color(muted)
                             .child(div().truncate().child(address))
                             .when(!jump_name.is_empty(), |r| {
-                                r.child(div().child(format!("· via {jump_name}")))
+                                r.child(div().child(crate::core::i18n::current_format(
+                                    cx,
+                                    "settings.via_suffix",
+                                    &[("name", jump_name.as_str())],
+                                )))
                             })
                             .when(live, |r| {
-                                r.child(div().text_color(success).child("· connected"))
+                                r.child(div().text_color(success).child(
+                                    crate::core::i18n::current(cx, "settings.connected_suffix"),
+                                ))
                             }),
                     ),
             )
@@ -2591,14 +2644,14 @@ impl AgenttyApp {
                     .gap_2()
                     .child(
                         Button::new("ssh-form-save")
-                            .label("Save")
+                            .label(crate::core::i18n::current(cx, "common.save"))
                             .small()
                             .disabled(!dirty)
                             .on_click(cx.listener(|this, _, _w, cx| this.save_ssh_form(cx))),
                     )
                     .child(
                         Button::new("ssh-form-connect")
-                            .label("Connect")
+                            .label(crate::core::i18n::current(cx, "common.connect"))
                             .primary()
                             .small()
                             .on_click(cx.listener(|this, _, window, cx| {
@@ -2611,8 +2664,8 @@ impl AgenttyApp {
             .gap_3()
             .child(
                 self.settings_row(
-                    "Name",
-                    "A label for this connection.",
+                    crate::core::i18n::current(cx, "settings.conn_name"),
+                    crate::core::i18n::current(cx, "settings.conn_name.desc"),
                     div()
                         .w(px(260.))
                         .child(Input::new(&form.name).small())
@@ -2622,8 +2675,8 @@ impl AgenttyApp {
             )
             .child(
                 self.settings_row(
-                    "Host",
-                    "Hostname or IP address.",
+                    crate::core::i18n::current(cx, "settings.conn_host"),
+                    crate::core::i18n::current(cx, "settings.conn_host.desc"),
                     h_flex()
                         .gap_2()
                         .child(div().w(px(172.)).child(Input::new(&form.host).small()))
@@ -2634,8 +2687,8 @@ impl AgenttyApp {
             )
             .child(
                 self.settings_row(
-                    "User",
-                    "Login user (blank = resolve at connect).",
+                    crate::core::i18n::current(cx, "settings.conn_user"),
+                    crate::core::i18n::current(cx, "settings.conn_user.desc"),
                     div()
                         .w(px(260.))
                         .child(Input::new(&form.user).small())
@@ -2644,8 +2697,8 @@ impl AgenttyApp {
                 ),
             )
             .child(self.settings_row(
-                "Auth",
-                "Authentication method. Auto tries every applicable method.",
+                crate::core::i18n::current(cx, "settings.conn_auth"),
+                crate::core::i18n::current(cx, "settings.conn_auth.desc"),
                 self.segmented(
                     "ssh-form-auth",
                     &["Auto", "GSSAPI", "Password", "Key", "Agent", "2FA"],
@@ -2738,8 +2791,8 @@ impl AgenttyApp {
         if form.show_jump {
             section = section.child(
                 self.settings_row(
-                    "Jump host",
-                    "Name of another profile to tunnel through (blank = direct).",
+                    crate::core::i18n::current(cx, "settings.jump_host"),
+                    crate::core::i18n::current(cx, "settings.jump_host.desc"),
                     div()
                         .w(px(260.))
                         .child(Input::new(&form.jump).small())
@@ -2763,13 +2816,17 @@ impl AgenttyApp {
             .filter(|r| r.collect(cx).is_some())
             .count();
         let summary = match count {
-            0 => "none".to_string(),
-            1 => "1 rule, opened with the connection".to_string(),
-            n => format!("{n} rules, opened with the connection"),
+            0 => crate::core::i18n::current(cx, "settings.fwd_rules_none").to_string(),
+            1 => crate::core::i18n::current(cx, "settings.fwd_rules_one").to_string(),
+            n => crate::core::i18n::current_format(
+                cx,
+                "settings.fwd_rules_many",
+                &[("n", &n.to_string())],
+            ),
         };
         let mut section = v_flex().child(self.disclosure_header(
             "ssh-sec-fwd",
-            "Port forwarding",
+            crate::core::i18n::current(cx, "settings.port_forwarding"),
             &summary,
             form.show_forwards,
             cx,
@@ -2792,7 +2849,7 @@ impl AgenttyApp {
             .child(
                 h_flex().pt_1p5().child(
                     Button::new("ssh-fwd-add")
-                        .label("+ Add rule")
+                        .label(crate::core::i18n::current(cx, "settings.add_rule"))
                         .ghost()
                         .small()
                         .on_click(
@@ -2806,9 +2863,9 @@ impl AgenttyApp {
                     .pt_1()
                     .text_xs()
                     .text_color(muted)
-                    .child("L — a local port reaches the remote side")
-                    .child("R — a remote port reaches this machine")
-                    .child("D — dynamic SOCKS proxy"),
+                    .child(crate::core::i18n::current(cx, "settings.forward_l_hint"))
+                    .child(crate::core::i18n::current(cx, "settings.forward_r_hint"))
+                    .child(crate::core::i18n::current(cx, "settings.forward_d_hint")),
             )
             .into_any_element()
     }
@@ -2988,8 +3045,8 @@ impl AgenttyApp {
             ))
             .child(
                 self.settings_row(
-                    "Agent forwarding",
-                    "Forward the local ssh-agent to the connection.",
+                    crate::core::i18n::current(cx, "settings.agent_forwarding"),
+                    crate::core::i18n::current(cx, "settings.agent_forwarding.desc"),
                     crate::ui::theme::switch("ssh-form-agent", cx)
                         .checked(form.agent_forward)
                         .on_click(cx.listener(|this, on: &bool, _w, cx| {
@@ -3081,8 +3138,8 @@ impl AgenttyApp {
             ))
             .child(
                 self.settings_row(
-                    "X11 forwarding",
-                    "Request X11 forwarding (needs XQuartz on macOS).",
+                    crate::core::i18n::current(cx, "settings.x11_forwarding"),
+                    crate::core::i18n::current(cx, "settings.x11_forwarding.desc"),
                     crate::ui::theme::switch("ssh-form-x11", cx)
                         .checked(form.x11)
                         .on_click(cx.listener(|this, on: &bool, _w, cx| {
@@ -3097,8 +3154,8 @@ impl AgenttyApp {
             )
             .child(
                 self.settings_row(
-                    "Shell integration",
-                    "Let the remote shell report prompts, exit codes and directory.",
+                    crate::core::i18n::current(cx, "settings.shell_integration"),
+                    crate::core::i18n::current(cx, "settings.shell_integration.desc"),
                     crate::ui::theme::switch("ssh-form-shell-integration", cx)
                         .checked(form.shell_integration)
                         .on_click(cx.listener(|this, on: &bool, _w, cx| {
@@ -3120,8 +3177,8 @@ impl AgenttyApp {
             ))
             .child(
                 self.settings_row(
-                    "Skip banner",
-                    "Suppress the server login banner.",
+                    crate::core::i18n::current(cx, "settings.skip_banner"),
+                    crate::core::i18n::current(cx, "settings.skip_banner.desc"),
                     crate::ui::theme::switch("ssh-form-banner", cx)
                         .checked(form.skip_banner)
                         .on_click(cx.listener(|this, on: &bool, _w, cx| {
@@ -3135,8 +3192,12 @@ impl AgenttyApp {
                 ),
             )
             .child(self.settings_row(
-                "Verify host keys",
-                format!("Default follows Defaults, which is {vhk_default}."),
+                crate::core::i18n::current(cx, "settings.verify_host_keys"),
+                crate::core::i18n::current_format(
+                    cx,
+                    "settings.default_follows",
+                    &[("value", vhk_default)],
+                ),
                 self.segmented(
                     "ssh-form-vhk",
                     &["Default", "On", "Off"],
@@ -3156,8 +3217,12 @@ impl AgenttyApp {
                 cx,
             ))
             .child(self.settings_row(
-                "Warn before closing",
-                format!("Default follows Defaults, which is {woc_default}."),
+                crate::core::i18n::current(cx, "settings.warn_before_closing"),
+                crate::core::i18n::current_format(
+                    cx,
+                    "settings.default_follows",
+                    &[("value", woc_default)],
+                ),
                 self.segmented(
                     "ssh-form-woc",
                     &["Default", "On", "Off"],
@@ -3237,34 +3302,28 @@ impl AgenttyApp {
 
         v_flex()
             .child(self.section_intro(
-                "Shell",
-                format!(
-                    "The program each new terminal launches. Leave Program empty to use the platform default ({platform_default})."
-                ),
+                crate::core::i18n::current(cx, "settings.shell_section"),
+                crate::core::i18n::current_format(cx, "settings.shell_section.desc", &[("platform_default", &platform_default)]),
                 cx,
             ))
             .child(self.settings_row(
-                "Program",
-                "Executable name on PATH or an absolute path. e.g. zsh, fish, pwsh.",
+                 crate::core::i18n::current(cx, "settings.program"), crate::core::i18n::current(cx, "settings.program.desc"),
                 program_control,
                 cx,
             ))
             .child(self.settings_row(
-                "Arguments",
-                "Space-separated launch flags. e.g. -l for a login shell.",
+                 crate::core::i18n::current(cx, "settings.arguments"), crate::core::i18n::current(cx, "settings.arguments.desc"),
                 args_control,
                 cx,
             ))
             .child(self.settings_row(
-                "Start in",
-                "What a fresh shell starts in: agentty's launch directory, your home folder, or a fixed path.",
+                 crate::core::i18n::current(cx, "settings.start_in"), crate::core::i18n::current(cx, "settings.start_in.desc"),
                 wd_radio,
                 cx,
             ))
             .when(wd_strategy == crate::core::config::WdStrategy::Custom, |v| {
                 v.child(self.settings_row(
-                    "Custom path",
-                    "The directory new shells start in.",
+                     crate::core::i18n::current(cx, "settings.custom_path"), crate::core::i18n::current(cx, "settings.custom_path.desc"),
                     wd_path_control,
                     cx,
                 ))
@@ -3380,58 +3439,62 @@ impl AgenttyApp {
         v_flex()
             .child(self.render_shell_group(cx))
             .child(self.section_rule(cx))
-            .child(self.section_header("Scrolling", cx))
+            .child(self.section_header(crate::core::i18n::current(cx, "settings.h.scrolling"), cx))
             .child(self.settings_row(
-                "Scrollback",
-                "Lines of history kept per pane. Applies to new panes.",
+                crate::core::i18n::current(cx, "settings.scrollback"),
+                crate::core::i18n::current(cx, "settings.scrollback.desc"),
                 scrollback_radio,
                 cx,
             ))
             .child(self.settings_row(
-                "Scroll speed",
-                "Multiplier applied to mouse-wheel scrolling.",
+                crate::core::i18n::current(cx, "settings.scroll_speed"),
+                crate::core::i18n::current(cx, "settings.scroll_speed.desc"),
                 scroll_control,
                 cx,
             ))
             .child(self.section_rule(cx))
-            .child(self.section_header("Mouse", cx))
+            .child(self.section_header(crate::core::i18n::current(cx, "settings.h.mouse"), cx))
             .child(self.settings_row(
-                "Focus follows mouse",
-                "Hovering a pane focuses it without a click.",
+                crate::core::i18n::current(cx, "settings.focus_follows_mouse"),
+                crate::core::i18n::current(cx, "settings.focus_follows_mouse.desc"),
                 focus_switch,
                 cx,
             ))
             .child(self.settings_row(
-                "Hide mouse while typing",
-                "Hide the pointer as you type; it returns on the next move.",
+                crate::core::i18n::current(cx, "settings.hide_mouse"),
+                crate::core::i18n::current(cx, "settings.hide_mouse.desc"),
                 mouse_hide_switch,
                 cx,
             ))
             .child(self.settings_row(
-                "Report mouse to apps",
-                "Let full-screen apps (vim, tmux) handle clicks and scrolling; hold Shift to keep a gesture local.",
+                crate::core::i18n::current(cx, "settings.report_mouse"),
+                crate::core::i18n::current(cx, "settings.report_mouse.desc"),
                 mouse_report_switch,
                 cx,
             ))
             .child(self.section_rule(cx))
-            .child(self.section_header("Bell", cx))
+            .child(self.section_header(crate::core::i18n::current(cx, "settings.h.bell"), cx))
             .child(self.settings_row(
-                "Terminal bell",
-                "How a bell (^G) is signalled: silenced, a brief flash, or the system sound.",
+                crate::core::i18n::current(cx, "settings.terminal_bell"),
+                crate::core::i18n::current(cx, "settings.terminal_bell.desc"),
                 bell_control,
                 cx,
             ))
             .child(self.section_rule(cx))
-            .child(self.section_header("Links", cx))
+            .child(self.section_header(crate::core::i18n::current(cx, "settings.h.links"), cx))
             .child(self.settings_row(
-                "Detect URLs",
-                format!("Underline links on hover and open them on {LINK_MODIFIER_LABEL}-click."),
+                crate::core::i18n::current(cx, "settings.detect_urls"),
+                crate::core::i18n::current_format(
+                    cx,
+                    "settings.detect_urls.desc",
+                    &[("modifier", LINK_MODIFIER_LABEL)],
+                ),
                 link_switch,
                 cx,
             ))
             .child(self.settings_row(
-                "Forward SSH loopback links",
-                "When a pane is in SSH, open localhost links through a temporary port forward.",
+                crate::core::i18n::current(cx, "settings.forward_loopback"),
+                crate::core::i18n::current(cx, "settings.forward_loopback.desc"),
                 ssh_loopback_switch,
                 cx,
             ))
@@ -3486,9 +3549,8 @@ impl AgenttyApp {
                 )
                 .into_any_element();
             self.settings_row(
-                "Option (⌥) acts as Meta",
-                "⌥+key sends the escape chord shells expect (⌥B = back one word) \
-                 instead of typing a special character (∫).",
+                crate::core::i18n::current(cx, "settings.option_meta"),
+                crate::core::i18n::current(cx, "settings.option_meta.desc"),
                 switch,
                 cx,
             )
@@ -3496,48 +3558,53 @@ impl AgenttyApp {
 
         v_flex()
             .child(self.section_intro(
-                "Prompt",
-                "agentty's own menus at the shell prompt. Turn one off to hand the key back to the shell.",
+                crate::core::i18n::current(cx, "settings.prompt"),
+                crate::core::i18n::current(cx, "settings.prompt.desc"),
                 cx,
             ))
             .child(self.settings_row(
-                "Tab completion",
-                "Tab at the prompt opens agentty's completion menu. When off, Tab goes to the \
-                 shell's own completion instead.",
+                crate::core::i18n::current(cx, "settings.tab_completion"),
+                crate::core::i18n::current(cx, "settings.tab_completion.desc"),
                 tab_completion_switch,
                 cx,
             ))
             .child(self.settings_row(
-                "History search",
-                "⌃R at the prompt opens agentty's fuzzy history menu. When off, ⌃R goes to the \
-                 shell instead — its own reverse-i-search, or whatever you've bound there \
-                 (fzf, percol).",
+                crate::core::i18n::current(cx, "settings.history_search"),
+                crate::core::i18n::current(cx, "settings.history_search.desc"),
                 history_search_switch,
                 cx,
             ))
             .child(self.section_rule(cx))
-            .child(self.section_header("Selection & clipboard", cx))
+            .child(self.section_header(
+                crate::core::i18n::current(cx, "settings.h.selection_clipboard"),
+                cx,
+            ))
             .child(self.settings_row(
-                "Smart selection",
-                "Double-click selects the whole URL, file path, email, or bracket pair under the cursor.",
+                crate::core::i18n::current(cx, "settings.smart_selection"),
+                crate::core::i18n::current(cx, "settings.smart_selection.desc"),
                 smart_select_switch,
                 cx,
             ))
             .child(self.settings_row(
-                "Copy on select",
-                "Selecting text with the mouse copies it to the clipboard right away, no ⌘C needed.",
+                crate::core::i18n::current(cx, "settings.copy_on_select"),
+                crate::core::i18n::current(cx, "settings.copy_on_select.desc"),
                 copy_on_select_switch,
                 cx,
             ))
             .child(self.settings_row(
-                "Trim trailing spaces on copy",
-                "Strip trailing whitespace from each copied line.",
+                crate::core::i18n::current(cx, "settings.trim_spaces"),
+                crate::core::i18n::current(cx, "settings.trim_spaces.desc"),
                 trim_switch,
                 cx,
             ))
             .when_some(option_alt_row, |v, row| {
                 v.child(self.section_rule(cx))
-                    .child(self.section_header("Keyboard", cx))
+                    .child(
+                        self.section_header(
+                            crate::core::i18n::current(cx, "settings.h.keyboard"),
+                            cx,
+                        ),
+                    )
                     .child(row)
             })
             .into_any_element()
@@ -3559,9 +3626,8 @@ impl AgenttyApp {
         };
 
         let mut page = v_flex().child(self.section_intro(
-            "Agents",
-            "Hook integrations give panes running these agents live session status \
-             (working / waiting / done) in the tab bar. Only active inside agentty.",
+            crate::core::i18n::current(cx, "settings.agents_intro"),
+            crate::core::i18n::current(cx, "settings.agents_intro.desc"),
             cx,
         ));
 
@@ -3570,13 +3636,9 @@ impl AgenttyApp {
         match view {
             AgentHooksView::Loading => {
                 return page
-                    .child(
-                        div()
-                            .py_4()
-                            .text_sm()
-                            .text_color(muted_fg)
-                            .child("Reading this machine's agent config…"),
-                    )
+                    .child(div().py_4().text_sm().text_color(muted_fg).child(
+                        crate::core::i18n::current(cx, "settings.reading_agent_config"),
+                    ))
                     .into_any_element();
             }
             AgentHooksView::Unavailable(reason) => {
@@ -3626,7 +3688,10 @@ impl AgenttyApp {
                                 .when(row.state != HooksState::NotInstalled, |r| {
                                     r.child(
                                         Button::new(("agent-hooks-uninstall", i))
-                                            .label("Uninstall")
+                                            .label(crate::core::i18n::current(
+                                                cx,
+                                                "common.uninstall",
+                                            ))
                                             .small()
                                             .on_click(cx.listener(move |this, _, _w, cx| {
                                                 this.settings_uninstall_agent_hooks(agent, cx)
@@ -3836,64 +3901,65 @@ impl AgenttyApp {
         );
 
         v_flex()
-            .child(self.section_header("Window", cx))
+            .child(self.section_header(crate::core::i18n::current(cx, "settings.h.window"), cx))
             .child(self.settings_row(
-                "Startup window",
-                "Window state when agentty launches.",
+                crate::core::i18n::current(cx, "settings.startup_window"),
+                crate::core::i18n::current(cx, "settings.startup_window.desc"),
                 startup_radio,
                 cx,
             ))
             .child(self.settings_row(
-                "Remember window size & position",
-                "Reopen at the size and position the window had when agentty last quit. Off opens centered at the default size.",
+                crate::core::i18n::current(cx, "settings.remember_window"),
+                crate::core::i18n::current(cx, "settings.remember_window.desc"),
                 remember_window_switch,
                 cx,
             ))
             .child(self.settings_row(
-                "Restore last layout",
-                "Reopen the last window's tabs, splits, and directories on launch. Off starts with a single fresh terminal.",
+                crate::core::i18n::current(cx, "settings.restore_layout"),
+                crate::core::i18n::current(cx, "settings.restore_layout.desc"),
                 restore_switch,
                 cx,
             ))
             .child(self.settings_row(
-                "Confirm before closing the last window",
-                "Ask first, since that close also quits agentty. Off closes straight away — \
-                 either way your shells keep running in the background.",
+                crate::core::i18n::current(cx, "settings.confirm_close_last"),
+                crate::core::i18n::current(cx, "settings.confirm_close_last.desc"),
                 confirm_close_switch,
                 cx,
             ))
             .child(self.settings_row(
-                "Show tray icon",
-                "Keep a status item in the system tray / menu bar: it signals when a \
-                 coding agent needs your input, and its menu jumps to agent panes.",
+                crate::core::i18n::current(cx, "settings.tray_icon"),
+                crate::core::i18n::current(cx, "settings.tray_icon.desc"),
                 tray_switch,
                 cx,
             ))
             .child(self.section_rule(cx))
-            .child(self.section_header("Tabs", cx))
+            .child(self.section_header(crate::core::i18n::current(cx, "settings.h.tabs"), cx))
             .child(self.settings_row(
-                "New tab position",
-                "Where a freshly opened tab is inserted.",
+                crate::core::i18n::current(cx, "settings.new_tab_position"),
+                crate::core::i18n::current(cx, "settings.new_tab_position.desc"),
                 new_tab_radio,
                 cx,
             ))
             .child(self.settings_row(
-                "Tab bar position",
-                "Show tabs as a horizontal strip on top or a vertical sidebar on the left.",
+                crate::core::i18n::current(cx, "settings.tab_bar_position"),
+                crate::core::i18n::current(cx, "settings.tab_bar_position.desc"),
                 tab_bar_radio,
                 cx,
             ))
             .child(self.section_rule(cx))
-            .child(self.section_header("Notifications", cx))
+            .child(self.section_header(
+                crate::core::i18n::current(cx, "settings.h.notifications"),
+                cx,
+            ))
             .child(self.settings_row(
-                "Notify on command finish",
-                "Desktop alert after a long foreground command completes.",
+                crate::core::i18n::current(cx, "settings.notify_finish"),
+                crate::core::i18n::current(cx, "settings.notify_finish.desc"),
                 notify_radio,
                 cx,
             ))
             .child(self.settings_row(
-                "Notify threshold",
-                "How long a command must run to qualify as \"long\".",
+                crate::core::i18n::current(cx, "settings.notify_threshold"),
+                crate::core::i18n::current(cx, "settings.notify_threshold.desc"),
                 threshold_radio,
                 cx,
             ))
@@ -3954,8 +4020,8 @@ impl AgenttyApp {
             }))
             .into_any_element();
         let root = v_flex().child(self.settings_row(
-            "Sync with system",
-            "Follow the OS appearance with separate light and dark themes.",
+            crate::core::i18n::current(cx, "settings.sync_system"),
+            crate::core::i18n::current(cx, "settings.sync_system.desc"),
             follow_switch,
             cx,
         ));
@@ -3986,23 +4052,47 @@ impl AgenttyApp {
         let active = presets::by_id(cx, &active_id);
         let name = active.name.clone();
         let kind = if active.path.is_some() {
-            "Custom"
+            crate::core::i18n::current(cx, "settings.theme_kind_custom")
         } else {
-            "Built-in"
+            crate::core::i18n::current(cx, "settings.theme_kind_builtin")
         };
         let caption = match slot {
             ThemeSlot::Manual => {
-                let mode = if active.dark { "Dark" } else { "Light" };
-                format!("{kind} · {mode}")
+                let mode = if active.dark {
+                    crate::core::i18n::current(cx, "settings.theme_mode_dark")
+                } else {
+                    crate::core::i18n::current(cx, "settings.theme_mode_light")
+                };
+                crate::core::i18n::current_format(
+                    cx,
+                    "settings.theme_caption_manual",
+                    &[("kind", kind), ("mode", mode)],
+                )
             }
             ThemeSlot::Light if !crate::ui::theme::system_dark(cx) => {
-                format!("Light mode · {kind} · Active")
+                crate::core::i18n::current_format(
+                    cx,
+                    "settings.theme_caption_light_active",
+                    &[("kind", kind)],
+                )
             }
-            ThemeSlot::Light => format!("Light mode · {kind}"),
+            ThemeSlot::Light => crate::core::i18n::current_format(
+                cx,
+                "settings.theme_caption_light",
+                &[("kind", kind)],
+            ),
             ThemeSlot::Dark if crate::ui::theme::system_dark(cx) => {
-                format!("Dark mode · {kind} · Active")
+                crate::core::i18n::current_format(
+                    cx,
+                    "settings.theme_caption_dark_active",
+                    &[("kind", kind)],
+                )
             }
-            ThemeSlot::Dark => format!("Dark mode · {kind}"),
+            ThemeSlot::Dark => crate::core::i18n::current_format(
+                cx,
+                "settings.theme_caption_dark",
+                &[("kind", kind)],
+            ),
         };
         let to_u32 = |(r, g, b): (u8, u8, u8)| (r as u32) << 16 | (g as u32) << 8 | b as u32;
         let swatches = h_flex().gap_1().mt_1p5().children((1..=6).map(|i| {
@@ -4059,7 +4149,7 @@ impl AgenttyApp {
                             .gap_1()
                             .text_sm()
                             .text_color(muted_fg)
-                            .child("Change theme")
+                            .child(crate::core::i18n::current(cx, "settings.change_theme"))
                             .child(Icon::new(IconName::ChevronRight).small()),
                     ),
             )
@@ -4110,7 +4200,7 @@ impl AgenttyApp {
                     .text_base()
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(foreground)
-                    .child("Themes"),
+                    .child(crate::core::i18n::current(cx, "settings.themes")),
             )
             .child(
                 div().occlude().child(
@@ -4128,9 +4218,11 @@ impl AgenttyApp {
             .text_xs()
             .text_color(muted_fg)
             .child(match slot {
-                ThemeSlot::Manual => "Change your current theme.",
-                ThemeSlot::Light => "Choose the theme for light mode.",
-                ThemeSlot::Dark => "Choose the theme for dark mode.",
+                ThemeSlot::Manual => {
+                    crate::core::i18n::current(cx, "settings.theme_subtitle_manual")
+                }
+                ThemeSlot::Light => crate::core::i18n::current(cx, "settings.theme_subtitle_light"),
+                ThemeSlot::Dark => crate::core::i18n::current(cx, "settings.theme_subtitle_dark"),
             });
 
         let search_box = div().px_4().pb_3().child(
@@ -4306,7 +4398,7 @@ impl AgenttyApp {
                             .text_sm()
                             .font_weight(FontWeight::MEDIUM)
                             .text_color(foreground)
-                            .child("Preset"),
+                            .child(crate::core::i18n::current(cx, "settings.preset")),
                     )
                     .child(div().text_xs().text_color(muted).child(
                         "tmux remaps pane/tab actions onto prefix sequences (e.g. Ctrl-B then C).",
@@ -4323,7 +4415,7 @@ impl AgenttyApp {
                     .text_sm()
                     .font_weight(FontWeight::MEDIUM)
                     .text_color(foreground)
-                    .child("Prefix"),
+                    .child(crate::core::i18n::current(cx, "settings.prefix")),
             )
             .child(h_flex().flex_shrink_0().child(prefix_control));
 
@@ -4348,13 +4440,18 @@ impl AgenttyApp {
                     .unwrap_or_default();
                 let row = h_flex().gap_2().items_center();
                 let row = if chords.is_empty() {
-                    row.child(div().text_xs().text_color(accent).child("Press keys…"))
+                    row.child(
+                        div()
+                            .text_xs()
+                            .text_color(accent)
+                            .child(crate::core::i18n::current(cx, "settings.press_keys")),
+                    )
                 } else {
                     row.child(keycaps(&chords.join(" "))).child(
                         div()
                             .text_xs()
                             .text_color(muted)
-                            .child("pause to save · Esc"),
+                            .child(crate::core::i18n::current(cx, "settings.pause_to_save")),
                     )
                 };
                 row.into_any_element()
@@ -4393,7 +4490,7 @@ impl AgenttyApp {
                 .when(is_overridden, |r| {
                     r.child(
                         Button::new(SharedString::from(format!("reset-{action}")))
-                            .label("Reset")
+                            .label(crate::core::i18n::current(cx, "common.reset"))
                             .small()
                             .on_click(cx.listener(move |this, _, _w, cx| {
                                 this.reset_keybinding(action_for_reset.clone(), cx)
@@ -4419,8 +4516,7 @@ impl AgenttyApp {
 
         v_flex()
             .child(self.section_intro(
-                "Keybindings",
-                "Click a shortcut, then press the new keys — it saves after a brief pause. Chain keys for a sequence like Ctrl-B then X. Esc cancels; Backspace removes the last key, or resets the shortcut to default when pressed first.",
+                 crate::core::i18n::current(cx, "settings.keybindings_intro"), crate::core::i18n::current(cx, "settings.keybindings_intro.desc"),
                 cx,
             ))
             .child(preset_row)
@@ -4436,7 +4532,7 @@ impl AgenttyApp {
             .child(
                 h_flex().justify_end().py_2().child(
                     Button::new("kb-restore-all")
-                        .label("Restore all defaults")
+                        .label(crate::core::i18n::current(cx, "settings.restore_all_defaults"))
                         .small()
                         .on_click(cx.listener(|this, _, _w, cx| {
                             this.restore_default_keybindings(cx)
@@ -4463,7 +4559,7 @@ impl AgenttyApp {
         ));
 
         v_flex()
-            .child(self.section_header("About", cx))
+            .child(self.section_header(crate::core::i18n::current(cx, "settings.h.about"), cx))
             .child(
                 h_flex()
                     .gap_4()
@@ -4499,7 +4595,7 @@ impl AgenttyApp {
                         div()
                             .text_sm()
                             .text_color(foreground)
-                            .child("A terminal workbench: shells, workspaces, SSH, coding agents."),
+                            .child(crate::core::i18n::current(cx, "settings.about_tagline")),
                     )
                     .child(div().text_sm().text_color(muted_fg).child(
                         "Editor-grade input in every shell, shells that outlive quits and reboots without tmux, a native SSH stack with profiles and port forwarding, and live status for panes running coding agents.",
@@ -4508,7 +4604,7 @@ impl AgenttyApp {
                         div()
                             .text_xs()
                             .text_color(muted_fg)
-                            .child("Pure Rust · GPU rendering on Zed's gpui · VT core from Alacritty"),
+                            .child(crate::core::i18n::current(cx, "settings.about_stack")),
                     ),
             )
             .child(
@@ -4521,7 +4617,7 @@ impl AgenttyApp {
                             .text_sm()
                             .font_weight(FontWeight::MEDIUM)
                             .text_color(foreground)
-                            .child("Updates"),
+                            .child(crate::core::i18n::current(cx, "settings.updates")),
                     )
                     .when_some(update, |this, upd| {
                         this.child(
@@ -4529,11 +4625,11 @@ impl AgenttyApp {
                                 .gap_3()
                                 .items_center()
                                 .child(div().text_sm().text_color(foreground).child(
-                                    format!("Version {} is available.", upd.version),
+                                    crate::core::i18n::current_format(cx, "settings.update_available", &[("version", &upd.version)]),
                                 ))
                                 .child(
                                     Button::new("download-update")
-                                        .label("Download")
+                                        .label(crate::core::i18n::current(cx, "common.download"))
                                         .small()
                                         .on_click(cx.listener(|this, _, _w, _cx| {
                                             this.open_releases_page()
@@ -4559,7 +4655,7 @@ impl AgenttyApp {
                                 div()
                                     .text_sm()
                                     .text_color(foreground)
-                                    .child("Check for updates on launch"),
+                                    .child(crate::core::i18n::current(cx, "settings.check_updates_launch")),
                             ),
                     ),
             )
@@ -4573,7 +4669,7 @@ impl AgenttyApp {
                             .text_sm()
                             .font_weight(FontWeight::MEDIUM)
                             .text_color(foreground)
-                            .child("Command line"),
+                            .child(crate::core::i18n::current(cx, "settings.command_line")),
                     )
                     .child(div().text_sm().text_color(muted_fg).child(
                         "Put the bundled `agentty` command on your PATH at launch, so scripts and coding agents can drive agentty from any terminal. Inside a agentty pane it works either way. Turn this off if you keep your own `agentty` — one you built or installed yourself — and do not want it shadowed. Takes effect at next launch.",
@@ -4593,7 +4689,7 @@ impl AgenttyApp {
                                 div()
                                     .text_sm()
                                     .text_color(foreground)
-                                    .child("Install the `agentty` command on PATH"),
+                                    .child(crate::core::i18n::current(cx, "settings.install_cli")),
                             ),
                     ),
             )
@@ -4607,15 +4703,15 @@ impl AgenttyApp {
                             .text_sm()
                             .font_weight(FontWeight::MEDIUM)
                             .text_color(foreground)
-                            .child("Server"),
+                            .child(crate::core::i18n::current(cx, "settings.server")),
                     )
                     .child(div().text_sm().text_color(muted_fg).child(
-                        "Restart the server on this computer to pick up a newly granted macOS permission, recover if it stops responding, or start from a clean slate. This ends all running shells here; your tabs and layout reopen with fresh shells. A remote machine's server is restarted from its own menu in the workspace switcher.",
+                        crate::core::i18n::current(cx, "settings.restart_server_body"),
                     ))
                     .child(
                         h_flex().child(
                             Button::new("restart-daemon")
-                                .label("Restart server…")
+                                .label(crate::core::i18n::current(cx, "settings.restart_server"))
                                 .small()
                                 .on_click(cx.listener(|this, _, window, cx| {
                                     this.restart_daemon(window, cx)

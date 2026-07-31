@@ -21,13 +21,13 @@ const LOGO: [&str; 4] = [
 const LOGO_PX: f32 = 20.0;
 
 const HOME_SHORTCUTS: [(&str, &str); 7] = [
-    ("NewTab", "New Tab"),
-    ("ReopenClosedTab", "Reopen Closed Tab"),
-    ("ToggleSwitcher", "Switch Workspace"),
-    ("TogglePalette", "Command Palette"),
-    ("SplitRight", "Split Right"),
-    ("SplitDown", "Split Down"),
-    ("OpenSettings", "Settings…"),
+    ("NewTab", "home.shortcut.new_tab"),
+    ("ReopenClosedTab", "home.shortcut.reopen_closed"),
+    ("ToggleSwitcher", "home.shortcut.switch_workspace"),
+    ("TogglePalette", "home.shortcut.palette"),
+    ("SplitRight", "home.shortcut.split_right"),
+    ("SplitDown", "home.shortcut.split_down"),
+    ("OpenSettings", "home.shortcut.settings"),
 ];
 
 const CLOSED_LABEL_MAX: usize = 20;
@@ -135,8 +135,11 @@ impl AgenttyApp {
         let mut list = v_flex().gap_2().w(px(300.)).text_sm().text_color(muted);
         for (action, label) in HOME_SHORTCUTS {
             let (label, emphasized) = match (&closed_hint, action) {
-                (Some(name), "ReopenClosedTab") => (format!("Reopen \u{201c}{name}\u{201d}"), true),
-                _ => (label.to_string(), false),
+                (Some(name), "ReopenClosedTab") => (
+                    crate::core::i18n::current_format(cx, "home.reopen_tab", &[("name", name)]),
+                    true,
+                ),
+                _ => (crate::core::i18n::current(cx, label).to_string(), false),
             };
             list = list.child(
                 h_flex()
@@ -185,8 +188,8 @@ impl AgenttyApp {
     ) -> Option<impl IntoElement + use<>> {
         let machine = self.remote_machine_label(cx);
         let status = self.remote_status(cx)?;
-        let message = status.strip_message(&machine)?;
-        let action = status.action_label();
+        let message = status.strip_message(&machine, cx)?;
+        let action = status.action_label(cx);
         let theme = cx.theme();
         Some(
             h_flex()

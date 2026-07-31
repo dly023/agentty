@@ -172,6 +172,97 @@ dependencies = [
 ]
 
 [[package]]
+name = "agentty"
+version = "0.0.1"
+dependencies = [
+ "agentty-core",
+ "alacritty_terminal",
+ "anyhow",
+ "core-foundation 0.10.0",
+ "gpui",
+ "gpui-component",
+ "gpui-component-assets",
+ "gpui_platform",
+ "image",
+ "jieba-rs",
+ "keyring",
+ "ksni",
+ "libc",
+ "log",
+ "memchr",
+ "notify 8.2.0",
+ "notify-rust",
+ "objc2 0.6.4",
+ "objc2-app-kit 0.3.2",
+ "objc2-foundation 0.3.2",
+ "plist",
+ "regex",
+ "reqwest_client",
+ "resvg",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "smallvec",
+ "smol",
+ "tray-icon",
+ "uuid",
+ "windows-sys 0.61.2",
+ "winresource",
+]
+
+[[package]]
+name = "agentty-cli"
+version = "0.0.1"
+dependencies = [
+ "agentty-core",
+ "alacritty_terminal",
+ "anyhow",
+ "clap",
+ "libc",
+ "serde_json",
+ "tempfile",
+ "unicode-width",
+ "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "agentty-core"
+version = "0.0.1"
+dependencies = [
+ "anyhow",
+ "base64",
+ "core-foundation 0.10.0",
+ "getrandom 0.3.4",
+ "ignore",
+ "libc",
+ "libgssapi",
+ "log",
+ "memchr",
+ "miniz_oxide",
+ "notify 8.2.0",
+ "portable-pty",
+ "russh",
+ "russh-sftp",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "smol",
+ "tempfile",
+ "tokio",
+ "ureq",
+ "uuid",
+ "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "agentty-server"
+version = "0.0.1"
+dependencies = [
+ "agentty-core",
+ "tempfile",
+]
+
+[[package]]
 name = "ahash"
 version = "0.8.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9648,97 +9739,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d2df906b07856748fa3f6e0ad0cbaa047052d4a7dd609e231c4f72cee8c36f31"
 dependencies = [
  "core_maths",
-]
-
-[[package]]
-name = "agentty"
-version = "0.0.1"
-dependencies = [
- "alacritty_terminal",
- "anyhow",
- "core-foundation 0.10.0",
- "gpui",
- "gpui-component",
- "gpui-component-assets",
- "gpui_platform",
- "image",
- "jieba-rs",
- "keyring",
- "ksni",
- "libc",
- "log",
- "memchr",
- "notify 8.2.0",
- "notify-rust",
- "objc2 0.6.4",
- "objc2-app-kit 0.3.2",
- "objc2-foundation 0.3.2",
- "plist",
- "regex",
- "reqwest_client",
- "resvg",
- "serde",
- "serde_json",
- "serde_yaml",
- "smallvec",
- "smol",
- "tray-icon",
- "agentty-core",
- "uuid",
- "windows-sys 0.61.2",
- "winresource",
-]
-
-[[package]]
-name = "agentty-cli"
-version = "0.0.1"
-dependencies = [
- "alacritty_terminal",
- "anyhow",
- "clap",
- "libc",
- "serde_json",
- "tempfile",
- "agentty-core",
- "unicode-width",
- "windows-sys 0.59.0",
-]
-
-[[package]]
-name = "agentty-core"
-version = "0.0.1"
-dependencies = [
- "anyhow",
- "base64",
- "core-foundation 0.10.0",
- "getrandom 0.3.4",
- "ignore",
- "libc",
- "libgssapi",
- "log",
- "memchr",
- "miniz_oxide",
- "notify 8.2.0",
- "portable-pty",
- "russh",
- "russh-sftp",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "smol",
- "tempfile",
- "tokio",
- "ureq",
- "uuid",
- "windows-sys 0.59.0",
-]
-
-[[package]]
-name = "agentty-server"
-version = "0.0.1"
-dependencies = [
- "tempfile",
- "agentty-core",
 ]
 
 [[package]]

@@ -1,32 +1,429 @@
+activity.done: Agent turn finished
+activity.heuristic: Heuristic
+activity.idle: No Agent activity
+activity.inferred: Inferred from terminal state
+activity.rich: Structured Agent event
+activity.structured: Structured
+activity.title: Agent Activity
+activity.waiting: Agent needs input
+activity.working: Agent is working
 app.name: Agentty
-environment.local.label: This Mac
-environment.local.detail: Local environment
-environment.remote.detail: Remote environment
-environment.connecting: Connecting
-environment.disconnected: Disconnected
-environment.ssh: SSH
-environment.execution: Execution environment
-session.default_name: Agent session
-session.live: Live
-session.restoring: Restoring…
-session.resume: Resume
-session.discovering: Discovering Agent sessions…
-session.empty: No Codex or Claude sessions found in this environment.
-session.no_match: No matching Agent sessions.
-session.search_placeholder: Search sessions…
-session.refresh: Refresh Agent sessions
-sidebar.hide: Hide Sidebar
-sidebar.show: Show Sidebar
+common.abort: Abort
+common.cancel: Cancel
+common.close: Close
+common.connect: Connect
+common.copy_path: Copy Path
+common.default: default
+common.delete: Delete
+common.discard: Discard
+common.dismiss: Dismiss
+common.download: Download
+common.keep: Keep
+common.link: Link
+common.more: More
+common.none: None.
+common.ok: OK
+common.override: Override
+common.reconnect: Reconnect
+common.refresh: Refresh
+common.reload: Reload
+common.remove: Remove
+common.reset: Reset
+common.restart_server: Restart Server
+common.retry: Try Again
+common.save: Save
+common.search_files: Search files…
+common.trust: Trust
+common.uninstall: Uninstall
+composer.disconnected: Remote environment is disconnected; draft preserved.
+composer.environment_mismatch: Composer target belongs to another environment; draft preserved.
 composer.placeholder: Write a prompt…  Shift+Enter for newline
 composer.target_missing: Composer target no longer exists; draft preserved.
-composer.environment_mismatch: Composer target belongs to another environment; draft preserved.
-composer.disconnected: Remote environment is disconnected; draft preserved.
-activity.title: Agent Activity
-activity.idle: No Agent activity
-activity.working: Agent is working
-activity.waiting: Agent needs input
-activity.done: Agent turn finished
-activity.structured: Structured
-activity.heuristic: Heuristic
-activity.rich: Structured Agent event
-activity.inferred: Inferred from terminal state
+diff.binary: binary
+diff.close_esc: Close Diff (Esc)
+diff.refreshing: refreshing…
+diff.untracked: Untracked files ({total})
+editor.back_to_terminal: Back to Terminal (Esc)
+editor.cant_open: Can't open {path}: {error}
+editor.cant_read: Can't read {path}: {error}
+editor.color_n: Color {i}
+editor.file_changed: File changed on disk
+editor.keep_mine: Keep mine
+editor.line_col: Ln {line}, Col {col}
+editor.looks_binary: "{path}" looks like a binary file
+editor.open_from_file_tree: Open a file from the file tree
+editor.unsaved_changes: "{name}" has unsaved changes
+environment.auth_error: Authentication error — {error}
+environment.connecting: Connecting
+environment.disconnected: Disconnected
+environment.execution: Execution environment
+environment.local.detail: Local environment
+environment.local.label: This Mac
+environment.remote.detail: Remote environment
+environment.ssh: SSH
+environment.tooltip: Execution environment — {state}
+file_tree.delete_confirm: Delete "{name}"?
+file_tree.delete_dir_detail: The folder and everything inside it will be deleted.
+file_tree.delete_file_detail: The file will be deleted.
+home.reopen_tab: Reopen “{name}”
+home.shortcut.new_tab: New Tab
+home.shortcut.palette: Command Palette
+home.shortcut.reopen_closed: Reopen Closed Tab
+home.shortcut.settings: Settings…
+home.shortcut.split_down: Split Down
+home.shortcut.split_right: Split Right
+home.shortcut.switch_workspace: Switch Workspace
+loopback.forward_failed: Couldn't forward :{port} — {error}
+menu.attach_agent: Attach to Agent
+menu.cd_here: cd Here
+menu.chmod: chmod…
+menu.close_other_tabs: Close Other Tabs
+menu.close_tab: Close Tab
+menu.connect: Connect
+menu.copy_address: Copy address
+menu.copy_cwd: Copy Working Directory
+menu.copy_path: Copy Path
+menu.copy_session_id: Copy Session ID
+menu.delete_workspace: Delete Workspace…
+menu.disconnect: Disconnect
+menu.duplicate: Duplicate
+menu.expand_groups: Expand all groups
+menu.follow_symlink: Follow symlink
+menu.forget_password: Forget password
+menu.import_ssh_config: Import from ~/.ssh/config
+menu.insert_path: Insert Path in Terminal
+menu.manage_ssh_envs: Manage SSH Environments…
+menu.mark_unread: Mark as Unread
+menu.new_file: New File
+menu.new_folder: New Folder
+menu.new_tab: New Tab
+menu.new_workspace: New Workspace
+menu.new_worktree_tab: New Worktree Tab
+menu.open: Open
+menu.open_in_new_window: Open in New Window
+menu.rename: Rename…
+menu.rename_plain: Rename
+menu.rename_tab: Rename Tab
+menu.restart_server: Restart Server…
+menu.split_down: Split Down
+menu.split_right: Split Right
+menu.stop_workspace: Stop Workspace…
+menu.this_mac: This Mac
+mismatch.detail: {host} is serving agentty sessions from {running}, which speaks a protocol this client ({wanted}) cannot. agentty has installed a matching server there, but the one already running is the one your sessions are on.\n{answer_restart} starts {wanted} there and ends every session it is hosting.\n{answer_cancel} leaves {host} exactly as it is. This window will not connect.
+mismatch.running_from: {version} (from {exe})
+mismatch.unknown: an unknown build
+mismatch.unknown_from: an unknown build (from {exe})
+navigator.scan_cancelled: Session scan was cancelled
+navigator.scan_completed: Session scan completed
+navigator.scan_incomplete: Session scan was incomplete: {failed}
+navigator.source_limit: Session source limit exceeded for {source} ({limit})
+navigator.source_missing: Session source not found: {source}
+notify.agent_finished: Finished after {secs}s
+notify.command_finished: Command finished after {secs}s
+notify.command_finished_labeled: {label} — finished after {secs}s
+notify.delete_failed: Delete failed
+notify.no_fork_command: agentty has no fork command for {name}
+notify.save_failed: Save failed
+notify.session_id_not_token: {name}'s session id isn't a plain token
+notify.split_failed: Could not split the pane: {error}
+notify.ssh_failed: SSH connection failed: {error}
+notify.ssh_reconnect_failed: SSH reconnect failed: {error}
+notify.terminal_open_failed: Could not open a terminal: {error}
+notify.turn_finished: Turn finished
+opt.after_current: After current
+opt.agent: Agent
+opt.always: Always
+opt.at_end: At end
+opt.audible: Audible
+opt.auto: Auto
+opt.bar: Bar
+opt.block: Block
+opt.custom: Custom
+opt.default: Default
+opt.fullscreen: Fullscreen
+opt.home: Home
+opt.inherit: Inherit
+opt.key: Key
+opt.left: Left
+opt.maximized: Maximized
+opt.never: Never
+opt.normal: Normal
+opt.off: Off
+opt.on: On
+opt.password: Password
+opt.top: Top
+opt.underline: Underline
+opt.visual: Visual
+opt.when_unfocused: When Unfocused
+palette.edit_arrow: → edit
+palette.no_matching_commands: No matching commands
+palette.ssh_hint: Type user@host to connect over SSH instead.
+pending.unreachable: Couldn't reach {machine}
+rw.action_retry: Retry Now
+rw.action_retry_short: Retry
+rw.action_take_back: Take Back
+rw.connecting: Connecting to {machine}…
+rw.entered_environment: Entered remote environment: {label}
+rw.failed: Not connected to {machine} — {error}
+rw.input_notice_disconnected: Not connected — typing has no effect
+rw.input_notice_preempted: Opened elsewhere — typing has no effect
+rw.no_connection_details: This window is a workspace on {machine}, but agentty has no connection details for it any more — check that its SSH profile or ~/.ssh/config entry still exists.
+rw.not_connected: Not connected to {machine}
+rw.preempted: This workspace was opened on {by}
+rw.reconnecting: Reconnecting to {machine}…
+rw.reconnecting_attempt: Reconnecting to {machine}… (attempt {attempt})
+rw.replace_confirm_body: The agentty-server running on {label} speaks a protocol this client cannot. agentty will restart the service there onto one that does, installing it first if {label} does not already have it.\nEvery session running on {label} ends, including any this window is not connected to.
+rw.restart_confirm_body: This stops every shell on {label} — anything still running in them will be terminated, including shells this window is not showing. Workspaces and layouts are kept and come back with fresh shells.
+rw.restart_confirm_title: Restart agentty's server on “{label}”?
+search.find_placeholder: Find
+search.match_case: Match case
+search.use_regex: Use regular expression
+session.default_name: Agent session
+session.discovering: Discovering Agent sessions…
+session.empty: No Codex or Claude sessions found in this environment.
+session.live: Live
+session.no_match: No matching Agent sessions.
+session.refresh: Refresh Agent sessions
+session.restoring: Restoring…
+session.resume: Resume
+session.search_placeholder: Search sessions…
+settings.about_stack: Pure Rust · GPU rendering on Zed's gpui · VT core from Alacritty
+settings.about_tagline: A terminal workbench: shells, workspaces, SSH, coding agents.
+settings.add_rule: + Add rule
+settings.agent_forwarding: Agent forwarding
+settings.agent_forwarding.desc: Forward the local ssh-agent to the connection.
+settings.agents_intro: Agents
+settings.agents_intro.desc: Hook integrations give panes running these agents live session status (working / waiting / done) in the tab bar. Only active inside agentty.
+settings.aliases_many: {n} aliases linked.
+settings.aliases_none: No aliases linked yet.
+settings.aliases_one: 1 alias linked.
+settings.arguments: Arguments
+settings.arguments.desc: Space-separated launch flags. e.g. -l for a login shell.
+settings.background_image: Background image
+settings.background_image.desc: Composited over the background color, under the text.
+settings.blur: Blur
+settings.blur.desc: Blur whatever is behind a translucent window (macOS).
+settings.bold_font: Bold font
+settings.bold_font.desc: Face for bold text; Default synthesizes it from the primary.
+settings.change_theme: Change theme
+settings.check_updates_launch: Check for updates on launch
+settings.command_line: Command line
+settings.confirm_close_last: Confirm before closing the last window
+settings.confirm_close_last.desc: Ask first, since that close also quits agentty. Off closes straight away — either way your shells keep running in the background.
+settings.conn_auth: Auth
+settings.conn_auth.desc: Authentication method. Auto tries every applicable method.
+settings.conn_host: Host
+settings.conn_host.desc: Hostname or IP address.
+settings.conn_name: Name
+settings.conn_name.desc: A label for this connection.
+settings.conn_user: User
+settings.conn_user.desc: Login user (blank = resolve at connect).
+settings.connected_suffix: · connected
+settings.copy_on_select: Copy on select
+settings.copy_on_select.desc: Selecting text with the mouse copies it to the clipboard right away, no ⌘C needed.
+settings.cursor_blink: Cursor blink
+settings.cursor_blink.desc: Pulse the cursor while the terminal is focused.
+settings.cursor_shape: Cursor shape
+settings.cursor_shape.desc: How the terminal cursor is drawn.
+settings.custom_path: Custom path
+settings.custom_path.desc: The directory new shells start in.
+settings.custom_themes: Custom themes
+settings.custom_themes.desc: Duplicate a theme to edit its colors here, or drop your own in the themes folder: a agentty YAML theme or an iTerm2 .itermcolors scheme.
+settings.default_follows: Default follows Defaults, which is {value}.
+settings.detect_urls: Detect URLs
+settings.detect_urls.desc: Underline links on hover and open them on {modifier}-click.
+settings.dim_inactive: Dim inactive panes
+settings.dim_inactive.desc: Fade unfocused panes in a split so the active one stands out.
+settings.duplicate_to_edit: Duplicate to edit
+settings.edit_theme: Edit theme
+settings.edit_theme.desc: You're editing a copy. Changes save to its file in the themes folder and apply live.
+settings.filter_hosts: Filter hosts…
+settings.focus_follows_mouse: Focus follows mouse
+settings.focus_follows_mouse.desc: Hovering a pane focuses it without a click.
+settings.follow_theme: Follow theme
+settings.font_family: Font family
+settings.font_family.desc: Pick from fonts installed on your system.
+settings.font_ligatures: Font ligatures
+settings.font_ligatures.desc: Enable common programming ligature features for terminal text.
+settings.font_size: Font size
+settings.font_size.desc: Terminal text size in pixels.
+settings.forgot_password: Forgot saved password for {endpoint}
+settings.forgot_password_failed: Couldn't forget password for {endpoint}: {error}
+settings.forward_d_hint: D — dynamic SOCKS proxy
+settings.forward_description_placeholder: description
+settings.forward_l_hint: L — a local port reaches the remote side
+settings.forward_loopback: Forward SSH loopback links
+settings.forward_loopback.desc: When a pane is in SSH, open localhost links through a temporary port forward.
+settings.forward_r_hint: R — a remote port reaches this machine
+settings.fwd_rules_many: {n} rules, opened with the connection
+settings.fwd_rules_none: none
+settings.fwd_rules_one: 1 rule, opened with the connection
+settings.h.about: About
+settings.h.ansi_colors: ANSI colors
+settings.h.bell: Bell
+settings.h.cursor: Cursor
+settings.h.keyboard: Keyboard
+settings.h.links: Links
+settings.h.mouse: Mouse
+settings.h.notifications: Notifications
+settings.h.scrolling: Scrolling
+settings.h.selection_clipboard: Selection & clipboard
+settings.h.tabs: Tabs
+settings.h.transparency: Transparency
+settings.h.typography: Typography
+settings.h.window: Window
+settings.hide_mouse: Hide mouse while typing
+settings.hide_mouse.desc: Hide the pointer as you type; it returns on the next move.
+settings.history_search: History search
+settings.history_search.desc: ⌃R at the prompt opens agentty's fuzzy history menu. When off, ⌃R goes to the shell instead — its own reverse-i-search, or whatever you've bound there (fzf, percol).
+settings.image_opacity: Image opacity
+settings.image_opacity.desc: How strongly the image shows over the background color.
+settings.import_aliases: Import aliases
+settings.import_aliases.desc: Re-reads the file and adds anything new. Edits you make here are stored by agentty — the file itself is never written.
+settings.import_now: Import now
+settings.install_cli: Install the `agentty` command on PATH
+settings.italic_font: Italic font
+settings.italic_font.desc: Face for italic text; Default synthesizes it from the primary.
+settings.jump_host: Jump host
+settings.jump_host.desc: Name of another profile to tunnel through (blank = direct).
+settings.keybindings_intro: Keybindings
+settings.keybindings_intro.desc: Click a shortcut, then press the new keys — it saves after a brief pause. Chain keys for a sequence like Ctrl-B then X. Esc cancels; Backspace removes the last key, or resets the shortcut to default when pressed first.
+settings.line_height: Line height
+settings.line_height.desc: Row spacing as a multiple of the font size.
+settings.nav.about: About
+settings.nav.agents: Agents
+settings.nav.appearance: Appearance
+settings.nav.input: Input
+settings.nav.keybindings: Keybindings
+settings.nav.terminal: Terminal
+settings.nav.window_tabs: Window & Tabs
+settings.new_tab_position: New tab position
+settings.new_tab_position.desc: Where a freshly opened tab is inserted.
+settings.no_saved_hosts: No saved hosts yet.
+settings.nothing_matches: Nothing matches {query}.
+settings.notify_finish: Notify on command finish
+settings.notify_finish.desc: Desktop alert after a long foreground command completes.
+settings.notify_threshold: Notify threshold
+settings.notify_threshold.desc: How long a command must run to qualify as "long".
+settings.opacity: Opacity
+settings.opacity.desc: How opaque the window background is, for every theme. Below 100% the desktop shows through.
+settings.open_default_app_placeholder: open in default app
+settings.open_themes_folder: Open themes folder
+settings.option_meta: Option (⌥) acts as Meta
+settings.option_meta.desc: ⌥+key sends the escape chord shells expect (⌥B = back one word) instead of typing a special character (∫).
+settings.pause_to_save: pause to save · Esc
+settings.port_forwarding: Port forwarding
+settings.prefix: Prefix
+settings.preset: Preset
+settings.press_keys: Press keys…
+settings.program: Program
+settings.program.desc: Executable name on PATH or an absolute path. e.g. zsh, fish, pwsh.
+settings.prompt: Prompt
+settings.prompt.desc: agentty's own menus at the shell prompt. Turn one off to hand the key back to the shell.
+settings.reading_agent_config: Reading this machine's agent config…
+settings.remember_window: Remember window size & position
+settings.remember_window.desc: Reopen at the size and position the window had when agentty last quit. Off opens centered at the default size.
+settings.report_mouse: Report mouse to apps
+settings.report_mouse.desc: Let full-screen apps (vim, tmux) handle clicks and scrolling; hold Shift to keep a gesture local.
+settings.restart_server: Restart server…
+settings.restart_server_body: Restart the server on this computer to pick up a newly granted macOS permission, recover if it stops responding, or start from a clean slate. This ends all running shells here; your tabs and layout reopen with fresh shells. A remote machine's server is restarted from its own menu in the workspace switcher.
+settings.restore_all_defaults: Restore all defaults
+settings.restore_layout: Restore last layout
+settings.restore_layout.desc: Reopen the last window's tabs, splits, and directories on launch. Off starts with a single fresh terminal.
+settings.scroll_speed: Scroll speed
+settings.scroll_speed.desc: Multiplier applied to mouse-wheel scrolling.
+settings.scrollback: Scrollback
+settings.scrollback.desc: Lines of history kept per pane. Applies to new panes.
+settings.search_settings: Search settings…
+settings.search_themes: Search themes…
+settings.security: Security
+settings.security.desc: A host can override either of these under its own Advanced.
+settings.server: Server
+settings.shell_integration: Shell integration
+settings.shell_integration.desc: Let the remote shell report prompts, exit codes and directory.
+settings.shell_section: Shell
+settings.shell_section.desc: The program each new terminal launches. Leave Program empty to use the platform default ({platform_default}).
+settings.skip_banner: Skip banner
+settings.skip_banner.desc: Suppress the server login banner.
+settings.smart_selection: Smart selection
+settings.smart_selection.desc: Double-click selects the whole URL, file path, email, or bracket pair under the cursor.
+settings.ssh_group_local: In agentty
+settings.start_in: Start in
+settings.start_in.desc: What a fresh shell starts in: agentty's launch directory, your home folder, or a fixed path.
+settings.startup_window: Startup window
+settings.startup_window.desc: Window state when agentty launches.
+settings.sync_system: Sync with system
+settings.sync_system.desc: Follow the OS appearance with separate light and dark themes.
+settings.tab_bar_position: Tab bar position
+settings.tab_bar_position.desc: Show tabs as a horizontal strip on top or a vertical sidebar on the left.
+settings.tab_completion: Tab completion
+settings.tab_completion.desc: Tab at the prompt opens agentty's completion menu. When off, Tab goes to the shell's own completion instead.
+settings.terminal_bell: Terminal bell
+settings.terminal_bell.desc: How a bell (^G) is signalled: silenced, a brief flash, or the system sound.
+settings.theme: Theme
+settings.theme.desc: Pick a color theme. Each one sets its own light or dark look.
+settings.theme_caption_dark: Dark mode · {kind}
+settings.theme_caption_dark_active: Dark mode · {kind} · Active
+settings.theme_caption_light: Light mode · {kind}
+settings.theme_caption_light_active: Light mode · {kind} · Active
+settings.theme_caption_manual: {kind} · {mode}
+settings.theme_kind_builtin: Built-in
+settings.theme_kind_custom: Custom
+settings.theme_mode_dark: Dark
+settings.theme_mode_light: Light
+settings.theme_subtitle_dark: Choose the theme for dark mode.
+settings.theme_subtitle_light: Choose the theme for light mode.
+settings.theme_subtitle_manual: Change your current theme.
+settings.themes: Themes
+settings.title: SETTINGS
+settings.tray_icon: Show tray icon
+settings.tray_icon.desc: Keep a status item in the system tray / menu bar: it signals when a coding agent needs your input, and its menu jumps to agent panes.
+settings.trim_spaces: Trim trailing spaces on copy
+settings.trim_spaces.desc: Strip trailing whitespace from each copied line.
+settings.update_available: Version {version} is available.
+settings.updates: Updates
+settings.verify_host_keys: Verify host keys
+settings.verify_host_keys.desc: Check each server's key against known_hosts and confirm unknown or changed keys before connecting. Off connects without checking, so a spoofed server would go unnoticed.
+settings.via_suffix: · via {name}
+settings.warn_before_closing: Warn before closing
+settings.warn_before_closing.desc: Ask for confirmation before closing a tab or pane with a live SSH session.
+settings.x11_forwarding: X11 forwarding
+settings.x11_forwarding.desc: Request X11 forwarding (needs XQuartz on macOS).
+sftp.new_file_name: New file name
+sftp.new_file_title: New file
+sftp.new_folder_name: New folder name
+sftp.new_folder_title: New folder
+sftp.no_transfers: No transfers yet.
+sftp.permissions: Permissions · {readable}
+sftp.rename_title: Rename
+sftp.search_placeholder: Search
+sidebar.hide: Hide Sidebar
+sidebar.show: Show Sidebar
+ssh.close_confirm_body: The connection is live. Closing will end it.
+ssh.close_confirm_title: Close this SSH connection?
+ssh.connect: Connect
+ssh.disconnected: Disconnected
+ssh.disconnected_from: Disconnected from {host}
+ssh.fingerprint_new: new {fingerprint}
+ssh.fingerprint_old: old {fingerprint}
+ssh.host_input_placeholder: user@host  or  user@host:port
+ssh.host_key_changed: Host key CHANGED — possible man-in-the-middle
+ssh.host_key_differs: The host key differs from the one previously trusted. This may be an attack.
+ssh.passphrase_for: Passphrase for {key_path}
+ssh.password_for: Password for {user}@{host}
+ssh.password_rejected: The stored password was rejected. Enter a new one.
+ssh.remember_keychain: Remember (keychain)
+ssh.submit: Submit
+ssh.two_factor: Two-factor authentication
+ssh.type_yes_override: Type "yes" to override and trust the new key, or Esc to abort.
+ssh.unknown_host: Unknown host {host}
+ssh.unlock: Unlock
+switcher.add_ssh_host: Add SSH Host…
+switcher.new_window_hint: click for a new window
+switcher.no_match: No workspace or machine matches.
+switcher.other_machines: Other Machines
+switcher.search_placeholder: Search workspaces and machines
+tab.shell_default: Shell {index}
+worktree.failed: New worktree failed: {error}
+worktree.new_tab: New Worktree Tab
+worktree.removal_failed: Worktree removal failed: {error}

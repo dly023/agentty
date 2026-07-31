@@ -1,3 +1,4 @@
+use crate::core::i18n::ResolveLocale as _;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -37,38 +38,70 @@ pub enum RemoteStatus {
 }
 
 impl RemoteStatus {
-    pub fn strip_message(&self, machine: &str) -> Option<String> {
+    pub fn strip_message(&self, machine: &str, cx: &gpui::App) -> Option<String> {
+        self.strip_message_loc(
+            machine,
+            cx.global::<crate::core::config::Config>().locale.resolve(),
+        )
+    }
+
+    fn strip_message_loc(
+        &self,
+        machine: &str,
+        locale: crate::core::i18n::Locale,
+    ) -> Option<String> {
+        use crate::core::i18n::trf;
         match self {
             RemoteStatus::Attached => None,
-            RemoteStatus::Disconnected => Some(format!("Not connected to {machine}")),
-            RemoteStatus::Connecting => Some(format!("Connecting to {machine}…")),
-            RemoteStatus::Reconnecting { attempt: 0 } => {
-                Some(format!("Reconnecting to {machine}…"))
+            RemoteStatus::Disconnected => {
+                Some(trf(locale, "rw.not_connected", &[("machine", machine)]))
             }
-            RemoteStatus::Reconnecting { attempt } => Some(format!(
-                "Reconnecting to {machine}… (attempt {})",
-                attempt + 1
+            RemoteStatus::Connecting => Some(trf(locale, "rw.connecting", &[("machine", machine)])),
+            RemoteStatus::Reconnecting { attempt: 0 } => {
+                Some(trf(locale, "rw.reconnecting", &[("machine", machine)]))
+            }
+            RemoteStatus::Reconnecting { attempt } => Some(trf(
+                locale,
+                "rw.reconnecting_attempt",
+                &[
+                    ("machine", machine),
+                    ("attempt", &(attempt + 1).to_string()),
+                ],
             )),
-            RemoteStatus::Preempted { by } => Some(format!("This workspace was opened on {by}")),
-            RemoteStatus::Failed(e) => Some(format!("Not connected to {machine} — {e}")),
+            RemoteStatus::Preempted { by } => Some(trf(locale, "rw.preempted", &[("by", by)])),
+            RemoteStatus::Failed(e) => Some(trf(
+                locale,
+                "rw.failed",
+                &[("machine", machine), ("error", e)],
+            )),
         }
     }
 
-    pub fn input_notice(&self) -> Option<&'static str> {
+    pub fn input_notice(&self, cx: &gpui::App) -> Option<&'static str> {
+        self.input_notice_loc(cx.global::<crate::core::config::Config>().locale.resolve())
+    }
+
+    fn input_notice_loc(&self, locale: crate::core::i18n::Locale) -> Option<&'static str> {
+        use crate::core::i18n::tr;
         match self {
             RemoteStatus::Attached => None,
-            RemoteStatus::Preempted { .. } => Some("Opened elsewhere — typing has no effect"),
-            _ => Some("Not connected — typing has no effect"),
+            RemoteStatus::Preempted { .. } => Some(tr(locale, "rw.input_notice_preempted")),
+            _ => Some(tr(locale, "rw.input_notice_disconnected")),
         }
     }
 
-    pub fn action_label(&self) -> Option<&'static str> {
+    pub fn action_label(&self, cx: &gpui::App) -> Option<&'static str> {
+        self.action_label_loc(cx.global::<crate::core::config::Config>().locale.resolve())
+    }
+
+    fn action_label_loc(&self, locale: crate::core::i18n::Locale) -> Option<&'static str> {
+        use crate::core::i18n::tr;
         match self {
             RemoteStatus::Attached | RemoteStatus::Connecting => None,
-            RemoteStatus::Reconnecting { .. } => Some("Retry Now"),
-            RemoteStatus::Preempted { .. } => Some("Take Back"),
-            RemoteStatus::Disconnected => Some("Connect"),
-            RemoteStatus::Failed(_) => Some("Retry"),
+            RemoteStatus::Reconnecting { .. } => Some(tr(locale, "rw.action_retry")),
+            RemoteStatus::Preempted { .. } => Some(tr(locale, "rw.action_take_back")),
+            RemoteStatus::Disconnected => Some(tr(locale, "common.connect")),
+            RemoteStatus::Failed(_) => Some(tr(locale, "rw.action_retry_short")),
         }
     }
 
@@ -184,10 +217,10 @@ impl AgenttyApp {
             _ => {
                 let machine = self.remote_machine_label(cx);
                 window.push_notification(
-                    format!(
-                        "This window is a workspace on {machine}, but agentty has no connection \
-                         details for it any more — check that its SSH profile or ~/.ssh/config \
-                         entry still exists."
+                    crate::core::i18n::current_format(
+                        cx,
+                        "rw.no_connection_details",
+                        &[("machine", &machine)],
                     ),
                     cx,
                 );
@@ -456,13 +489,16 @@ impl AgenttyApp {
 
     pub(crate) fn prompt_remote_daemon_mismatch(window: &mut Window, cx: &mut Context<Self>) {
         for mismatch in crate::daemon::install::take_mismatched_remote_daemons() {
-            let title = remote_connect::mismatch_title(&mismatch);
-            let detail = remote_connect::mismatch_detail(&mismatch);
+            let title = remote_connect::mismatch_title(&mismatch, cx);
+            let detail = remote_connect::mismatch_detail(&mismatch, cx);
             let answer = window.prompt(
                 PromptLevel::Warning,
                 &title,
                 Some(&detail),
-                &remote_connect::MISMATCH_ANSWERS,
+                &[
+                    crate::core::i18n::current(cx, "common.cancel"),
+                    crate::core::i18n::current(cx, "common.restart_server"),
+                ],
                 cx,
             );
             cx.spawn(async move |this, cx| {
@@ -499,15 +535,18 @@ impl AgenttyApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let title =
+            crate::core::i18n::current_format(cx, "rw.restart_confirm_title", &[("label", &label)]);
+        let body =
+            crate::core::i18n::current_format(cx, "rw.restart_confirm_body", &[("label", &label)]);
         let answer = window.prompt(
             PromptLevel::Warning,
-            &format!("Restart agentty's server on \u{201c}{label}\u{201d}?"),
-            Some(&format!(
-                "This stops every shell on {label} — anything still running in them \
-                 will be terminated, including shells this window is not showing. \
-                 Workspaces and layouts are kept and come back with fresh shells."
-            )),
-            &["Cancel", "Restart Server"],
+            &title,
+            Some(&body),
+            &[
+                crate::core::i18n::current(cx, "common.cancel"),
+                crate::core::i18n::current(cx, "common.restart_server"),
+            ],
             cx,
         );
         cx.spawn(async move |this, cx| {
@@ -569,18 +608,18 @@ impl AgenttyApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let title =
+            crate::core::i18n::current_format(cx, "rw.restart_confirm_title", &[("label", &label)]);
+        let body =
+            crate::core::i18n::current_format(cx, "rw.replace_confirm_body", &[("label", &label)]);
         let answer = window.prompt(
             PromptLevel::Warning,
-            &format!("Restart agentty's server on \u{201c}{label}\u{201d}?"),
-            Some(&format!(
-                "The agentty-server running on {label} speaks a protocol this client cannot. \
-                 agentty will restart the service there onto one that does, installing it \
-                 first if {label} does not already have it.\n\
-                 \n\
-                 Every session running on {label} ends, including any this window is not \
-                 connected to."
-            )),
-            &["Cancel", "Restart Server"],
+            &title,
+            Some(&body),
+            &[
+                crate::core::i18n::current(cx, "common.cancel"),
+                crate::core::i18n::current(cx, "common.restart_server"),
+            ],
             cx,
         );
         cx.spawn(async move |this, cx| {
@@ -1279,7 +1318,14 @@ fn notify_entered_environment(cx: &mut gpui::App, host: HostId, label: &str) {
             continue;
         };
         let _ = handle.update(cx, |_, window, cx| {
-            window.push_notification(format!("Entered remote environment: {label}"), cx);
+            window.push_notification(
+                crate::core::i18n::current_format(
+                    cx,
+                    "rw.entered_environment",
+                    &[("label", label)],
+                ),
+                cx,
+            );
         });
     }
 }
@@ -1528,22 +1574,25 @@ mod tests {
 
     #[test]
     fn the_status_strip_speaks_unless_everything_is_working() {
-        assert_eq!(RemoteStatus::Attached.strip_message("build-box"), None);
+        assert_eq!(
+            RemoteStatus::Attached.strip_message_loc("build-box", crate::core::i18n::Locale::EnUs),
+            None
+        );
         assert_eq!(
             RemoteStatus::Disconnected
-                .strip_message("build-box")
+                .strip_message_loc("build-box", crate::core::i18n::Locale::EnUs)
                 .as_deref(),
             Some("Not connected to build-box")
         );
         assert_eq!(
             RemoteStatus::Connecting
-                .strip_message("build-box")
+                .strip_message_loc("build-box", crate::core::i18n::Locale::EnUs)
                 .as_deref(),
             Some("Connecting to build-box…")
         );
         assert_eq!(
             RemoteStatus::Failed("connection refused".into())
-                .strip_message("build-box")
+                .strip_message_loc("build-box", crate::core::i18n::Locale::EnUs)
                 .as_deref(),
             Some("Not connected to build-box — connection refused")
         );
@@ -1791,8 +1840,16 @@ mod tests {
         ];
         for (status, accepts, notice, action) in cases {
             assert_eq!(status.accepts_input(), accepts, "{status:?}");
-            assert_eq!(status.input_notice(), notice, "{status:?}");
-            assert_eq!(status.action_label(), action, "{status:?}");
+            assert_eq!(
+                status.input_notice_loc(crate::core::i18n::Locale::EnUs),
+                notice,
+                "{status:?}"
+            );
+            assert_eq!(
+                status.action_label_loc(crate::core::i18n::Locale::EnUs),
+                action,
+                "{status:?}"
+            );
         }
     }
 
@@ -1800,14 +1857,14 @@ mod tests {
     fn the_new_states_name_what_happened() {
         assert_eq!(
             RemoteStatus::Reconnecting { attempt: 0 }
-                .strip_message("build-box")
+                .strip_message_loc("build-box", crate::core::i18n::Locale::EnUs)
                 .as_deref(),
             Some("Reconnecting to build-box…"),
             "the first attempt does not need a count"
         );
         assert_eq!(
             RemoteStatus::Reconnecting { attempt: 3 }
-                .strip_message("build-box")
+                .strip_message_loc("build-box", crate::core::i18n::Locale::EnUs)
                 .as_deref(),
             Some("Reconnecting to build-box… (attempt 4)")
         );
@@ -1815,7 +1872,7 @@ mod tests {
             RemoteStatus::Preempted {
                 by: "desktop".into()
             }
-            .strip_message("build-box")
+            .strip_message_loc("build-box", crate::core::i18n::Locale::EnUs)
             .as_deref(),
             Some("This workspace was opened on desktop")
         );

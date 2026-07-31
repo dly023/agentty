@@ -77,60 +77,63 @@ impl Render for PendingPane {
         let theme = cx.theme();
         let (muted, dim) = (theme.muted_foreground, theme.muted_foreground.opacity(0.75));
 
-        let body = match &self.state {
-            PendingState::Connecting => v_flex()
-                .items_center()
-                .gap(px(10.))
-                .child(
-                    Icon::new(IconName::LoaderCircle)
-                        .size(px(18.))
-                        .text_color(dim)
-                        .with_animation(
-                            "pending-pane-spin",
-                            Animation::new(Duration::from_millis(900)).repeat(),
-                            |icon, delta| {
-                                icon.transform(gpui::Transformation::rotate(gpui::percentage(
-                                    delta,
-                                )))
-                            },
+        let body =
+            match &self.state {
+                PendingState::Connecting => v_flex()
+                    .items_center()
+                    .gap(px(10.))
+                    .child(
+                        Icon::new(IconName::LoaderCircle)
+                            .size(px(18.))
+                            .text_color(dim)
+                            .with_animation(
+                                "pending-pane-spin",
+                                Animation::new(Duration::from_millis(900)).repeat(),
+                                |icon, delta| {
+                                    icon.transform(gpui::Transformation::rotate(gpui::percentage(
+                                        delta,
+                                    )))
+                                },
+                            ),
+                    )
+                    .child(div().text_sm().text_color(muted).child(
+                        crate::core::i18n::current_format(
+                            cx,
+                            "rw.connecting",
+                            &[("machine", &self.machine)],
                         ),
-                )
-                .child(
-                    div()
-                        .text_sm()
-                        .text_color(muted)
-                        .child(format!("Connecting to {}…", self.machine)),
-                )
-                .into_any_element(),
-            PendingState::Failed(reason) => v_flex()
-                .items_center()
-                .gap(px(10.))
-                .max_w(px(420.))
-                .child(
-                    div()
-                        .text_sm()
-                        .text_color(theme.foreground)
-                        .child(format!("Couldn't reach {}", self.machine)),
-                )
-                .child(
-                    div()
-                        .text_xs()
-                        .text_center()
-                        .text_color(muted)
-                        .child(reason.clone()),
-                )
-                .child(
-                    Button::new("pending-pane-retry")
-                        .label("Try Again")
-                        .ghost()
-                        .small()
-                        .on_click(cx.listener(|this, _, _window, cx| {
-                            this.retrying(cx);
-                            cx.emit(RetryRequested);
-                        })),
-                )
-                .into_any_element(),
-        };
+                    ))
+                    .into_any_element(),
+                PendingState::Failed(reason) => v_flex()
+                    .items_center()
+                    .gap(px(10.))
+                    .max_w(px(420.))
+                    .child(div().text_sm().text_color(theme.foreground).child(
+                        crate::core::i18n::current_format(
+                            cx,
+                            "pending.unreachable",
+                            &[("machine", &self.machine)],
+                        ),
+                    ))
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_center()
+                            .text_color(muted)
+                            .child(reason.clone()),
+                    )
+                    .child(
+                        Button::new("pending-pane-retry")
+                            .label(crate::core::i18n::current(cx, "common.retry"))
+                            .ghost()
+                            .small()
+                            .on_click(cx.listener(|this, _, _window, cx| {
+                                this.retrying(cx);
+                                cx.emit(RetryRequested);
+                            })),
+                    )
+                    .into_any_element(),
+            };
 
         h_flex()
             .track_focus(&self.focus_handle)

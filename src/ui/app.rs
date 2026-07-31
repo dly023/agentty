@@ -548,7 +548,12 @@ impl AgenttyApp {
         let mf_bind_port = cx.new(|cx| InputState::new(window, cx).placeholder("8080"));
         let mf_target_host = cx.new(|cx| InputState::new(window, cx).placeholder("127.0.0.1"));
         let mf_target_port = cx.new(|cx| InputState::new(window, cx).placeholder("80"));
-        let mf_description = cx.new(|cx| InputState::new(window, cx).placeholder("description"));
+        let mf_description = cx.new(|cx| {
+            InputState::new(window, cx).placeholder(crate::core::i18n::current(
+                cx,
+                "settings.forward_description_placeholder",
+            ))
+        });
         let sidebar_width = cx.global::<Config>().sidebar_width;
         let right_panel_width = cx.global::<Config>().right_panel_width;
         let right_panel_visible = cx.global::<Config>().right_panel_visible;
@@ -625,7 +630,10 @@ impl AgenttyApp {
                     cx.notify();
                 }
             });
-        let file_search = cx.new(|cx| InputState::new(window, cx).placeholder("Search files…"));
+        let file_search = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder(crate::core::i18n::current(cx, "common.search_files"))
+        });
         let file_search_sub = cx.subscribe_in(&file_search, window, |_this, _i, ev, _w, cx| {
             if matches!(ev, InputEvent::Change) {
                 cx.notify();
@@ -1579,7 +1587,11 @@ impl AgenttyApp {
                 let value = (r as u32) << 16 | (g as u32) << 8 | b as u32;
                 (
                     ThemeEdit::Ansi(i),
-                    format!("Color {i}"),
+                    crate::core::i18n::current_format(
+                        cx,
+                        "editor.color_n",
+                        &[("i", &i.to_string())],
+                    ),
                     make(ThemeEdit::Ansi(i), value, &mut subs, cx),
                 )
             })
@@ -2276,7 +2288,14 @@ impl AgenttyApp {
             Ok(view) => view,
             Err(e) => {
                 log::error!("new tab spawn failed: {e}");
-                window.push_notification(format!("Could not open a terminal: {e}"), cx);
+                window.push_notification(
+                    crate::core::i18n::current_format(
+                        cx,
+                        "notify.terminal_open_failed",
+                        &[("error", &e.to_string())],
+                    ),
+                    cx,
+                );
                 return;
             }
         };
@@ -2305,7 +2324,14 @@ impl AgenttyApp {
             Ok(view) => view,
             Err(e) => {
                 log::error!("native SSH spawn failed: {e}");
-                window.push_notification(format!("SSH connection failed: {e}"), cx);
+                window.push_notification(
+                    crate::core::i18n::current_format(
+                        cx,
+                        "notify.ssh_failed",
+                        &[("error", &e.to_string())],
+                    ),
+                    cx,
+                );
                 return;
             }
         };
@@ -2332,7 +2358,14 @@ impl AgenttyApp {
             Ok(view) => view,
             Err(e) => {
                 log::error!("native SSH respawn failed: {e}");
-                window.push_notification(format!("SSH reconnect failed: {e}"), cx);
+                window.push_notification(
+                    crate::core::i18n::current_format(
+                        cx,
+                        "notify.ssh_reconnect_failed",
+                        &[("error", &e.to_string())],
+                    ),
+                    cx,
+                );
                 return;
             }
         };
@@ -2369,7 +2402,14 @@ impl AgenttyApp {
                 Ok(view) => PaneSlot::Ready(view),
                 Err(e) => {
                     log::error!("native SSH split spawn failed: {e}");
-                    window.push_notification(format!("SSH connection failed: {e}"), cx);
+                    window.push_notification(
+                        crate::core::i18n::current_format(
+                            cx,
+                            "notify.ssh_failed",
+                            &[("error", &e.to_string())],
+                        ),
+                        cx,
+                    );
                     return;
                 }
             }
@@ -2388,7 +2428,14 @@ impl AgenttyApp {
                 Ok(view) => view,
                 Err(e) => {
                     log::error!("split spawn failed: {e}");
-                    window.push_notification(format!("Could not split the pane: {e}"), cx);
+                    window.push_notification(
+                        crate::core::i18n::current_format(
+                            cx,
+                            "notify.split_failed",
+                            &[("error", &e.to_string())],
+                        ),
+                        cx,
+                    );
                     return;
                 }
             }
@@ -2711,8 +2758,14 @@ impl AgenttyApp {
                                     format!("Removed worktree \"{branch}\""),
                                     cx,
                                 ),
-                                Err(e) => window
-                                    .push_notification(format!("Worktree removal failed: {e}"), cx),
+                                Err(e) => window.push_notification(
+                                    crate::core::i18n::current_format(
+                                        cx,
+                                        "worktree.removal_failed",
+                                        &[("error", &e.to_string())],
+                                    ),
+                                    cx,
+                                ),
                             },
                         );
                     });
@@ -2855,7 +2908,14 @@ impl AgenttyApp {
             Ok(view) => view,
             Err(e) => {
                 log::error!("fork spawn failed: {e}");
-                window.push_notification(format!("Could not open a terminal: {e}"), cx);
+                window.push_notification(
+                    crate::core::i18n::current_format(
+                        cx,
+                        "notify.terminal_open_failed",
+                        &[("error", &e.to_string())],
+                    ),
+                    cx,
+                );
                 return;
             }
         };
@@ -2932,7 +2992,10 @@ impl AgenttyApp {
         };
         let name = agent.display_name();
         if agent.fork_label().is_none() {
-            window.push_notification(format!("agentty has no fork command for {name}"), cx);
+            window.push_notification(
+                crate::core::i18n::current_format(cx, "notify.no_fork_command", &[("name", &name)]),
+                cx,
+            );
             return None;
         }
         if remote.is_some() {
@@ -2951,7 +3014,14 @@ impl AgenttyApp {
             return None;
         };
         let Some(cmd) = agent.fork_command(id, session.launch_argv.as_deref()) else {
-            window.push_notification(format!("{name}'s session id isn't a plain token"), cx);
+            window.push_notification(
+                crate::core::i18n::current_format(
+                    cx,
+                    "notify.session_id_not_token",
+                    &[("name", &name)],
+                ),
+                cx,
+            );
             return None;
         };
         if session.status == AgentStatus::Working {
@@ -3016,7 +3086,14 @@ impl AgenttyApp {
             move |h| crate::core::worktree::defaults(h, &probe_cwd),
             move |this, result, window, cx| match result {
                 Ok(defaults) => this.open_worktree_prompt(sheet_host, cwd, defaults, window, cx),
-                Err(e) => window.push_notification(format!("New worktree failed: {e}"), cx),
+                Err(e) => window.push_notification(
+                    crate::core::i18n::current_format(
+                        cx,
+                        "worktree.failed",
+                        &[("error", &e.to_string())],
+                    ),
+                    cx,
+                ),
             },
         );
     }
@@ -3040,7 +3117,14 @@ impl AgenttyApp {
             Ok(view) => view,
             Err(e) => {
                 log::error!("worktree tab spawn failed: {e}");
-                window.push_notification(format!("Could not open a terminal: {e}"), cx);
+                window.push_notification(
+                    crate::core::i18n::current_format(
+                        cx,
+                        "notify.terminal_open_failed",
+                        &[("error", &e.to_string())],
+                    ),
+                    cx,
+                );
                 return;
             }
         };
@@ -3491,7 +3575,10 @@ impl AgenttyApp {
         let link_file_command_input = self.build_link_file_command_input(&mut subs, window, cx);
         let scroll_slider = self.build_scroll_slider(&mut subs, window, cx);
         let window_opacity_slider = self.build_window_opacity_slider(&mut subs, window, cx);
-        let theme_search = cx.new(|cx| InputState::new(window, cx).placeholder("Search themes…"));
+        let theme_search = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder(crate::core::i18n::current(cx, "settings.search_themes"))
+        });
         subs.push(
             cx.subscribe_in(&theme_search, window, |_this, _i, ev, _w, cx| {
                 if matches!(ev, InputEvent::Change) {
@@ -3499,8 +3586,10 @@ impl AgenttyApp {
                 }
             }),
         );
-        let settings_search =
-            cx.new(|cx| InputState::new(window, cx).placeholder("Search settings…"));
+        let settings_search = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder(crate::core::i18n::current(cx, "settings.search_settings"))
+        });
         subs.push(
             cx.subscribe_in(&settings_search, window, |this, _i, ev, _w, cx| {
                 if matches!(ev, InputEvent::Change) {
@@ -3510,7 +3599,10 @@ impl AgenttyApp {
             }),
         );
 
-        let ssh_filter = cx.new(|cx| InputState::new(window, cx).placeholder("Filter hosts…"));
+        let ssh_filter = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder(crate::core::i18n::current(cx, "settings.filter_hosts"))
+        });
         subs.push(
             cx.subscribe_in(&ssh_filter, window, |_this, _i, ev, _w, cx| {
                 if matches!(ev, InputEvent::Change) {
@@ -3519,8 +3611,10 @@ impl AgenttyApp {
             }),
         );
 
-        let ssh_quick_connect =
-            cx.new(|cx| InputState::new(window, cx).placeholder("user@host  or  user@host:port"));
+        let ssh_quick_connect = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder(crate::core::i18n::current(cx, "ssh.host_input_placeholder"))
+        });
         subs.push(
             cx.subscribe_in(&ssh_quick_connect, window, |_this, _i, ev, _w, cx| {
                 if matches!(ev, InputEvent::Change) {
@@ -3730,7 +3824,10 @@ impl AgenttyApp {
             .unwrap_or_default();
         let input = cx.new(|cx| {
             InputState::new(window, cx)
-                .placeholder("open in default app")
+                .placeholder(crate::core::i18n::current(
+                    cx,
+                    "settings.open_default_app_placeholder",
+                ))
                 .default_value(value)
         });
         subs.push(
@@ -4683,8 +4780,8 @@ impl AgenttyApp {
         }
         let status = self.remote_status(cx)?;
         let machine = self.remote_machine_label(cx);
-        let message = status.strip_message(&machine)?;
-        let action = status.action_label();
+        let message = status.strip_message(&machine, cx)?;
+        let action = status.action_label(cx);
         let theme = cx.theme();
         let bar = gpui_component::h_flex()
             .occlude()
@@ -4734,7 +4831,7 @@ impl AgenttyApp {
         if self.tabs.is_empty() {
             return None;
         }
-        let notice = self.remote_status(cx)?.input_notice()?;
+        let notice = self.remote_status(cx)?.input_notice(cx)?;
         let theme = cx.theme();
         Some(
             div()

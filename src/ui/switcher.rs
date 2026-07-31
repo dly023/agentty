@@ -108,8 +108,12 @@ impl AgenttyApp {
     pub(crate) fn open_switcher(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         remote_connect::register(cx);
         remote_connect::sweep_wsl(cx);
-        let query =
-            cx.new(|cx| InputState::new(window, cx).placeholder("Search workspaces and machines"));
+        let query = cx.new(|cx| {
+            InputState::new(window, cx).placeholder(crate::core::i18n::current(
+                cx,
+                "switcher.search_placeholder",
+            ))
+        });
         query.update(cx, |state, cx| state.focus(window, cx));
         let subs = vec![cx.subscribe_in(
             &query,
@@ -436,7 +440,7 @@ impl AgenttyApp {
                     .py(px(14.))
                     .text_sm()
                     .text_color(cx.theme().muted_foreground)
-                    .child("No workspace or machine matches."),
+                    .child(crate::core::i18n::current(cx, "switcher.no_match")),
             );
         }
 
@@ -537,7 +541,7 @@ impl AgenttyApp {
                         GUTTER,
                         Icon::new(IconName::Plus).size(px(ICON)).text_color(dim),
                     ))
-                    .child("Add SSH Host…")
+                    .child(crate::core::i18n::current(cx, "switcher.add_ssh_host"))
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.close_switcher(window, cx);
                         this.open_settings_section(
@@ -563,7 +567,7 @@ impl AgenttyApp {
                             .border_color(border)
                             .child("⌘"),
                     )
-                    .child("click for a new window"),
+                    .child(crate::core::i18n::current(cx, "switcher.new_window_hint")),
             )
     }
 
@@ -630,7 +634,7 @@ impl AgenttyApp {
                                         "switcher-retry:{}",
                                         group.key
                                     )))
-                                    .label("Try Again")
+                                    .label(crate::core::i18n::current(cx, "common.retry"))
                                     .ghost()
                                     .xsmall()
                                     .on_click(cx.listener(move |this, _, _window, cx| {
@@ -655,7 +659,10 @@ impl AgenttyApp {
                                                 "switcher-replace:{}",
                                                 group.key
                                             )))
-                                            .label("Restart Server")
+                                            .label(crate::core::i18n::current(
+                                                cx,
+                                                "common.restart_server",
+                                            ))
                                             .ghost()
                                             .xsmall()
                                             .on_click(cx.listener(move |this, _, window, cx| {
@@ -874,7 +881,7 @@ impl AgenttyApp {
                         .ghost()
                         .xsmall()
                         .dropdown_menu(move |menu, _window, _cx| {
-                            group_menu(menu, &menu_ref, app.clone())
+                            group_menu(menu, &menu_ref, app.clone(), _cx)
                         }),
                     ),
             )
@@ -890,7 +897,7 @@ impl AgenttyApp {
             .on_click(cx.listener(move |this, _: &ClickEvent, _window, cx| {
                 this.switcher_toggle_host(&gref, cx)
             }))
-            .context_menu(move |menu, _window, _cx| group_menu(menu, &ctx_ref, app2.clone()))
+            .context_menu(move |menu, _window, _cx| group_menu(menu, &ctx_ref, app2.clone(), _cx))
     }
 
     fn render_row(&self, group: &Group, row: &Row, cx: &mut Context<Self>) -> AnyElement {
@@ -1002,14 +1009,14 @@ impl AgenttyApp {
                             .ghost()
                             .xsmall()
                             .dropdown_menu(move |menu, _window, _cx| {
-                                row_menu(menu, &menu_ref, app.clone())
+                                row_menu(menu, &menu_ref, app.clone(), _cx)
                             }),
                     ),
             )
             .on_click(cx.listener(move |this, ev: &ClickEvent, window, cx| {
                 this.switcher_open(click_ref.clone(), ev.modifiers().platform, window, cx)
             }))
-            .context_menu(move |menu, _window, _cx| row_menu(menu, &ctx_ref, app2.clone()))
+            .context_menu(move |menu, _window, _cx| row_menu(menu, &ctx_ref, app2.clone(), _cx))
             .into_any_element()
     }
 
@@ -1054,7 +1061,12 @@ impl AgenttyApp {
                     GUTTER,
                     Icon::new(IconName::Globe).size(px(ICON)).text_color(dim),
                 ))
-                .child(div().text_sm().text_color(muted).child("Other Machines"))
+                .child(
+                    div()
+                        .text_sm()
+                        .text_color(muted)
+                        .child(crate::core::i18n::current(cx, "switcher.other_machines")),
+                )
                 .child(div().flex_1())
                 .child(
                     div()
@@ -1197,12 +1209,13 @@ fn group_menu(
     menu: gpui_component::menu::PopupMenu,
     group: &GroupRef,
     app: gpui::WeakEntity<AgenttyApp>,
+    cx: &gpui::App,
 ) -> gpui_component::menu::PopupMenu {
     let (a1, a2, a3) = (app.clone(), app.clone(), app);
     let gref = group.clone();
     let can_create = group.target.is_none() || group.home.is_some();
     let menu = menu.item(
-        PopupMenuItem::new("New Workspace")
+        PopupMenuItem::new(crate::core::i18n::current(cx, "menu.new_workspace"))
             .disabled(!can_create)
             .on_click(move |_, window, cx| {
                 let _ = a1.update(cx, |this, cx| this.switcher_new(&gref, window, cx));
@@ -1215,7 +1228,7 @@ fn group_menu(
     let restartable = target.is_ssh();
     let (label, for_restart) = (group.label.clone(), target.clone());
     let menu = menu.separator().item(
-        PopupMenuItem::new("Disconnect")
+        PopupMenuItem::new(crate::core::i18n::current(cx, "menu.disconnect"))
             .disabled(!connected)
             .on_click(move |_, _window, cx| {
                 let _ = a2.update(cx, |this, cx| this.switcher_disconnect(&target, cx));
@@ -1225,11 +1238,18 @@ fn group_menu(
         return menu;
     }
     menu.item(
-        PopupMenuItem::new("Restart Server…").on_click(move |_, window, cx| {
-            let _ = a3.update(cx, |this, cx| {
-                this.confirm_restart_remote_server(for_restart.clone(), label.clone(), window, cx);
-            });
-        }),
+        PopupMenuItem::new(crate::core::i18n::current(cx, "menu.restart_server")).on_click(
+            move |_, window, cx| {
+                let _ = a3.update(cx, |this, cx| {
+                    this.confirm_restart_remote_server(
+                        for_restart.clone(),
+                        label.clone(),
+                        window,
+                        cx,
+                    );
+                });
+            },
+        ),
     )
 }
 
@@ -1237,19 +1257,20 @@ fn row_menu(
     menu: gpui_component::menu::PopupMenu,
     row: &RowRef,
     app: gpui::WeakEntity<AgenttyApp>,
+    cx: &gpui::App,
 ) -> gpui_component::menu::PopupMenu {
     let (a1, a2, a3, a4) = (app.clone(), app.clone(), app.clone(), app);
     let (id, adopt) = (row.id, row.adopt.is_some());
     let stoppable = row.live;
     menu.item(
-        PopupMenuItem::new("Rename…")
+        PopupMenuItem::new(crate::core::i18n::current(cx, "menu.rename"))
             .disabled(adopt)
             .on_click(move |_, window, cx| {
                 let _ = a1.update(cx, |this, cx| this.switcher_rename(id, window, cx));
             }),
     )
     .item(
-        PopupMenuItem::new("Open in New Window")
+        PopupMenuItem::new(crate::core::i18n::current(cx, "menu.open_in_new_window"))
             .disabled(adopt)
             .on_click(move |_, window, cx| {
                 let _ = a2.update(cx, |this, cx| {
@@ -1260,7 +1281,7 @@ fn row_menu(
     )
     .separator()
     .item(
-        PopupMenuItem::new("Stop Workspace…")
+        PopupMenuItem::new(crate::core::i18n::current(cx, "menu.stop_workspace"))
             .disabled(adopt || !stoppable)
             .on_click(move |_, window, cx| {
                 let _ = a3.update(cx, |this, cx| {
@@ -1270,7 +1291,7 @@ fn row_menu(
             }),
     )
     .item(
-        PopupMenuItem::new("Delete Workspace…")
+        PopupMenuItem::new(crate::core::i18n::current(cx, "menu.delete_workspace"))
             .disabled(adopt)
             .on_click(move |_, window, cx| {
                 let _ = a4.update(cx, |this, cx| {

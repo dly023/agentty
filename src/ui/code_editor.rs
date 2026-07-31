@@ -1,3 +1,4 @@
+use crate::core::i18n::ResolveLocale as _;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -354,6 +355,7 @@ impl AgenttyApp {
             return;
         };
         let p = path.to_path_buf();
+        let locale = cx.global::<crate::core::config::Config>().locale.resolve();
         HostOps::run_in(
             host,
             window,
@@ -362,21 +364,46 @@ impl AgenttyApp {
                 let path = h.canonicalize(&p).unwrap_or(p);
                 let meta = match h.stat(&path) {
                     Ok(m) => m,
-                    Err(e) => return Err(format!("Can't open {}: {e}", path.display())),
+                    Err(e) => {
+                        return Err(crate::core::i18n::trf(
+                            locale,
+                            "editor.cant_open",
+                            &[
+                                ("path", &path.display().to_string()),
+                                ("error", &e.to_string()),
+                            ],
+                        ));
+                    }
                 };
                 if meta.len > MAX_FILE_BYTES {
-                    return Err(format!(
-                        "\"{}\" is too large for the editor ({} MB)",
-                        path.display(),
-                        meta.len / (1024 * 1024)
+                    return Err(crate::core::i18n::trf(
+                        locale,
+                        "editor.too_large",
+                        &[
+                            ("path", &path.display().to_string()),
+                            ("mb", &(meta.len / (1024 * 1024)).to_string()),
+                        ],
                     ));
                 }
                 let bytes = match h.read_file(&path, MAX_FILE_BYTES) {
                     Ok(b) => b,
-                    Err(e) => return Err(format!("Can't read {}: {e}", path.display())),
+                    Err(e) => {
+                        return Err(crate::core::i18n::trf(
+                            locale,
+                            "editor.cant_read",
+                            &[
+                                ("path", &path.display().to_string()),
+                                ("error", &e.to_string()),
+                            ],
+                        ));
+                    }
                 };
                 if looks_binary(&bytes) {
-                    return Err(format!("\"{}\" looks like a binary file", path.display()));
+                    return Err(crate::core::i18n::trf(
+                        locale,
+                        "editor.looks_binary",
+                        &[("path", &path.display().to_string())],
+                    ));
                 }
                 let text = String::from_utf8(bytes)
                     .map_err(|_| format!("\"{}\" is not valid UTF-8", path.display()))?;
@@ -603,7 +630,10 @@ impl AgenttyApp {
                     Ok(mtime) => {
                         f.disk_mtime = mtime;
                     }
-                    Err(e) => HostOps::notify_err(window, cx, "Save failed", &e),
+                    Err(e) => {
+                        let context = crate::core::i18n::current(cx, "notify.save_failed");
+                        HostOps::notify_err(window, cx, context, &e)
+                    }
                 }
                 if landing.clean {
                     f.dirty = false;
@@ -656,11 +686,17 @@ impl AgenttyApp {
             return;
         }
         let name = f.label();
+        let title =
+            crate::core::i18n::current_format(cx, "editor.unsaved_changes", &[("name", &name)]);
         let answer = window.prompt(
             PromptLevel::Warning,
-            &format!("\"{name}\" has unsaved changes"),
+            &title,
             None,
-            &["Save", "Discard", "Cancel"],
+            &[
+                crate::core::i18n::current(cx, "common.save"),
+                crate::core::i18n::current(cx, "common.discard"),
+                crate::core::i18n::current(cx, "common.cancel"),
+            ],
             cx,
         );
         let id = f.input.entity_id();
@@ -958,7 +994,7 @@ impl AgenttyApp {
                         cx,
                     )
                     .rounded_lg()
-                    .tooltip("Back to Terminal (Esc)")
+                    .tooltip(crate::core::i18n::current(cx, "editor.back_to_terminal"))
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.toggle_code_panel(window, cx);
                     })),
@@ -992,7 +1028,15 @@ impl AgenttyApp {
         let active = code.and_then(|c| c.active_file());
         let cursor: Option<SharedString> = active.map(|f| {
             let pos = f.input.read(cx).cursor_position();
-            format!("Ln {}, Col {}", pos.line + 1, pos.character + 1).into()
+            crate::core::i18n::current_format(
+                cx,
+                "editor.line_col",
+                &[
+                    ("line", &(pos.line + 1).to_string()),
+                    ("col", &(pos.character + 1).to_string()),
+                ],
+            )
+            .into()
         });
         let wrap: Option<bool> = active.map(|f| f.wrap);
         let is_markdown = active.is_some_and(|f| language_for_path(&f.path) == "markdown");
@@ -1069,7 +1113,7 @@ impl AgenttyApp {
                 div()
                     .text_sm()
                     .text_color(cx.theme().muted_foreground)
-                    .child("Open a file from the file tree"),
+                    .child(crate::core::i18n::current(cx, "editor.open_from_file_tree")),
             )
     }
 
@@ -1087,10 +1131,14 @@ impl AgenttyApp {
             .border_b_1()
             .border_color(cx.theme().border)
             .text_sm()
-            .child(div().flex_1().child("File changed on disk"))
+            .child(
+                div()
+                    .flex_1()
+                    .child(crate::core::i18n::current(cx, "editor.file_changed")),
+            )
             .child(
                 Button::new("editor-conflict-reload")
-                    .label("Reload")
+                    .label(crate::core::i18n::current(cx, "common.reload"))
                     .small()
                     .on_click(cx.listener(move |this, _, window, cx| {
                         this.editor_reload_from_disk(tab_ix, ix, window, cx);
@@ -1098,7 +1146,7 @@ impl AgenttyApp {
             )
             .child(
                 Button::new("editor-conflict-keep")
-                    .label("Keep mine")
+                    .label(crate::core::i18n::current(cx, "editor.keep_mine"))
                     .ghost()
                     .small()
                     .on_click(cx.listener(move |this, _, _w, cx| {
