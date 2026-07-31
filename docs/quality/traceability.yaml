@@ -95,10 +95,10 @@ entries:
     evidence: "2026-07-31: stable SessionIdentity and opaque RowId lifecycle tests passed"
   - id: I18N-COVERAGE-014
     spec: I18N-FULL-COVERAGE-04
-    source: [docs/specs/I18N_SPEC.yaml, assets/i18n/en-US.yaml, assets/i18n/zh-CN.yaml, src/core/i18n.rs, src/ui/settings.rs, src/ui/app.rs, src/ui/tab_strip.rs, src/ui/remote_workspace.rs]
+    source: [docs/specs/I18N_SPEC.yaml, assets/i18n/en-US.yaml, assets/i18n/zh-CN.yaml, src/core/i18n.rs, src/ui/settings.rs, src/ui/app.rs, src/ui/tab_strip.rs, src/ui/remote_workspace.rs, src/ui/palette.rs]
     static_check: script/check_i18n
     tests: [catalogs_have_identical_keys, format_replaces_named_placeholders, option_labels_translate_and_fall_back, escaped_newlines_render_as_real_newlines]
-    evidence: "2026-08-01: 428-key catalog covers settings/menus/dialogs/prompts/notifications; used-key-existence gate and hardcoded-literal allowlist gate added to script/check_i18n"
+    evidence: "2026-08-01: 519-key catalog covers settings/menus/dialogs/prompts/notifications and the full command palette; used-key-existence gate and hardcoded-literal allowlist gate added to script/check_i18n"
   - id: I18N-SYSTEM-012
     spec: I18N-SYSTEM-DEFAULT-01
     source: [docs/specs/I18N_SPEC.yaml, src/core/i18n.rs, crates/agentty-core/src/core/config.rs]
@@ -113,10 +113,10 @@ entries:
     evidence: "2026-07-31: Agent-first product strings use stable keys while raw errors and identifiers remain unchanged"
   - id: INPUT-COMPOSER-PLAN-014
     spec: INPUT-COMPOSER-OPTIONAL-01
-    source: [docs/design/AGENTTY_DEVELOPMENT_PLAN.md, src/ui/composer.rs]
+    source: [docs/design/AGENTTY_DEVELOPMENT_PLAN.md, src/ui/composer.rs, src/ui/palette.rs]
     static_check: script/check_spec_matrix
     tests: [drafts_are_isolated_per_pane, successful_delivery_clears_only_target_draft]
-    evidence: "2026-07-31: optional multiline overlay and pane-isolated draft lifecycle implemented"
+    evidence: "2026-08-01: optional multiline overlay and pane-isolated draft lifecycle implemented; Composer now has a localized command palette entry (ToggleComposer)"
   - id: INPUT-DELIVERY-PLAN-015
     spec: INPUT-DELIVERY-STABLE-TARGET-02
     source: [docs/design/AGENTTY_DEVELOPMENT_PLAN.md, src/ui/composer.rs, src/terminal/view.rs]
