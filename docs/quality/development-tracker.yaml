@@ -98,8 +98,8 @@ milestones:
         title: Shared provider registry
         status: verified
         spec: HELPER-SHARED-CORE-02
-        tests: [registry_rejects_duplicate_provider_ids, codex_and_claude_discovery_uses_one_shared_host_core]
-        evidence: 2026-07-31 Codex and Claude providers execute through one Host-based core used by LocalAgentRuntime and agentty-server RPC
+        tests: [registry_rejects_duplicate_provider_ids, codex_and_claude_discovery_uses_one_shared_host_core, huge_transcripts_are_scanned_via_bounded_head_read, only_the_most_recent_candidates_are_parsed]
+        evidence: 2026-08-01 Codex and Claude providers execute through one Host-based core used by LocalAgentRuntime and agentty-server RPC; transcripts are read via Host::read_file_prefix as a bounded 256KiB head (truncated tail line dropped) so multi-GB rollouts cannot fail a provider, and only the most recent parse candidates are read
       - id: HELPER-003
         title: Atomic session discovery reducer
         status: verified
@@ -167,7 +167,8 @@ milestones:
           - stale_generation_is_ignored
           - provider_failure_does_not_publish_partial_subset
           - remote_authority_never_falls_back_to_local_rows
-        evidence: 2026-07-31 Codex and Claude Host-based providers plus atomic generation reducer tests passed in agentty-core
+        tests: [discovers_real_sessions_on_this_machine, huge_transcripts_are_scanned_via_bounded_head_read, only_the_most_recent_candidates_are_parsed]
+        evidence: 2026-08-01 Codex and Claude Host-based providers plus atomic generation reducer tests passed in agentty-core; real-machine e2e (AGENTTY_E2E_HOME) discovered 40 rows after the head-read fallback fixed FileTooLarge failing both providers on transcripts over 4MB
       - id: SESSION-002
         title: Live/history identity merge
         status: verified

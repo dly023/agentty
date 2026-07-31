@@ -232,6 +232,7 @@ dependencies = [
  "anyhow",
  "base64",
  "core-foundation 0.10.0",
+ "filetime",
  "getrandom 0.3.4",
  "ignore",
  "libc",

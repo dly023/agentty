@@ -29,9 +29,10 @@ entries:
       - docs/specs/SESSION_NAVIGATOR_SPEC.yaml
       - crates/agentty-core/src/agent_runtime/discovery.rs
       - crates/agentty-core/src/agent_runtime/service.rs
+      - crates/agentty-core/src/host/local.rs
     static_check: script/check_remote_helper
-    tests: [failed_scan_preserves_last_committed_rows, stale_generation_is_ignored, partial_provider_failure_does_not_publish_subset, physical_source_limit_is_explicit_not_enumeration_truncation]
-    evidence: "2026-07-31: atomic reducer and Codex/Claude provider fallback tests passed"
+    tests: [failed_scan_preserves_last_committed_rows, stale_generation_is_ignored, partial_provider_failure_does_not_publish_subset, physical_source_limit_is_explicit_not_enumeration_truncation, huge_transcripts_are_scanned_via_bounded_head_read, only_the_most_recent_candidates_are_parsed, discovers_real_sessions_on_this_machine]
+    evidence: "2026-08-01: atomic reducer and Codex/Claude provider fallback tests passed; bounded head-read via Host::read_file_prefix keeps multi-GB transcripts from failing a provider (real-machine regression: both providers failed with FileTooLarge before, 40 rows discovered after)"
   - id: I18N-PARITY-004
     spec: I18N-PARITY-03
     source: [docs/specs/I18N_SPEC.yaml, assets/i18n/en-US.yaml, assets/i18n/zh-CN.yaml, src/core/i18n.rs]
@@ -257,8 +258,8 @@ entries:
     spec: HELPER-SHARED-CORE-02
     source: [docs/specs/REMOTE_HELPER_SPEC.yaml, crates/agentty-core/src/agent_runtime/service.rs, crates/agentty-core/src/agent_runtime/adapter.rs]
     static_check: script/check_remote_helper
-    tests: [registry_rejects_duplicate_provider_ids, codex_and_claude_discovery_uses_one_shared_host_core]
-    evidence: "2026-07-31: Codex and Claude discovery uses one Host-based core for local and remote adapters"
+    tests: [registry_rejects_duplicate_provider_ids, codex_and_claude_discovery_uses_one_shared_host_core, huge_transcripts_are_scanned_via_bounded_head_read, only_the_most_recent_candidates_are_parsed]
+    evidence: "2026-08-01: Codex and Claude discovery uses one Host-based core for local and remote adapters; head-read fallback plus recent-candidate cut bound the per-scan I/O"
   - id: HELPER-DISCOVERY-025
     spec: HELPER-DISCOVERY-ATOMIC-03
     source: [docs/specs/REMOTE_HELPER_SPEC.yaml, crates/agentty-core/src/agent_runtime/discovery.rs]

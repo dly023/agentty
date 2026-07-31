@@ -191,6 +191,15 @@ pub trait Host: Send + Sync + 'static {
 
     fn read_file(&self, p: &Path, max_bytes: u64) -> io::Result<Vec<u8>>;
 
+    /// Read at most `max_bytes` from the start of a file without failing when
+    /// the file is larger. Discovery-style consumers (JSONL metadata lives in
+    /// the head) use this so one huge transcript cannot fail a whole provider.
+    /// Default falls back to the strict `read_file`; hosts that can stream
+    /// should override.
+    fn read_file_prefix(&self, p: &Path, max_bytes: u64) -> io::Result<Vec<u8>> {
+        self.read_file(p, max_bytes)
+    }
+
     fn canonicalize(&self, p: &Path) -> io::Result<PathBuf>;
 
     fn search(

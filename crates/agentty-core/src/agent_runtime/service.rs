@@ -13,8 +13,13 @@ use super::stores::AgentStoreRoots;
 
 pub const DEFAULT_LOGICAL_LIMIT: usize = 40;
 pub const DEFAULT_PHYSICAL_SOURCE_LIMIT: usize = 2_000;
-pub const DEFAULT_FILE_BYTES: u64 = 4 * 1024 * 1024;
+/// Transcripts are read as a bounded head prefix: session metadata lives in
+/// the first lines, and a multi-GB rollout must never fail the whole scan.
+pub const DEFAULT_HEAD_BYTES: u64 = 256 * 1024;
 pub const DEFAULT_LINE_LIMIT: usize = 400;
+/// Only the most recently touched transcripts are parsed; canonicalize would
+/// truncate to `logical_limit` rows sorted by mtime anyway.
+pub const PARSE_CANDIDATE_FACTOR: usize = 4;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DiscoveryRequest {
@@ -79,12 +84,12 @@ fn discover_codex(host: &dyn Host, request: &DiscoveryRequest) -> DiscoveryOutco
 
     if host.exists(&index) {
         found_source = true;
-        match host
-            .read_file(&index, DEFAULT_FILE_BYTES)
-            .and_then(|bytes| {
-                parse_jsonl_strict(&bytes, request.physical_source_limit)
-                    .map_err(|message| io::Error::new(io::ErrorKind::InvalidData, message))
-            }) {
+        match read_jsonl_head(
+            host,
+            &index,
+            DEFAULT_HEAD_BYTES,
+            request.physical_source_limit,
+        ) {
             Ok(values) => {
                 for value in values {
                     if let Some(metadata) = codex_index_metadata(&value) {
@@ -116,19 +121,15 @@ fn discover_codex(host: &dyn Host, request: &DiscoveryRequest) -> DiscoveryOutco
     match collect_jsonl(host, &sessions, request.physical_source_limit) {
         Ok(files) if !files.is_empty() => {
             found_source = true;
+            let mut files = files;
+            files.truncate(parse_candidate_cut(request));
             for file in files {
-                let bytes = match host.read_file(&file.path, DEFAULT_FILE_BYTES) {
-                    Ok(bytes) => bytes,
-                    Err(e) => return failed(&file.path, e),
-                };
-                let values = match parse_jsonl_strict(&bytes, DEFAULT_LINE_LIMIT) {
-                    Ok(values) => values,
-                    Err(e) => {
-                        return DiscoveryOutcome::Failed {
-                            message: format!("{}: {e}", file.path.display()),
-                        };
-                    }
-                };
+                let values =
+                    match read_jsonl_head(host, &file.path, DEFAULT_HEAD_BYTES, DEFAULT_LINE_LIMIT)
+                    {
+                        Ok(values) => values,
+                        Err(e) => return failed(&file.path, e),
+                    };
                 let metadata = codex_transcript_metadata(&values);
                 if let Some(id) = metadata.session_id {
                     rows.push(record(
@@ -186,18 +187,13 @@ fn discover_claude(host: &dyn Host, request: &DiscoveryRequest) -> DiscoveryOutc
         Err(CollectError::Io(e)) => return failed(&projects, e),
     };
     let mut rows = Vec::new();
+    let mut files = files;
+    files.truncate(parse_candidate_cut(request));
     for file in files {
-        let bytes = match host.read_file(&file.path, DEFAULT_FILE_BYTES) {
-            Ok(bytes) => bytes,
-            Err(e) => return failed(&file.path, e),
-        };
-        let values = match parse_jsonl_strict(&bytes, DEFAULT_LINE_LIMIT) {
+        let values = match read_jsonl_head(host, &file.path, DEFAULT_HEAD_BYTES, DEFAULT_LINE_LIMIT)
+        {
             Ok(values) => values,
-            Err(e) => {
-                return DiscoveryOutcome::Failed {
-                    message: format!("{}: {e}", file.path.display()),
-                };
-            }
+            Err(e) => return failed(&file.path, e),
         };
         let metadata = claude_transcript_metadata(&values);
         if let Some(id) = metadata.session_id {
@@ -244,6 +240,31 @@ fn mtime_ms(mtime: MTime) -> Option<u64> {
     (mtime.secs as u64)
         .checked_mul(1000)?
         .checked_add(u64::from(mtime.nanos / 1_000_000))
+}
+
+/// Read a JSONL source as a bounded head prefix and parse it strictly. The
+/// final (possibly cut) line is dropped before parsing so a truncated tail
+/// never turns into a malformed-line failure; genuinely malformed complete
+/// lines still fail closed.
+fn read_jsonl_head(
+    host: &dyn Host,
+    path: &Path,
+    head_bytes: u64,
+    line_limit: usize,
+) -> Result<Vec<serde_json::Value>, io::Error> {
+    let mut bytes = host.read_file_prefix(path, head_bytes)?;
+    if bytes.len() as u64 == head_bytes {
+        match bytes.iter().rposition(|b| *b == b'\n') {
+            Some(last_newline) => bytes.truncate(last_newline + 1),
+            None => bytes.clear(),
+        }
+    }
+    parse_jsonl_strict(&bytes, line_limit)
+        .map_err(|message| io::Error::new(io::ErrorKind::InvalidData, message))
+}
+
+fn parse_candidate_cut(request: &DiscoveryRequest) -> usize {
+    (request.logical_limit * PARSE_CANDIDATE_FACTOR).max(DEFAULT_LOGICAL_LIMIT)
 }
 
 fn failed(path: &Path, error: io::Error) -> DiscoveryOutcome {
@@ -361,6 +382,122 @@ mod tests {
                 .any(|row| row.key.provider == "claude"
                     && row.title.as_deref() == Some("Review code"))
         );
+    }
+
+    /// End-to-end proof against a real machine's agent stores. Opt-in via
+    /// AGENTTY_E2E_HOME so CI stays hermetic; the test asserts the discovery
+    /// pipeline (roots -> scan -> parse -> canonicalize) produces rows from
+    /// whatever real stores exist there, or an explicit SourceMissing rather
+    /// than a silent empty list.
+    #[test]
+    fn discovers_real_sessions_on_this_machine() {
+        let Some(home) = std::env::var_os("AGENTTY_E2E_HOME") else {
+            eprintln!("AGENTTY_E2E_HOME unset; skipping real-machine e2e");
+            return;
+        };
+        let roots = AgentStoreRoots::for_home(PathBuf::from(home));
+        let outcome = discover(
+            &*LocalHost::new(),
+            &DiscoveryRequest::codex_and_claude(roots),
+        );
+        match &outcome {
+            DiscoveryOutcome::Complete(rows) => {
+                assert!(
+                    !rows.is_empty(),
+                    "real stores exist but discovery returned zero rows"
+                );
+                for row in rows {
+                    assert!(!row.key.session_id.is_empty());
+                    let invocation =
+                        row.agent
+                            .resume_invocation(&row.key.session_id, None, row.cwd.clone());
+                    assert!(
+                        invocation.is_some(),
+                        "row {:?} cannot produce a resume invocation",
+                        row.key
+                    );
+                }
+                eprintln!("e2e discovery rows: {}", rows.len());
+            }
+            DiscoveryOutcome::SourceMissing { source } => {
+                eprintln!("no real stores present ({source}); nothing to prove");
+            }
+            other => panic!("real-machine discovery must not degrade: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn huge_transcripts_are_scanned_via_bounded_head_read() {
+        let temp = tempfile::tempdir().unwrap();
+        let roots = roots(temp.path());
+        fs::create_dir_all(roots.codex_sessions()).unwrap();
+        // Well over the old 4 MB whole-file cap: metadata in the head, then a
+        // long filler tail. The head cut lands mid-line, which must be dropped
+        // rather than parsed as malformed JSON.
+        let mut content = String::from(
+            r#"{"type":"session_meta","payload":{"id":"019fa76a-6276-7b03-b302-c640686b2033","cwd":"/codex"}}
+{"type":"event_msg","payload":{"type":"user_message","message":"Huge session"}}
+"#,
+        );
+        // Valid-JSON filler lines (strict parse must accept every complete
+        // line in the head); length chosen so the 256 KiB head cut lands
+        // mid-line, exercising the truncated-tail drop.
+        while content.len() < 5 * 1024 * 1024 {
+            content.push_str(&format!(
+                r#"{{"type":"event_msg","payload":{{"type":"token","text":"{}"}}}}
+"#,
+                "x".repeat(1000)
+            ));
+        }
+        fs::write(roots.codex_sessions().join("huge.jsonl"), content).unwrap();
+        let outcome = discover(
+            &*LocalHost::new(),
+            &DiscoveryRequest {
+                providers: vec!["codex".into()],
+                ..DiscoveryRequest::codex_and_claude(roots)
+            },
+        );
+        let DiscoveryOutcome::Complete(rows) = outcome else {
+            panic!("huge transcript must not fail the provider: {outcome:?}")
+        };
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].title.as_deref(), Some("Huge session"));
+    }
+
+    #[test]
+    fn only_the_most_recent_candidates_are_parsed() {
+        let temp = tempfile::tempdir().unwrap();
+        let roots = roots(temp.path());
+        fs::create_dir_all(roots.claude_projects().join("repo")).unwrap();
+        let dir = roots.claude_projects().join("repo");
+        // logical_limit 1 -> parse cut is max(1*4, 40) = 40 files; write 50.
+        for index in 0..50 {
+            let path = dir.join(format!("s{index:02}.jsonl"));
+            fs::write(
+                &path,
+                format!(
+                    r#"{{"type":"user","sessionId":"s{index:02}","cwd":"/c","message":{{"content":"row {index:02}"}}}}
+"#
+                ),
+            )
+            .unwrap();
+            // Monotonically increasing mtimes: s00 oldest, s49 newest.
+            let mtime = filetime::FileTime::from_unix_time(1_700_000_000 + index, 0);
+            filetime::set_file_mtime(&path, mtime).unwrap();
+        }
+        let outcome = discover(
+            &*LocalHost::new(),
+            &DiscoveryRequest {
+                providers: vec!["claude".into()],
+                logical_limit: 1,
+                ..DiscoveryRequest::codex_and_claude(roots)
+            },
+        );
+        let DiscoveryOutcome::Complete(rows) = outcome else {
+            panic!("expected complete: {outcome:?}")
+        };
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].key.session_id, "s49");
     }
 
     #[test]

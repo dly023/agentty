@@ -151,6 +151,10 @@ windows-sys = { version = "0.59", features = [
 # removed on drop.
 tempfile = "3"
 
+# Sets deterministic mtimes in discovery tests so "most recent candidate"
+# ordering does not depend on filesystem timestamp granularity.
+filetime = "0.2"
+
 # `test-util` unlocks tokio's paused clock (`start_paused`) so the ssh prompt
 # broker's timeout/retry tests run instantly instead of in real time.
 tokio = { version = "1", features = ["test-util", "macros", "rt"] }

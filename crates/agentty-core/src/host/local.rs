@@ -134,6 +134,22 @@ impl Host for LocalHost {
         fs::read(p)
     }
 
+    fn read_file_prefix(&self, p: &Path, max_bytes: u64) -> io::Result<Vec<u8>> {
+        guard_off_ui();
+        let md = fs::metadata(p)?;
+        if md.is_dir() {
+            return Err(io::Error::new(
+                io::ErrorKind::IsADirectory,
+                format!("{} is a directory", p.display()),
+            ));
+        }
+        use std::io::Read as _;
+        let file = fs::File::open(p)?;
+        let mut bytes = Vec::new();
+        file.take(max_bytes).read_to_end(&mut bytes)?;
+        Ok(bytes)
+    }
+
     fn canonicalize(&self, p: &Path) -> io::Result<PathBuf> {
         guard_off_ui();
         fs::canonicalize(p)
