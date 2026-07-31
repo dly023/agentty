@@ -63,6 +63,7 @@ fn build_hook_sequence(agent: &str, event: &str, stdin_json: &str) -> Vec<u8> {
         ("session_id", "sessionId"),
         ("message", "message"),
         ("cwd", "cwd"),
+        ("tool_name", "toolName"),
     ] {
         if let Some(v) = payload
             .get(key)
@@ -914,6 +915,24 @@ mod tests {
         assert_eq!(ev.session_id.as_deref(), Some("abc-123"));
         assert!(ev.message.as_deref().unwrap().contains("permission"));
         assert_eq!(ev.cwd.as_deref(), Some(std::path::Path::new("/w")));
+
+        let seq = build_hook_sequence(
+            "claude",
+            "tool-complete",
+            r#"{"session_id":"abc-123","tool_name":"Bash","cwd":"/w"}"#,
+        );
+        let ev = parse_agent_event(&seq[2..seq.len() - 1]).expect("tool event parses");
+        assert_eq!(ev.kind, AgentEventKind::ToolComplete);
+        assert_eq!(ev.tool_name.as_deref(), Some("Bash"));
+
+        // Claude's PostToolUse payload uses toolName; the alias must win too.
+        let seq = build_hook_sequence(
+            "claude",
+            "tool-complete",
+            r#"{"sessionId":"abc-123","toolName":"Read"}"#,
+        );
+        let ev = parse_agent_event(&seq[2..seq.len() - 1]).expect("aliased tool event parses");
+        assert_eq!(ev.tool_name.as_deref(), Some("Read"));
 
         let seq = build_hook_sequence("claude", "stop", "not json at all");
         let ev = parse_agent_event(&seq[2..seq.len() - 1]).expect("bare event still parses");

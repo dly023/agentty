@@ -499,6 +499,10 @@ pub struct AgentSessionState {
     pub cwd: Option<std::path::PathBuf>,
     #[serde(default)]
     pub activity: u64,
+    #[serde(default)]
+    pub recent_activity: std::collections::VecDeque<AgentActivityEntry>,
+    #[serde(default)]
+    pub activity_seq: u64,
 }
 
 impl AgentStatus {
@@ -519,6 +523,16 @@ impl AgentSessionState {
 
     pub fn apply_event(&mut self, ev: &AgentEvent) {
         self.rich = true;
+        self.activity_seq = self.activity_seq.wrapping_add(1);
+        self.recent_activity.push_back(AgentActivityEntry {
+            sequence: self.activity_seq,
+            kind: ev.kind,
+            tool_name: ev.tool_name.clone(),
+            message: ev.message.clone(),
+        });
+        while self.recent_activity.len() > MAX_RECENT_ACTIVITY {
+            self.recent_activity.pop_front();
+        }
         if let Some(id) = &ev.session_id {
             self.session_id = Some(id.clone());
         }
@@ -584,7 +598,25 @@ pub struct AgentEvent {
     pub session_id: Option<String>,
     pub message: Option<String>,
     pub cwd: Option<std::path::PathBuf>,
+    pub tool_name: Option<String>,
 }
+
+/// One structured entry in a pane's bounded recent-activity log. Only hook
+/// events (never terminal heuristics) are appended, so every entry is
+/// authoritative tool/session activity.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentActivityEntry {
+    pub sequence: u64,
+    pub kind: AgentEventKind,
+    #[serde(default)]
+    pub tool_name: Option<String>,
+    #[serde(default)]
+    pub message: Option<String>,
+}
+
+/// Bound on `AgentSessionState::recent_activity`; the tail is what the
+/// Activity Bar and tool inspector render, so oldest entries drop first.
+pub const MAX_RECENT_ACTIVITY: usize = 50;
 
 pub fn parse_agent_event(payload: &[u8]) -> Option<AgentEvent> {
     let rest = payload.strip_prefix(b"777;notify;")?;
@@ -605,6 +637,8 @@ pub fn parse_agent_event(payload: &[u8]) -> Option<AgentEvent> {
         message: Option<String>,
         #[serde(default)]
         cwd: Option<String>,
+        #[serde(default)]
+        tool_name: Option<String>,
     }
 
     let w: Wire = serde_json::from_slice(json).ok()?;
@@ -616,6 +650,7 @@ pub fn parse_agent_event(payload: &[u8]) -> Option<AgentEvent> {
         session_id: nonempty(w.session_id),
         message: nonempty(w.message),
         cwd: nonempty(w.cwd).map(std::path::PathBuf::from),
+        tool_name: nonempty(w.tool_name),
     })
 }
 
@@ -845,6 +880,68 @@ mod tests {
     }
 
     #[test]
+    fn parses_tool_name_from_sentinel_events() {
+        let ev = parse_agent_event(
+            br#"777;notify;agentty://cli-agent;{"v":1,"agent":"claude","event":"tool-complete","session_id":"abc-123","tool_name":"Bash"}"#,
+        )
+        .expect("sentinel event should parse");
+        assert_eq!(ev.kind, AgentEventKind::ToolComplete);
+        assert_eq!(ev.tool_name.as_deref(), Some("Bash"));
+    }
+
+    #[test]
+    fn recent_activity_is_bounded_and_carries_tool_names() {
+        let ev = |kind, tool: Option<&str>| AgentEvent {
+            agent: Some(CLIAgent::Claude),
+            kind,
+            session_id: Some("sid".into()),
+            message: None,
+            cwd: None,
+            tool_name: tool.map(String::from),
+        };
+        let mut s = AgentSessionState::default();
+        s.apply_event(&ev(AgentEventKind::PromptSubmit, None));
+        s.apply_event(&ev(AgentEventKind::ToolComplete, Some("Bash")));
+        assert_eq!(s.recent_activity.len(), 2);
+        let latest = s.recent_activity.back().unwrap();
+        assert_eq!(latest.kind, AgentEventKind::ToolComplete);
+        assert_eq!(latest.tool_name.as_deref(), Some("Bash"));
+        assert!(latest.sequence > s.recent_activity.front().unwrap().sequence);
+
+        for _ in 0..(MAX_RECENT_ACTIVITY * 2) {
+            s.apply_event(&ev(AgentEventKind::ToolComplete, Some("Read")));
+        }
+        assert_eq!(s.recent_activity.len(), MAX_RECENT_ACTIVITY);
+        assert!(
+            s.recent_activity
+                .iter()
+                .all(|e| e.kind == AgentEventKind::ToolComplete)
+        );
+    }
+
+    #[test]
+    fn recent_activity_round_trips_and_defaults_for_old_daemons() {
+        let mut s = AgentSessionState::default();
+        s.apply_event(&AgentEvent {
+            agent: Some(CLIAgent::Codex),
+            kind: AgentEventKind::ToolComplete,
+            session_id: Some("sid".into()),
+            message: None,
+            cwd: None,
+            tool_name: Some("shell".into()),
+        });
+        let json = serde_json::to_string(&s).unwrap();
+        let back: AgentSessionState = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.recent_activity.len(), 1);
+
+        // An old daemon's payload has no recent_activity field at all.
+        let old: AgentSessionState =
+            serde_json::from_str(r#"{"status":"working","rich":true}"#).unwrap();
+        assert!(old.recent_activity.is_empty());
+        assert_eq!(old.activity_seq, 0);
+    }
+
+    #[test]
     fn parses_sentinel_events() {
         let ev = parse_agent_event(
             br#"777;notify;agentty://cli-agent;{"v":1,"agent":"claude","event":"permission-request","session_id":"abc-123","message":"Claude needs your permission to use Bash"}"#,
@@ -877,6 +974,7 @@ mod tests {
             session_id: id.map(String::from),
             message: msg.map(String::from),
             cwd: None,
+            tool_name: None,
         };
 
         s.apply_event(&ev(AgentEventKind::SessionStart, None, Some("sid-1")));
@@ -932,6 +1030,7 @@ mod tests {
             session_id: None,
             message: None,
             cwd: None,
+            tool_name: None,
         };
 
         let mut s = AgentSessionState::default();
@@ -967,6 +1066,7 @@ mod tests {
             session_id: None,
             message: None,
             cwd: cwd.map(PathBuf::from),
+            tool_name: None,
         };
 
         let mut s = AgentSessionState::default();

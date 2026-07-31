@@ -1539,6 +1539,7 @@ mod tests {
                     rich: true,
                     cwd: Some("/work/api".into()),
                     activity: 3,
+                    ..Default::default()
                 },
             }])),
             ControlReply::Ok(ReplyOk::AgentStates(Vec::new())),

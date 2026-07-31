@@ -2636,6 +2636,7 @@ mod tests {
             rich: true,
             cwd: None,
             activity: 0,
+            ..Default::default()
         }))
         .encode(&mut daemon_side)
         .unwrap();

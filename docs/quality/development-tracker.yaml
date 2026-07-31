@@ -218,14 +218,14 @@ milestones:
         title: Unified activity event store
         status: verified
         spec: INPUT-ACTIVITY-TRUSTED-SOURCE-03
-        tests: [terminal_heuristic_never_becomes_authoritative_tool_activity, activity_stream_is_ordered_and_bounded]
-        evidence: 2026-07-31 shared typed event schema and bounded ordered store distinguish structured authority from heuristics
+        tests: [terminal_heuristic_never_becomes_authoritative_tool_activity, activity_stream_is_ordered_and_bounded, latest_tool_entry_is_the_most_recent_tool_complete, tool_activity_surfaces_only_without_an_actionable_message, activity_entry_view_maps_every_kind]
+        evidence: 2026-08-01 shared typed event schema and bounded ordered store distinguish structured authority from heuristics; Activity Bar surfaces the latest authoritative tool call (never covering an actionable message) and the new Right Panel Activity tab renders the full recent-activity log as the tool inspector
       - id: ACTIVITY-002
         title: Codex and Claude structured adapters
         status: verified
         spec: INPUT-ACTIVITY-TRUSTED-SOURCE-03
-        tests: [codex_and_claude_structured_events_share_one_schema, terminal_heuristic_never_becomes_authoritative_tool_activity]
-        evidence: 2026-07-31 native Codex and Claude hook events adapt into the same typed schema while non-rich pane snapshots remain explicitly heuristic; Activity UI remains to be connected
+        tests: [codex_and_claude_structured_events_share_one_schema, terminal_heuristic_never_becomes_authoritative_tool_activity, recent_activity_is_bounded_and_carries_tool_names, parses_tool_name_from_sentinel_events, hook_sequence_round_trips_through_the_daemon_parser, recent_activity_round_trips_and_defaults_for_old_daemons]
+        evidence: 2026-08-01 native Codex and Claude hook events adapt into the same typed schema while non-rich pane snapshots remain explicitly heuristic; hook shims now forward tool_name, AgentSessionState carries a bounded (50) structured recent_activity log over the existing AgentStatus push with serde-default compat for old daemons
   - id: M4-COMPLETION
     title: Deterministic-first smart completion
     status: verified

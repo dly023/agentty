@@ -7,6 +7,14 @@ activity.structured: Structured
 activity.title: Agent Activity
 activity.waiting: Agent needs input
 activity.working: Agent is working
+activity.bar.latest_tool: Latest tool: {name}
+activity.kind.attention: Needs attention
+activity.kind.finished: Finished
+activity.kind.notification: Notification
+activity.kind.prompt_submit: Prompt submitted
+activity.kind.session_start: Session started
+activity.kind.tool_complete: Tool completed
+activity.kind.tool_with_name: Tool: {name}
 app.name: Agentty
 common.abort: Abort
 common.cancel: Cancel
@@ -155,6 +163,15 @@ opt.top: Top
 opt.underline: Underline
 opt.visual: Visual
 opt.when_unfocused: When Unfocused
+panel.activity.count: {count} tool calls
+panel.activity.empty: No agent activity yet
+panel.activity.empty.hint: Run a coding agent with agentty hooks in this pane.
+panel.activity.title: Activity
+panel.tab.activity: Activity
+panel.tab.changes: Changes
+panel.tab.files: Files
+panel.tab.info: Info
+panel.tab.outline: Outline
 palette.cmd.about: About agentty
 palette.cmd.agent_send_diff: Agent: Send Git Diff for Review
 palette.cmd.agent_send_diff.sub: git diff → running coding agent
@@ -213,6 +230,7 @@ palette.cmd.resize_right: Resize Pane Right
 palette.cmd.resize_up: Resize Pane Up
 palette.cmd.restart_server: Restart Server…
 palette.cmd.restart_server.sub: ends every running shell; layout is kept
+palette.cmd.right_activity: Right Panel: Activity
 palette.cmd.right_changes: Right Panel: Changes
 palette.cmd.right_files: Right Panel: Files
 palette.cmd.right_info: Right Panel: Info

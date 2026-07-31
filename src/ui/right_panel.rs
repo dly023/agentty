@@ -86,6 +86,7 @@ impl AgenttyApp {
             RightPanelTab::Outline => self.render_panel_outline(window, cx),
             RightPanelTab::Changes => self.render_panel_changes(window, cx),
             RightPanelTab::Files => self.render_panel_files(window, cx),
+            RightPanelTab::Activity => self.render_panel_activity(window, cx),
         };
         let (backing, handle) = self.right_panel_resize(cx);
 
@@ -998,6 +999,98 @@ impl AgenttyApp {
         if stale {
             self.spawn_right_panel_diff(host, cwd, cx);
         }
+    }
+
+    fn render_panel_activity(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        use crate::core::i18n::{current, current_format};
+
+        let session = self
+            .focused_leaf(window, cx)
+            .and_then(|leaf| leaf.read(cx).agent_session());
+        let Some(state) = session else {
+            let title =
+                self.panel_title(current(cx, "panel.activity.title"), None, None, window, cx);
+            return self.panel_scroll(
+                self.panel_empty(
+                    current(cx, "panel.activity.empty"),
+                    Some(current(cx, "panel.activity.empty.hint")),
+                    cx,
+                ),
+                title,
+            );
+        };
+
+        let count = current_format(
+            cx,
+            "panel.activity.count",
+            &[("count", &state.activity.to_string())],
+        );
+        let title = self.panel_title(
+            current(cx, "panel.activity.title"),
+            Some(count),
+            None,
+            window,
+            cx,
+        );
+
+        if state.recent_activity.is_empty() {
+            return self.panel_scroll(
+                self.panel_empty(
+                    current(cx, "panel.activity.empty"),
+                    Some(current(cx, "panel.activity.empty.hint")),
+                    cx,
+                ),
+                title,
+            );
+        }
+
+        let muted = cx.theme().muted_foreground;
+        let mut list = v_flex().px(px(CONTENT_INSET)).py(px(4.)).gap(px(2.));
+        for entry in state.recent_activity.iter().rev() {
+            let view = crate::ui::activity_bar::activity_entry_view(entry);
+            let label: String = match entry.kind {
+                crate::core::cli_agent::AgentEventKind::ToolComplete => {
+                    match view.detail.as_deref() {
+                        Some(name) => {
+                            current_format(cx, "activity.kind.tool_with_name", &[("name", name)])
+                        }
+                        None => current(cx, view.label_key).into(),
+                    }
+                }
+                _ => current(cx, view.label_key).into(),
+            };
+            let message = match entry.kind {
+                crate::core::cli_agent::AgentEventKind::ToolComplete => None,
+                _ => view.detail.clone(),
+            };
+            let mut row_text = v_flex()
+                .flex_1()
+                .min_w_0()
+                .child(div().truncate().text_size(px(12.)).child(label));
+            if let Some(message) = message {
+                row_text = row_text.child(
+                    div()
+                        .truncate()
+                        .text_size(px(11.))
+                        .text_color(muted)
+                        .child(message),
+                );
+            }
+            list = list.child(
+                h_flex()
+                    .gap(px(6.))
+                    .items_center()
+                    .child(
+                        div()
+                            .flex_shrink_0()
+                            .size(px(6.))
+                            .rounded_full()
+                            .bg(gpui::rgb(view.color)),
+                    )
+                    .child(row_text),
+            );
+        }
+        self.panel_scroll(list.into_any_element(), title)
     }
 
     fn render_panel_files(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {

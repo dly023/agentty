@@ -424,22 +424,27 @@ impl AgenttyApp {
             (
                 RightPanelTab::Info,
                 Icon::empty().path("icons/info.svg"),
-                "Info",
+                crate::core::i18n::current(cx, "panel.tab.info"),
             ),
             (
                 RightPanelTab::Outline,
                 Icon::empty().path("icons/list.svg"),
-                "Outline",
+                crate::core::i18n::current(cx, "panel.tab.outline"),
             ),
             (
                 RightPanelTab::Changes,
                 Icon::empty().path("icons/git-branch.svg"),
-                "Changes",
+                crate::core::i18n::current(cx, "panel.tab.changes"),
             ),
             (
                 RightPanelTab::Files,
                 Icon::new(IconName::FolderClosed),
-                "Files",
+                crate::core::i18n::current(cx, "panel.tab.files"),
+            ),
+            (
+                RightPanelTab::Activity,
+                Icon::new(IconName::Bot),
+                crate::core::i18n::current(cx, "panel.tab.activity"),
             ),
         ]
         .into_iter()

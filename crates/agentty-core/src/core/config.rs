@@ -665,6 +665,7 @@ pub enum RightPanelTab {
     Outline,
     Changes,
     Files,
+    Activity,
 }
 
 fn default_right_panel_width() -> f32 {

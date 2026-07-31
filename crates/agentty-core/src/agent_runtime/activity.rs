@@ -197,6 +197,7 @@ mod tests {
                 session_id: Some("550e8400-e29b-41d4-a716-446655440000".into()),
                 message: Some("completed".into()),
                 cwd: None,
+                tool_name: Some("shell".into()),
             };
             let activity =
                 structured_activity_from_agent_event(1, OperationId(1), provider, &event).unwrap();

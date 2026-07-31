@@ -5820,6 +5820,7 @@ mod gpui_tests {
             rich: true,
             cwd: None,
             activity: 0,
+            ..Default::default()
         }))
         .encode(&mut daemon)
         .unwrap();

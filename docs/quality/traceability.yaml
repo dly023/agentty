@@ -126,10 +126,10 @@ entries:
     evidence: "2026-07-31: stable PaneIdentity resolves before canonical fail-closed delivery"
   - id: INPUT-ACTIVITY-PLAN-016
     spec: INPUT-ACTIVITY-TRUSTED-SOURCE-03
-    source: [docs/design/AGENTTY_DEVELOPMENT_PLAN.md, crates/agentty-core/src/agent_runtime/activity.rs, src/ui/activity_bar.rs]
+    source: [docs/design/AGENTTY_DEVELOPMENT_PLAN.md, crates/agentty-core/src/agent_runtime/activity.rs, crates/agentty-core/src/core/cli_agent.rs, crates/agentty-core/src/core/agent_hooks.rs, src/ui/activity_bar.rs, src/ui/right_panel.rs]
     static_check: script/check_remote_helper
-    tests: [terminal_heuristic_never_becomes_authoritative_tool_activity, heuristic_activity_is_visibly_not_structured, rich_activity_is_presented_as_structured]
-    evidence: "2026-07-31: typed activity store and visible trust presentation distinguish structured events from heuristics"
+    tests: [terminal_heuristic_never_becomes_authoritative_tool_activity, heuristic_activity_is_visibly_not_structured, rich_activity_is_presented_as_structured, recent_activity_is_bounded_and_carries_tool_names, latest_tool_entry_is_the_most_recent_tool_complete, tool_activity_surfaces_only_without_an_actionable_message, activity_entry_view_maps_every_kind, recent_activity_round_trips_and_defaults_for_old_daemons]
+    evidence: "2026-08-01: typed activity store and visible trust presentation distinguish structured events from heuristics; structured tool activity now flows hook shim -> OSC sentinel -> AgentSessionState.recent_activity -> Activity Bar detail and Right Panel Activity inspector, with tool_name forwarded and old-daemon payloads defaulting cleanly"
   - id: INPUT-COMPLETION-PLAN-017
     spec: INPUT-COMPLETION-DETERMINISTIC-FIRST-04
     source: [docs/design/AGENTTY_DEVELOPMENT_PLAN.md, crates/agentty-core/src/agent_runtime/completion.rs, src/terminal/completion.rs]

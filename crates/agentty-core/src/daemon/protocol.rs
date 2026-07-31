@@ -1482,6 +1482,7 @@ mod tests {
                 rich: true,
                 cwd: Some("/repo/.claude/worktrees/fix-x".into()),
                 activity: 12,
+                ..Default::default()
             })),
             DaemonMsg::AgentStatus(None),
             DaemonMsg::LoopbackForward(LoopbackForward { local_port: 49152 }),

@@ -7,6 +7,14 @@ activity.structured: 结构化事件
 activity.title: Agent 活动
 activity.waiting: Agent 正在等待输入
 activity.working: Agent 正在工作
+activity.bar.latest_tool: 最近工具：{name}
+activity.kind.attention: 需要处理
+activity.kind.finished: 已结束
+activity.kind.notification: 通知
+activity.kind.prompt_submit: 提交提示词
+activity.kind.session_start: 会话开始
+activity.kind.tool_complete: 工具完成
+activity.kind.tool_with_name: 工具：{name}
 app.name: Agentty
 common.abort: 中止
 common.cancel: 取消
@@ -155,6 +163,15 @@ opt.top: 顶部
 opt.underline: 下划线
 opt.visual: 闪烁
 opt.when_unfocused: 失焦时
+panel.activity.count: {count} 次工具调用
+panel.activity.empty: 暂无 agent 活动
+panel.activity.empty.hint: 在此面板运行已安装 agentty 钩子的 coding agent。
+panel.activity.title: 活动
+panel.tab.activity: 活动
+panel.tab.changes: 变更
+panel.tab.files: 文件
+panel.tab.info: 信息
+panel.tab.outline: 大纲
 palette.cmd.about: 关于 agentty
 palette.cmd.agent_send_diff: Agent：发送 Git Diff 供审查
 palette.cmd.agent_send_diff.sub: git diff → 正在运行的 coding agent
@@ -213,6 +230,7 @@ palette.cmd.resize_right: 向右调整面板大小
 palette.cmd.resize_up: 向上调整面板大小
 palette.cmd.restart_server: 重启服务器…
 palette.cmd.restart_server.sub: 结束所有运行中的 shell，保留布局
+palette.cmd.right_activity: 右侧面板：活动
 palette.cmd.right_changes: 右侧面板：变更
 palette.cmd.right_files: 右侧面板：文件
 palette.cmd.right_info: 右侧面板：信息
