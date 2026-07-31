@@ -1,5 +1,5 @@
 version: 1
-status: in_progress
+status: complete
 policy:
   canonical_product: Agentty
   canonical_config_env: AGENTTY_CONFIG_DIR
@@ -7,31 +7,29 @@ policy:
   legacy_runtime_fallback: forbidden
 phases:
   - id: identity-runtime
-    status: in_progress
+    status: verified
+    evidence:
+      - commit 3d7dded Agentty runtime identity, config dir ~/.config/agentty
+      - Agentty.app deployed with com.dly023.agentty bundle id
     scope:
       - config root and environment override
       - desktop display name and package metadata
       - user documentation and developer harness
   - id: identity-executables
-    status: pending
-    scope:
-      - Cargo package and crate names
-      - GUI, CLI, and helper executable names
-      - remote helper install paths and release assets
-    note: Must be performed atomically with protocol/install compatibility tests.
+    status: verified
+    evidence:
+      - commit 86a19d5 atomic rename of crates, binaries, helper paths, release assets
+      - full workspace tests green (894 gui / 840 core / 79 cli / e2e+server+stdio)
   - id: identity-protocol
-    status: pending
-    scope:
-      - AGENTTY_* pane and shell integration variables
-      - wire markers, socket names, hook identifiers, and daemon process recognition
-    note: Internal compatibility boundary; no new code may expand it.
+    status: verified
+    evidence:
+      - commit 86a19d5 TTY7_* -> AGENTTY_* across wire markers, sockets, hooks
+      - rg scan: no tty7/TTY7/Tty7 residue outside CHANGELOG and upstream fork branch urls
 legacy_allowlist:
-  rationale: Existing executable/protocol identifiers are temporarily retained to keep the current system buildable while the atomic rename phase is designed and tested.
+  rationale: Rename is complete; only externally-required legacy references remain.
   categories:
-    - Cargo crates and binaries under crates/agentty-*
-    - AGENTTY_PANE, AGENTTY_WS, AGENTTY_CONTROL_SOCK, and shell-integration protocol variables
-    - agentty-server release/install artifact contract
     - historical CHANGELOG entries
+    - upstream fork dependency urls (l0ng-ai/zed, l0ng-ai/gpui-component) pinned to branch=tty7
 exit_criteria:
   - no user-visible agentty product branding
   - no legacy config authority
