@@ -3371,6 +3371,7 @@ impl AgenttyApp {
             ToggleLeftPanel => self.toggle_left_panel(cx),
             ToggleRightPanel => self.toggle_right_panel(cx),
             ShowRightPanel(tab) => self.set_right_panel_tab(tab, cx),
+            ToggleComposer => self.toggle_composer(window, cx),
             ResetFontSize => self.reset_font_size(cx),
             FindInTerminal => {
                 if let Some(leaf) = self.focused_leaf(window, cx) {

@@ -155,7 +155,97 @@ opt.top: Top
 opt.underline: Underline
 opt.visual: Visual
 opt.when_unfocused: When Unfocused
+palette.cmd.about: About agentty
+palette.cmd.agent_send_diff: Agent: Send Git Diff for Review
+palette.cmd.agent_send_diff.sub: git diff → running coding agent
+palette.cmd.agent_send_selection: Agent: Send Selection
+palette.cmd.agent_send_selection.sub: selection → running coding agent
+palette.cmd.change_theme: Change Theme…
+palette.cmd.check_updates: Check for Updates…
+palette.cmd.clear_scrollback: Clear Scrollback
+palette.cmd.close_other_tabs: Close Other Tabs
+palette.cmd.close_pane: Close Pane / Tab
+palette.cmd.close_tabs_right: Close Tabs to the Right
+palette.cmd.code_panel: Show Code Panel
+palette.cmd.composer: Composer
+palette.cmd.composer.sub: multiline prompt editor
+palette.cmd.copy: Copy
+palette.cmd.copy_cwd: Copy Working Directory
+palette.cmd.copy_session_id: Copy Session ID
+palette.cmd.copy_session_id.sub: the coding agent's own session id
+palette.cmd.cut: Cut
+palette.cmd.delete_workspace: Delete Workspace…
+palette.cmd.delete_workspace.sub: ends its shells and forgets the layout
+palette.cmd.discord: Join the Discord
+palette.cmd.documentation: Documentation
+palette.cmd.find: Find in Terminal…
+palette.cmd.find_next: Find Next
+palette.cmd.find_prev: Find Previous
+palette.cmd.focus_down: Focus Pane Down
+palette.cmd.focus_left: Focus Pane Left
+palette.cmd.focus_right: Focus Pane Right
+palette.cmd.focus_up: Focus Pane Up
+palette.cmd.fork_session: Fork Session
+palette.cmd.fork_session.sub: branch this agent session into a new tab
+palette.cmd.fullscreen: Enter Full Screen
+palette.cmd.hide_left_sidebar: Hide Left Sidebar
+palette.cmd.hide_right_panel: Hide Right Panel
+palette.cmd.mark_unread: Mark Tab as Unread
+palette.cmd.new_tab: New Tab
+palette.cmd.new_workspace: New Workspace
+palette.cmd.new_worktree_tab: New Worktree Tab
+palette.cmd.new_worktree_tab.sub: isolated checkout on a fresh branch
+palette.cmd.next_pane: Next Pane
+palette.cmd.next_tab: Next Tab
+palette.cmd.paste: Paste
+palette.cmd.prev_pane: Previous Pane
+palette.cmd.prev_tab: Previous Tab
+palette.cmd.quit: Quit agentty
+palette.cmd.quit.sub: shells keep running
+palette.cmd.rename_tab: Rename Tab…
+palette.cmd.rename_workspace: Rename Workspace…
+palette.cmd.reopen_closed: Reopen Closed Tab
+palette.cmd.report_issue: Report an Issue…
+palette.cmd.reset_font: Reset Font Size
+palette.cmd.resize_down: Resize Pane Down
+palette.cmd.resize_left: Resize Pane Left
+palette.cmd.resize_right: Resize Pane Right
+palette.cmd.resize_up: Resize Pane Up
+palette.cmd.restart_server: Restart Server…
+palette.cmd.restart_server.sub: ends every running shell; layout is kept
+palette.cmd.right_changes: Right Panel: Changes
+palette.cmd.right_files: Right Panel: Files
+palette.cmd.right_info: Right Panel: Info
+palette.cmd.right_outline: Right Panel: Outline
+palette.cmd.select_all: Select All
+palette.cmd.settings: Settings…
+palette.cmd.shortcuts: Keyboard Shortcuts
+palette.cmd.show_left_sidebar: Show Left Sidebar
+palette.cmd.show_right_panel: Show Right Panel
+palette.cmd.split_down: Split Down
+palette.cmd.split_right: Split Right
+palette.cmd.ssh_add: SSH: Add Connection…
+palette.cmd.ssh_files: SSH: Remote Files
+palette.cmd.ssh_forwards: SSH: Port Forwarding
+palette.cmd.ssh_manage: SSH: Manage Profiles…
+palette.cmd.ssh_reconnect: SSH: Reconnect
+palette.cmd.stop_workspace: Stop Workspace…
+palette.cmd.stop_workspace.sub: ends its shells, keeps the layout
+palette.cmd.swap_next: Swap Pane Next
+palette.cmd.swap_prev: Swap Pane Previous
+palette.cmd.switch_workspace: Switch Workspace…
+palette.cmd.tabbar_to_left: Tab Bar: Move to Left Sidebar
+palette.cmd.tabbar_to_top: Tab Bar: Move to Top
+palette.cmd.zoom_pane: Zoom Pane
 palette.edit_arrow: → edit
+palette.group.agents: Agents
+palette.group.application: Application
+palette.group.recent: Recent
+palette.group.ssh: SSH
+palette.group.tabs_panes: Tabs & Panes
+palette.group.terminal: Terminal
+palette.group.view: View
+palette.group.workspaces: Workspaces
 palette.no_matching_commands: No matching commands
 palette.ssh_hint: Type user@host to connect over SSH instead.
 pending.unreachable: Couldn't reach {machine}

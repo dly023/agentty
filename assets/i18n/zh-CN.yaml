@@ -155,7 +155,97 @@ opt.top: 顶部
 opt.underline: 下划线
 opt.visual: 闪烁
 opt.when_unfocused: 失焦时
+palette.cmd.about: 关于 agentty
+palette.cmd.agent_send_diff: Agent：发送 Git Diff 供审查
+palette.cmd.agent_send_diff.sub: git diff → 正在运行的 coding agent
+palette.cmd.agent_send_selection: Agent：发送选中内容
+palette.cmd.agent_send_selection.sub: 选中内容 → 正在运行的 coding agent
+palette.cmd.change_theme: 更改主题…
+palette.cmd.check_updates: 检查更新…
+palette.cmd.clear_scrollback: 清除滚动缓冲
+palette.cmd.close_other_tabs: 关闭其他标签
+palette.cmd.close_pane: 关闭面板 / 标签
+palette.cmd.close_tabs_right: 关闭右侧标签
+palette.cmd.code_panel: 显示代码面板
+palette.cmd.composer: 自由编辑框
+palette.cmd.composer.sub: 为当前面板编写多行输入
+palette.cmd.copy: 复制
+palette.cmd.copy_cwd: 复制工作目录
+palette.cmd.copy_session_id: 复制会话 ID
+palette.cmd.copy_session_id.sub: coding agent 自己的会话 id
+palette.cmd.cut: 剪切
+palette.cmd.delete_workspace: 删除工作区…
+palette.cmd.delete_workspace.sub: 结束其 shell 并遗忘布局
+palette.cmd.discord: 加入 Discord
+palette.cmd.documentation: 文档
+palette.cmd.find: 在终端中查找…
+palette.cmd.find_next: 查找下一个
+palette.cmd.find_prev: 查找上一个
+palette.cmd.focus_down: 聚焦下面板
+palette.cmd.focus_left: 聚焦左面板
+palette.cmd.focus_right: 聚焦右面板
+palette.cmd.focus_up: 聚焦上面板
+palette.cmd.fork_session: 派生会话
+palette.cmd.fork_session.sub: 将此 agent 会话分支到新标签
+palette.cmd.fullscreen: 进入全屏
+palette.cmd.hide_left_sidebar: 隐藏左侧栏
+palette.cmd.hide_right_panel: 隐藏右侧面板
+palette.cmd.mark_unread: 将标签标记为未读
+palette.cmd.new_tab: 新建标签
+palette.cmd.new_workspace: 新建工作区
+palette.cmd.new_worktree_tab: 新建 Worktree 标签
+palette.cmd.new_worktree_tab.sub: 在新分支上创建隔离检出
+palette.cmd.next_pane: 下一个面板
+palette.cmd.next_tab: 下一个标签
+palette.cmd.paste: 粘贴
+palette.cmd.prev_pane: 上一个面板
+palette.cmd.prev_tab: 上一个标签
+palette.cmd.quit: 退出 agentty
+palette.cmd.quit.sub: shell 继续运行
+palette.cmd.rename_tab: 重命名标签…
+palette.cmd.rename_workspace: 重命名工作区…
+palette.cmd.reopen_closed: 重新打开已关闭的标签
+palette.cmd.report_issue: 报告问题…
+palette.cmd.reset_font: 重置字体大小
+palette.cmd.resize_down: 向下调整面板大小
+palette.cmd.resize_left: 向左调整面板大小
+palette.cmd.resize_right: 向右调整面板大小
+palette.cmd.resize_up: 向上调整面板大小
+palette.cmd.restart_server: 重启服务器…
+palette.cmd.restart_server.sub: 结束所有运行中的 shell，保留布局
+palette.cmd.right_changes: 右侧面板：变更
+palette.cmd.right_files: 右侧面板：文件
+palette.cmd.right_info: 右侧面板：信息
+palette.cmd.right_outline: 右侧面板：大纲
+palette.cmd.select_all: 全选
+palette.cmd.settings: 设置…
+palette.cmd.shortcuts: 键盘快捷键
+palette.cmd.show_left_sidebar: 显示左侧栏
+palette.cmd.show_right_panel: 显示右侧面板
+palette.cmd.split_down: 向下拆分
+palette.cmd.split_right: 向右拆分
+palette.cmd.ssh_add: SSH：添加连接…
+palette.cmd.ssh_files: SSH：远程文件
+palette.cmd.ssh_forwards: SSH：端口转发
+palette.cmd.ssh_manage: SSH：管理配置…
+palette.cmd.ssh_reconnect: SSH：重新连接
+palette.cmd.stop_workspace: 停止工作区…
+palette.cmd.stop_workspace.sub: 结束其 shell，保留布局
+palette.cmd.swap_next: 与下一个面板交换
+palette.cmd.swap_prev: 与上一个面板交换
+palette.cmd.switch_workspace: 切换工作区…
+palette.cmd.tabbar_to_left: 标签栏：移到左侧栏
+palette.cmd.tabbar_to_top: 标签栏：移到顶部
+palette.cmd.zoom_pane: 缩放面板
 palette.edit_arrow: → 编辑
+palette.group.agents: 代理
+palette.group.application: 应用
+palette.group.recent: 最近使用
+palette.group.ssh: SSH
+palette.group.tabs_panes: 标签与面板
+palette.group.terminal: 终端
+palette.group.view: 视图
+palette.group.workspaces: 工作区
 palette.no_matching_commands: 没有匹配的命令
 palette.ssh_hint: 输入 user@host 可改为通过 SSH 连接。
 pending.unreachable: 无法连接到 {machine}

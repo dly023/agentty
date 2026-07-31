@@ -74,6 +74,7 @@ pub enum CommandKind {
     ToggleSftp,
     ShowSshForwards,
     ToggleCodePanel,
+    ToggleComposer,
     RestartSshSession,
     SendSelectionToAgent,
     SendGitDiffToAgent,
@@ -163,6 +164,7 @@ impl CommandKind {
             ToggleSftp => "ssh-remote-files",
             ShowSshForwards => "ssh-port-forwarding",
             ToggleCodePanel => "code-panel",
+            ToggleComposer => "toggle-composer",
             RestartSshSession => "ssh-reconnect",
             SendSelectionToAgent => "agent-send-selection",
             SendGitDiffToAgent => "agent-send-diff",
@@ -250,6 +252,7 @@ impl CommandKind {
             ToggleSftp => "ToggleSftp",
             ShowSshForwards => "ShowSshForwards",
             ToggleCodePanel => "ToggleCodePanel",
+            ToggleComposer => "ToggleComposer",
             RestartSshSession => "RestartSshSession",
             OpenSshProfiles => "OpenSshProfiles",
             CopyText
@@ -295,16 +298,19 @@ impl CommandGroup {
         CommandGroup::Application,
     ];
 
-    fn title(self) -> &'static str {
-        match self {
-            CommandGroup::TabsPanes => "Tabs & Panes",
-            CommandGroup::Workspaces => "Workspaces",
-            CommandGroup::View => "View",
-            CommandGroup::Terminal => "Terminal",
-            CommandGroup::Ssh => "SSH",
-            CommandGroup::Agents => "Agents",
-            CommandGroup::Application => "Application",
-        }
+    fn title(self, cx: &App) -> &'static str {
+        crate::core::i18n::current(
+            cx,
+            match self {
+                CommandGroup::TabsPanes => "palette.group.tabs_panes",
+                CommandGroup::Workspaces => "palette.group.workspaces",
+                CommandGroup::View => "palette.group.view",
+                CommandGroup::Terminal => "palette.group.terminal",
+                CommandGroup::Ssh => "palette.group.ssh",
+                CommandGroup::Agents => "palette.group.agents",
+                CommandGroup::Application => "palette.group.application",
+            },
+        )
     }
 }
 
@@ -350,127 +356,334 @@ impl Command {
         let right_panel_open = chrome.right_panel_visible;
 
         let tabs = [
-            Command::new("New Tab", NewTab),
-            Command::new("New Worktree Tab", NewWorktreeTab)
-                .with_subtitle("isolated checkout on a fresh branch"),
-            Command::new("Rename Tab…", RenameTab),
-            Command::new("Split Right", SplitRight),
-            Command::new("Split Down", SplitDown),
-            Command::new("Zoom Pane", ToggleMaximizePane),
-            Command::new("Next Pane", NextPane),
-            Command::new("Previous Pane", PrevPane),
-            Command::new("Focus Pane Left", FocusPaneLeft),
-            Command::new("Focus Pane Right", FocusPaneRight),
-            Command::new("Focus Pane Up", FocusPaneUp),
-            Command::new("Focus Pane Down", FocusPaneDown),
-            Command::new("Resize Pane Left", ResizePaneLeft),
-            Command::new("Resize Pane Right", ResizePaneRight),
-            Command::new("Resize Pane Up", ResizePaneUp),
-            Command::new("Resize Pane Down", ResizePaneDown),
-            Command::new("Swap Pane Next", SwapPaneNext),
-            Command::new("Swap Pane Previous", SwapPanePrev),
-            Command::new("Next Tab", NextTab),
-            Command::new("Previous Tab", PrevTab),
-            Command::new("Copy Working Directory", CopyWorkingDirectory),
-            Command::new("Copy Session ID", CopyAgentSessionId)
-                .with_subtitle("the coding agent's own session id"),
-            Command::new("Fork Session", ForkAgentSession)
-                .with_subtitle("branch this agent session into a new tab"),
-            Command::new("Mark Tab as Unread", MarkTabUnread),
-            Command::new("Close Pane / Tab", ClosePane),
-            Command::new("Close Other Tabs", CloseOtherTabs),
-            Command::new("Close Tabs to the Right", CloseTabsToTheRight),
-            Command::new("Reopen Closed Tab", ReopenClosedTab),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.new_tab"),
+                NewTab,
+            ),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.new_worktree_tab"),
+                NewWorktreeTab,
+            )
+            .with_subtitle(crate::core::i18n::current(
+                cx,
+                "palette.cmd.new_worktree_tab.sub",
+            )),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.rename_tab"),
+                RenameTab,
+            ),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.split_right"),
+                SplitRight,
+            ),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.split_down"),
+                SplitDown,
+            ),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.zoom_pane"),
+                ToggleMaximizePane,
+            ),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.next_pane"),
+                NextPane,
+            ),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.prev_pane"),
+                PrevPane,
+            ),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.focus_left"),
+                FocusPaneLeft,
+            ),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.focus_right"),
+                FocusPaneRight,
+            ),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.focus_up"),
+                FocusPaneUp,
+            ),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.focus_down"),
+                FocusPaneDown,
+            ),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.resize_left"),
+                ResizePaneLeft,
+            ),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.resize_right"),
+                ResizePaneRight,
+            ),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.resize_up"),
+                ResizePaneUp,
+            ),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.resize_down"),
+                ResizePaneDown,
+            ),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.swap_next"),
+                SwapPaneNext,
+            ),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.swap_prev"),
+                SwapPanePrev,
+            ),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.next_tab"),
+                NextTab,
+            ),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.prev_tab"),
+                PrevTab,
+            ),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.copy_cwd"),
+                CopyWorkingDirectory,
+            ),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.copy_session_id"),
+                CopyAgentSessionId,
+            )
+            .with_subtitle(crate::core::i18n::current(
+                cx,
+                "palette.cmd.copy_session_id.sub",
+            )),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.fork_session"),
+                ForkAgentSession,
+            )
+            .with_subtitle(crate::core::i18n::current(
+                cx,
+                "palette.cmd.fork_session.sub",
+            )),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.mark_unread"),
+                MarkTabUnread,
+            ),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.close_pane"),
+                ClosePane,
+            ),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.close_other_tabs"),
+                CloseOtherTabs,
+            ),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.close_tabs_right"),
+                CloseTabsToTheRight,
+            ),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.reopen_closed"),
+                ReopenClosedTab,
+            ),
         ];
 
         let workspaces = [
-            Command::new("New Workspace", NewWorkspace),
-            Command::new("Switch Workspace…", OpenWorkspacePicker),
-            Command::new("Rename Workspace…", RenameWorkspace),
-            Command::new("Stop Workspace…", StopWorkspace)
-                .with_subtitle("ends its shells, keeps the layout"),
-            Command::new("Delete Workspace…", DeleteWorkspace)
-                .with_subtitle("ends its shells and forgets the layout"),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.new_workspace"),
+                NewWorkspace,
+            ),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.switch_workspace"),
+                OpenWorkspacePicker,
+            ),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.rename_workspace"),
+                RenameWorkspace,
+            ),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.stop_workspace"),
+                StopWorkspace,
+            )
+            .with_subtitle(crate::core::i18n::current(
+                cx,
+                "palette.cmd.stop_workspace.sub",
+            )),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.delete_workspace"),
+                DeleteWorkspace,
+            )
+            .with_subtitle(crate::core::i18n::current(
+                cx,
+                "palette.cmd.delete_workspace.sub",
+            )),
         ];
 
         let view = [
             Command::new(
                 if sidebar_hidden {
-                    "Show Left Sidebar"
+                    crate::core::i18n::current(cx, "palette.cmd.show_left_sidebar")
                 } else {
-                    "Hide Left Sidebar"
+                    crate::core::i18n::current(cx, "palette.cmd.hide_left_sidebar")
                 },
                 ToggleLeftPanel,
             ),
             Command::new(
                 if right_panel_open {
-                    "Hide Right Panel"
+                    crate::core::i18n::current(cx, "palette.cmd.hide_right_panel")
                 } else {
-                    "Show Right Panel"
+                    crate::core::i18n::current(cx, "palette.cmd.show_right_panel")
                 },
                 ToggleRightPanel,
             ),
-            Command::new("Show Code Panel", ToggleCodePanel),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.code_panel"),
+                ToggleCodePanel,
+            ),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.composer"),
+                ToggleComposer,
+            )
+            .with_subtitle(crate::core::i18n::current(cx, "palette.cmd.composer.sub")),
             Command::new(
                 if tab_bar_left {
-                    "Tab Bar: Move to Top"
+                    crate::core::i18n::current(cx, "palette.cmd.tabbar_to_top")
                 } else {
-                    "Tab Bar: Move to Left Sidebar"
+                    crate::core::i18n::current(cx, "palette.cmd.tabbar_to_left")
                 },
                 ToggleTabSidebar,
             ),
-            Command::new("Right Panel: Info", ShowRightPanel(RightPanelTab::Info)),
             Command::new(
-                "Right Panel: Outline",
+                crate::core::i18n::current(cx, "palette.cmd.right_info"),
+                ShowRightPanel(RightPanelTab::Info),
+            ),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.right_outline"),
                 ShowRightPanel(RightPanelTab::Outline),
             ),
             Command::new(
-                "Right Panel: Changes",
+                crate::core::i18n::current(cx, "palette.cmd.right_changes"),
                 ShowRightPanel(RightPanelTab::Changes),
             ),
-            Command::new("Right Panel: Files", ShowRightPanel(RightPanelTab::Files)),
-            Command::new("Change Theme…", OpenThemePicker),
-            Command::new("Reset Font Size", ResetFontSize),
-            Command::new("Enter Full Screen", ToggleFullscreen),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.right_files"),
+                ShowRightPanel(RightPanelTab::Files),
+            ),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.change_theme"),
+                OpenThemePicker,
+            ),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.reset_font"),
+                ResetFontSize,
+            ),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.fullscreen"),
+                ToggleFullscreen,
+            ),
         ];
 
         let terminal = [
-            Command::new("Clear Scrollback", ClearTerminal),
-            Command::new("Find in Terminal…", FindInTerminal),
-            Command::new("Find Next", FindNext),
-            Command::new("Find Previous", FindPrevious),
-            Command::new("Copy", CopyText),
-            Command::new("Cut", CutText),
-            Command::new("Paste", PasteText),
-            Command::new("Select All", SelectAllText),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.clear_scrollback"),
+                ClearTerminal,
+            ),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.find"),
+                FindInTerminal,
+            ),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.find_next"),
+                FindNext,
+            ),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.find_prev"),
+                FindPrevious,
+            ),
+            Command::new(crate::core::i18n::current(cx, "palette.cmd.copy"), CopyText),
+            Command::new(crate::core::i18n::current(cx, "palette.cmd.cut"), CutText),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.paste"),
+                PasteText,
+            ),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.select_all"),
+                SelectAllText,
+            ),
         ];
 
         let ssh = [
-            Command::new("SSH: Add Connection…", OpenSshConnectInput),
-            Command::new("SSH: Manage Profiles…", OpenSshProfiles),
-            Command::new("SSH: Reconnect", RestartSshSession),
-            Command::new("SSH: Remote Files", ToggleSftp),
-            Command::new("SSH: Port Forwarding", ShowSshForwards),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.ssh_add"),
+                OpenSshConnectInput,
+            ),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.ssh_manage"),
+                OpenSshProfiles,
+            ),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.ssh_reconnect"),
+                RestartSshSession,
+            ),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.ssh_files"),
+                ToggleSftp,
+            ),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.ssh_forwards"),
+                ShowSshForwards,
+            ),
         ];
 
         let agents = [
-            Command::new("Agent: Send Selection", SendSelectionToAgent)
-                .with_subtitle("selection → running coding agent"),
-            Command::new("Agent: Send Git Diff for Review", SendGitDiffToAgent)
-                .with_subtitle("git diff → running coding agent"),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.agent_send_selection"),
+                SendSelectionToAgent,
+            )
+            .with_subtitle(crate::core::i18n::current(
+                cx,
+                "palette.cmd.agent_send_selection.sub",
+            )),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.agent_send_diff"),
+                SendGitDiffToAgent,
+            )
+            .with_subtitle(crate::core::i18n::current(
+                cx,
+                "palette.cmd.agent_send_diff.sub",
+            )),
         ];
 
         let application = [
-            Command::new("Settings…", OpenSettings),
-            Command::new("Keyboard Shortcuts", ShowKeyboardShortcuts),
-            Command::new("About agentty", About),
-            Command::new("Check for Updates…", CheckForUpdates),
-            Command::new("Documentation", OpenDocumentation),
-            Command::new("Join the Discord", OpenDiscord),
-            Command::new("Report an Issue…", ReportIssue),
-            Command::new("Restart Server…", RestartDaemon)
-                .with_subtitle("ends every running shell; layout is kept"),
-            Command::new("Quit agentty", Quit).with_subtitle("shells keep running"),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.settings"),
+                OpenSettings,
+            ),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.shortcuts"),
+                ShowKeyboardShortcuts,
+            ),
+            Command::new(crate::core::i18n::current(cx, "palette.cmd.about"), About),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.check_updates"),
+                CheckForUpdates,
+            ),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.documentation"),
+                OpenDocumentation,
+            ),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.discord"),
+                OpenDiscord,
+            ),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.report_issue"),
+                ReportIssue,
+            ),
+            Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.restart_server"),
+                RestartDaemon,
+            )
+            .with_subtitle(crate::core::i18n::current(
+                cx,
+                "palette.cmd.restart_server.sub",
+            )),
+            Command::new(crate::core::i18n::current(cx, "palette.cmd.quit"), Quit)
+                .with_subtitle(crate::core::i18n::current(cx, "palette.cmd.quit.sub")),
         ];
 
         let mut out = Vec::new();
@@ -644,7 +857,7 @@ impl PaletteDelegate {
         recent.truncate(RECENT_ROWS);
         if !recent.is_empty() {
             sections.push(Section {
-                title: Some("Recent".into()),
+                title: Some(crate::core::i18n::current(cx, "palette.group.recent").into()),
                 commands: recent.into_iter().map(|(_, c)| c.clone()).collect(),
             });
         }
@@ -658,7 +871,7 @@ impl PaletteDelegate {
                 .collect();
             if !commands.is_empty() {
                 sections.push(Section {
-                    title: Some(group.title().into()),
+                    title: Some(group.title(cx).into()),
                     commands,
                 });
             }
