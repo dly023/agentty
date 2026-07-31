@@ -78,6 +78,7 @@ struct SearchEntry {
     section: SettingsSection,
     title: &'static str,
     keywords: &'static str,
+    keywords_zh: &'static str,
 }
 
 fn settings_search_entries() -> &'static [SearchEntry] {
@@ -86,299 +87,359 @@ fn settings_search_entries() -> &'static [SearchEntry] {
         SearchEntry {
             section: Appearance,
             title: "Theme",
+            keywords_zh: "主题 外观 颜色 配色 深色 浅色 背景 前景 跟随系统",
             keywords: "appearance color colours scheme dark light palette background foreground accent sync system os auto follow",
         },
         SearchEntry {
             section: Appearance,
             title: "Sync with system",
+            keywords_zh: "跟随系统 自动 深色 浅色 外观 模式",
             keywords: "theme dark light auto follow os appearance mode",
         },
         SearchEntry {
             section: Appearance,
             title: "Custom themes",
+            keywords_zh: "自定义主题 主题 编辑 导入 文件夹 颜色",
             keywords: "theme duplicate edit colors folder yaml import",
         },
         SearchEntry {
             section: Appearance,
             title: "Opacity",
+            keywords_zh: "不透明度 透明 窗口",
             keywords: "transparency translucent see through window alpha",
         },
         SearchEntry {
             section: Appearance,
             title: "Blur",
+            keywords_zh: "模糊 毛玻璃 透明 背景",
             keywords: "transparency translucent frosted vibrancy window background",
         },
         SearchEntry {
             section: Appearance,
             title: "Dim inactive panes",
+            keywords_zh: "调暗 非活动 面板 聚焦 高亮 变暗",
             keywords: "fade unfocused inactive split pane focus opacity highlight active dimming",
         },
         SearchEntry {
             section: Appearance,
             title: "Font size",
+            keywords_zh: "字体大小 字号 缩放",
             keywords: "typography text bigger smaller zoom",
         },
         SearchEntry {
             section: Appearance,
             title: "Line height",
+            keywords_zh: "行高 间距",
             keywords: "typography leading spacing",
         },
         SearchEntry {
             section: Appearance,
             title: "Font family",
+            keywords_zh: "字体 等宽 字体族",
             keywords: "typeface monospace typography",
         },
         SearchEntry {
             section: Appearance,
             title: "Bold font",
+            keywords_zh: "粗体 字体 加粗",
             keywords: "typeface weight",
         },
         SearchEntry {
             section: Appearance,
             title: "Italic font",
+            keywords_zh: "斜体 字体",
             keywords: "typeface oblique",
         },
         SearchEntry {
             section: Appearance,
             title: "Font ligatures",
+            keywords_zh: "连字 字体 字形",
             keywords: "typography glyph fira",
         },
         SearchEntry {
             section: Appearance,
             title: "Cursor shape",
+            keywords_zh: "光标 形状 块状 下划线 竖线",
             keywords: "caret block bar underline beam",
         },
         SearchEntry {
             section: Appearance,
             title: "Cursor blink",
+            keywords_zh: "光标 闪烁",
             keywords: "caret blinking flash",
         },
         SearchEntry {
             section: Appearance,
             title: "ANSI colors",
+            keywords_zh: "ANSI 颜色 配色 终端",
             keywords: "palette 16 terminal colours theme",
         },
         SearchEntry {
             section: Terminal,
             title: "Program",
+            keywords_zh: "程序 解释器 启动 终端",
             keywords: "shell binary zsh bash fish pwsh powershell executable launch",
         },
         SearchEntry {
             section: Terminal,
             title: "Arguments",
+            keywords_zh: "参数 启动参数 登录",
             keywords: "shell flags login args",
         },
         SearchEntry {
             section: Terminal,
             title: "Start in",
+            keywords_zh: "启动目录 工作目录 起始位置 路径 文件夹",
             keywords: "cwd working directory start folder path home inherit custom",
         },
         SearchEntry {
             section: Terminal,
             title: "Scrollback",
+            keywords_zh: "滚动缓冲 历史 回滚 行数",
             keywords: "history buffer lines scroll",
         },
         SearchEntry {
             section: Terminal,
             title: "Scroll speed",
+            keywords_zh: "滚动速度 滚轮 鼠标",
             keywords: "mouse wheel multiplier scrolling",
         },
         SearchEntry {
             section: Terminal,
             title: "Focus follows mouse",
+            keywords_zh: "焦点跟随鼠标 悬停 面板 激活",
             keywords: "pane hover activate",
         },
         SearchEntry {
             section: Terminal,
             title: "Hide mouse while typing",
+            keywords_zh: "打字时隐藏鼠标 指针 自动隐藏",
             keywords: "cursor pointer autohide",
         },
         SearchEntry {
             section: Terminal,
             title: "Report mouse to apps",
+            keywords_zh: "鼠标上报 应用 点击 滚动 透传",
             keywords: "mouse reporting vim tmux click scroll shift passthrough",
         },
         SearchEntry {
             section: Terminal,
             title: "Terminal bell",
+            keywords_zh: "响铃 提示音 声音 静音",
             keywords: "bell audible visual flash sound silence beep ^g",
         },
         SearchEntry {
             section: Terminal,
             title: "Detect URLs",
+            keywords_zh: "链接 检测 网址 可点击 打开",
             keywords: "links hyperlink clickable open",
         },
         SearchEntry {
             section: Terminal,
             title: "Forward SSH loopback links",
+            keywords_zh: "链接 转发 端口 隧道",
             keywords: "ssh remote port tunnel localhost forward links",
         },
         SearchEntry {
             section: Terminal,
             title: "Open files with",
+            keywords_zh: "打开文件 编辑器 外部应用 路径 行 列",
             keywords: "links file editor command external app path line column",
         },
         SearchEntry {
             section: Input,
             title: "Tab completion",
+            keywords_zh: "补全 自动补全 命令补全 建议 提示",
             keywords: "complete completion menu suggestions tab prompt",
         },
         SearchEntry {
             section: Input,
             title: "History search",
+            keywords_zh: "历史搜索 搜索 模糊 历史记录 回溯",
             keywords: "ctrl-r reverse search fuzzy history recall fzf prompt",
         },
         SearchEntry {
             section: Input,
             title: "Option (⌥) acts as Meta",
+            keywords_zh: "修饰键 键盘 转义",
             keywords: "alt keyboard modifier escape macos option meta option acts as meta",
         },
         SearchEntry {
             section: Input,
             title: "Smart selection",
+            keywords_zh: "智能选择 双击 单词 选中 语义 括号 邮箱",
             keywords: "double click word url path select semantic bracket email",
         },
         SearchEntry {
             section: Input,
             title: "Copy on select",
+            keywords_zh: "选中复制 剪贴板",
             keywords: "clipboard selection yank mouse",
         },
         SearchEntry {
             section: Input,
             title: "Trim trailing spaces on copy",
+            keywords_zh: "复制 去除 行尾空格 剪贴板 空白",
             keywords: "clipboard whitespace copy",
         },
         SearchEntry {
             section: Ssh,
             title: "Hosts",
+            keywords_zh: "主机 连接 配置 导入 管理 添加 编辑 快速连接",
             keywords: "ssh host connection saved profile import ssh_config manage add edit \
                        quick connect",
         },
         SearchEntry {
             section: Ssh,
             title: "Verify host keys",
+            keywords_zh: "主机密钥 验证 指纹 安全 中间人",
             keywords: "ssh security known_hosts fingerprint mitm host key verification",
         },
         SearchEntry {
             section: Ssh,
             title: "Warn before closing",
+            keywords_zh: "关闭前警告 确认 关闭 会话 安全",
             keywords: "ssh confirm close tab pane live session security",
         },
         SearchEntry {
             section: Ssh,
             title: "Port forwarding",
+            keywords_zh: "端口转发 隧道 代理 规则",
             keywords: "ssh tunnel local remote dynamic socks forward rule",
         },
         SearchEntry {
             section: Agents,
             title: "Claude Code",
+            keywords_zh: "代理 集成 钩子 安装 卸载 状态 会话 等待 徽标",
             keywords: "agent integration hooks install uninstall status rich session working waiting tab bar sidebar badge claude",
         },
         SearchEntry {
             section: Agents,
             title: "Codex",
+            keywords_zh: "代理 集成 钩子 安装",
             keywords: "agent integration hooks install openai codex",
         },
         SearchEntry {
             section: Agents,
             title: "Copilot CLI",
+            keywords_zh: "代理 集成 安装",
             keywords: "agent integration hooks install github copilot",
         },
         SearchEntry {
             section: Agents,
             title: "OpenCode",
+            keywords_zh: "代理 集成 插件 安装",
             keywords: "agent integration plugin install opencode",
         },
         SearchEntry {
             section: Agents,
             title: "Pi",
+            keywords_zh: "代理 集成 扩展 安装",
             keywords: "agent integration extension install pi",
         },
         SearchEntry {
             section: Agents,
             title: "Grok Build",
+            keywords_zh: "代理 集成 钩子 安装",
             keywords: "agent integration hooks install xai grok build",
         },
         SearchEntry {
             section: WindowTabs,
             title: "Startup window",
+            keywords_zh: "启动窗口 最大化 全屏 正常",
             keywords: "launch open maximized fullscreen normal",
         },
         SearchEntry {
             section: WindowTabs,
             title: "Remember window size & position",
+            keywords_zh: "记住窗口大小 位置 几何 启动",
             keywords: "window size position bounds geometry launch startup remember",
         },
         SearchEntry {
             section: WindowTabs,
             title: "Restore last layout",
+            keywords_zh: "恢复布局 上次 标签 拆分 重新打开 启动",
             keywords: "restore session previous tabs splits reopen launch startup layout",
         },
         SearchEntry {
             section: WindowTabs,
             title: "Confirm before closing the last window",
+            keywords_zh: "关闭确认 最后窗口 退出 询问 警告",
             keywords: "close quit confirm prompt dialog ask again warn last window cmd-w ctrl-w",
         },
         SearchEntry {
             section: WindowTabs,
             title: "Show tray icon",
+            keywords_zh: "托盘图标 菜单栏 状态栏 系统图标",
             keywords: "tray menu bar status item agent attention system icon",
         },
         SearchEntry {
             section: WindowTabs,
             title: "New tab position",
+            keywords_zh: "新标签位置 顺序 末尾 当前之后",
             keywords: "tabs order end after current",
         },
         SearchEntry {
             section: WindowTabs,
             title: "Tab bar position",
+            keywords_zh: "标签栏位置 侧栏 顶部 布局 垂直",
             keywords: "tabs vertical sidebar left top layout rail",
         },
         SearchEntry {
             section: WindowTabs,
             title: "Sidebar grouping",
+            keywords_zh: "侧栏分组 仓库 分组 平铺 标题",
             keywords: "tabs group repo repository git scratch header sidebar flat",
         },
         SearchEntry {
             section: WindowTabs,
             title: "Open diff preview from sidebar counts",
+            keywords_zh: "差异预览 侧栏 变更 点击 分支 行数",
             keywords: "diff overlay preview sidebar counts git changes click branch lines",
         },
         SearchEntry {
             section: WindowTabs,
             title: "Notify on command finish",
+            keywords_zh: "命令完成通知 提醒 通知 横幅 长命令",
             keywords: "notification alert done osc desktop banner long command",
         },
         SearchEntry {
             section: WindowTabs,
             title: "Notify threshold",
+            keywords_zh: "通知阈值 秒 时长 延迟 长命令",
             keywords: "notification alert seconds duration long command delay",
         },
         SearchEntry {
             section: Keybindings,
             title: "Keybindings",
+            keywords_zh: "快捷键 键位 绑定 键盘 预设 前缀 重绑定",
             keywords: "shortcut hotkey keyboard binding chord tmux preset rebind prefix",
         },
         SearchEntry {
             section: About,
             title: "About",
+            keywords_zh: "关于 版本 许可 构建 更新 检查",
             keywords: "version license credits build update check github",
         },
         SearchEntry {
             section: About,
             title: "How shells work",
+            keywords_zh: "工作原理 会话 后台 守护 保持 布局 重启 存活",
             keywords: "shell session daemon server detach persist background close quit stop delete workspace layout survive reboot tmux",
         },
         SearchEntry {
             section: About,
             title: "Command line tool",
+            keywords_zh: "命令行工具 安装 终端 脚本 路径",
             keywords: "cli agentty path shell command install symlink terminal iterm agent script",
         },
     ]
 }
 
 fn entry_matches(entry: &SearchEntry, query: &str) -> bool {
-    entry.title.to_lowercase().contains(query) || entry.keywords.contains(query)
+    entry.title.to_lowercase().contains(query)
+        || entry.keywords.contains(query)
+        || entry.keywords_zh.contains(query)
 }
 
 pub(crate) fn section_match_count(section: SettingsSection, query: &str) -> usize {
@@ -4755,6 +4816,38 @@ mod tests {
                 landed.is_some(),
                 "query {query:?} matched nothing at all (section {:?})",
                 section.profile_label()
+            );
+        }
+    }
+
+    #[test]
+    fn chinese_queries_find_settings() {
+        use SettingsSection::*;
+        let cases: &[(&str, SettingsSection)] = &[
+            ("字体", Appearance),
+            ("主题", Appearance),
+            ("不透明", Appearance),
+            ("光标", Appearance),
+            ("补全", Input),
+            ("历史搜索", Input),
+            ("剪贴板", Input),
+            ("启动目录", Terminal),
+            ("响铃", Terminal),
+            ("端口转发", Ssh),
+            ("主机密钥", Ssh),
+            ("代理", Agents),
+            ("快捷键", Keybindings),
+            ("托盘", WindowTabs),
+            ("恢复布局", WindowTabs),
+            ("关于", About),
+            ("命令行工具", About),
+        ];
+        for (query, expected) in cases {
+            assert_eq!(
+                best_matching_section(query).map(|s| s.profile_label()),
+                Some(expected.profile_label()),
+                "query {query:?} should land on {:?}",
+                expected.profile_label()
             );
         }
     }

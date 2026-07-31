@@ -266,8 +266,8 @@ milestones:
         title: Full user-facing coverage with zh-CN translations
         status: verified
         spec: I18N-FULL-COVERAGE-04
-        tests: [catalogs_have_identical_keys, format_replaces_named_placeholders, option_labels_translate_and_fall_back, escaped_newlines_render_as_real_newlines, locale_override_is_deterministic]
-        evidence: 2026-08-01 519-key catalog replaces hardcoded strings across settings, menus, dialogs, SSH prompts, notifications, tooltips, remote-status surfaces, and the full command palette (90+ command titles/subtitles and group headers); check_i18n gates used-key existence and rejects new hardcoded literals outside docs/quality/i18n-hardcoded-allowlist.txt; focused i18n and palette tests green; shipped in dist/agentty-0.0.1-macos-arm64.dmg
+        tests: [catalogs_have_identical_keys, format_replaces_named_placeholders, option_labels_translate_and_fall_back, escaped_newlines_render_as_real_newlines, locale_override_is_deterministic, chinese_queries_find_settings]
+        evidence: 2026-08-01 519-key catalog replaces hardcoded strings across settings, menus, dialogs, SSH prompts, notifications, tooltips, remote-status surfaces, and the full command palette (90+ command titles/subtitles and group headers); check_i18n gates used-key existence and rejects new hardcoded literals outside docs/quality/i18n-hardcoded-allowlist.txt; settings search accepts Chinese keywords (SearchEntry.keywords_zh) so zh-CN users can find settings by 字体/主题/补全 etc.; focused i18n, palette, and settings-search tests green; shipped in dist/agentty-0.0.1-macos-arm64.dmg
   - id: M6-SSH
     title: OpenSSH-compatible native SSH
     status: verified
