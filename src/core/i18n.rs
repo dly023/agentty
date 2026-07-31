@@ -24,18 +24,48 @@ impl ResolveLocale for LocalePreference {
 }
 
 fn system_locale() -> Locale {
-    let value = std::env::var("LC_ALL")
-        .ok()
-        .filter(|v| !v.is_empty())
-        .or_else(|| std::env::var("LC_MESSAGES").ok().filter(|v| !v.is_empty()))
-        .or_else(|| std::env::var("LANG").ok())
-        .unwrap_or_default()
-        .to_ascii_lowercase();
-    if value.starts_with("zh") {
-        Locale::ZhCn
-    } else {
-        Locale::EnUs
-    }
+    // GUI apps launched from Finder do not inherit shell locale variables,
+    // so the OS preference is the fallback authority. Resolved once.
+    static CACHED: OnceLock<Locale> = OnceLock::new();
+    *CACHED.get_or_init(|| {
+        let env = std::env::var("LC_ALL")
+            .ok()
+            .filter(|v| !v.is_empty())
+            .or_else(|| std::env::var("LC_MESSAGES").ok().filter(|v| !v.is_empty()))
+            .or_else(|| std::env::var("LANG").ok())
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        if env.starts_with("zh") {
+            return Locale::ZhCn;
+        }
+        if !env.is_empty() {
+            return Locale::EnUs;
+        }
+        if macos_prefers_chinese() {
+            Locale::ZhCn
+        } else {
+            Locale::EnUs
+        }
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn macos_prefers_chinese() -> bool {
+    std::process::Command::new("defaults")
+        .args(["read", "-g", "AppleLanguages"])
+        .output()
+        .map(|out| {
+            out.status.success()
+                && String::from_utf8_lossy(&out.stdout)
+                    .to_ascii_lowercase()
+                    .contains("zh")
+        })
+        .unwrap_or(false)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn macos_prefers_chinese() -> bool {
+    false
 }
 
 fn parse_catalog(input: &'static str) -> HashMap<&'static str, &'static str> {
