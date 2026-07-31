@@ -534,6 +534,8 @@ switcher.no_match: 没有匹配的工作区或机器。
 switcher.other_machines: 其他机器
 switcher.search_placeholder: 搜索工作区和机器
 tab.shell_default: Shell {index}
+terminal.integration_blocked: agentty shell 集成在此面板被拦截——“{wrapper}”截获了 shell 上报，行内补全和 Ctrl+R 菜单不可用。shell 自带的历史搜索仍可使用。
+terminal.integration_missing: agentty shell 集成尚未在此面板生效，行内补全和 Ctrl+R 菜单不可用。PTY 包装器（figterm 类）或不受支持的 shell 配置可能导致此问题。
 worktree.failed: 创建 worktree 失败:{error}
 worktree.new_tab: 新建 Worktree 标签
 worktree.removal_failed: 移除 worktree 失败:{error}

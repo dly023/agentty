@@ -534,6 +534,8 @@ switcher.no_match: No workspace or machine matches.
 switcher.other_machines: Other Machines
 switcher.search_placeholder: Search workspaces and machines
 tab.shell_default: Shell {index}
+terminal.integration_blocked: agentty shell integration is blocked in this pane — “{wrapper}” is intercepting shell reports, so inline completion and the Ctrl+R menu are unavailable. The shell's own history search still works.
+terminal.integration_missing: agentty shell integration hasn't engaged in this pane, so inline completion and the Ctrl+R menu are unavailable. A PTY wrapper (figterm-style) or an unsupported shell setup can cause this.
 worktree.failed: New worktree failed: {error}
 worktree.new_tab: New Worktree Tab
 worktree.removal_failed: Worktree removal failed: {error}

@@ -2523,6 +2523,7 @@ mod tests {
 
     #[test]
     fn at_prompt_stays_false_while_shell_integration_is_inactive() {
+        crate::core::config::pin_test_config_dir();
         let (client_side, mut daemon_side) = UnixStream::pair().unwrap();
         let term = RemoteTerminal::from_stream(client_side, TermSize::new(80, 24)).unwrap();
         assert!(!term.shell_active(), "no report yet → integration inactive");

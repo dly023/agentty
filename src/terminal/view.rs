@@ -267,17 +267,15 @@ fn known_pty_shim(fg: &str) -> Option<&'static str> {
         .find(|shim| fg.contains(shim))
 }
 
-fn integration_notice_message(wrapper: Option<&str>) -> String {
+fn integration_notice_message_loc(
+    locale: crate::core::i18n::Locale,
+    wrapper: Option<&str>,
+) -> String {
     match wrapper {
-        Some(w) => format!(
-            "agentty shell integration is blocked in this pane — \u{201c}{w}\u{201d} is intercepting \
-             shell reports, so inline completion and the Ctrl+R menu are unavailable. \
-             The shell's own history search still works."
-        ),
-        None => "agentty shell integration hasn't engaged in this pane, so inline completion and \
-                 the Ctrl+R menu are unavailable. A PTY wrapper (figterm-style) or an \
-                 unsupported shell setup can cause this."
-            .to_string(),
+        Some(w) => {
+            crate::core::i18n::trf(locale, "terminal.integration_blocked", &[("wrapper", w)])
+        }
+        None => crate::core::i18n::tr(locale, "terminal.integration_missing").into(),
     }
 }
 
@@ -2868,7 +2866,10 @@ impl TerminalView {
             return;
         }
         self.integration_notice_shown = true;
-        self.integration_notice = Some(integration_notice_message(None));
+        self.integration_notice = Some(integration_notice_message_loc(
+            cx.global::<crate::core::config::Config>().locale.resolve(),
+            None,
+        ));
         cx.notify();
 
         let pane_id = self.pane_id;
@@ -2886,7 +2887,10 @@ impl TerminalView {
             if let Some(shim) = fg.as_deref().and_then(known_pty_shim) {
                 let _ = this.update(cx, |view, cx| {
                     if view.integration_notice.is_some() {
-                        view.integration_notice = Some(integration_notice_message(Some(shim)));
+                        view.integration_notice = Some(integration_notice_message_loc(
+                            cx.global::<crate::core::config::Config>().locale.resolve(),
+                            Some(shim),
+                        ));
                         cx.notify();
                     }
                 });
@@ -6363,8 +6367,14 @@ mod gpui_tests {
         assert_eq!(known_pty_shim("ssh"), None);
         assert_eq!(known_pty_shim("wezterm"), None);
         assert_eq!(known_pty_shim(""), None);
-        assert!(integration_notice_message(Some("kiro-cli-term")).contains("kiro-cli-term"));
-        assert!(!integration_notice_message(None).contains("intercepting"));
+        assert!(
+            integration_notice_message_loc(crate::core::i18n::Locale::EnUs, Some("kiro-cli-term"))
+                .contains("kiro-cli-term")
+        );
+        assert!(
+            !integration_notice_message_loc(crate::core::i18n::Locale::EnUs, None)
+                .contains("intercepting")
+        );
     }
 
     #[gpui::test]
