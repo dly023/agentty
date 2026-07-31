@@ -113,7 +113,7 @@ milestones:
           - source_missing_preserves_rows
           - partial_provider_failure_does_not_publish_subset
           - remote_authority_never_falls_back_to_local_rows
-        evidence: 2026-07-31 nine agent_runtime reducer tests pass within 860 agentty-core tests (2026-08-01); failed, cancelled, missing, partial, stale, and cross-authority results preserve committed rows
+        evidence: 2026-08-01 nine agent_runtime reducer tests pass within 860 agentty-core tests; failed, cancelled, missing, partial, stale, and cross-authority results preserve committed rows
       - id: HELPER-004
         title: Typed Resume RPC model
         status: verified
