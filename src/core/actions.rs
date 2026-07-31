@@ -1,7 +1,7 @@
 use gpui::actions;
 
 actions!(
-    tty7,
+    agentty,
     [
         NewTab,
         NewWorkspace,

@@ -17,7 +17,7 @@ milestones:
         source:
           - docs/design/ENVIRONMENT_AUTHORITY_INVENTORY.yaml
           - src/core/session.rs
-          - crates/tty7-core/src/core/session.rs
+          - crates/agentty-core/src/core/session.rs
           - src/ui/app.rs
           - src/ui/windows.rs
         tests: [window_environment_is_derived_from_its_persisted_authority]
@@ -28,12 +28,12 @@ milestones:
         status: verified
         spec: ENV-EXECUTION-AUTHORITY-02
         source:
-          - crates/tty7-core/src/core/environment.rs
+          - crates/agentty-core/src/core/environment.rs
         tests:
           - environment_id_round_trip
           - same_remote_target_has_stable_environment_identity
           - different_remote_targets_do_not_share_environment_identity
-        evidence: 2026-07-31 four tty7-core environment identity and classification tests passed
+        evidence: 2026-07-31 four agentty-core environment identity and classification tests passed
         old_path_removal: Remove host authority lookup through WindowView after persistence migration.
       - id: ENV-003
         title: Make windows the single Environment authority boundary
@@ -86,20 +86,20 @@ milestones:
   - id: M0.5-REMOTE-HELPER
     title: Lightweight local/remote Agent helper
     status: verified
-    outcome: Extend the existing tty7-server control channel with a capability-negotiated Agent layer while local execution calls the same shared core directly.
+    outcome: Extend the existing agentty-server control channel with a capability-negotiated Agent layer while local execution calls the same shared core directly.
     items:
       - id: HELPER-001
         title: Capability negotiation
         status: verified
         spec: HELPER-CAPABILITY-NEGOTIATION-01
         tests: [helper_hello_reports_protocol_and_capabilities]
-        evidence: 2026-07-31 control protocol v5 advertises agent-helper and the full tty7-core suite passed
+        evidence: 2026-07-31 control protocol v5 advertises agent-helper and the full agentty-core suite passed
       - id: HELPER-002
         title: Shared provider registry
         status: verified
         spec: HELPER-SHARED-CORE-02
         tests: [registry_rejects_duplicate_provider_ids, codex_and_claude_discovery_uses_one_shared_host_core]
-        evidence: 2026-07-31 Codex and Claude providers execute through one Host-based core used by LocalAgentRuntime and tty7-server RPC
+        evidence: 2026-07-31 Codex and Claude providers execute through one Host-based core used by LocalAgentRuntime and agentty-server RPC
       - id: HELPER-003
         title: Atomic session discovery reducer
         status: verified
@@ -113,7 +113,7 @@ milestones:
           - source_missing_preserves_rows
           - partial_provider_failure_does_not_publish_subset
           - remote_authority_never_falls_back_to_local_rows
-        evidence: 2026-07-31 nine agent_runtime tests and 811 tty7-core tests passed; failed, cancelled, missing, partial, stale, and cross-authority results preserve committed rows
+        evidence: 2026-07-31 nine agent_runtime tests and 811 agentty-core tests passed; failed, cancelled, missing, partial, stale, and cross-authority results preserve committed rows
       - id: HELPER-004
         title: Typed Resume RPC model
         status: verified
@@ -126,13 +126,13 @@ milestones:
         status: verified
         spec: HELPER-ACTIVITY-STRUCTURED-05
         tests: [terminal_heuristic_never_becomes_authoritative_tool_activity, activity_stream_is_ordered_and_bounded, codex_and_claude_structured_events_share_one_schema, server_messages_round_trip]
-        evidence: 2026-07-31 typed activity carries operation/session/provider identity and structured trust; Codex/Claude hook events share one schema and bounded AgentActivity RPC crosses the existing tty7-server control channel; focused runtime/control tests passed
+        evidence: 2026-07-31 typed activity carries operation/session/provider identity and structured trust; Codex/Claude hook events share one schema and bounded AgentActivity RPC crosses the existing agentty-server control channel; focused runtime/control tests passed
       - id: HELPER-006
         title: Environment-authoritative completion RPC
         status: verified
         spec: HELPER-COMPLETION-AUTHORITY-06
         tests: [remote_source_failure_never_reads_local_filesystem]
-        evidence: 2026-07-31 shared completion reducer rejects cross-authority results and CompleteAgentInput runs through the existing tty7-server control channel against the selected Host; control, agent_runtime, and host server tests passed
+        evidence: 2026-07-31 shared completion reducer rejects cross-authority results and CompleteAgentInput runs through the existing agentty-server control channel against the selected Host; control, agent_runtime, and host server tests passed
       - id: HELPER-007
         title: Cancellation and backpressure
         status: verified
@@ -167,7 +167,7 @@ milestones:
           - stale_generation_is_ignored
           - provider_failure_does_not_publish_partial_subset
           - remote_authority_never_falls_back_to_local_rows
-        evidence: 2026-07-31 Codex and Claude Host-based providers plus atomic generation reducer tests passed in tty7-core
+        evidence: 2026-07-31 Codex and Claude Host-based providers plus atomic generation reducer tests passed in agentty-core
       - id: SESSION-002
         title: Live/history identity merge
         status: verified
@@ -270,7 +270,7 @@ milestones:
         title: OpenSSH default identities
         status: verified
         spec: SSH-DEFAULT-IDENTITIES-02
-        evidence: 8 focused tty7-core auth tests passed on 2026-07-31
+        evidence: 8 focused agentty-core auth tests passed on 2026-07-31
       - id: SSH-002
         title: Actionable authentication diagnostics
         status: verified

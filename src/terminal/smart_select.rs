@@ -868,7 +868,7 @@ mod tests {
         for (text, want) in [
             ("let v: Vec<String> = x", "<String>"),
             ("<div class=\"row\">hi", "<div class=\"row\">"),
-            ("usage: tty7 <command> [opts]", "<command>"),
+            ("usage: agentty <command> [opts]", "<command>"),
             ("From: Jo <j@example.com> ok", "<j@example.com>"),
             ("map: HashMap<K, V> here", "<K, V>"),
         ] {

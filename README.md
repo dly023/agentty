@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="assets/app-icon.svg" alt="tty7" width="88" height="88" />
+<img src="assets/app-icon.svg" alt="agentty" width="88" height="88" />
 
-### tty7
+### agentty
 
 **A terminal workbench: shells, sessions, SSH, coding agents.**
 
@@ -10,8 +10,8 @@
 
 <br />
 
-[![CI](https://github.com/l0ng-ai/tty7/actions/workflows/ci.yml/badge.svg)](https://github.com/l0ng-ai/tty7/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/github/v/tag/l0ng-ai/tty7?label=version&color=3FDD8C)](https://github.com/l0ng-ai/tty7/releases)
+[![CI](https://github.com/dly023/agentty/actions/workflows/ci.yml/badge.svg)](https://github.com/dly023/agentty/actions/workflows/ci.yml)
+[![Version](https://img.shields.io/github/v/tag/dly023/agentty?label=version&color=3FDD8C)](https://github.com/dly023/agentty/releases)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![Discord](https://img.shields.io/badge/Discord-join%20chat-5865F2?logo=discord&logoColor=white)](https://discord.gg/s3dethqz2V)
 
@@ -28,7 +28,7 @@
 
 ## Install
 
-Native builds for each platform on [**Releases**](https://github.com/l0ng-ai/tty7/releases):
+Native builds for each platform on [**Releases**](https://github.com/dly023/agentty/releases):
 
 | | | |
 |---|---|---|
@@ -54,7 +54,7 @@ opens Settings — browse and remap everything, tmux preset included
 Same machine, same day, same 155×40 grid — Apple M1 Pro, macOS 26.3.1,
 five-run averages (2026-07-04):
 
-| | **tty7** | Alacritty | Ghostty | Kitty |
+| | **agentty** | Alacritty | Ghostty | Kitty |
 |---|---:|---:|---:|---:|
 | Plaintext IO — 11 MB `cat` <sub>(lower = better)</sub> | **95 ms** | 239 ms | 179 ms | 185 ms |
 | [DOOM-fire](https://github.com/const-void/DOOM-fire-zig) frame rate <sub>(higher = better)</sub> | **888 fps** | 485 fps | 552 fps | 617 fps |

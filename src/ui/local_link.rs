@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
+use agentty_core::daemon::control::ControlClient;
 use gpui::{App, Global};
-use tty7_core::daemon::control::ControlClient;
 
 use crate::ui::remote_workspace::Backoff;
 
@@ -100,9 +100,9 @@ impl LocalLink {
                         link.next_attempt = None;
                         crate::ui::machine_mirror::MachineMirrors::refresh(
                             cx,
-                            tty7_core::host::HostId::LOCAL,
+                            agentty_core::host::HostId::LOCAL,
                         );
-                        crate::ui::tree_sync::on_link_up(cx, tty7_core::host::HostId::LOCAL);
+                        crate::ui::tree_sync::on_link_up(cx, agentty_core::host::HostId::LOCAL);
                     }
                     Err(e) => {
                         log::debug!("local control link attempt failed: {e}");
@@ -115,23 +115,23 @@ impl LocalLink {
 }
 
 fn connect_blocking() -> std::io::Result<Arc<ControlClient>> {
-    use tty7_core::daemon::control::ControlHello;
+    use agentty_core::daemon::control::ControlHello;
 
     crate::daemon::spawn::ensure_running().map_err(std::io::Error::other)?;
     let hello = ControlHello::host_rpc(uuid::Uuid::new_v4().to_string(), "this computer");
-    let sink: tty7_core::daemon::control::EventSink = Box::new(local_event_sink);
+    let sink: agentty_core::daemon::control::EventSink = Box::new(local_event_sink);
     #[cfg(unix)]
     let client = ControlClient::over_unix(
-        std::os::unix::net::UnixStream::connect(tty7_core::host::server::control_socket_path()?)?,
+        std::os::unix::net::UnixStream::connect(agentty_core::host::server::control_socket_path()?)?,
         &hello,
         sink,
     )?;
     #[cfg(windows)]
     let client =
-        ControlClient::over_tcp(tty7_core::host::server::connect_control()?, &hello, sink)?;
+        ControlClient::over_tcp(agentty_core::host::server::connect_control()?, &hello, sink)?;
     Ok(Arc::new(client))
 }
 
-fn local_event_sink(event: tty7_core::daemon::control::ControlEvent) {
-    tty7_core::daemon::control::observe_event(tty7_core::host::HostId::LOCAL, event);
+fn local_event_sink(event: agentty_core::daemon::control::ControlEvent) {
+    agentty_core::daemon::control::observe_event(agentty_core::host::HostId::LOCAL, event);
 }

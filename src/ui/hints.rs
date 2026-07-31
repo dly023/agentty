@@ -1,6 +1,6 @@
 use gpui::{Context, ModifiersChangedEvent, Window};
 
-use crate::ui::app::Tty7App;
+use crate::ui::app::AgenttyApp;
 
 const BADGE_DELAY_MS: u64 = 200;
 
@@ -8,7 +8,7 @@ pub(crate) fn tab_badge_label(index: usize) -> String {
     (index + 1).to_string()
 }
 
-impl Tty7App {
+impl AgenttyApp {
     pub(crate) fn on_modifiers_changed(
         &mut self,
         ev: &ModifiersChangedEvent,
@@ -78,17 +78,17 @@ mod tests {
 mod gpui_tests {
     use crate::core::config::Config;
     use crate::core::session::Session;
-    use crate::ui::app::Tty7App;
+    use crate::ui::app::AgenttyApp;
     use gpui::{Modifiers, TestAppContext, VisualTestContext, WindowHandle};
 
-    fn harness(cx: &mut TestAppContext) -> (WindowHandle<Tty7App>, VisualTestContext) {
+    fn harness(cx: &mut TestAppContext) -> (WindowHandle<AgenttyApp>, VisualTestContext) {
         cx.executor().allow_parking();
         cx.update(|cx| {
             gpui_component::init(cx);
             cx.set_global(Config::default());
         });
         let window = cx.add_window(|window, cx| {
-            Tty7App::with_session(None, Some(Session::default()), window, cx)
+            AgenttyApp::with_session(None, Some(Session::default()), window, cx)
         });
         window
             .update(cx, |_, window, _| window.activate_window())
@@ -98,13 +98,13 @@ mod gpui_tests {
         (window, vcx)
     }
 
-    fn badges_shown(window: &WindowHandle<Tty7App>, cx: &mut TestAppContext) -> bool {
+    fn badges_shown(window: &WindowHandle<AgenttyApp>, cx: &mut TestAppContext) -> bool {
         window
             .update(cx, |app, _, _| app.mod_hint_badges)
             .expect("the app window stays open")
     }
 
-    fn wait_for_badges(window: &WindowHandle<Tty7App>, cx: &mut TestAppContext) {
+    fn wait_for_badges(window: &WindowHandle<AgenttyApp>, cx: &mut TestAppContext) {
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
         loop {
             cx.background_executor.run_until_parked();

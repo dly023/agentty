@@ -1039,10 +1039,10 @@ mod tests {
 
     #[test]
     fn cargo_packages_dedupes_by_name() {
-        let json = r#"{"packages":[{"name":"tty7","version":"0.9.0"},{"name":"serde","version":"1.0"},{"name":"tty7","version":"0.9.0"}]}"#;
+        let json = r#"{"packages":[{"name":"agentty","version":"0.9.0"},{"name":"serde","version":"1.0"},{"name":"agentty","version":"0.9.0"}]}"#;
         assert_eq!(
             pairs(&parse_cargo_packages(json)),
-            vec![("tty7", Some("0.9.0")), ("serde", Some("1.0"))]
+            vec![("agentty", Some("0.9.0")), ("serde", Some("1.0"))]
         );
     }
 

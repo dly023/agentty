@@ -8,7 +8,7 @@ actual=$(awk '/^\[workspace.package\]/{inside=1; next} inside && /^version = /{g
   exit 1
 }
 # Cargo.lock may contain many third-party versions. Require every local package name to use the policy version.
-for package in tty7 tty7-core tty7-server tty7-cli; do
+for package in agentty agentty-core agentty-server agentty-cli; do
   awk -v package="$package" -v expected="$expected" '
     $0 == "name = \"" package "\"" { found=1; getline; if ($0 != "version = \"" expected "\"") bad=1 }
     END { exit (!found || bad) }

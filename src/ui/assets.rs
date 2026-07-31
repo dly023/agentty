@@ -69,7 +69,7 @@ mod tests {
             let overridden = Assets
                 .load(&format!("icons/{name}.svg"))
                 .unwrap()
-                .expect("tty7 override present");
+                .expect("agentty override present");
             let stock = Assets
                 .load(&format!("{STOCK_PREFIX}icons/{name}.svg"))
                 .unwrap()

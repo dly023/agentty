@@ -3,15 +3,15 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 required=(
-  crates/tty7-core/src/core/environment.rs
-  crates/tty7-core/src/core/session.rs
+  crates/agentty-core/src/core/environment.rs
+  crates/agentty-core/src/core/session.rs
   docs/design/ENVIRONMENT_AUTHORITY_INVENTORY.yaml
 )
 for path in "${required[@]}"; do
   [[ -f "$path" ]] || { echo "[environment] missing $path" >&2; exit 1; }
 done
 
-rg -q 'pub struct EnvironmentId' crates/tty7-core/src/core/environment.rs || {
+rg -q 'pub struct EnvironmentId' crates/agentty-core/src/core/environment.rs || {
   echo '[environment] EnvironmentId is missing' >&2; exit 1;
 }
 rg -q 'open_or_focus_environment' src/ui/windows.rs || {
@@ -21,10 +21,10 @@ rg -q 'environment_indicator' src/ui/tab_strip.rs || {
   echo '[environment] persistent top-right indicator is missing' >&2; exit 1;
 }
 
-rg -q 'environment-windows.json' crates/tty7-core/src/core/session.rs || {
+rg -q 'environment-windows.json' crates/agentty-core/src/core/session.rs || {
   echo '[environment] Environment window persistence is missing' >&2; exit 1;
 }
-rg -q 'legacy_window_views_migrate_once' crates/tty7-core/src/core/session.rs || {
+rg -q 'legacy_window_views_migrate_once' crates/agentty-core/src/core/session.rs || {
   echo '[environment] legacy persistence migration coverage is missing' >&2; exit 1;
 }
 

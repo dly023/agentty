@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   build:
-    # The Windows installer embeds the Linux musl `tty7-server` so a WSL distro
+    # The Windows installer embeds the Linux musl `agentty-server` so a WSL distro
     # can be served the binary the client already shipped with, instead of
     # downloading one (WSL installs nothing over the network). That
     # binary comes from `server-musl`, so the two jobs can no longer run in
@@ -41,10 +41,10 @@ jobs:
             target: x86_64-unknown-linux-gnu
     runs-on: ${{ matrix.runner }}
     steps:
-      - name: Checkout tty7
+      - name: Checkout agentty
         uses: actions/checkout@v4
         with:
-          path: tty7
+          path: agentty
 
       # gpui-component is pulled as a git dependency (see Cargo.toml's patch
       # section), so no sibling checkout is needed.
@@ -68,14 +68,14 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: tty7
+          workspaces: agentty
 
       # `--locked` because a release must ship the dependency set the tag
       # recorded, not whatever cargo would re-resolve at build time. Safe here
       # (unlike nightly) precisely because nothing rewrites Cargo.toml: this is
       # a plain checkout of the tagged commit.
       - name: Build
-        working-directory: tty7
+        working-directory: agentty
         run: cargo build --release --locked --target ${{ matrix.target }}
 
       # ---- Packaging: one step per OS ----------------------------------------
@@ -85,7 +85,7 @@ jobs:
       # include_bytes!; the Windows icon is compiled in via build.rs).
       - name: Bundle macOS DMG
         if: matrix.os == 'macos'
-        working-directory: tty7
+        working-directory: agentty
         env:
           # macOS code signing — the cert is imported into a throwaway keychain.
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -100,7 +100,7 @@ jobs:
 
       - name: Package Linux tarball
         if: matrix.os == 'linux'
-        working-directory: tty7
+        working-directory: agentty
         run: bash .github/scripts/bundle-linux.sh "${{ matrix.target }}" "${{ matrix.arch }}"
 
       # AppImage bundles the x11/wayland/xkb/font libs so it runs on Fedora/Arch/
@@ -108,7 +108,7 @@ jobs:
       # still ships even if AppImage tooling changes upstream.
       - name: Package Linux AppImage
         if: matrix.os == 'linux'
-        working-directory: tty7
+        working-directory: agentty
         run: bash .github/scripts/bundle-appimage.sh "${{ matrix.target }}" "${{ matrix.arch }}"
 
       # The bundled server for WSL. `continue-on-error` mirrors `server-musl`'s
@@ -121,12 +121,12 @@ jobs:
         continue-on-error: true
         uses: actions/download-artifact@v7
         with:
-          name: release-tty7-server-linux-x86_64-musl
-          path: tty7/bundled-server
+          name: release-agentty-server-linux-x86_64-musl
+          path: agentty/bundled-server
 
       - name: Package Windows installer + zip
         if: matrix.os == 'windows'
-        working-directory: tty7
+        working-directory: agentty
         shell: pwsh
         run: '& ./.github/scripts/bundle-windows.ps1 "${{ matrix.target }}" "${{ matrix.arch }}"'
 
@@ -136,17 +136,17 @@ jobs:
       # in-app update check (src/core/update.rs) reads /releases/latest, so users
       # would be prompted to download a release that was still missing most of
       # its assets. Same glob list as before: the bundle scripts leave
-      # intermediates in dist/ (tty7.app, entitlements.plist, the Windows staging
+      # intermediates in dist/ (agentty.app, entitlements.plist, the Windows staging
       # dir) that must not reach the release assets.
       - uses: actions/upload-artifact@v7
         with:
           name: release-${{ matrix.os }}-${{ matrix.arch }}
           path: |
-            tty7/dist/*.dmg
-            tty7/dist/*.tar.gz
-            tty7/dist/*.zip
-            tty7/dist/*-setup.exe
-            tty7/dist/*.AppImage
+            agentty/dist/*.dmg
+            agentty/dist/*.tar.gz
+            agentty/dist/*.zip
+            agentty/dist/*-setup.exe
+            agentty/dist/*.AppImage
           if-no-files-found: error
 
   # The headless server binary remote workspaces install on the far machine
@@ -154,7 +154,7 @@ jobs:
   # on any distro whatever its glibc vintage, and shipped as a bare executable
   # rather than an archive so the client can fetch exactly one file and verify it
   # against checksums.txt. The asset names are a contract with the installer:
-  # `tty7_core::daemon::install::asset` derives them from `uname -sm`.
+  # `agentty_core::daemon::install::asset` derives them from `uname -sm`.
   #
   # Separate from the `build` matrix above because it shares nothing with it: no
   # GUI toolchain, no bundling, no code signing, two targets off one runner.
@@ -168,17 +168,17 @@ jobs:
       matrix:
         include:
           - target: x86_64-unknown-linux-musl
-            asset: tty7-server-linux-x86_64-musl
+            asset: agentty-server-linux-x86_64-musl
           - target: aarch64-unknown-linux-musl
-            asset: tty7-server-linux-aarch64-musl
+            asset: agentty-server-linux-aarch64-musl
     runs-on: ubuntu-latest
     env:
       RUSTFLAGS: -C strip=symbols
     steps:
-      - name: Checkout tty7
+      - name: Checkout agentty
         uses: actions/checkout@v4
         with:
-          path: tty7
+          path: agentty
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -197,49 +197,49 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: tty7
+          workspaces: agentty
           key: ${{ matrix.target }}
 
-      # Until the crate split lands there is no tty7-server to build. Skip
+      # Until the crate split lands there is no agentty-server to build. Skip
       # rather than fail, so this workflow can ship ahead of the split; the
       # release simply carries no server assets until it arrives.
-      - name: Look for the tty7-server package
+      - name: Look for the agentty-server package
         id: probe
-        working-directory: tty7
+        working-directory: agentty
         run: |
           set -euo pipefail
           if cargo metadata --no-deps --format-version 1 \
-              | jq -e '[.packages[].name] | index("tty7-server")' >/dev/null; then
+              | jq -e '[.packages[].name] | index("agentty-server")' >/dev/null; then
             echo "present=true" >> "$GITHUB_OUTPUT"
           else
             echo "present=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::tty7-server is not a workspace member yet — this release will carry no remote-server assets"
+            echo "::warning::agentty-server is not a workspace member yet — this release will carry no remote-server assets"
           fi
 
       # `--locked` for the same reason the GUI build uses it: a release ships the
-      # dependency set the tag recorded. `-p tty7-server` both addresses the
+      # dependency set the tag recorded. `-p agentty-server` both addresses the
       # package independently of its path and keeps feature unification off the
       # GUI's `gssapi` feature, which cannot build under musl.
-      - name: Build static tty7-server
+      - name: Build static agentty-server
         if: steps.probe.outputs.present == 'true'
-        working-directory: tty7
-        run: cargo zigbuild --release --locked -p tty7-server --target ${{ matrix.target }}
+        working-directory: agentty
+        run: cargo zigbuild --release --locked -p agentty-server --target ${{ matrix.target }}
 
       - name: Assert the binary is static
         if: steps.probe.outputs.present == 'true'
-        working-directory: tty7
-        run: bash .github/scripts/assert-static.sh "target/${{ matrix.target }}/release/tty7-server"
+        working-directory: agentty
+        run: bash .github/scripts/assert-static.sh "target/${{ matrix.target }}/release/agentty-server"
 
       # Flat, version-free asset name — the tag in the download URL carries the
       # version. See `install::asset` for the contract the client
       # installer derives this name from.
       - name: Stage the asset
         if: steps.probe.outputs.present == 'true'
-        working-directory: tty7
+        working-directory: agentty
         run: |
           set -euo pipefail
           mkdir -p dist
-          cp "target/${{ matrix.target }}/release/tty7-server" \
+          cp "target/${{ matrix.target }}/release/agentty-server" \
              "dist/${{ matrix.asset }}"
           chmod +x "dist/${{ matrix.asset }}"
 
@@ -247,7 +247,7 @@ jobs:
         if: steps.probe.outputs.present == 'true'
         with:
           name: release-${{ matrix.asset }}
-          path: tty7/dist/${{ matrix.asset }}
+          path: agentty/dist/${{ matrix.asset }}
           if-no-files-found: error
 
   # Single assembly step, after all four platforms succeed. The release object is

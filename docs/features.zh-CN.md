@@ -5,7 +5,7 @@
 ## 输入
 
 - **影子建议** —— 边打字边用你的历史补全整条命令，<kbd>→</kbd> 接受
-- **带说明的 Tab 补全** —— 每个 flag、每个子命令都带说明，覆盖约 100 个常用命令；tty7 没有候选时 Tab 自动交给 shell 自己的补全，整个功能也可关闭（设置 → 终端 → 键盘，或 `config.json` 里的 `tab_completion`）
+- **带说明的 Tab 补全** —— 每个 flag、每个子命令都带说明，覆盖约 100 个常用命令；agentty 没有候选时 Tab 自动交给 shell 自己的补全，整个功能也可关闭（设置 → 终端 → 键盘，或 `config.json` 里的 `tab_completion`）
 - **语法高亮** —— 边打边亮，什么都不用装
 - **模糊历史搜索** —— <kbd>⌃ R</kbd> 看到每条命令在哪跑的、什么时候、有没有失败；关掉它（设置 → 终端 → 键盘，或 `config.json` 里的 `history_search`）后 <kbd>⌃ R</kbd> 直接交给 shell，你绑的 fzf / percol 照常可用
 - **历史开箱即用** —— 你已有的 shell 历史直接生效，并跨会话延续
@@ -20,7 +20,7 @@
 - **⌘ 点击打开链接** · 桌面通知 · 划选即复制（可选，设置 → 终端 → 剪贴板）
 - **智能双击选中** —— 双击直接选中整条 URL、文件路径、括号/引号对，中文按词典分词出词；Shift 点击扩展选区（设置 → 终端 → 鼠标可开关；分隔符用 `config.json` 的 `word_separators` 配置）
 - **9 套主题，也能自定义** — YAML 种子主题，背景支持纯色、渐变或图片；可导入 iTerm2 `.itermcolors`；应用内颜色编辑器带背景图选择
-- **跟随系统外观** — 设置 → Appearance；分别选好浅色和深色主题，tty7 随系统深浅模式实时切换（`config.json` 中的 `theme_follow_system`、`theme_preset_light` / `theme_preset_dark`）
+- **跟随系统外观** — 设置 → Appearance；分别选好浅色和深色主题，agentty 随系统深浅模式实时切换（`config.json` 中的 `theme_follow_system`、`theme_preset_light` / `theme_preset_dark`）
 - **窗口透明与模糊** — 设置 → Appearance → Window；对所有主题生效，*Follow theme* 恢复主题自带的 `opacity` / `blur`
 - **CJK / 输入法输入**
 
@@ -49,7 +49,7 @@ fallback 只有在**汉字 advance 等于主字体西文 advance 的两倍**时�
 
 ## Coding agent
 
-tty7 能识别 pane 里跑着的第三方 coding agent（Claude Code、Codex、Gemini CLI、
+agentty 能识别 pane 里跑着的第三方 coding agent（Claude Code、Codex、Gemini CLI、
 Aider、Amp、OpenCode 等约 17 个）并在其外围加功能 —— 绝不包裹或替代 agent 本身。
 
 - **品牌头像** —— 标签 chip / 侧栏行显示每个 pane 跑的是哪个 agent；自定义包装命令可通过 `config.json` 的 `agent_commands` 映射
@@ -61,7 +61,7 @@ Aider、Amp、OpenCode 等约 17 个）并在其外围加功能 —— 绝不包
 - **复制 Session ID** —— 把 agent 的原生 session id 复制到剪贴板，就在 *Copy Working Directory* 旁边，方便粘进 `codex resume`、bug 报告或别的工具
 - **上下文回填** —— 面板命令把当前选区或仓库 `git diff` 打包成 prompt 直接喂给正在跑的 agent
 - **托盘图标** —— 系统托盘 / 菜单栏常驻图标，任何 agent 等你输入时立即切换为提醒态；菜单列出所有 agent pane（品牌头像 + 状态点，点击直达）、可切换通知策略，并在保留会话的普通退出之外提供 *Quit and Stop Daemon*（`show_tray_icon`，默认开启）
-- **`tty7` 上 PATH** —— CLI 随每个安装包一起发布，启动时自动放到 PATH 上，脚本和 coding agent 在任何终端里都能驱动 tty7。tty7 自己的 pane 里则一定可用，因为 pane 继承 app 的环境。Unix 上是往 `/opt/homebrew/bin`、`/usr/local/bin`、`~/.local/bin`、`~/bin`、`~/.cargo/bin` 中你 PATH 已经覆盖的那个目录里放一个软链；Windows 上是把安装目录追加到用户 PATH，卸载时再摘掉。你自己装的 `tty7` 一律保持原样，不会被覆盖。关掉：设置 → About，或 `config.json` 里 `install_cli_on_path: false`
+- **`agentty` 上 PATH** —— CLI 随每个安装包一起发布，启动时自动放到 PATH 上，脚本和 coding agent 在任何终端里都能驱动 agentty。agentty 自己的 pane 里则一定可用，因为 pane 继承 app 的环境。Unix 上是往 `/opt/homebrew/bin`、`/usr/local/bin`、`~/.local/bin`、`~/bin`、`~/.cargo/bin` 中你 PATH 已经覆盖的那个目录里放一个软链；Windows 上是把安装目录追加到用户 PATH，卸载时再摘掉。你自己装的 `agentty` 一律保持原样，不会被覆盖。关掉：设置 → About，或 `config.json` 里 `install_cli_on_path: false`
 
 ## SSH
 

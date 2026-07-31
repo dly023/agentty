@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="assets/app-icon.svg" alt="tty7" width="88" height="88" />
+<img src="assets/app-icon.svg" alt="agentty" width="88" height="88" />
 
-### tty7
+### agentty
 
 **终端工作台：shell、会话、SSH、coding agent。**
 
@@ -10,8 +10,8 @@
 
 <br />
 
-[![CI](https://github.com/l0ng-ai/tty7/actions/workflows/ci.yml/badge.svg)](https://github.com/l0ng-ai/tty7/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/github/v/tag/l0ng-ai/tty7?label=version&color=3FDD8C)](https://github.com/l0ng-ai/tty7/releases)
+[![CI](https://github.com/dly023/agentty/actions/workflows/ci.yml/badge.svg)](https://github.com/dly023/agentty/actions/workflows/ci.yml)
+[![Version](https://img.shields.io/github/v/tag/dly023/agentty?label=version&color=3FDD8C)](https://github.com/dly023/agentty/releases)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![Discord](https://img.shields.io/badge/Discord-%E5%8A%A0%E5%85%A5%E7%BE%A4%E7%BB%84-5865F2?logo=discord&logoColor=white)](https://discord.gg/s3dethqz2V)
 
@@ -28,7 +28,7 @@
 
 ## 安装
 
-三平台原生构建都在 [**Releases**](https://github.com/l0ng-ai/tty7/releases)：
+三平台原生构建都在 [**Releases**](https://github.com/dly023/agentty/releases)：
 
 | | | |
 |---|---|---|
@@ -53,7 +53,7 @@
 同一台机器、同一天、统一 155×40 网格 —— Apple M1 Pro，macOS 26.3.1，
 取五次运行的平均值（2026-07-04）：
 
-| | **tty7** | Alacritty | Ghostty | Kitty |
+| | **agentty** | Alacritty | Ghostty | Kitty |
 |---|---:|---:|---:|---:|
 | 纯文本 IO —— 11 MB `cat` <sub>（越低越好）</sub> | **95 ms** | 239 ms | 179 ms | 185 ms |
 | [DOOM-fire](https://github.com/const-void/DOOM-fire-zig) 帧率 <sub>（越高越好）</sub> | **888 fps** | 485 fps | 552 fps | 617 fps |

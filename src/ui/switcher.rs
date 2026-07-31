@@ -10,12 +10,12 @@ use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::menu::{ContextMenuExt as _, DropdownMenu as _, PopupMenuItem};
 use gpui_component::{ActiveTheme as _, Icon, IconName, Sizable as _, h_flex, v_flex};
 
-use tty7_core::core::session::{RemoteTarget, WorkspaceId};
+use agentty_core::core::session::{RemoteTarget, WorkspaceId};
 
 use crate::core::session::WorkspaceStore;
 use crate::daemon::install::InstallPhase;
 use crate::terminal::pane_liveness::Liveness;
-use crate::ui::app::Tty7App;
+use crate::ui::app::AgenttyApp;
 use crate::ui::remote_connect::{self, HostChoice, RemoteWorkspaceRow, human_bytes};
 use crate::ui::remote_workspace::ConnectFlow;
 
@@ -96,7 +96,7 @@ impl Switcher {
     }
 }
 
-impl Tty7App {
+impl AgenttyApp {
     pub(crate) fn toggle_switcher(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.switcher.is_some() {
             self.close_switcher(window, cx);
@@ -693,17 +693,17 @@ impl Tty7App {
         let accent = theme.warning;
         let fraction = phase.fraction().unwrap_or(0.0);
         let caption = match phase {
-            InstallPhase::Restarting => "Restarting tty7's server\u{2026}".to_string(),
+            InstallPhase::Restarting => "Restarting agentty's server\u{2026}".to_string(),
             InstallPhase::Downloading { done, total } => match total {
                 Some(total) => format!(
-                    "Downloading tty7's server\u{2026} {} / {}",
+                    "Downloading agentty's server\u{2026} {} / {}",
                     human_bytes(done),
                     human_bytes(total)
                 ),
-                None => format!("Downloading tty7's server\u{2026} {}", human_bytes(done)),
+                None => format!("Downloading agentty's server\u{2026} {}", human_bytes(done)),
             },
             InstallPhase::Uploading { done, total } => format!(
-                "Copying tty7's server\u{2026} {} / {}",
+                "Copying agentty's server\u{2026} {} / {}",
                 human_bytes(done),
                 human_bytes(total)
             ),
@@ -1196,7 +1196,7 @@ impl RowRef {
 fn group_menu(
     menu: gpui_component::menu::PopupMenu,
     group: &GroupRef,
-    app: gpui::WeakEntity<Tty7App>,
+    app: gpui::WeakEntity<AgenttyApp>,
 ) -> gpui_component::menu::PopupMenu {
     let (a1, a2, a3) = (app.clone(), app.clone(), app);
     let gref = group.clone();
@@ -1236,7 +1236,7 @@ fn group_menu(
 fn row_menu(
     menu: gpui_component::menu::PopupMenu,
     row: &RowRef,
-    app: gpui::WeakEntity<Tty7App>,
+    app: gpui::WeakEntity<AgenttyApp>,
 ) -> gpui_component::menu::PopupMenu {
     let (a1, a2, a3, a4) = (app.clone(), app.clone(), app.clone(), app);
     let (id, adopt) = (row.id, row.adopt.is_some());

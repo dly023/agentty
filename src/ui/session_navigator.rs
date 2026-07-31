@@ -1,13 +1,13 @@
 use std::path::PathBuf;
 
-use gpui::{Context, Window};
-use tty7_core::agent_runtime::{
+use agentty_core::agent_runtime::{
     AgentRuntimeAdapter, AgentStoreRoots, DiscoveryOutcome, DiscoveryRequest, LiveCarrier,
     LiveSession, LocalAgentRuntime, NavigatorRowId, OperationId, RestoreOutcome, ScanGeneration,
     SessionIdentity,
 };
+use gpui::{Context, Window};
 
-use crate::ui::app::{Tab, Tty7App, new_terminal};
+use crate::ui::app::{AgenttyApp, Tab, new_terminal};
 use crate::ui::pane::{Pane, PaneSlot};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -81,7 +81,7 @@ fn discovery_message(outcome: &DiscoveryOutcome) -> String {
     }
 }
 
-impl Tty7App {
+impl AgenttyApp {
     pub(crate) fn refresh_session_navigator(&mut self, cx: &mut Context<Self>) {
         self.request_session_navigator_refresh(true, cx);
     }
@@ -134,7 +134,7 @@ impl Tty7App {
                                 "remote Environment has no connected Agent helper",
                             )
                         })?;
-                        tty7_core::agent_runtime::RemoteAgentRuntime::new(&*remote)
+                        agentty_core::agent_runtime::RemoteAgentRuntime::new(&*remote)
                             .discover_sessions(
                                 OperationId(generation),
                                 ScanGeneration(generation),
@@ -187,7 +187,7 @@ impl Tty7App {
                 let session_id = session.as_ref().and_then(|s| s.session_id.clone());
                 let identity = match session_id.as_deref() {
                     Some(id) => {
-                        SessionIdentity::Provider(tty7_core::agent_runtime::AgentSessionKey {
+                        SessionIdentity::Provider(agentty_core::agent_runtime::AgentSessionKey {
                             provider: agent.slug().into(),
                             session_id: id.into(),
                         })

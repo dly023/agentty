@@ -6,7 +6,7 @@ cut -d: -f1 assets/i18n/en-US.yaml | sort -u > /tmp/agentty-i18n-en.$$
 cut -d: -f1 assets/i18n/zh-CN.yaml | sort -u > /tmp/agentty-i18n-zh.$$
 trap 'rm -f /tmp/agentty-i18n-en.$$ /tmp/agentty-i18n-zh.$$' EXIT
 diff -u /tmp/agentty-i18n-en.$$ /tmp/agentty-i18n-zh.$$
-rg -q 'LocalePreference.*System|System,' crates/tty7-core/src/core/config.rs
+rg -q 'LocalePreference.*System|System,' crates/agentty-core/src/core/config.rs
 rg -q 'include_str!.*zh-CN.yaml' src/core/i18n.rs
 rg -q 'include_str!.*en-US.yaml' src/core/i18n.rs
 echo 'i18n checks passed'

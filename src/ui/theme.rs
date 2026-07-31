@@ -20,19 +20,19 @@ pub(crate) fn traffic_light_position() -> Point<Pixels> {
 
 pub(crate) fn set_menus(cx: &mut App) {
     cx.set_menus([
-        Menu::new("tty7").items([
-            MenuItem::action("About tty7", About),
+        Menu::new("agentty").items([
+            MenuItem::action("About agentty", About),
             MenuItem::action("Check for Updates…", CheckForUpdates),
             MenuItem::separator(),
             MenuItem::action("Settings…", OpenSettings),
             MenuItem::separator(),
             MenuItem::os_submenu("Services", SystemMenuType::Services),
             MenuItem::separator(),
-            MenuItem::action("Hide tty7", HideApp),
+            MenuItem::action("Hide agentty", HideApp),
             MenuItem::action("Hide Others", HideOthers),
             MenuItem::action("Show All", ShowAll),
             MenuItem::separator(),
-            MenuItem::action("Quit tty7", Quit),
+            MenuItem::action("Quit agentty", Quit),
         ]),
         Menu::new("File").items([
             MenuItem::action("New Tab", NewTab),
@@ -92,7 +92,7 @@ pub(crate) fn set_menus(cx: &mut App) {
         ]),
         Menu::new("Window").items(window_menu_items(cx)),
         Menu::new("Help").items([
-            MenuItem::action("tty7 Documentation", OpenDocumentation),
+            MenuItem::action("agentty Documentation", OpenDocumentation),
             MenuItem::action("Keyboard Shortcuts", ShowKeyboardShortcuts),
             MenuItem::separator(),
             MenuItem::action("Join the Discord", OpenDiscord),

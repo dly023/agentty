@@ -2,16 +2,16 @@ use std::collections::{HashMap, VecDeque};
 use std::io;
 use std::sync::Arc;
 
-use gpui::{App, Global};
-use tty7_core::core::machine::{
+use agentty_core::core::machine::{
     AgentFacts, Axis as TreeAxis, LayoutDelta, Machine, PaneNode, PaneRecord, PaneSeed, Side,
     Tab as TreeTab, TabId,
 };
-use tty7_core::daemon::control::{ControlClient, ControlRequest, ReplyOk};
-use tty7_core::host::HostId;
+use agentty_core::daemon::control::{ControlClient, ControlRequest, ReplyOk};
+use agentty_core::host::HostId;
+use gpui::{App, Global};
 
 use crate::core::session::{Session, SessionPane, SessionTab, WorkspaceId, WorkspaceStore};
-use crate::ui::app::Tty7App;
+use crate::ui::app::AgenttyApp;
 use crate::ui::pane::{Pane, PaneSlot};
 
 pub(crate) fn control_for(cx: &mut App, host: HostId) -> Option<Arc<ControlClient>> {
@@ -39,7 +39,7 @@ fn classify_tree_link(client: Option<Arc<ControlClient>>) -> TreeLink {
         Some(client)
             if client
                 .hello()
-                .has_feature(tty7_core::daemon::control::feature::MACHINE_TREE) =>
+                .has_feature(agentty_core::daemon::control::feature::MACHINE_TREE) =>
         {
             TreeLink::Ready(client)
         }
@@ -106,7 +106,7 @@ impl DesiredNode {
 }
 
 pub(crate) fn desired_tabs(
-    app: &Tty7App,
+    app: &AgenttyApp,
     cx: &App,
 ) -> (Vec<DesiredTab>, Option<TabId>, Vec<TabId>) {
     let remote = WorkspaceStore::all(cx)
@@ -684,7 +684,7 @@ pub(crate) struct TreeSync {
 
 impl Global for TreeSync {}
 
-pub(crate) fn sync_window(app: &Tty7App, cx: &mut App) {
+pub(crate) fn sync_window(app: &AgenttyApp, cx: &mut App) {
     let client_ws = app.workspace;
     if !cx.has_global::<crate::core::session::WorkspaceStore>() {
         return;
@@ -772,7 +772,7 @@ pub(crate) fn mark_window_informed(cx: &mut App, client_ws: WorkspaceId) {
         .informed = true;
 }
 
-fn adopt_tab_ids(app: &Tty7App, cx: &App) {
+fn adopt_tab_ids(app: &AgenttyApp, cx: &App) {
     let Some(TreeSync { windows }) = cx.try_global::<TreeSync>() else {
         return;
     };
@@ -1056,7 +1056,7 @@ fn desync(cx: &mut App, client_ws: WorkspaceId, why: &str) {
 }
 
 pub(crate) fn session_from_tree(
-    ws: &tty7_core::core::machine::Workspace,
+    ws: &agentty_core::core::machine::Workspace,
     panes: &[PaneRecord],
 ) -> Session {
     let tabs: Vec<SessionTab> = ws
@@ -1420,7 +1420,7 @@ pub(crate) fn resync_window_from_tree(cx: &mut App, client_ws: WorkspaceId) {
     hydrate(cx, client_ws, Adopt::Replace);
 }
 
-impl Tty7App {
+impl AgenttyApp {
     pub(crate) fn apply_layout_delta(
         &mut self,
         delta: &LayoutDelta,
@@ -1655,9 +1655,9 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn a_peer_without_the_machine_tree_bit_classifies_as_unserved() {
-        use tty7_core::daemon::control::ControlHello;
-        use tty7_core::host::local::LocalHost;
-        use tty7_core::host::server::{Services, serve_with};
+        use agentty_core::daemon::control::ControlHello;
+        use agentty_core::host::local::LocalHost;
+        use agentty_core::host::server::{Services, serve_with};
 
         let connect = |services: Services| {
             let (server, client) = std::os::unix::net::UnixStream::pair().unwrap();
@@ -1666,7 +1666,7 @@ mod tests {
             });
             let hello = ControlHello::host_rpc("test-token", "test-host");
             Arc::new(
-                tty7_core::daemon::control::ControlClient::over_unix(
+                agentty_core::daemon::control::ControlClient::over_unix(
                     client,
                     &hello,
                     Box::new(|_| {}),
@@ -1681,10 +1681,10 @@ mod tests {
             TreeLink::Unserved
         ));
 
-        let dir = std::env::temp_dir().join(format!("tty7-treelink-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("agentty-treelink-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let store = tty7_core::core::machine::MachineStore::open(
-            dir.join(tty7_core::core::machine::MACHINE_FILE),
+        let store = agentty_core::core::machine::MachineStore::open(
+            dir.join(agentty_core::core::machine::MACHINE_FILE),
         );
         let serving = connect(Services::with_machine(store));
         assert!(matches!(
@@ -2459,9 +2459,9 @@ mod tests {
 
     #[test]
     fn a_live_leaf_keeps_its_pane_id_and_a_dead_one_lowers_to_a_revival_leaf() {
-        use tty7_core::core::cli_agent::CLIAgent;
+        use agentty_core::core::cli_agent::CLIAgent;
         let tab_id = TabId::new();
-        let ws = tty7_core::core::machine::Workspace {
+        let ws = agentty_core::core::machine::Workspace {
             tabs: vec![TreeTab {
                 id: tab_id,
                 name: Some("build".into()),
@@ -2540,7 +2540,7 @@ mod tests {
 
     #[test]
     fn a_dangling_active_tab_in_the_pulled_tree_falls_back_to_the_first() {
-        let ws = tty7_core::core::machine::Workspace {
+        let ws = agentty_core::core::machine::Workspace {
             tabs: vec![TreeTab {
                 id: TabId::new(),
                 name: None,

@@ -2,15 +2,15 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use agentty_core::host::remote::RemoteHost;
+use agentty_core::host::{Host as _, HostId};
 use gpui::{Context, PromptLevel, Window};
 use gpui_component::WindowExt as _;
-use tty7_core::host::remote::RemoteHost;
-use tty7_core::host::{Host as _, HostId};
 
 use crate::core::session::{RemoteRef, RemoteTarget, WorkspaceId, WorkspaceStore};
 use crate::daemon::control::{ControlEvent, ControlRequest, ReplyOk};
 use crate::daemon::install::InstallDecision;
-use crate::ui::app::Tty7App;
+use crate::ui::app::AgenttyApp;
 use crate::ui::remote_connect::{self, HostChoice, RemoteWorkspaceRow};
 
 pub enum ConnectFlow {
@@ -166,7 +166,7 @@ impl AuthSheetQueue {
     }
 }
 
-impl Tty7App {
+impl AgenttyApp {
     pub(crate) fn spawn_host(&self, cx: &gpui::App) -> HostId {
         WorkspaceStore::host_of(cx, self.workspace)
     }
@@ -185,7 +185,7 @@ impl Tty7App {
                 let machine = self.remote_machine_label(cx);
                 window.push_notification(
                     format!(
-                        "This window is a workspace on {machine}, but tty7 has no connection \
+                        "This window is a workspace on {machine}, but agentty has no connection \
                          details for it any more — check that its SSH profile or ~/.ssh/config \
                          entry still exists."
                     ),
@@ -485,10 +485,10 @@ impl Tty7App {
     ) {
         let label = mismatch.host.clone();
         match remote_connect::mismatch_target(&mismatch)
-            .ok_or_else(|| format!("tty7 no longer has a way to reach {label}"))
+            .ok_or_else(|| format!("agentty no longer has a way to reach {label}"))
         {
             Ok(target) => self.restart_remote_server(target, label, window, cx),
-            Err(e) => Tty7App::report_restart_failure(&label, &e, window, cx),
+            Err(e) => AgenttyApp::report_restart_failure(&label, &e, window, cx),
         }
     }
 
@@ -501,7 +501,7 @@ impl Tty7App {
     ) {
         let answer = window.prompt(
             PromptLevel::Warning,
-            &format!("Restart tty7's server on \u{201c}{label}\u{201d}?"),
+            &format!("Restart agentty's server on \u{201c}{label}\u{201d}?"),
             Some(&format!(
                 "This stops every shell on {label} — anything still running in them \
                  will be terminated, including shells this window is not showing. \
@@ -531,13 +531,13 @@ impl Tty7App {
         let header = match remote_connect::control_route(&target, cx) {
             Ok(header) => header.restart_server(),
             Err(e) => {
-                Tty7App::report_restart_failure(&label, &e, window, cx);
+                AgenttyApp::report_restart_failure(&label, &e, window, cx);
                 return;
             }
         };
         let host = header.target.origin_key();
         let host_id = target.host_id();
-        log::info!("restarting tty7's server on {label} at the user's request");
+        log::info!("restarting agentty's server on {label} at the user's request");
         let running = Arc::new(std::sync::atomic::AtomicBool::new(true));
         self.watch_for_restart_consent(host_id, running.clone(), cx);
         cx.spawn(async move |this, cx| {
@@ -554,8 +554,8 @@ impl Tty7App {
                     reconnect_after_restart(&host, cx);
                 }
                 Err(e) => {
-                    log::warn!("could not restart tty7's server on {label}: {e}");
-                    Tty7App::report_restart_failure(&label, &e, window, cx);
+                    log::warn!("could not restart agentty's server on {label}: {e}");
+                    AgenttyApp::report_restart_failure(&label, &e, window, cx);
                 }
             });
         })
@@ -571,10 +571,10 @@ impl Tty7App {
     ) {
         let answer = window.prompt(
             PromptLevel::Warning,
-            &format!("Restart tty7's server on \u{201c}{label}\u{201d}?"),
+            &format!("Restart agentty's server on \u{201c}{label}\u{201d}?"),
             Some(&format!(
-                "The tty7-server running on {label} speaks a protocol this client cannot. \
-                 tty7 will restart the service there onto one that does, installing it \
+                "The agentty-server running on {label} speaks a protocol this client cannot. \
+                 agentty will restart the service there onto one that does, installing it \
                  first if {label} does not already have it.\n\
                  \n\
                  Every session running on {label} ends, including any this window is not \
@@ -605,13 +605,13 @@ impl Tty7App {
             Ok(header) => header.replace_server(),
             Err(e) => {
                 log::warn!("could not address {label} to replace its server: {e}");
-                Tty7App::report_restart_failure(&label, &e, window, cx);
+                AgenttyApp::report_restart_failure(&label, &e, window, cx);
                 return;
             }
         };
         let host = route.target.origin_key();
         let host_id = target.host_id();
-        log::info!("replacing tty7's server on {label} at the user's request");
+        log::info!("replacing agentty's server on {label} at the user's request");
         let running = Arc::new(std::sync::atomic::AtomicBool::new(true));
         self.watch_for_restart_consent(host_id, running.clone(), cx);
         cx.spawn(async move |this, cx| {
@@ -628,8 +628,8 @@ impl Tty7App {
                     reconnect_after_restart(&host, cx);
                 }
                 Err(e) => {
-                    log::warn!("could not replace tty7's server on {label}: {e}");
-                    Tty7App::report_restart_failure(&label, &e, window, cx);
+                    log::warn!("could not replace agentty's server on {label}: {e}");
+                    AgenttyApp::report_restart_failure(&label, &e, window, cx);
                 }
             });
         })
@@ -644,7 +644,7 @@ impl Tty7App {
     ) {
         let answer = window.prompt(
             PromptLevel::Warning,
-            &format!("tty7's server on \u{201c}{label}\u{201d} was not restarted"),
+            &format!("agentty's server on \u{201c}{label}\u{201d} was not restarted"),
             Some(&format!(
                 "{error}\n\nSessions still running there are on the older build. If they are \
                  gone, reconnecting starts this build's server."
@@ -684,7 +684,7 @@ impl Tty7App {
     fn prompt_remote_daemon_mismatch_later(&self, cx: &mut Context<Self>) {
         cx.spawn(async move |this, cx| {
             let _ = this.update_in(cx, |_, window, cx| {
-                Tty7App::prompt_remote_daemon_mismatch(window, cx);
+                AgenttyApp::prompt_remote_daemon_mismatch(window, cx);
             });
         })
         .detach();
@@ -1264,7 +1264,7 @@ fn note_instance(
     match seen.insert(host, instance.to_string()) {
         Some(before) if before != instance => {
             log::info!(
-                "the tty7-server on this machine is a new process ({before} → {instance}); \
+                "the agentty-server on this machine is a new process ({before} → {instance}); \
                  its panes are gone"
             );
             true
@@ -1611,7 +1611,7 @@ mod tests {
         transition.disconnected();
         assert_eq!(
             window.environment.id,
-            tty7_core::core::environment::EnvironmentId::for_remote(&target),
+            agentty_core::core::environment::EnvironmentId::for_remote(&target),
         );
         assert!(window.remote_ref().is_some());
         assert!(!window.environment.id.is_local());

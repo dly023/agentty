@@ -1,0 +1,30 @@
+[package]
+name = "agentty-server"
+version.workspace = true
+edition.workspace = true
+description = "agentty's headless session server: the persistent terminal daemon, with no GUI attached"
+repository = "https://github.com/dly023/agentty"
+license = "Apache-2.0"
+publish = false
+
+[[bin]]
+name = "agentty-server"
+path = "src/main.rs"
+
+# One dependency, on purpose. This binary exists to prove — and keep proving —
+# that everything a agentty session needs runs without gpui: if it ever grows a
+# second dependency that the GUI also needs, that dependency belongs in
+# `agentty-core` instead.
+[dependencies]
+agentty-core = { path = "../agentty-core" }
+
+# The end-to-end proof (`tests/stdio_conformance.rs`) runs `agentty-core`'s shared
+# `Host` conformance suite against a *real* `agentty-server --stdio` child process.
+# It has to live in this crate because that is the crate that owns the binary —
+# `CARGO_BIN_EXE_agentty-server` only exists for its own tests.
+[dev-dependencies]
+# Sandboxes for the suite: an empty directory per case, removed on drop. The
+# server is on this machine, so a local temp dir is a path in its namespace.
+tempfile = "3"
+[lints]
+workspace = true

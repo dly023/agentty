@@ -11,7 +11,7 @@ use crate::core::config::{Config, RightPanelTab};
 use crate::daemon::protocol::PaneProcs;
 use crate::terminal::git_diff::{DiffSnapshot, MAX_RENDERED_FILES};
 use crate::ui::app::{
-    CONTENT_INSET, TILE_GLYPH_SM, TILE_SIZE_SM, Tty7App, tile_trailing_inset,
+    AgenttyApp, CONTENT_INSET, TILE_GLYPH_SM, TILE_SIZE_SM, tile_trailing_inset,
     tile_trailing_inset_sm,
 };
 use crate::ui::scrollbar::with_vertical_scrollbar;
@@ -37,7 +37,7 @@ pub(crate) struct RightPanelState {
 
 const PROCS_POLL: std::time::Duration = std::time::Duration::from_millis(2000);
 
-impl Tty7App {
+impl AgenttyApp {
     pub(crate) fn right_panel_open(&self, _cx: &gpui::App) -> bool {
         self.right_panel_visible && !self.tabs.is_empty()
     }

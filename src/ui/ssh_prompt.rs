@@ -11,7 +11,7 @@ use crate::core::keychain::{CredentialStore as _, OsCredentialStore};
 use crate::daemon::protocol::{AuthPromptKind, AuthResponse, SshPhase};
 use crate::terminal::view::TerminalView;
 
-use super::app::Tty7App;
+use super::app::AgenttyApp;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct KiRow {
@@ -223,13 +223,13 @@ pub(crate) struct SshPromptState {
     remember: bool,
     phase: Option<SshPhase>,
     routed: Option<crate::ui::remote_connect::PendingAuth>,
-    routed_host: Option<tty7_core::host::HostId>,
+    routed_host: Option<agentty_core::host::HostId>,
     focus_handle: FocusHandle,
     _subs: Vec<Subscription>,
 }
 
 impl SshPromptState {
-    pub(crate) fn new(cx: &mut Context<Tty7App>) -> Self {
+    pub(crate) fn new(cx: &mut Context<AgenttyApp>) -> Self {
         Self {
             pane: None,
             pane_id: None,
@@ -260,7 +260,7 @@ impl SshPromptState {
     }
 }
 
-impl Tty7App {
+impl AgenttyApp {
     pub(crate) fn on_auth_prompt_ready(
         &mut self,
         view: Entity<TerminalView>,
@@ -813,7 +813,7 @@ impl Tty7App {
 fn build_inputs(
     model: &PromptModel,
     window: &mut Window,
-    cx: &mut Context<Tty7App>,
+    cx: &mut Context<AgenttyApp>,
 ) -> Vec<Entity<InputState>> {
     let count = model.input_count();
     (0..count)

@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to tty7 are documented in this file.
+All notable changes to agentty are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -13,9 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   robot glyph every unbranded agent shares, so a Pi tab was indistinguishable
   from an Aider or Qwen one in the sidebar, the tab chip and the tray menu. They
   now carry their own avatar on the existing sky accent, status dot unchanged.
-  The mark is Pi's own, from pi.dev, rescaled to tty7's 24x24 icon grid — its
+  The mark is Pi's own, from pi.dev, rescaled to agentty's 24x24 icon grid — its
   `prefers-color-scheme` stylesheet dropped, since these avatars are tinted by
-  the app. Restoring a Pi pane also resumes its conversation now: the tty7
+  the app. Restoring a Pi pane also resumes its conversation now: the agentty
   extension reports Pi's session id, and the resume command is
   `pi --session <id>` (Pi's `--resume` is a boolean that only opens the
   interactive picker), with `--session` / `--session-id` / `--fork` /
@@ -26,11 +26,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Fork an agent session** — branch a live agent conversation into a second,
   independent one, so a risky direction can be tried without losing the thread
-  that got you there. tty7 shells the agent's *own* fork command rather than
+  that got you there. agentty shells the agent's *own* fork command rather than
   touching its transcript files: `codex fork <id>`, `claude --resume <id>
   --fork-session`, `opencode --session <id> --fork`, `grok --resume <id>
   --fork-session` — every one checked against the installed CLI's own help.
-  Agents with no fork tty7 could verify simply don't offer the action, rather
+  Agents with no fork agentty could verify simply don't offer the action, rather
   than getting a row that can only produce a usage error. The command carries
   the pane's original launch flags exactly as session restore does, and sheds
   the stale session-targeting ones so a fork of a fork can't branch twice or
@@ -53,7 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Your WSL distributions are machines you can open a workspace on** — the
   transport for them has been there since remote workspaces landed
-  (`wsl.exe -d <distro> -- tty7-server --stdio`: no SSH, no address, no
+  (`wsl.exe -d <distro> -- agentty-server --stdio`: no SSH, no address, no
   credential, no host key), but nothing offered one, so nothing could reach it.
   Every installed distribution now appears in the workspace switcher beside your
   saved SSH hosts, and opening one is the whole setup — there is nothing to
@@ -62,9 +62,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the machine is keyed (`wsl:<distro>`), and searching the switcher for `wsl`
   finds all of them.
 
-  A distribution is served the Linux `tty7-server` this client shipped with
+  A distribution is served the Linux `agentty-server` this client shipped with
   rather than one downloaded from a release, so the first connect writes it into
-  `~/.local/share/tty7/bin` inside the distro — with the same one-time
+  `~/.local/share/agentty/bin` inside the distro — with the same one-time
   confirmation any other machine gets, and no `sudo` anywhere. A build with no
   bundled server (any `cargo build`, and any platform that isn't Windows) says
   so and names the directories it looked in.
@@ -179,7 +179,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Two consequences worth knowing before you upgrade:
 
   - **Saved layouts do not carry over.** The tree is a new file
-    (`~/.local/share/tty7/machine.json`) and the old `session.json` is not read;
+    (`~/.local/share/agentty/machine.json`) and the old `session.json` is not read;
     the upgrade also replaces the background service, which ends the panes it was
     holding. The first launch after upgrading comes up on a fresh workspace, and
     tabs from before it are not recoverable. `views.json` (window geometry and
@@ -281,14 +281,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **⌃R on a remote machine searches that machine's history** — tty7 owns ⌃R at
+- **⌃R on a remote machine searches that machine's history** — agentty owns ⌃R at
   the prompt and shows its own fuzzy menu, but the store behind it had no notion
   of *where* a command had run. Every pane read one file, so ssh'ing to a server
   and reaching for ⌃R offered the commands you had typed on your laptop —
   worse than offering nothing, since the answers look plausible until you run
   one. History is now kept per machine: the local store stays where it was, and
   each remote gets its own, keyed by the target you connected to. On a remote
-  workspace tty7 also reads the far end's own `~/.zsh_history` and
+  workspace agentty also reads the far end's own `~/.zsh_history` and
   `~/.bash_history` through the same channel it already uses for git and file
   listings, so the first ⌃R on a freshly connected box has something in it
   rather than starting empty. Switching a pane between machines swaps the store
@@ -297,7 +297,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **A Windows clipboard pastes like every other clipboard** — text copied on
   Windows carries `\r\n`, and a bracketed paste forwarded it byte for byte. vim
   counts CR and LF as two line breaks, so pasting a block of code into it left a
-  blank line under every line — bad enough to make tty7 unusable for editing.
+  blank line under every line — bad enough to make agentty unusable for editing.
   Bracketed pastes now fold `\r\n` down to a single `\n`, which is exactly what
   the same paste already produced on Linux and macOS. The non-bracketed path is
   untouched: with no paste mode to distinguish text from typing, a line break
@@ -322,7 +322,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   legitimately still see. (#239)
 
 - **Rounded UI controls no longer square off their corners**
-  ([#236](https://github.com/l0ng-ai/tty7/issues/236)) — the cursor-shape
+  ([#236](https://github.com/dly023/agentty/issues/236)) — the cursor-shape
   toggles (Block / Bar / Underline) are the clearest case: the selected
   segment's fill filled the whole corner of the track it caps, with the track's
   own anti-aliased border arc floating *inside* that square. The controls were
@@ -386,7 +386,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   macOS and are not claimed to be confirmed. (#243)
 
 - **Return no longer confirms the file tree's delete prompt** — it was the only
-  destructive prompt in tty7 with the destructive action first, and on macOS
+  destructive prompt in agentty with the destructive action first, and on macOS
   (NSAlert) and Windows (TaskDialog) the first button is the Return-key
   default, so pressing Return deleted — recursive folder deletion included. The
   buttons now put the safe option first, matching every other destructive
@@ -437,13 +437,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the warning orange to stay distinguishable. (#224)
 
 - **Panes are told which terminal they're running in** — every pane now carries
-  `TERM_PROGRAM=tty7` and `TERM_PROGRAM_VERSION`, the de-facto standard pair
+  `TERM_PROGRAM=agentty` and `TERM_PROGRAM_VERSION`, the de-facto standard pair
   Apple Terminal introduced and iTerm2, WezTerm, Ghostty, VS Code and tmux all
   set. `TERM` names terminfo capabilities and can't answer "which program is
   this", so without the pair, capability probes (`supports-color`,
   `supports-hyperlinks`, and the CLI ecosystem built on them), editors applying
   terminal-specific workarounds, and shell prompts all fell back to their most
-  conservative behaviour. tty7's own `TTY7` marker doesn't help them — it exists
+  conservative behaviour. agentty's own `AGENTTY` marker doesn't help them — it exists
   so globally-installed agent hooks stay silent in other terminals, and nothing
   third-party knows to look for it. Unlike `TERM` and `COLORTERM`, both new
   variables can be overridden from `env` in `config.json`: they name an
@@ -465,10 +465,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **One fewer duplicate SVG stack in the build** — the resvg 0.47 bump (#227)
   left the gpui fork on 0.45, so the tree compiled two resvg/usvg/tiny-skia
-  stacks. The fork now pins 0.47 too, re-unifying its stack with the one tty7
+  stacks. The fork now pins 0.47 too, re-unifying its stack with the one agentty
   uses for the tray icon. (#237)
 
-- **The last duplicate SVG stack is gone** — after #227 and #237 unified tty7
+- **The last duplicate SVG stack is gone** — after #227 and #237 unified agentty
   and the gpui fork on resvg 0.47, the gpui-component fork still declared its
   own `resvg = "0.45.1"`, keeping a legacy resvg/usvg/tiny-skia 0.45/0.11
   stack in the tree. That fork now pins 0.47 as well, so the whole build
@@ -483,7 +483,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   boundary: two-line prompts never closed their corners, TUI frames were dotted
   down both sides. U+2500–U+257F and U+2580–U+259F are now drawn as native
   geometry pinned to the cell's real edges — the same special case kitty,
-  Alacritty, WezTerm and iTerm2 all ship, and what tty7's Powerline separators
+  Alacritty, WezTerm and iTerm2 all ship, and what agentty's Powerline separators
   already did. Covers mixed light/heavy weights, the double-line set with its
   junctions left open, rounded corners, dashes, diagonals, block eighths and the
   ░▒▓ shades. (#229)
@@ -535,7 +535,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   echoed into the scrollback and no prompt hooks are involved. `cd` still filters
   to directories. Command position and `~/` still fall through, as does a
   foreground `ssh` typed into a local shell or a WSL pane, neither of which has a
-  tty7-owned connection to ask. (#217)
+  agentty-owned connection to ask. (#217)
 
 - **The last-window close confirmation can be turned off** — Settings → Window &
   Tabs gains **Confirm before closing the last window**, on by default. The
@@ -555,7 +555,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Foreground applications can negotiate the Kitty keyboard protocol** — the
   embedded terminal config inherited `kitty_keyboard: false`, so the parser
   ignored the negotiation sequences and an application asking for progressive
-  enhancement fell back to `modifyOtherKeys`, which tty7 doesn't implement. That
+  enhancement fell back to `modifyOtherKeys`, which agentty doesn't implement. That
   collapsed distinct chords onto the same legacy byte — `Shift+Enter` reached the
   application as a plain carriage return, submitting a prompt instead of
   inserting a soft newline. Legacy input is unchanged until an application opts
@@ -574,7 +574,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **Interaction state and status colours are derived from the active theme**
-  ([#197](https://github.com/l0ng-ai/tty7/issues/197)) — a segmented control's
+  ([#197](https://github.com/dly023/agentty/issues/197)) — a segmented control's
   selected option was indistinguishable from its neighbours on *every* bundled
   theme (Dracula worst at 1.03:1), because the theme had a colour model but no
   state model: fixed blend ratios scattered across the code, plus every
@@ -616,7 +616,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **Splitting or un-maximizing a pane you were hovering no longer kills the app**
-  ([#201](https://github.com/l0ng-ai/tty7/issues/201)) — a pane remembers the
+  ([#201](https://github.com/dly023/agentty/issues/201)) — a pane remembers the
   cell under the pointer (that's what makes ⌘-hover underline links), and nothing
   invalidated it when the grid shrank underneath. The remembered row then named a
   line the grid no longer had, and the next modifier press indexed the grid with
@@ -631,7 +631,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (#204)
 
 - **Emoji written with a variation selector take their real width and
-  presentation** ([#203](https://github.com/l0ng-ai/tty7/issues/203)) — `🗂️`,
+  presentation** ([#203](https://github.com/dly023/agentty/issues/203)) — `🗂️`,
   `❤️` and `⚠️` were budgeted one column, so the glyph bled over its neighbour
   and every following cell on the line shifted left by one, taking selection and
   click hit-testing with it. The selector is zero-width and lands *after* the
@@ -671,7 +671,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   config-dir file is read by a loader that treats any parse error as "there is
   no file", falling back to defaults. `serde_json` rejects the U+FEFF a BOM puts
   before the opening brace, so a BOM didn't report a broken config — it reported
-  an absent one, and tty7 came up on defaults with nothing in the log to explain
+  an absent one, and agentty came up on defaults with nothing in the log to explain
   it. Windows makes this easy to hit by accident: PowerShell's `>`, `Out-File`
   and `Set-Content -Encoding utf8` all write a BOM, so editing `config.json`
   from a shell was enough to lose every setting. `config.json`, `session.json`
@@ -679,8 +679,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   now skip a leading BOM. (#215)
 
 - **New tabs and splits open in the right directory even when the shell can't be
-  instrumented** ([#187](https://github.com/l0ng-ai/tty7/issues/187)) — a pane
-  learned its directory from `OSC 7`, which only shells tty7 injects its
+  instrumented** ([#187](https://github.com/dly023/agentty/issues/187)) — a pane
+  learned its directory from `OSC 7`, which only shells agentty injects its
   integration into ever emit. A shell that `exec`s into another one from its rc
   file (`exec fish` at the end of `.zshrc`), a nested shell started by hand, or
   any shell with no integration at all emitted none — and because a pane's
@@ -695,7 +695,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Windows has no equivalent process query and is unchanged. (#207)
 
 - **Links open on Ctrl+click on Windows and Linux**
-  ([#183](https://github.com/l0ng-ai/tty7/issues/183)) — the link modifier was
+  ([#183](https://github.com/dly023/agentty/issues/183)) — the link modifier was
   the platform key, which gpui maps to ⌘ on macOS but to Win/Super elsewhere, a
   key the OS mostly swallows. Off macOS neither the hover underline nor
   click-to-open could be triggered at all, and the only way to follow a URL was
@@ -705,7 +705,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Settings copy and the docs follow the platform. (#192)
 
 - **Option-as-Meta works with a CJK input source**
-  ([#177](https://github.com/l0ng-ai/tty7/issues/177)) — macOS gives Option two
+  ([#177](https://github.com/dly023/agentty/issues/177)) — macOS gives Option two
   jobs, and routes the chord before the terminal sees it. With a non-ASCII input
   source active, ⌥F went to the IME, which committed `ƒ` and consumed the event,
   so the code that turns the chord into `ESC f` never got a say. The setting
@@ -770,7 +770,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Grok Build gets the full hook integration** — Settings → Agents grows a
-  sixth row, installing tty7's hooks to `~/.grok/hooks/tty7.json`. A grok pane
+  sixth row, installing agentty's hooks to `~/.grok/hooks/agentty.json`. A grok pane
   now carries the same live status the other agents do (blue "working" → green
   "done", amber "needs you" when grok asks a question), and after a restart it
   relaunches `grok --resume <id>` with the original launch flags instead of a
@@ -778,8 +778,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   relabeled to grok rather than reporting as "Claude Code", and grok's brand
   mark replaces the generic robot avatar. (#174)
 - **Edit, File and Help menus** — copy/cut/paste/select-all, undo/redo and
-  find/find-next now live in a real Edit menu; `About tty7`, `Check for
-  Updates…`, `Hide tty7` and Services sit in the app menu; Docs, Discord and
+  find/find-next now live in a real Edit menu; `About agentty`, `Check for
+  Updates…`, `Hide agentty` and Services sit in the app menu; Docs, Discord and
   `Report an Issue` are reachable from Help; and tab actions that used to exist
   only in a context menu (Rename Tab, New Worktree Tab, Close Other Tabs, Close
   Tabs to the Right, Copy Working Directory) are real actions you can also find
@@ -787,8 +787,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **The menu bar follows the HIG** — `tty7 · File · Edit · View · Window ·
-  Help` replaces `tty7 · Shell · Window · View`. The `Shell` menu is gone: its
+- **The menu bar follows the HIG** — `agentty · File · Edit · View · Window ·
+  Help` replaces `agentty · Shell · Window · View`. The `Shell` menu is gone: its
   new / close / split / rename items are File's job everywhere else, and the
   name collided with Settings → Shell, which configures something entirely
   different. View gained the layout toggles and pane commands that were
@@ -832,7 +832,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The derived name is checked against the locales actually installed before it
   is exported, so it stays loadable on remote hosts too, where ssh forwards
   `LC_*` by default.
-  ([#178](https://github.com/l0ng-ai/tty7/issues/178), #173, #180)
+  ([#178](https://github.com/dly023/agentty/issues/178), #173, #180)
 - **Right-click Paste dropped images, and Copy looked disabled** — copy, cut,
   paste and undo each had two implementations, a chord handler and an action
   handler, which had drifted: the context menu's Paste skipped the image branch
@@ -895,7 +895,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Keyboard, or `history_search` in `config.json`. With it off, the prompt
   line is handed to the shell and the raw `^R` follows it, so a binding
   of your own (fzf, percol, plain reverse-i-search) answers instead of
-  tty7's menu. (#163, #170)
+  agentty's menu. (#163, #170)
 
 ### Changed
 
@@ -998,7 +998,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Tab completion falls through to the shell** — a Tab tty7 has no
+- **Tab completion falls through to the shell** — a Tab agentty has no
   candidates for now hands the line to the shell's own completion
   instead of being swallowed (remote panes included); `cd`/`pushd` stop
   offering files; and the whole feature can be turned off with
@@ -1113,7 +1113,7 @@ it shipped rather than what changed.
 - **Per-tab context menu with worktree tabs** — right-clicking a tab chip or
   sidebar row opens a menu: rename, splits, copy working directory, and a
   close group. *New Worktree Tab* creates a git worktree under the repo's own
-  `.tty7/worktrees/<name>` (kept out of `git status` by a self-ignoring
+  `.agentty/worktrees/<name>` (kept out of `git status` by a self-ignoring
   `.gitignore`), with editable name / branch / start point and a live path
   preview. Closing a tab that sat in a managed worktree offers to remove the
   checkout — unless another pane still lives in it, and dirty checkouts
@@ -1138,7 +1138,7 @@ it shipped rather than what changed.
   cut mid-height. (#97)
 - **README rewritten as a minimal index** — feature details, keybindings,
   and performance notes moved to `docs/features.md` (en + zh-CN); the
-  tagline now positions tty7 as a terminal workbench.
+  tagline now positions agentty as a terminal workbench.
 
 ### Fixed
 
@@ -1169,7 +1169,7 @@ it shipped rather than what changed.
   hunks. It rides the shared git-status signal: when fresh numbers land that
   disagree with what it shows, it re-probes the full diff so the overlay stays
   live. (#92)
-- **Window size and position are remembered across launches** — tty7 saves
+- **Window size and position are remembered across launches** — agentty saves
   the window geometry on quit and restores it next launch, re-centering if the
   saved bounds no longer overlap any display. Can be toggled off with the
   `remember_window_size` config key. (#94)
@@ -1266,7 +1266,7 @@ it shipped rather than what changed.
 - The Cmd+F find bar now owns the top-right slot over the SSH action
   icons. (#76, #78)
 - Windows: stop the daemon before install/uninstall so it can replace
-  `tty7.exe`. (#72)
+  `agentty.exe`. (#72)
 - Moved SSH forwards into the pane context. (#71)
 
 ## [0.13.0] - 2026-07-13
@@ -1404,7 +1404,7 @@ it shipped rather than what changed.
 
 - On Windows, a pane no longer hangs open when its shell exits on its own.
   Typing `exit`, pressing Ctrl-D, or a shell crash ends the shell, but ConPTY's
-  output pipe never reports EOF on a natural exit — and tty7 detected a shell's
+  output pipe never reports EOF on a natural exit — and agentty detected a shell's
   death solely from that EOF — so the pane was left wedged open, dead but
   visible. A Windows-only monitor now waits on the shell process directly and
   reports the exit through the same path a Unix `read()` EOF drives, so the pane
@@ -1414,7 +1414,7 @@ it shipped rather than what changed.
 - Nerd Font prompt icons no longer render sliced off on the right. A non-Mono
   Nerd Font (and the proportional `➜`/`❯` the OS cascade hands back when nothing
   in your font list covers them) gives an icon a single-cell *advance* but draws
-  ink up to ~1.9 cells wide, and tty7 clipped every lone glyph to exactly one
+  ink up to ~1.9 cells wide, and agentty clipped every lone glyph to exactly one
   cell — severing the overflow into the half-icons and cut-off arrow from the
   report. A single glyph now paints into a two-cell window, so it renders whole
   (bleeding into the trailing blank the way iTerm2 and Terminal.app do), bounded
@@ -1422,7 +1422,7 @@ it shipped rather than what changed.
   powerline separators from #19; Mono Nerd Fonts are unchanged. (#17)
 
 - New tabs and splits no longer stall for seconds while a zsh plugin manager
-  reinstalls itself. tty7 launches zsh through a throwaway `ZDOTDIR` (so it can
+  reinstalls itself. agentty launches zsh through a throwaway `ZDOTDIR` (so it can
   layer its shell integration on top of your config), but it used to leave
   `ZDOTDIR` pointing at that empty temp dir the whole time — so tools that find
   their own state via `${ZDOTDIR:-$HOME}` (Zim, oh-my-zsh, `compinit`'s
@@ -1433,7 +1433,7 @@ it shipped rather than what changed.
   and completion caches resolve correctly and load instantly. As a bonus this
   also fixes the classic relocated-config layout (a tiny `~/.zshenv` that sets
   `ZDOTDIR=~/.config/zsh`), which previously loaded your config but silently
-  dropped tty7's integration. (#15)
+  dropped agentty's integration. (#15)
 
 ## [0.6.1] - 2026-07-08
 
@@ -1441,9 +1441,9 @@ it shipped rather than what changed.
 
 - Tab completion (and other line editing) now stays out of the way over `ssh`.
   A remote shell that emits its own prompt marks — fish 4.x on a Linux server,
-  most visibly, which ships OSC 133 on by default — used to engage tty7's
+  most visibly, which ships OSC 133 on by default — used to engage agentty's
   *local* line editor, so Tab ran completion against the local machine's
-  filesystem instead of reaching the remote shell. tty7 now only drives the
+  filesystem instead of reaching the remote shell. agentty now only drives the
   inline editor while the shell it launched is itself idle at its prompt;
   whenever a foreground command (ssh, a TUI, a nested shell) owns the terminal,
   keystrokes pass straight through to it. (#26, follow-up to #18)
@@ -1452,7 +1452,7 @@ it shipped rather than what changed.
 
 ### Added
 
-- The "+" button now opens a shell picker: tty7 detects the shells installed
+- The "+" button now opens a shell picker: agentty detects the shells installed
   on this machine (on Unix the login shell, `/etc/shells`, plus well-known
   shells found on `PATH` — fish, nushell, pwsh and friends installed by
   Homebrew/nix are never registered in `/etc/shells`; on Windows PowerShell 7,
@@ -1491,7 +1491,7 @@ it shipped rather than what changed.
   (which those package managers leave to the user): a curated set of well-known
   shells is now probed on `PATH` as a catch-all, after the `/etc/shells`
   entries. (#18)
-- Upgrading tty7 while an older daemon is still running in the background no
+- Upgrading agentty while an older daemon is still running in the background no
   longer breaks new tabs. A stale daemon that accepts the connection but can't
   serve the new client's request is now restarted once and retried
   automatically; on macOS the GUI also forwards the shell it was launched with
@@ -1503,15 +1503,15 @@ it shipped rather than what changed.
 ### Added
 
 - Windows releases now ship an Inno Setup installer
-  (`tty7-<version>-windows-x86_64-setup.exe`) alongside the portable zip. It
+  (`agentty-<version>-windows-x86_64-setup.exe`) alongside the portable zip. It
   installs per-user by default (no admin prompt, with an all-users option),
   adds a Start Menu shortcut and an "Apps" uninstall entry, and offers an
   optional desktop icon. Still unsigned, so SmartScreen warns on first launch.
-- Startup update check: tty7 asks GitHub once, in the background, whether a
+- Startup update check: agentty asks GitHub once, in the background, whether a
   newer release has shipped. If so, it pops a one-time "Update available" dialog
   (once per version — remembered in `update.json`, so it never nags twice for
   the same release) and keeps a persistent "Download" prompt in Settings →
-  About. Both open the Releases page; tty7 never downloads or updates itself —
+  About. Both open the Releases page; agentty never downloads or updates itself —
   you still install by hand. Turn the check off with `check_for_updates` in
   `config.json` or the "Check for updates on launch" toggle in About. A failed
   or offline check is silent.
@@ -1537,7 +1537,7 @@ it shipped rather than what changed.
 
 ### Fixed
 
-- Windows: launching tty7 no longer opens a stray console window behind the
+- Windows: launching agentty no longer opens a stray console window behind the
   app. Release builds are now linked with the `windows` subsystem; debug
   builds keep the console so `println!` output stays visible. (#10)
 - The right-click "Select All" now matches the ⌘A shortcut: at the prompt it
@@ -1605,7 +1605,7 @@ it shipped rather than what changed.
 
 ### Changed
 
-- Project renamed to **tty7**.
+- Project renamed to **agentty**.
 - macOS releases ship as drag-to-Applications DMGs instead of zips, and the
   Intel build moved to the `macos-15-intel` runner (`macos-13` was retired,
   which had silently kept x86_64 assets from ever publishing).
@@ -1614,8 +1614,8 @@ it shipped rather than what changed.
 - CJK-dense screens paint ~2.4× faster: consecutive wide glyphs batch into single shaped runs (two columns per glyph) instead of painting cell-by-cell; the grid snapshot buffer is reused across frames and the selection/search overlay scans are skipped when nothing is highlighted. Release builds now use thin LTO.
 - Type-ahead is integrated into the line editor instead of being stranded on zle's line.
 - New tabs open next to the active tab instead of at the end.
-- Terminal throughput ~12× faster (11 MB `cat`: ~2.0 s → ~0.16 s; DOOM-fire: ~47 fps → ~920 fps, both at 155×40 on an M1 Pro — now ahead of Alacritty/Ghostty on the same machine): the daemon's replay ring is a `VecDeque` so a full ring no longer memmoves 8 MiB per ~1 KiB PTY read, and the per-connection writer coalesces queued `Output` frames (≤256 KiB) so a flood reaches the client as a few large frames instead of thousands of tiny ones. A backpressure gate (4 MiB high-water) pauses the PTY reader while the client catches up, so a runaway `yes` can't grow daemon memory without bound. `TTY7_TRACE=1` prints per-second reader-loop accounting on both sides for future diagnosis.
-- Second throughput pass, another ~1.4× on bulk output (11 MB `cat`: ~160 ms → ~100 ms; sustained plaintext drain 124 → 148 MB/s, vs ~170 MB/s for a raw do-nothing PTY reader on the same machine; DOOM-fire is unchanged — it is producer-bound at ~96 MB/s): the backpressure high-water grows to 16 MiB so a big burst drains at PTY speed while the client parses in its own time; daemon⇄GUI socket buffers grow from macOS's 8 KiB default to 256 KiB; the client applies consecutive `Output` frames as one batched parser pass (one term-lock + wakeup per burst, latency-free — the batch never waits for unarrived bytes); the shared OSC tokenizer skips Ground/Ignore runs with SIMD `memchr`; the gate's hot path is a lock-free atomic (previously a Mutex plus an unconditional `notify_all` per socket write); and the four threads on the interactive output path ask macOS for `USER_INTERACTIVE` QoS to stay off the efficiency cores (`TTY7_NO_QOS=1` opts out).
+- Terminal throughput ~12× faster (11 MB `cat`: ~2.0 s → ~0.16 s; DOOM-fire: ~47 fps → ~920 fps, both at 155×40 on an M1 Pro — now ahead of Alacritty/Ghostty on the same machine): the daemon's replay ring is a `VecDeque` so a full ring no longer memmoves 8 MiB per ~1 KiB PTY read, and the per-connection writer coalesces queued `Output` frames (≤256 KiB) so a flood reaches the client as a few large frames instead of thousands of tiny ones. A backpressure gate (4 MiB high-water) pauses the PTY reader while the client catches up, so a runaway `yes` can't grow daemon memory without bound. `AGENTTY_TRACE=1` prints per-second reader-loop accounting on both sides for future diagnosis.
+- Second throughput pass, another ~1.4× on bulk output (11 MB `cat`: ~160 ms → ~100 ms; sustained plaintext drain 124 → 148 MB/s, vs ~170 MB/s for a raw do-nothing PTY reader on the same machine; DOOM-fire is unchanged — it is producer-bound at ~96 MB/s): the backpressure high-water grows to 16 MiB so a big burst drains at PTY speed while the client parses in its own time; daemon⇄GUI socket buffers grow from macOS's 8 KiB default to 256 KiB; the client applies consecutive `Output` frames as one batched parser pass (one term-lock + wakeup per burst, latency-free — the batch never waits for unarrived bytes); the shared OSC tokenizer skips Ground/Ignore runs with SIMD `memchr`; the gate's hot path is a lock-free atomic (previously a Mutex plus an unconditional `notify_all` per socket write); and the four threads on the interactive output path ask macOS for `USER_INTERACTIVE` QoS to stay off the efficiency cores (`AGENTTY_NO_QOS=1` opts out).
 
 ### Fixed
 
@@ -1645,17 +1645,17 @@ Initial release.
 - zsh shell integration (OSC 7 cwd + OSC 133 prompt marks) via a throwaway `ZDOTDIR`.
 - Native macOS light/dark themes that follow the system appearance.
 
-[Unreleased]: https://github.com/l0ng-ai/tty7/compare/v26.7.6...HEAD
-[0.10.0]: https://github.com/l0ng-ai/tty7/compare/v0.9.0...v0.10.0
-[0.9.0]: https://github.com/l0ng-ai/tty7/compare/v0.8.0...v0.9.0
-[0.8.0]: https://github.com/l0ng-ai/tty7/compare/v0.7.0...v0.8.0
-[0.7.0]: https://github.com/l0ng-ai/tty7/compare/v0.6.2...v0.7.0
-[0.6.2]: https://github.com/l0ng-ai/tty7/compare/v0.6.1...v0.6.2
-[0.6.1]: https://github.com/l0ng-ai/tty7/compare/v0.6.0...v0.6.1
-[0.6.0]: https://github.com/l0ng-ai/tty7/compare/v0.5.0...v0.6.0
-[0.5.0]: https://github.com/l0ng-ai/tty7/compare/v0.4.0...v0.5.0
-[0.4.0]: https://github.com/l0ng-ai/tty7/compare/v0.3.0...v0.4.0
-[0.3.0]: https://github.com/l0ng-ai/tty7/compare/v0.2.0...v0.3.0
-[0.2.0]: https://github.com/l0ng-ai/tty7/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/l0ng-ai/tty7/releases/tag/v0.1.0
+[Unreleased]: https://github.com/dly023/agentty/compare/v26.7.6...HEAD
+[0.10.0]: https://github.com/dly023/agentty/compare/v0.9.0...v0.10.0
+[0.9.0]: https://github.com/dly023/agentty/compare/v0.8.0...v0.9.0
+[0.8.0]: https://github.com/dly023/agentty/compare/v0.7.0...v0.8.0
+[0.7.0]: https://github.com/dly023/agentty/compare/v0.6.2...v0.7.0
+[0.6.2]: https://github.com/dly023/agentty/compare/v0.6.1...v0.6.2
+[0.6.1]: https://github.com/dly023/agentty/compare/v0.6.0...v0.6.1
+[0.6.0]: https://github.com/dly023/agentty/compare/v0.5.0...v0.6.0
+[0.5.0]: https://github.com/dly023/agentty/compare/v0.4.0...v0.5.0
+[0.4.0]: https://github.com/dly023/agentty/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/dly023/agentty/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/dly023/agentty/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/dly023/agentty/releases/tag/v0.1.0
 [gpui]: https://github.com/zed-industries/zed

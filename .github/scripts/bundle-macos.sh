@@ -25,16 +25,16 @@ APP="dist/Agentty.app"
 
 rm -rf dist
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "target/${TARGET}/release/tty7-app" "$APP/Contents/MacOS/tty7-app"
-chmod +x "$APP/Contents/MacOS/tty7-app"
+cp "target/${TARGET}/release/agentty-app" "$APP/Contents/MacOS/agentty-app"
+chmod +x "$APP/Contents/MacOS/agentty-app"
 # The CLI rides inside the bundle rather than beside it: a DMG is drag-to-
 # Applications, so anything not in the .app never reaches the user's disk. The
 # GUI symlinks it onto PATH at launch (see core::cli_install), which is why it
-# sits next to tty7-app under MacOS/ — that is the directory the GUI resolves
+# sits next to agentty-app under MacOS/ — that is the directory the GUI resolves
 # relative to its own executable.
-cp "target/${TARGET}/release/tty7" "$APP/Contents/MacOS/tty7"
-chmod +x "$APP/Contents/MacOS/tty7"
-cp assets/tty7.icns "$APP/Contents/Resources/tty7.icns"
+cp "target/${TARGET}/release/agentty" "$APP/Contents/MacOS/agentty"
+chmod +x "$APP/Contents/MacOS/agentty"
+cp assets/agentty.icns "$APP/Contents/Resources/agentty.icns"
 # Completion signatures are loaded at runtime (not embedded), resolved relative
 # to the executable as ../Resources/completions — see terminal::signature.
 mkdir -p "$APP/Contents/Resources/completions"
@@ -51,8 +51,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleIdentifier</key><string>com.dly023.agentty</string>
     <key>CFBundleVersion</key><string>${VERSION}</string>
     <key>CFBundleShortVersionString</key><string>${VERSION}</string>
-    <key>CFBundleExecutable</key><string>tty7-app</string>
-    <key>CFBundleIconFile</key><string>tty7</string>
+    <key>CFBundleExecutable</key><string>agentty-app</string>
+    <key>CFBundleIconFile</key><string>agentty</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSPrincipalClass</key><string>NSApplication</string>
@@ -65,9 +65,9 @@ SIGN_ID="${APPLE_SIGNING_IDENTITY:-}"
 if [[ -n "$SIGN_ID" && -n "${APPLE_CERTIFICATE:-}" ]]; then
     # ---- Developer ID signing ------------------------------------------------
     # Import the cert into a throwaway keychain so we never touch the login one.
-    KEYCHAIN="${RUNNER_TEMP:-/tmp}/tty7-sign.keychain-db"
-    CERT_PATH="${RUNNER_TEMP:-/tmp}/tty7-cert.p12"
-    KEYCHAIN_PASSWORD="${KEYCHAIN_PASSWORD:-tty7-ci}"
+    KEYCHAIN="${RUNNER_TEMP:-/tmp}/agentty-sign.keychain-db"
+    CERT_PATH="${RUNNER_TEMP:-/tmp}/agentty-cert.p12"
+    KEYCHAIN_PASSWORD="${KEYCHAIN_PASSWORD:-agentty-ci}"
     # Scrub the decoded cert + temp keychain on any exit path.
     cleanup() {
         security delete-keychain "$KEYCHAIN" >/dev/null 2>&1 || true
@@ -111,9 +111,9 @@ ENT
     # Metal path, and a CLI that never renders anything has no business holding
     # them.
     codesign --force --options runtime --timestamp \
-        --sign "$SIGN_ID" "$APP/Contents/MacOS/tty7"
+        --sign "$SIGN_ID" "$APP/Contents/MacOS/agentty"
     codesign --force --options runtime --timestamp --entitlements "$ENTITLEMENTS" \
-        --sign "$SIGN_ID" "$APP/Contents/MacOS/tty7-app"
+        --sign "$SIGN_ID" "$APP/Contents/MacOS/agentty-app"
     codesign --force --options runtime --timestamp --entitlements "$ENTITLEMENTS" \
         --sign "$SIGN_ID" "$APP"
     codesign --verify --strict --verbose=2 "$APP"

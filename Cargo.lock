@@ -9651,7 +9651,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "tty7"
+name = "agentty"
 version = "0.0.1"
 dependencies = [
  "alacritty_terminal",
@@ -9683,14 +9683,14 @@ dependencies = [
  "smallvec",
  "smol",
  "tray-icon",
- "tty7-core",
+ "agentty-core",
  "uuid",
  "windows-sys 0.61.2",
  "winresource",
 ]
 
 [[package]]
-name = "tty7-cli"
+name = "agentty-cli"
 version = "0.0.1"
 dependencies = [
  "alacritty_terminal",
@@ -9699,13 +9699,13 @@ dependencies = [
  "libc",
  "serde_json",
  "tempfile",
- "tty7-core",
+ "agentty-core",
  "unicode-width",
  "windows-sys 0.59.0",
 ]
 
 [[package]]
-name = "tty7-core"
+name = "agentty-core"
 version = "0.0.1"
 dependencies = [
  "anyhow",
@@ -9734,11 +9734,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "tty7-server"
+name = "agentty-server"
 version = "0.0.1"
 dependencies = [
  "tempfile",
- "tty7-core",
+ "agentty-core",
 ]
 
 [[package]]

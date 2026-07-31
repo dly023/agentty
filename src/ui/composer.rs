@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use tty7_core::core::environment::EnvironmentId;
+use agentty_core::core::environment::EnvironmentId;
 
 /// Stable product identity for a terminal pane. GPUI entity ids and focus are
 /// deliberately excluded: neither is stable enough to authorize delivery.
@@ -14,7 +14,7 @@ pub struct PaneIdentity {
 pub enum InputDelivery {
     AgentPrompt(String),
     CommandLine(String),
-    Resume(tty7_core::agent_runtime::ResumeInvocation),
+    Resume(agentty_core::agent_runtime::ResumeInvocation),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -51,7 +51,7 @@ impl ComposerDraftStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tty7_core::core::environment::EnvironmentDescriptor;
+    use agentty_core::core::environment::EnvironmentDescriptor;
 
     fn pane(id: u64) -> PaneIdentity {
         PaneIdentity {
@@ -91,7 +91,7 @@ pub struct ComposerState {
     pub input: Entity<InputState>,
 }
 
-impl crate::ui::app::Tty7App {
+impl crate::ui::app::AgenttyApp {
     pub(crate) fn toggle_composer(&mut self, window: &mut Window, cx: &mut gpui::Context<Self>) {
         if let Some(state) = self.composer.take() {
             let draft = state.input.read(cx).value().to_string();

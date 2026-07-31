@@ -185,7 +185,7 @@ pub struct RemoteTerminal {
     reader_thread: Option<JoinHandle<()>>,
 }
 
-/// The workspace id a spawn carries, so the pane's shell gets `$TTY7_WS` and a
+/// The workspace id a spawn carries, so the pane's shell gets `$AGENTTY_WS` and a
 /// CLI running in it can use workspace-scoped verbs with no argument.
 ///
 /// This is the same id as `owner`, but decided separately: `owner` is also
@@ -510,7 +510,7 @@ impl RemoteTerminal {
         signals: ReaderSignals,
     ) -> JoinHandle<()> {
         std::thread::Builder::new()
-            .name("tty7-remote-reader".to_string())
+            .name("agentty-remote-reader".to_string())
             .spawn(move || {
                 let ReaderSignals {
                     cwd,
@@ -551,7 +551,7 @@ impl RemoteTerminal {
                 };
                 let mut scratch = vec![0u8; 256 * 1024];
 
-                let trace = std::env::var("TTY7_TRACE").is_ok_and(|v| !v.is_empty() && v != "0");
+                let trace = std::env::var("AGENTTY_TRACE").is_ok_and(|v| !v.is_empty() && v != "0");
                 let mut tr_last = std::time::Instant::now();
                 let mut tr_bytes: u64 = 0;
                 let mut tr_reads: u32 = 0;
@@ -694,7 +694,7 @@ impl RemoteTerminal {
                             DaemonMsg::Image(frame) => {
                                 flush_batch!();
                                 if let Some(img) =
-                                    tty7_core::core::kitty_graphics::Image::decode_frame(&frame)
+                                    agentty_core::core::kitty_graphics::Image::decode_frame(&frame)
                                 {
                                     // Capture the anchor *now*, at the cursor cell
                                     // the transmission arrived on; the decode is
@@ -730,7 +730,7 @@ impl RemoteTerminal {
                             DaemonMsg::DeleteImage(sel) => {
                                 flush_batch!();
                                 if let Some(del) =
-                                    tty7_core::core::kitty_graphics::ImageDelete::decode(&sel)
+                                    agentty_core::core::kitty_graphics::ImageDelete::decode(&sel)
                                 {
                                     images.delete(&del);
                                     proxy.send_event(AlacEvent::Wakeup);
@@ -1521,7 +1521,7 @@ fn stale_mode_resets(mode: TermMode) -> Vec<u8> {
 }
 
 pub(crate) fn notify_desktop(title: Option<&str>, body: &str) {
-    let summary = title.unwrap_or("tty7").to_string();
+    let summary = title.unwrap_or("agentty").to_string();
     let body = body.to_string();
     std::thread::spawn(move || {
         #[cfg(target_os = "macos")]
@@ -1538,7 +1538,7 @@ fn ensure_notification_app() {
     use std::sync::Once;
     static ONCE: Once = Once::new();
     ONCE.call_once(|| {
-        if notify_rust::set_application("com.github.tty7").is_err() {
+        if notify_rust::set_application("com.github.agentty").is_err() {
             let _ = notify_rust::set_application("com.apple.Terminal");
         }
     });
@@ -1594,11 +1594,11 @@ fn connect_routed(route: &PaneRoute) -> anyhow::Result<Stream> {
         return connect();
     };
 
-    tty7_core::host::guard_off_ui();
+    agentty_core::host::guard_off_ui();
 
     if let crate::daemon::router::RouteTarget::Wsl { distro } = &header.target {
         crate::daemon::install::wsl::ensure_wsl_server(distro)
-            .map_err(|e| anyhow::anyhow!("prepare tty7-server in WSL `{distro}`: {e}"))?;
+            .map_err(|e| anyhow::anyhow!("prepare agentty-server in WSL `{distro}`: {e}"))?;
     }
 
     let mut stream = connect()?;
@@ -1706,7 +1706,7 @@ mod tests {
         let ws = PaneWorkspace {
             workspace: crate::core::session::WorkspaceId::new(),
             target: crate::core::session::RemoteTarget::LocalStdio {
-                program: "/tmp/tty7-server".into(),
+                program: "/tmp/agentty-server".into(),
                 args: vec!["--stdio".into()],
             },
             spec: None,
@@ -1716,7 +1716,7 @@ mod tests {
         assert_eq!(header.channel, crate::daemon::router::RouteChannel::Pane);
         match &header.target {
             crate::daemon::router::RouteTarget::LocalStdio { program, args } => {
-                assert_eq!(program, "/tmp/tty7-server");
+                assert_eq!(program, "/tmp/agentty-server");
                 assert_eq!(args, &vec!["--stdio".to_string(), "--pane".to_string()]);
             }
             other => panic!("wrong target: {other:?}"),
@@ -1740,13 +1740,13 @@ mod tests {
     }
 
     #[test]
-    fn a_local_spawn_carries_its_workspace_so_the_shell_gets_tty7_ws() {
+    fn a_local_spawn_carries_its_workspace_so_the_shell_gets_agentty_ws() {
         let ws = "0d4e1a54-0000-4000-8000-000000000001";
 
         assert_eq!(
             spawn_workspace(Some(ws), &PaneRoute::Local).as_deref(),
             Some(ws),
-            "without this the pane's shell has no $TTY7_WS and every \
+            "without this the pane's shell has no $AGENTTY_WS and every \
              workspace-scoped CLI verb in it needs an explicit address"
         );
 
@@ -1893,7 +1893,7 @@ mod tests {
     fn only_a_dead_daemon_is_worth_starting_one_for() {
         let connect_failed = |kind| -> anyhow::Error {
             anyhow::Error::new(std::io::Error::new(kind, "no listener"))
-                .context("connect to daemon at /tmp/tty7.sock")
+                .context("connect to daemon at /tmp/agentty.sock")
         };
         assert!(daemon_not_listening(&connect_failed(
             std::io::ErrorKind::ConnectionRefused

@@ -60,11 +60,11 @@ impl SniTray {
 
 impl ksni::Tray for SniTray {
     fn id(&self) -> String {
-        "tty7".into()
+        "agentty".into()
     }
 
     fn title(&self) -> String {
-        "tty7".into()
+        "agentty".into()
     }
 
     fn status(&self) -> ksni::Status {

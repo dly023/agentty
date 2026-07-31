@@ -1,4 +1,4 @@
-pub use tty7_core::core::keychain::{
+pub use agentty_core::core::keychain::{
     CredentialKind, CredentialRef, SERVICE_KEY_PASSPHRASE, SERVICE_PASSWORD, endpoint_account,
     key_account_from_contents,
 };
@@ -200,7 +200,7 @@ mod tests {
 
         let cref = store.set_key_passphrase(&key_id, "s3cret").unwrap();
         assert_eq!(cref.kind, CredentialKind::KeyPassphrase);
-        assert_eq!(cref.service(), "tty7-ssh-key");
+        assert_eq!(cref.service(), "agentty-ssh-key");
         assert_eq!(
             store.passphrase_for_key(&key_id).unwrap().as_deref(),
             Some("s3cret")

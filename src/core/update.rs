@@ -8,9 +8,9 @@ use std::time::Duration;
 
 use crate::core::config::Config;
 
-const REPO: &str = "l0ng-ai/tty7";
+const REPO: &str = "dly023/agentty";
 
-pub const RELEASES_URL: &str = "https://github.com/l0ng-ai/tty7/releases/latest";
+pub const RELEASES_URL: &str = "https://github.com/dly023/agentty/releases/latest";
 
 const CHECK_TIMEOUT: Duration = Duration::from_secs(15);
 
@@ -104,7 +104,7 @@ async fn wait_for_window(cx: &mut AsyncApp) -> Option<AnyWindowHandle> {
 
 fn prompt_update(version: &str, window: &mut Window, cx: &mut App) {
     let detail = format!(
-        "tty7 {version} is available — you're on {}. Open the download page to get it.",
+        "agentty {version} is available — you're on {}. Open the download page to get it.",
         env!("CARGO_PKG_VERSION")
     );
     let answer = window.prompt(
@@ -182,7 +182,7 @@ struct LatestRelease {
 }
 
 async fn fetch_latest_version() -> Result<String> {
-    let client = ReqwestClient::user_agent(concat!("tty7/", env!("CARGO_PKG_VERSION")))
+    let client = ReqwestClient::user_agent(concat!("agentty/", env!("CARGO_PKG_VERSION")))
         .context("building HTTP client")?;
 
     let url = format!("https://api.github.com/repos/{REPO}/releases/latest");

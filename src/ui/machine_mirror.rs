@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
+use agentty_core::core::machine::{LayoutDelta, Machine, PaneRecord, Tab, TabId, Workspace};
+use agentty_core::daemon::control::{ControlRequest, ReplyOk};
+use agentty_core::host::HostId;
 use gpui::{App, Global};
-use tty7_core::core::machine::{LayoutDelta, Machine, PaneRecord, Tab, TabId, Workspace};
-use tty7_core::daemon::control::{ControlRequest, ReplyOk};
-use tty7_core::host::HostId;
 
 use crate::core::session::WorkspaceId;
 
@@ -226,7 +226,7 @@ fn apply(machine: &mut Machine, workspace: WorkspaceId, delta: &LayoutDelta) -> 
                 return false;
             };
             match t.root.descend_mut(path) {
-                Some(tty7_core::core::machine::PaneNode::Split { ratio: r, .. }) => {
+                Some(agentty_core::core::machine::PaneNode::Split { ratio: r, .. }) => {
                     *r = *ratio;
                     true
                 }
@@ -324,7 +324,7 @@ pub fn pane_count(cx: &App, entry: &crate::core::session::EnvironmentWindow) -> 
 
 #[cfg(test)]
 mod tests {
-    use tty7_core::core::machine::{Axis, PaneNode, Tab, TabId};
+    use agentty_core::core::machine::{Axis, PaneNode, Tab, TabId};
 
     use super::*;
 
@@ -509,8 +509,8 @@ mod tests {
         ws.tabs = vec![leaf_tab(1)];
         assert_eq!(display_name_of(&ws, &panes), "scratch");
 
-        ws.tabs[0].sidebar_group = Some("/repo/tty7".into());
-        assert_eq!(display_name_of(&ws, &panes), "tty7");
+        ws.tabs[0].sidebar_group = Some("/repo/agentty".into());
+        assert_eq!(display_name_of(&ws, &panes), "agentty");
 
         ws.name = Some("  Release prep  ".into());
         assert_eq!(display_name_of(&ws, &panes), "Release prep");

@@ -3,7 +3,7 @@ use gpui_component::button::Button;
 use gpui_component::input::Input;
 use gpui_component::{ActiveTheme as _, Icon, IconName, h_flex, v_flex};
 
-use crate::ui::app::{TITLE_BAR_HEIGHT, Tty7App};
+use crate::ui::app::{AgenttyApp, TITLE_BAR_HEIGHT};
 
 const MIN_SIDEBAR_WIDTH: f32 = 180.;
 
@@ -12,7 +12,7 @@ const MAX_SIDEBAR_WIDTH_RATIO: f32 = 0.5;
 
 const RESIZE_HANDLE_WIDTH: f32 = 8.;
 
-impl Tty7App {
+impl AgenttyApp {
     pub(crate) fn tab_sidebar(
         &mut self,
         window: &mut Window,
@@ -59,8 +59,8 @@ impl Tty7App {
                 .session_navigator
                 .selected()
                 .is_some_and(|selected| selected == &row.row_id);
-            let active = row.lifecycle == tty7_core::agent_runtime::RowLifecycle::Live;
-            let restoring = row.lifecycle == tty7_core::agent_runtime::RowLifecycle::Restoring;
+            let active = row.lifecycle == agentty_core::agent_runtime::RowLifecycle::Live;
+            let restoring = row.lifecycle == agentty_core::agent_runtime::RowLifecycle::Restoring;
             let status_dot = if active {
                 Some(cx.theme().success)
             } else if restoring {

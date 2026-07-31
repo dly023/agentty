@@ -79,9 +79,9 @@ pub(crate) const TILE_GLYPH_LINE: f32 = 16.;
 pub(crate) const TILE_PAD: f32 = (TILE_SIZE - TILE_GLYPH) / 2.;
 pub(crate) const TILE_PAD_SM: f32 = (TILE_SIZE_SM - TILE_GLYPH_SM) / 2.;
 
-const DOCS_URL: &str = "https://github.com/l0ng-ai/tty7#readme";
+const DOCS_URL: &str = "https://github.com/dly023/agentty#readme";
 const DISCORD_URL: &str = "https://discord.gg/s3dethqz2V";
-const ISSUES_URL: &str = "https://github.com/l0ng-ai/tty7/issues/new";
+const ISSUES_URL: &str = "https://github.com/dly023/agentty/issues/new";
 
 pub(crate) const CONTENT_INSET: f32 = 12.;
 
@@ -193,7 +193,7 @@ pub struct Tab {
     pub(crate) code: Option<Box<crate::ui::code_editor::TabCode>>,
     pub(crate) sidebar_group: std::cell::RefCell<Option<std::path::PathBuf>>,
     pub(crate) overlay_top: OverlayTop,
-    pub(crate) tree_id: std::cell::Cell<tty7_core::core::machine::TabId>,
+    pub(crate) tree_id: std::cell::Cell<agentty_core::core::machine::TabId>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
@@ -213,11 +213,11 @@ impl Tab {
             code: None,
             overlay_top: OverlayTop::default(),
             sidebar_group: std::cell::RefCell::new(None),
-            tree_id: std::cell::Cell::new(tty7_core::core::machine::TabId::new()),
+            tree_id: std::cell::Cell::new(agentty_core::core::machine::TabId::new()),
         }
     }
 
-    pub(crate) fn from_tree(tree: &tty7_core::core::machine::Tab, pane: Pane) -> Self {
+    pub(crate) fn from_tree(tree: &agentty_core::core::machine::Tab, pane: Pane) -> Self {
         Self {
             pane,
             name: tree.name.clone(),
@@ -343,7 +343,7 @@ pub(crate) struct LoopbackForwardPanelState {
     pub(crate) mf_editing: Option<u64>,
 }
 
-pub struct Tty7App {
+pub struct AgenttyApp {
     pub(crate) tabs: Vec<Tab>,
     pub(crate) active: usize,
     pub(crate) font_size: f32,
@@ -391,8 +391,8 @@ pub struct Tty7App {
     pub(crate) sidebar_scroll: gpui::ScrollHandle,
     pub(crate) reorder: Rc<RefCell<Option<crate::ui::reorder::Reorder>>>,
     pub(crate) sidebar_search: Entity<InputState>,
-    pub(crate) session_navigator: tty7_core::agent_runtime::SessionNavigator,
-    pub(crate) session_history: Vec<tty7_core::agent_runtime::AgentSessionRecord>,
+    pub(crate) session_navigator: agentty_core::agent_runtime::SessionNavigator,
+    pub(crate) session_history: Vec<agentty_core::agent_runtime::AgentSessionRecord>,
     pub(crate) session_refresh: crate::ui::session_navigator::SessionRefreshState,
     pub(crate) session_scan_error: Option<String>,
     pub(crate) session_scan_started: bool,
@@ -440,7 +440,7 @@ impl TabAgentSession {
     }
 }
 
-impl Tty7App {
+impl AgenttyApp {
     pub fn for_workspace(
         id: Option<WorkspaceId>,
         window: &mut Window,
@@ -687,7 +687,7 @@ impl Tty7App {
             sidebar_scroll: gpui::ScrollHandle::new(),
             reorder: Rc::new(RefCell::new(None)),
             sidebar_search,
-            session_navigator: tty7_core::agent_runtime::SessionNavigator::default(),
+            session_navigator: agentty_core::agent_runtime::SessionNavigator::default(),
             session_history: Vec::new(),
             session_refresh: Default::default(),
             session_scan_error: None,
@@ -756,7 +756,7 @@ impl Tty7App {
                     "Your sessions keep running in the background. This \
                      workspace will be waiting on the home page, and in the \
                      workspace menu in the title bar, the next time you open \
-                     tty7.",
+                     agentty.",
                 ),
                 &["Cancel", "Close"],
                 cx,
@@ -813,7 +813,7 @@ impl Tty7App {
             && crate::ui::tree_sync::window_is_informed(cx, self.workspace)
         {
             crate::ui::tree_sync::fire_workspace_op(cx, self.workspace, |ws| {
-                tty7_core::daemon::control::ControlRequest::WorkspaceRemove { workspace: ws }
+                agentty_core::daemon::control::ControlRequest::WorkspaceRemove { workspace: ws }
             });
             WorkspaceStore::remove(cx, self.workspace);
         } else {
@@ -911,7 +911,7 @@ impl Tty7App {
         }
         if self.tabs.is_empty() && crate::ui::tree_sync::window_is_informed(cx, previous) {
             crate::ui::tree_sync::fire_workspace_op(cx, previous, |ws| {
-                tty7_core::daemon::control::ControlRequest::WorkspaceRemove { workspace: ws }
+                agentty_core::daemon::control::ControlRequest::WorkspaceRemove { workspace: ws }
             });
             WorkspaceStore::remove(cx, previous);
         } else if self.tabs.is_empty() {
@@ -991,7 +991,7 @@ impl Tty7App {
                 code: None,
                 overlay_top: OverlayTop::default(),
                 sidebar_group: std::cell::RefCell::new(st.sidebar_group),
-                tree_id: std::cell::Cell::new(tty7_core::core::machine::TabId::new()),
+                tree_id: std::cell::Cell::new(agentty_core::core::machine::TabId::new()),
             },
         );
         self.active = insert_at;
@@ -1105,7 +1105,7 @@ impl Tty7App {
             PromptLevel::Warning,
             "Quit and Stop Server?",
             Some(
-                "This quits tty7 and stops the background server — anything \
+                "This quits agentty and stops the background server — anything \
                  still running in your shells is terminated. Your tabs and \
                  layout are kept and reopen with fresh shells next launch. \
                  (Plain Quit keeps shells running.)",
@@ -1134,7 +1134,7 @@ impl Tty7App {
         if !target.is_ssh() {
             window.push_notification(
                 format!(
-                    "tty7 can only restart the server on machines it reaches over SSH. \
+                    "agentty can only restart the server on machines it reaches over SSH. \
                      {label} is served from this computer — stop its workspace instead."
                 ),
                 cx,
@@ -2099,7 +2099,7 @@ impl Tty7App {
             .get(self.workspace)
             .filter(|w| crate::ui::machine_mirror::pane_count(cx, w).unwrap_or(0) > 0)
             .and_then(|w| crate::ui::machine_mirror::display_name(cx, w))
-            .unwrap_or_else(|| "tty7".to_string());
+            .unwrap_or_else(|| "agentty".to_string());
         if *self.window_title.borrow() == title {
             return;
         }
@@ -2158,7 +2158,7 @@ impl Tty7App {
                 if let Some(row_id) = navigator_row_id {
                     let _ = self.session_navigator.finish_restore(
                         &row_id,
-                        tty7_core::agent_runtime::RestoreOutcome::Retryable(reason),
+                        agentty_core::agent_runtime::RestoreOutcome::Retryable(reason),
                     );
                     self.rebuild_session_navigator(cx);
                     cx.notify();
@@ -2215,12 +2215,12 @@ impl Tty7App {
             if let Some(carrier) = carrier {
                 let _ = self.session_navigator.finish_restore(
                     &row_id,
-                    tty7_core::agent_runtime::RestoreOutcome::Success(carrier),
+                    agentty_core::agent_runtime::RestoreOutcome::Success(carrier),
                 );
             } else {
                 let _ = self.session_navigator.finish_restore(
                     &row_id,
-                    tty7_core::agent_runtime::RestoreOutcome::Retryable(
+                    agentty_core::agent_runtime::RestoreOutcome::Retryable(
                         "Agent session metadata did not materialize".into(),
                     ),
                 );
@@ -2932,7 +2932,7 @@ impl Tty7App {
         };
         let name = agent.display_name();
         if agent.fork_label().is_none() {
-            window.push_notification(format!("tty7 has no fork command for {name}"), cx);
+            window.push_notification(format!("agentty has no fork command for {name}"), cx);
             return None;
         }
         if remote.is_some() {
@@ -2945,7 +2945,7 @@ impl Tty7App {
         let session = session.unwrap_or_default();
         let Some(id) = session.session_id.as_deref() else {
             window.push_notification(
-                format!("tty7 hasn't seen a {name} session id in this pane — install its hooks in Settings → Agents"),
+                format!("agentty hasn't seen a {name} session id in this pane — install its hooks in Settings → Agents"),
                 cx,
             );
             return None;
@@ -3397,7 +3397,7 @@ impl Tty7App {
     fn deliver_agent_prompt(&mut self, prompt: &str, window: &mut Window, cx: &mut Context<Self>) {
         let Some(target) = self.agent_target_leaf(cx) else {
             crate::terminal::notify_desktop(
-                Some("tty7"),
+                Some("agentty"),
                 "No running coding agent found — start one (claude, codex, …) in a pane first.",
             );
             return;
@@ -3423,7 +3423,7 @@ impl Tty7App {
         };
         let Some(selection) = selection else {
             crate::terminal::notify_desktop(
-                Some("tty7"),
+                Some("agentty"),
                 "Nothing selected — select some terminal output first.",
             );
             return;
@@ -3446,7 +3446,7 @@ impl Tty7App {
             Some((view.host(cx)?, view.host_cwd()?))
         });
         let Some((host, cwd)) = target else {
-            crate::terminal::notify_desktop(Some("tty7"), "This pane has no known directory.");
+            crate::terminal::notify_desktop(Some("agentty"), "This pane has no known directory.");
             return;
         };
         crate::ui::host_ops::HostOps::run_in(
@@ -3468,7 +3468,7 @@ impl Tty7App {
                 match crate::core::agent_prompt::build_diff_review_prompt(&diff, Some(&cwd_s)) {
                     Some(prompt) => this.deliver_agent_prompt(&prompt, window, cx),
                     None => crate::terminal::notify_desktop(
-                        Some("tty7"),
+                        Some("agentty"),
                         &format!("No uncommitted changes in {cwd_s} (or not a git repository)."),
                     ),
                 }
@@ -4324,7 +4324,7 @@ impl Tty7App {
                     s.agent_hooks_states = match rows {
                         Some(rows) => AgentHooksView::Ready(rows),
                         None => AgentHooksView::Unavailable(
-                            "tty7 could not work out this computer's home directory, so there is \
+                            "agentty could not work out this computer's home directory, so there is \
                              nowhere to install to."
                                 .into(),
                         ),
@@ -4676,7 +4676,7 @@ pub(crate) mod render_probe {
     }
 }
 
-impl Tty7App {
+impl AgenttyApp {
     fn render_remote_workspace_strip(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
         if self.tabs.is_empty() {
             return None;
@@ -4837,7 +4837,7 @@ impl ForwardRoute {
     }
 }
 
-impl Render for Tty7App {
+impl Render for AgenttyApp {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         #[cfg(test)]
         render_probe::record();
@@ -5028,7 +5028,7 @@ impl Render for Tty7App {
 
         let root =
             div()
-                .id("tty7-root")
+                .id("agentty-root")
                 .size_full()
                 .flex()
                 .flex_col()
@@ -5335,7 +5335,7 @@ fn agent_resume_invocation(
     launch_argv: Option<&[String]>,
     cwd: Option<&std::path::PathBuf>,
     cx: &App,
-) -> Option<tty7_core::agent_runtime::ResumeInvocation> {
+) -> Option<agentty_core::agent_runtime::ResumeInvocation> {
     if !cx.global::<Config>().restore_agent_sessions {
         return None;
     }
@@ -5440,7 +5440,7 @@ fn tabs_from_session(
     session: Option<Session>,
     font_size: f32,
     window: &mut Window,
-    cx: &mut Context<Tty7App>,
+    cx: &mut Context<AgenttyApp>,
 ) -> (Vec<Tab>, usize) {
     let Some(session) = session.filter(|s| !s.tabs.is_empty()) else {
         return (Vec::new(), 0);
@@ -5463,7 +5463,7 @@ fn tabs_from_session(
             sidebar_group: std::cell::RefCell::new(st.sidebar_group.clone()),
             tree_id: std::cell::Cell::new(
                 st.tree_id
-                    .unwrap_or_else(tty7_core::core::machine::TabId::new),
+                    .unwrap_or_else(agentty_core::core::machine::TabId::new),
             ),
         });
     }
@@ -5482,7 +5482,7 @@ fn session_to_pane(
     alive: &std::collections::HashMap<u64, Option<String>>,
     font_size: f32,
     window: &mut Window,
-    cx: &mut Context<Tty7App>,
+    cx: &mut Context<AgenttyApp>,
 ) -> Option<Pane> {
     match sp {
         SessionPane::Leaf {
@@ -5572,7 +5572,7 @@ pub(crate) fn new_terminal(
     restore_pane: Option<u64>,
     shell: Option<ShellSpec>,
     window: &mut Window,
-    cx: &mut Context<Tty7App>,
+    cx: &mut Context<AgenttyApp>,
 ) -> anyhow::Result<PaneSlot> {
     if matches!(
         crate::terminal::PaneRoute::for_workspace(workspace.as_ref()),
@@ -5624,7 +5624,7 @@ pub(crate) fn new_terminal(
 fn start_pane_spawn(
     pending: Entity<crate::ui::pending_pane::PendingPane>,
     window: &mut Window,
-    cx: &mut Context<Tty7App>,
+    cx: &mut Context<AgenttyApp>,
 ) {
     let spawn = pending.read(cx).spawn.clone();
     let slot_id = pending.entity_id();
@@ -5654,7 +5654,7 @@ fn build_terminal_view(
     parts: crate::terminal::view::ShellParts,
     font_size: f32,
     window: &mut Window,
-    cx: &mut Context<Tty7App>,
+    cx: &mut Context<AgenttyApp>,
 ) -> Entity<TerminalView> {
     let view = cx.new(|cx| {
         let mut view = TerminalView::from_shell_parts(parts, window, cx);
@@ -5691,7 +5691,11 @@ fn kill_pane_off_thread(route: crate::terminal::PaneRoute, pane_id: u64, cx: &mu
         .detach();
 }
 
-fn watch_pane_focus(view: &Entity<TerminalView>, window: &mut Window, cx: &mut Context<Tty7App>) {
+fn watch_pane_focus(
+    view: &Entity<TerminalView>,
+    window: &mut Window,
+    cx: &mut Context<AgenttyApp>,
+) {
     let handle = view.read(cx).focus_handle.clone();
     let app = cx.weak_entity();
     window
@@ -5708,7 +5712,7 @@ pub(crate) fn new_terminal_native(
     working_directory: Option<std::path::PathBuf>,
     spec: Box<crate::daemon::protocol::NativeSshSpec>,
     window: &mut Window,
-    cx: &mut Context<Tty7App>,
+    cx: &mut Context<AgenttyApp>,
 ) -> anyhow::Result<Entity<TerminalView>> {
     let parts = TerminalView::spawn_native_ssh_terminal(spec, working_directory)?;
     let view = cx.new(|cx| {
@@ -6275,10 +6279,10 @@ mod tests {
 pub(crate) mod test_window {
     use crate::core::config::Config;
     use crate::core::session::Session;
-    use crate::ui::app::Tty7App;
+    use crate::ui::app::AgenttyApp;
     use gpui::{AppContext, Entity, TestAppContext, VisualTestContext};
 
-    pub(crate) fn harness(cx: &mut TestAppContext) -> (Entity<Tty7App>, VisualTestContext) {
+    pub(crate) fn harness(cx: &mut TestAppContext) -> (Entity<AgenttyApp>, VisualTestContext) {
         crate::core::config::pin_test_config_dir();
 
         cx.executor().allow_parking();
@@ -6289,7 +6293,7 @@ pub(crate) mod test_window {
         });
         let window = cx.add_window(|window, cx| {
             let app =
-                cx.new(|cx| Tty7App::with_session(None, Some(Session::default()), window, cx));
+                cx.new(|cx| AgenttyApp::with_session(None, Some(Session::default()), window, cx));
             gpui_component::Root::new(app, window, cx)
         });
         window
@@ -6300,9 +6304,9 @@ pub(crate) mod test_window {
             .update(cx, |root, _, _| {
                 root.view()
                     .clone()
-                    .downcast::<Tty7App>()
+                    .downcast::<AgenttyApp>()
                     .ok()
-                    .expect("window root wraps a Tty7App")
+                    .expect("window root wraps a AgenttyApp")
             })
             .unwrap();
         let vcx = VisualTestContext::from_window(window.into(), cx);
@@ -6313,7 +6317,7 @@ pub(crate) mod test_window {
     pub(crate) fn harness_with_pane(
         cx: &mut TestAppContext,
     ) -> (
-        Entity<Tty7App>,
+        Entity<AgenttyApp>,
         VisualTestContext,
         std::os::unix::net::UnixStream,
     ) {
@@ -6346,8 +6350,8 @@ mod ssh_rebuild_gpui_tests {
         RemoteRef, RemoteTarget, WindowView, WindowViews, WorkspaceId, WorkspaceStore,
     };
     use crate::ui::pane::{Pane, PaneSlot};
+    use agentty_core::core::machine::{LayoutDelta, PaneNode, Tab as TreeTab};
     use gpui::TestAppContext;
-    use tty7_core::core::machine::{LayoutDelta, PaneNode, Tab as TreeTab};
 
     #[gpui::test]
     fn a_tree_rebuild_keeps_the_native_ssh_split_a_remote_tab_holds(cx: &mut TestAppContext) {
@@ -6467,11 +6471,11 @@ mod ssh_rebuild_gpui_tests {
 mod keybinding_gpui_tests {
     use super::test_window::harness;
     use crate::core::config::Config;
-    use crate::ui::app::Tty7App;
+    use crate::ui::app::AgenttyApp;
     use crate::ui::settings::SettingsSection;
     use gpui::{Entity, TestAppContext, VisualTestContext};
 
-    fn begin_capture(app: &Entity<Tty7App>, vcx: &mut VisualTestContext, action: &str) {
+    fn begin_capture(app: &Entity<AgenttyApp>, vcx: &mut VisualTestContext, action: &str) {
         let action = action.to_string();
         app.update_in(vcx, |app, window, cx| {
             app.toggle_settings(window, cx);
@@ -6566,10 +6570,10 @@ mod shell_menu_gpui_tests {
     use crate::core::session::{
         RemoteRef, RemoteTarget, Session, WindowView, WindowViews, WorkspaceId, WorkspaceStore,
     };
-    use crate::ui::app::Tty7App;
+    use crate::ui::app::AgenttyApp;
     use gpui::{AppContext, Entity, TestAppContext, VisualTestContext};
 
-    fn harness(cx: &mut TestAppContext) -> (Entity<Tty7App>, VisualTestContext) {
+    fn harness(cx: &mut TestAppContext) -> (Entity<AgenttyApp>, VisualTestContext) {
         crate::core::config::pin_test_config_dir();
         cx.executor().allow_parking();
         cx.update(|cx| {
@@ -6580,16 +6584,16 @@ mod shell_menu_gpui_tests {
         });
         let window = cx.add_window(|window, cx| {
             let app =
-                cx.new(|cx| Tty7App::with_session(None, Some(Session::default()), window, cx));
+                cx.new(|cx| AgenttyApp::with_session(None, Some(Session::default()), window, cx));
             gpui_component::Root::new(app, window, cx)
         });
         let app = window
             .update(cx, |root, _, _| {
                 root.view()
                     .clone()
-                    .downcast::<Tty7App>()
+                    .downcast::<AgenttyApp>()
                     .ok()
-                    .expect("window root wraps a Tty7App")
+                    .expect("window root wraps a AgenttyApp")
             })
             .unwrap();
         let vcx = VisualTestContext::from_window(window.into(), cx);
@@ -6597,9 +6601,9 @@ mod shell_menu_gpui_tests {
     }
 
     fn pump_until(
-        app: &Entity<Tty7App>,
+        app: &Entity<AgenttyApp>,
         vcx: &mut VisualTestContext,
-        done: impl Fn(&Tty7App) -> bool,
+        done: impl Fn(&AgenttyApp) -> bool,
     ) -> bool {
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
         loop {

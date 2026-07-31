@@ -17,7 +17,9 @@ use crate::core::actions::{
 };
 use crate::core::config::RightPanelTab;
 use crate::daemon::protocol::ShellSpec;
-use crate::ui::app::{TILE_GLYPH, TILE_GLYPH_LINE, TILE_SIZE, Tab, Tty7App, tile_trailing_inset};
+use crate::ui::app::{
+    AgenttyApp, TILE_GLYPH, TILE_GLYPH_LINE, TILE_SIZE, Tab, tile_trailing_inset,
+};
 use crate::ui::hints::tab_badge_label;
 use crate::ui::reorder::{self, Reorder, Surface};
 
@@ -194,7 +196,7 @@ pub(crate) fn workspace_avatar(
                 .child(initial)
                 .when(!current, |disc| disc.opacity(0.55)),
         )
-        .children(dot.map(|rgb| Tty7App::status_dot(rgb, 0, size, cx.theme().popover)))
+        .children(dot.map(|rgb| AgenttyApp::status_dot(rgb, 0, size, cx.theme().popover)))
 }
 
 pub(crate) fn select_workspace_action(index: usize) -> Option<Box<dyn gpui::Action>> {
@@ -212,7 +214,7 @@ pub(crate) fn select_workspace_action(index: usize) -> Option<Box<dyn gpui::Acti
     })
 }
 
-impl Tty7App {
+impl AgenttyApp {
     pub(crate) fn app_menu_tile(
         &self,
         window: &Window,
@@ -323,7 +325,7 @@ impl Tty7App {
                 );
                 for host in &hosts {
                     let target = host.target.clone();
-                    let id = tty7_core::core::environment::EnvironmentId::for_remote(&target);
+                    let id = agentty_core::core::environment::EnvironmentId::for_remote(&target);
                     let selected = id == current_environment;
                     let target_for_click = target.clone();
                     menu = menu.item(
@@ -570,7 +572,7 @@ impl Tty7App {
                 let spec = ShellSpec {
                     program: shell.program.clone(),
                     args: shell.args.clone(),
-                    args_are_tty7_defaults: true,
+                    args_are_agentty_defaults: true,
                 };
                 let open = app.clone();
                 let item = if shell.label == default_name {
@@ -1134,7 +1136,10 @@ mod tests {
 
     #[test]
     fn short_title_truncates_deep_paths_to_trailing_segments() {
-        assert_eq!(short_title("user@host:~/repo/025/tty7"), "…/repo/025/tty7");
+        assert_eq!(
+            short_title("user@host:~/repo/025/agentty"),
+            "…/repo/025/agentty"
+        );
         assert_eq!(short_title("/usr/local/share/man"), "…/local/share/man");
         assert_eq!(short_title("a/b/c/d"), "…/b/c/d");
     }
@@ -1148,7 +1153,7 @@ mod tests {
 
     #[test]
     fn environment_indicator_labels_local_and_remote_authority() {
-        let (label, state, color) = Tty7App::environment_indicator_state(None, None);
+        let (label, state, color) = AgenttyApp::environment_indicator_state(None, None);
         assert_eq!(
             (label.as_str(), state.as_str(), color),
             ("This Mac", "Local environment", 0x22C55E)
@@ -1160,7 +1165,7 @@ mod tests {
             },
             crate::core::session::WorkspaceId::new(),
         );
-        let (label, state, color) = Tty7App::environment_indicator_state(
+        let (label, state, color) = AgenttyApp::environment_indicator_state(
             Some(&remote),
             Some(&crate::ui::remote_workspace::RemoteStatus::Attached),
         );
@@ -1178,7 +1183,7 @@ mod tests {
             crate::core::session::WorkspaceId::new(),
         );
         let detail = "no default identity files and SSH agent has no identities";
-        let (_, state, color) = Tty7App::environment_indicator_state(
+        let (_, state, color) = AgenttyApp::environment_indicator_state(
             Some(&remote),
             Some(&crate::ui::remote_workspace::RemoteStatus::Failed(
                 detail.into(),

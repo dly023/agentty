@@ -1,11 +1,11 @@
 # Usage: bundle-windows.ps1 <target-triple> <arch-label>
 # Package the release binary twice from one staged payload:
-#   dist/tty7-<version>-windows-<arch>.zip        portable (unzip anywhere)
-#   dist/tty7-<version>-windows-<arch>-setup.exe  Inno Setup installer
+#   dist/agentty-<version>-windows-<arch>.zip        portable (unzip anywhere)
+#   dist/agentty-<version>-windows-<arch>-setup.exe  Inno Setup installer
 #     (Program Files or per-user, Start Menu shortcut, "Apps" uninstall entry)
 #
 # Fonts are embedded via include_bytes! and the app icon is compiled into the
-# executable as a resource (see build.rs). So the payload is tty7-app.exe plus a
+# executable as a resource (see build.rs). So the payload is agentty-app.exe plus a
 # sibling completions\ dir (loaded at runtime — see terminal::signature) and the
 # license/readme. Both artifacts are unsigned builds — SmartScreen will
 # warn on first launch.
@@ -14,26 +14,26 @@ $ErrorActionPreference = 'Stop'
 $Target = $args[0]
 $Arch   = $args[1]
 $Version = (Select-String -Path Cargo.toml -Pattern '^version\s*=\s*"([^"]+)"').Matches[0].Groups[1].Value
-$Name  = "tty7-$Version-windows-$Arch"
+$Name  = "agentty-$Version-windows-$Arch"
 $Stage = "dist/$Name"
 
 Remove-Item -Recurse -Force dist -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $Stage | Out-Null
 
-Copy-Item "target/$Target/release/tty7-app.exe" "$Stage/tty7-app.exe"
+Copy-Item "target/$Target/release/agentty-app.exe" "$Stage/agentty-app.exe"
 # The CLI, staged beside the GUI so both the zip and the installer carry it.
-# `core::cli_install` resolves it relative to tty7-app.exe and puts that
+# `core::cli_install` resolves it relative to agentty-app.exe and puts that
 # directory on the user's PATH.
-Copy-Item "target/$Target/release/tty7.exe" "$Stage/tty7.exe"
+Copy-Item "target/$Target/release/agentty.exe" "$Stage/agentty.exe"
 New-Item -ItemType Directory -Force -Path "$Stage/completions" | Out-Null
 Copy-Item "assets/completions/*.json" "$Stage/completions/"
 Copy-Item LICENSE "$Stage/LICENSE.txt"
 Copy-Item README.md "$Stage/README.md"
 
-# The Linux musl `tty7-server`, staged at server/ so a WSL distro can be handed
+# The Linux musl `agentty-server`, staged at server/ so a WSL distro can be handed
 # the binary this client shipped with (WSL downloads nothing). The
 # lookup path is a contract with `daemon::install::wsl` — it searches
-# <dir of tty7-app.exe>/server/<asset> first — so this directory name is not free to
+# <dir of agentty-app.exe>/server/<asset> first — so this directory name is not free to
 # change on its own. Missing is a warning, not an error, matching `server-musl`'s
 # own skip-don't-fail probe; WSL then fails at connect time with a message
 # naming the directories it searched.
@@ -41,7 +41,7 @@ Copy-Item README.md "$Stage/README.md"
 # The *filename* is a contract too, not just the directory: `wsl.rs` looks for
 # `<dir>/<asset name>`, so this string has to stay whatever
 # `install::asset::ASSET_X86_64` says it is.
-$ServerAsset = "tty7-server-linux-x86_64-musl"
+$ServerAsset = "agentty-server-linux-x86_64-musl"
 $ServerSrc = "bundled-server/$ServerAsset"
 if (Test-Path $ServerSrc) {
     New-Item -ItemType Directory -Force -Path "$Stage/server" | Out-Null

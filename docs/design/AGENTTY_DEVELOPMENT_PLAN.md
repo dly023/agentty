@@ -125,7 +125,7 @@ Composer 不直接依赖临时 focus handler，统一经 `InputDelivery` canonic
 本轮活动
   ✓ rg "session" src/                 120ms
   ✓ Read src/ui/tab_sidebar.rs          8ms
-  ● cargo test -p tty7-core            18s
+  ● cargo test -p agentty-core            18s
   ! ApplyPatch                          等待授权
 ```
 
@@ -133,7 +133,7 @@ Composer 不直接依赖临时 focus handler，统一经 `InputDelivery` canonic
 
 1. provider 官方 hook/event；
 2. Agent JSONL/session event tail；
-3. tty7 已捕获的 OSC 777；
+3. agentty 已捕获的 OSC 777；
 4. process tree / foreground command；
 5. terminal text heuristic，仅低可信 fallback。
 

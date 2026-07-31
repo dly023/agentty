@@ -9,7 +9,7 @@ fn capped(text: &str) -> String {
         end -= 1;
     }
     format!(
-        "{}\n[… truncated by tty7 — ask for the rest if needed]",
+        "{}\n[… truncated by agentty — ask for the rest if needed]",
         &text[..end]
     )
 }
@@ -63,10 +63,10 @@ mod tests {
 
     #[test]
     fn selection_prompt_embeds_the_text_and_cwd() {
-        let p = build_selection_prompt("error[E0308]: mismatched types", Some("/work/tty7"))
+        let p = build_selection_prompt("error[E0308]: mismatched types", Some("/work/agentty"))
             .expect("non-empty selection builds");
         assert!(p.contains("error[E0308]"));
-        assert!(p.contains("/work/tty7"));
+        assert!(p.contains("/work/agentty"));
         assert!(p.contains("```"));
         assert_eq!(build_selection_prompt("   \n", None), None);
     }
@@ -84,7 +84,7 @@ mod tests {
         let big = "x".repeat(MAX_CONTEXT_BYTES + 100);
         let p = build_selection_prompt(&big, None).unwrap();
         assert!(p.len() < big.len() + 500);
-        assert!(p.contains("truncated by tty7"));
+        assert!(p.contains("truncated by agentty"));
     }
 
     #[test]

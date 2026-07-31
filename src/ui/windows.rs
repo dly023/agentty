@@ -7,8 +7,8 @@ use gpui_component::{Root, TitleBar};
 use crate::core::config::{Config, StartupMode};
 use crate::core::session::{RemoteRef, RemoteTarget, WorkspaceId, WorkspaceStore};
 use crate::core::window_state::{WindowGeometry as _, WindowState};
-use crate::ui::app::Tty7App;
-use tty7_core::core::environment::EnvironmentId;
+use crate::ui::app::AgenttyApp;
+use agentty_core::core::environment::EnvironmentId;
 
 const CASCADE_STEP: f32 = 28.0;
 
@@ -18,7 +18,7 @@ struct WindowEntry {
     workspace: WorkspaceId,
     environment: EnvironmentId,
     handle: AnyWindowHandle,
-    app: WeakEntity<Tty7App>,
+    app: WeakEntity<AgenttyApp>,
 }
 
 #[derive(Default)]
@@ -38,7 +38,7 @@ impl WindowRegistry {
         cx.global::<Self>().windows.len()
     }
 
-    pub fn open_windows(cx: &mut App) -> Vec<(WorkspaceId, WeakEntity<Tty7App>)> {
+    pub fn open_windows(cx: &mut App) -> Vec<(WorkspaceId, WeakEntity<AgenttyApp>)> {
         Self::sweep(cx);
         cx.global::<Self>()
             .windows
@@ -81,7 +81,7 @@ impl WindowRegistry {
             .or_else(|| registry.windows.first().map(|w| w.workspace))
     }
 
-    pub fn app_in(cx: &mut App, window: &Window) -> Option<gpui::Entity<Tty7App>> {
+    pub fn app_in(cx: &mut App, window: &Window) -> Option<gpui::Entity<AgenttyApp>> {
         Self::sweep(cx);
         let handle = window.window_handle();
         cx.global::<Self>()
@@ -91,7 +91,7 @@ impl WindowRegistry {
             .and_then(|w| w.app.upgrade())
     }
 
-    pub fn app_for(cx: &mut App, workspace: WorkspaceId) -> Option<WeakEntity<Tty7App>> {
+    pub fn app_for(cx: &mut App, workspace: WorkspaceId) -> Option<WeakEntity<AgenttyApp>> {
         Self::sweep(cx);
         cx.global::<Self>()
             .windows
@@ -104,7 +104,7 @@ impl WindowRegistry {
         cx: &mut App,
         workspace: WorkspaceId,
         handle: AnyWindowHandle,
-        app: WeakEntity<Tty7App>,
+        app: WeakEntity<AgenttyApp>,
     ) {
         let environment = WorkspaceStore::environment_id(cx, workspace);
         cx.global_mut::<Self>().windows.push(WindowEntry {
@@ -203,9 +203,9 @@ pub fn open(cx: &mut App, workspace: Option<WorkspaceId>) {
     }
 
     let options = window_options(cx, workspace);
-    let mut created: Option<gpui::Entity<Tty7App>> = None;
+    let mut created: Option<gpui::Entity<AgenttyApp>> = None;
     let opened = cx.open_window(options, |window, cx| {
-        let app = cx.new(|cx| Tty7App::for_workspace(workspace, window, cx));
+        let app = cx.new(|cx| AgenttyApp::for_workspace(workspace, window, cx));
         created = Some(app.clone());
         cx.new(|cx| Root::new(app, window, cx).bg(gpui::transparent_black()))
     });
@@ -218,7 +218,7 @@ pub fn open(cx: &mut App, workspace: Option<WorkspaceId>) {
         }
     };
     let Some(app) = created else {
-        log::error!("opened a window but its Tty7App was never built; not registering");
+        log::error!("opened a window but its AgenttyApp was never built; not registering");
         return;
     };
 
@@ -410,7 +410,7 @@ pub fn delete_workspace(cx: &mut App, workspace: WorkspaceId) {
 fn delete_from_tree(cx: &mut App, workspace: WorkspaceId) -> Vec<u64> {
     let doomed = doomed_pane_ids(cx, workspace);
     crate::ui::tree_sync::fire_workspace_op(cx, workspace, |ws| {
-        tty7_core::daemon::control::ControlRequest::WorkspaceRemove { workspace: ws }
+        agentty_core::daemon::control::ControlRequest::WorkspaceRemove { workspace: ws }
     });
     crate::ui::tree_sync::forget(cx, workspace);
     doomed
@@ -495,7 +495,7 @@ fn window_options(cx: &mut App, workspace: Option<WorkspaceId>) -> WindowOptions
 
     WindowOptions {
         window_bounds: Some(window_bounds),
-        app_id: Some("tty7".to_owned()),
+        app_id: Some("agentty".to_owned()),
         #[cfg(any(target_os = "linux", target_os = "freebsd"))]
         icon: APP_ICON.as_ref().cloned(),
         titlebar: Some(TitlebarOptions {
@@ -601,7 +601,7 @@ mod tests {
         cx: &mut gpui::TestAppContext,
     ) {
         use crate::core::session::{WindowView, WindowViews};
-        use tty7_core::core::machine::{Machine, PaneRecord, Tab, Workspace as TreeWorkspace};
+        use agentty_core::core::machine::{Machine, PaneRecord, Tab, Workspace as TreeWorkspace};
 
         cx.update(|cx| {
             let view = WindowView::default();

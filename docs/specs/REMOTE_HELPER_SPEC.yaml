@@ -2,7 +2,7 @@ version: 1
 updated: 2026-07-31
 domain: remote_agent_helper
 architecture:
-  deployment: extend_existing_tty7_server_control_channel
+  deployment: extend_existing_agentty_server_control_channel
   local_path: direct_call_to_shared_agent_runtime
   remote_path: control_rpc_to_same_agent_runtime
   exclusions: [byok, model_proxy, chat_backend, new_listening_port, second_daemon]
@@ -22,7 +22,7 @@ contracts:
   - id: HELPER-CANCELLATION-BACKPRESSURE-07
     rule: Long-running helper operations have operation identity, cancellation, timeout, source limits, and bounded event or candidate delivery.
   - id: HELPER-VERSION-INSTALL-08
-    rule: Helper version, protocol, capabilities, instance identity, binary hash, and install outcome are observable through the existing tty7-server lifecycle without a second daemon or listening port.
+    rule: Helper version, protocol, capabilities, instance identity, binary hash, and install outcome are observable through the existing agentty-server lifecycle without a second daemon or listening port.
   - id: HELPER-LOCAL-REMOTE-PARITY-09
     rule: Every helper contract has local and remote parity tests, including explicit negative tests proving that remote failures cannot fall back to local authority.
 status: verified

@@ -22,18 +22,18 @@ phases:
   - id: identity-protocol
     status: pending
     scope:
-      - TTY7_* pane and shell integration variables
+      - AGENTTY_* pane and shell integration variables
       - wire markers, socket names, hook identifiers, and daemon process recognition
     note: Internal compatibility boundary; no new code may expand it.
 legacy_allowlist:
   rationale: Existing executable/protocol identifiers are temporarily retained to keep the current system buildable while the atomic rename phase is designed and tested.
   categories:
-    - Cargo crates and binaries under crates/tty7-*
-    - TTY7_PANE, TTY7_WS, TTY7_CONTROL_SOCK, and shell-integration protocol variables
-    - tty7-server release/install artifact contract
+    - Cargo crates and binaries under crates/agentty-*
+    - AGENTTY_PANE, AGENTTY_WS, AGENTTY_CONTROL_SOCK, and shell-integration protocol variables
+    - agentty-server release/install artifact contract
     - historical CHANGELOG entries
 exit_criteria:
-  - no user-visible tty7 product branding
+  - no user-visible agentty product branding
   - no legacy config authority
   - Agentty.app installs and launches with version 0.0.1
   - remaining legacy identifiers are only those explicitly listed above

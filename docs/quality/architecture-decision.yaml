@@ -27,10 +27,10 @@ consequences:
   - WorkspaceId may remain temporarily for daemon collections and persistence migration, but it is not the product-level Environment identity.
   - The old switch-current-window-to-workspace path must be deleted after environment-window migration verification.
   - id: ADR-REMOTE-HELPER-002
-    title: Extend tty7-server instead of adding a second remote Agent daemon
+    title: Extend agentty-server instead of adding a second remote Agent daemon
     status: accepted
     date: 2026-07-31
-    decision: Local adapters call tty7-core agent_runtime directly and remote adapters use capability-negotiated control RPC to the same core through tty7-server.
+    decision: Local adapters call agentty-core agent_runtime directly and remote adapters use capability-negotiated control RPC to the same core through agentty-server.
     consequences:
       - No BYOK, model proxy, new listening port, system service, or second install lifecycle.
       - Remote discovery, resume, activity, and completion remain under remote Environment authority.

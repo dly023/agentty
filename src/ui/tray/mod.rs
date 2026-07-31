@@ -68,9 +68,9 @@ impl TraySnapshot {
             }
         }
         if parts.is_empty() {
-            "tty7".to_string()
+            "agentty".to_string()
         } else {
-            format!("tty7 — {}", parts.join(", "))
+            format!("agentty — {}", parts.join(", "))
         }
     }
 }
@@ -96,7 +96,7 @@ pub(crate) fn menu_spec(snap: &TraySnapshot) -> Vec<SpecItem> {
         checked: None,
         avatar: None,
     };
-    let mut items = vec![item("show", "Show tty7".into()), SpecItem::Separator];
+    let mut items = vec![item("show", "Show agentty".into()), SpecItem::Separator];
     for a in &snap.agents {
         let state = match a.status {
             AgentStatus::Waiting => " — needs input",
@@ -131,7 +131,7 @@ pub(crate) fn menu_spec(snap: &TraySnapshot) -> Vec<SpecItem> {
     items.push(item("settings", "Settings…".into()));
     items.push(item("updates", "Check for Updates…".into()));
     items.push(SpecItem::Separator);
-    items.push(item("quit", "Quit tty7".into()));
+    items.push(item("quit", "Quit agentty".into()));
     items.push(item("quit-stop", "Quit and Stop Server…".into()));
     items
 }
@@ -163,7 +163,7 @@ mod tests {
                 leaf_id: 42,
                 agent: crate::core::cli_agent::CLIAgent::Claude,
                 status,
-                detail: "tty7 @ main".into(),
+                detail: "agentty @ main".into(),
             }],
             notify_mode: NotifyMode::Unfocused,
         }
@@ -204,9 +204,9 @@ mod tests {
         assert!(!snapshot_with_agent(AgentStatus::Done).attention());
         assert_eq!(
             snapshot_with_agent(AgentStatus::Waiting).tooltip(),
-            "tty7 — 1 waiting"
+            "agentty — 1 waiting"
         );
-        assert_eq!(TraySnapshot::default().tooltip(), "tty7");
+        assert_eq!(TraySnapshot::default().tooltip(), "agentty");
     }
 
     #[test]
@@ -223,11 +223,11 @@ mod tests {
         assert_eq!(
             labels,
             [
-                "Show tty7",
+                "Show agentty",
                 "Notifications",
                 "Settings…",
                 "Check for Updates…",
-                "Quit tty7",
+                "Quit agentty",
                 "Quit and Stop Server…"
             ]
         );

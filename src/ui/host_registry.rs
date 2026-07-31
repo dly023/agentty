@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
+use agentty_core::host::local::LocalHost;
 use gpui::{App, Global};
-use tty7_core::host::local::LocalHost;
 
-pub use tty7_core::host::{Host, HostId, SharedHost};
+pub use agentty_core::host::{Host, HostId, SharedHost};
 
 pub struct HostRegistry {
     hosts: HashMap<HostId, SharedHost>,

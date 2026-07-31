@@ -11,9 +11,9 @@ use crate::daemon::protocol::{
     NativeSshSpec, SshAlgorithms, SshAuthMode, SshForwardKind, SshForwardRule, SshProxy,
 };
 
-use super::app::Tty7App;
+use super::app::AgenttyApp;
 
-impl Tty7App {
+impl AgenttyApp {
     pub(crate) fn native_ssh_spec_for_profile(
         &self,
         profile: &SshProfile,

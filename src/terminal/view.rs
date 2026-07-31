@@ -269,11 +269,11 @@ fn known_pty_shim(fg: &str) -> Option<&'static str> {
 fn integration_notice_message(wrapper: Option<&str>) -> String {
     match wrapper {
         Some(w) => format!(
-            "tty7 shell integration is blocked in this pane — \u{201c}{w}\u{201d} is intercepting \
+            "agentty shell integration is blocked in this pane — \u{201c}{w}\u{201d} is intercepting \
              shell reports, so inline completion and the Ctrl+R menu are unavailable. \
              The shell's own history search still works."
         ),
-        None => "tty7 shell integration hasn't engaged in this pane, so inline completion and \
+        None => "agentty shell integration hasn't engaged in this pane, so inline completion and \
                  the Ctrl+R menu are unavailable. A PTY wrapper (figterm-style) or an \
                  unsupported shell setup can cause this."
             .to_string(),
@@ -288,7 +288,7 @@ fn notify_command_finished(label: &str, elapsed: std::time::Duration) {
     } else {
         format!("{label} — finished after {secs}s")
     };
-    super::remote::notify_desktop(Some("tty7"), &body);
+    super::remote::notify_desktop(Some("agentty"), &body);
 }
 
 fn notify_agent_finished(agent: crate::core::cli_agent::CLIAgent, elapsed: std::time::Duration) {
@@ -402,7 +402,7 @@ fn clipboard_paste_text(item: &ClipboardItem) -> Option<String> {
 #[cfg(not(target_os = "macos"))]
 fn write_clipboard_image(img: &gpui::Image) -> Option<std::path::PathBuf> {
     use gpui::ImageFormat;
-    let dir = std::env::temp_dir().join("tty7-clipboard");
+    let dir = std::env::temp_dir().join("agentty-clipboard");
     std::fs::create_dir_all(&dir).ok()?;
     let (ext, transcoded) = match img.format {
         ImageFormat::Png => ("png", None),
@@ -705,7 +705,7 @@ impl TerminalView {
             selecting: false,
             drag_scroll: None,
             drag_scroll_epoch: 0,
-            title: "tty7".to_string(),
+            title: "agentty".to_string(),
             marked_text: String::new(),
             last_mouse_cell: None,
             report_mouse,
@@ -874,7 +874,7 @@ impl TerminalView {
     ) -> anyhow::Result<()> {
         self.terminal
             .adopt_relink(stream, route, size, cell_w, cell_h)?;
-        self.title = "tty7".to_string();
+        self.title = "agentty".to_string();
         cx.notify();
         Ok(())
     }
@@ -952,7 +952,7 @@ impl TerminalView {
                 format!("{command}\r").into_bytes()
             }
             crate::ui::composer::InputDelivery::Resume(invocation) => {
-                tty7_core::agent_runtime::shell_line(invocation)
+                agentty_core::agent_runtime::shell_line(invocation)
             }
         };
         self.terminal.write(bytes);
@@ -983,7 +983,7 @@ impl TerminalView {
 
     pub fn run_invocation(
         &self,
-        invocation: &tty7_core::agent_runtime::ResumeInvocation,
+        invocation: &agentty_core::agent_runtime::ResumeInvocation,
         cx: &gpui::App,
     ) -> crate::ui::composer::DeliveryOutcome {
         self.deliver_input(
@@ -1020,16 +1020,16 @@ impl TerminalView {
                 cx.notify();
             }
             AlacEvent::ResetTitle => {
-                self.title = "tty7".to_string();
+                self.title = "agentty".to_string();
                 cx.notify();
             }
             AlacEvent::PtyWrite(text) => self.terminal.write(text.into_bytes()),
             AlacEvent::ChildExit(_) | AlacEvent::Exit => {
                 self.terminal.exited = true;
                 self.title = if self.workspace().is_some() && !self.terminal.child_exited() {
-                    "tty7 — disconnected".to_string()
+                    "agentty — disconnected".to_string()
                 } else {
-                    "tty7 — process exited".to_string()
+                    "agentty — process exited".to_string()
                 };
                 if self.terminal.child_exited() {
                     cx.emit(ChildExited);
@@ -2241,7 +2241,7 @@ impl TerminalView {
         // is scoped to the *inner* target, and seeding that scope from the
         // workspace host's ~/.zsh_history would offer commands from the wrong
         // box — the exact confusion scoping exists to prevent. Those panes
-        // start from what tty7 recorded for the inner target, like bare ssh.
+        // start from what agentty recorded for the inner target, like bare ssh.
         if self.remote_context().is_some() {
             return Vec::new();
         }
@@ -2957,11 +2957,11 @@ impl TerminalView {
             return;
         }
         if let Some(reason) = self.link_inactive_reason(cx) {
-            log::debug!(target: "tty7::completion", "Tab does nothing and the line stays: {reason}");
+            log::debug!(target: "agentty::completion", "Tab does nothing and the line stays: {reason}");
             return;
         }
         if let Some(reason) = self.input_inactive_reason() {
-            log::debug!(target: "tty7::completion", "Tab goes straight to the PTY: {reason}");
+            log::debug!(target: "agentty::completion", "Tab goes straight to the PTY: {reason}");
             let bytes = self.tab_bytes(!forward);
             self.send_to_pty(&bytes, cx);
             return;
@@ -2989,15 +2989,15 @@ impl TerminalView {
             .map(|(offset, _)| offset)
             .unwrap_or(line.len());
         let authority = if self.host_id.is_local() {
-            tty7_core::agent_runtime::AuthorityKind::Local
+            agentty_core::agent_runtime::AuthorityKind::Local
         } else {
-            tty7_core::agent_runtime::AuthorityKind::Remote
+            agentty_core::agent_runtime::AuthorityKind::Remote
         };
-        let request = tty7_core::agent_runtime::CompletionRequest {
-            operation: tty7_core::agent_runtime::OperationId(
+        let request = agentty_core::agent_runtime::CompletionRequest {
+            operation: agentty_core::agent_runtime::OperationId(
                 self.completion_generation.wrapping_add(1),
             ),
-            generation: tty7_core::agent_runtime::CompletionGeneration(
+            generation: agentty_core::agent_runtime::CompletionGeneration(
                 self.completion_generation.wrapping_add(1),
             ),
             authority,
@@ -3007,8 +3007,8 @@ impl TerminalView {
             limit: 400,
             history: self.history_ranked.iter().take(200).cloned().collect(),
         };
-        let tty7_core::agent_runtime::CompletionOutcome::Complete(candidates) =
-            tty7_core::agent_runtime::complete(&*host, &request)
+        let agentty_core::agent_runtime::CompletionOutcome::Complete(candidates) =
+            agentty_core::agent_runtime::complete(&*host, &request)
         else {
             return Vec::new();
         };
@@ -3022,14 +3022,14 @@ impl TerminalView {
                     .chars()
                     .count();
                 let kind = match candidate.source {
-                    tty7_core::agent_runtime::CompletionSourceKind::Filesystem => {
+                    agentty_core::agent_runtime::CompletionSourceKind::Filesystem => {
                         if candidate.value.ends_with('/') {
                             CandidateKind::Dir
                         } else {
                             CandidateKind::File
                         }
                     }
-                    tty7_core::agent_runtime::CompletionSourceKind::Grammar => {
+                    agentty_core::agent_runtime::CompletionSourceKind::Grammar => {
                         CandidateKind::Command
                     }
                     _ => CandidateKind::Value,
@@ -3051,7 +3051,7 @@ impl TerminalView {
             return;
         }
         if !cx.global::<Config>().tab_completion {
-            log::debug!(target: "tty7::completion", "handing the line to the shell: tab_completion is off");
+            log::debug!(target: "agentty::completion", "handing the line to the shell: tab_completion is off");
             self.handoff_tab_to_shell(!forward, cx);
             return;
         }
@@ -3087,7 +3087,7 @@ impl TerminalView {
             if self.spawn_remote_path_completion(&line, cursor, forward, cx) {
                 return;
             }
-            log::debug!(target: "tty7::completion", "handing the line to the shell: no candidates for {line:?} at {cursor}");
+            log::debug!(target: "agentty::completion", "handing the line to the shell: no candidates for {line:?} at {cursor}");
             self.handoff_tab_to_shell(!forward, cx);
             return;
         }
@@ -3187,7 +3187,7 @@ impl TerminalView {
         };
         let Some(req) = completion::remote_path_request(line, cursor, &cwd) else {
             log::debug!(
-                target: "tty7::completion",
+                target: "agentty::completion",
                 "no remote listing to ask for: {line:?} at {cursor} against {cwd}"
             );
             return false;
@@ -3199,12 +3199,12 @@ impl TerminalView {
         let route = crate::ui::sftp::SftpRoute::new(self.pane_id, self.workspace.clone());
         let dir = req.dir.clone();
         let line = line.to_string();
-        log::debug!(target: "tty7::completion", "listing {dir} over the remote's own connection");
+        log::debug!(target: "agentty::completion", "listing {dir} over the remote's own connection");
         cx.spawn(async move |this, cx| {
             let listed = cx.background_spawn(async move { route.list(&dir) }).await;
             let entries = listed.unwrap_or_else(|e| {
                 log::warn!(
-                    target: "tty7::completion",
+                    target: "agentty::completion",
                     "remote listing failed, treating it as no candidates: {e}"
                 );
                 Vec::new()
@@ -3232,14 +3232,14 @@ impl TerminalView {
             .or_else(|| self.input_inactive_reason())
         {
             log::debug!(
-                target: "tty7::completion",
+                target: "agentty::completion",
                 "dropping a remote listing for {line:?}: {reason}"
             );
             return;
         }
         if self.cmd.text() != line || self.cmd.cursor() != cursor {
             log::debug!(
-                target: "tty7::completion",
+                target: "agentty::completion",
                 "dropping a remote listing for {line:?}: the line has moved on"
             );
             return;
@@ -3253,7 +3253,7 @@ impl TerminalView {
             .collect();
         let cands = completion::remote_path_candidates(&req, &entries);
         log::debug!(
-            target: "tty7::completion",
+            target: "agentty::completion",
             "{} entries in {}, {} match the word",
             entries.len(),
             req.dir,
@@ -5871,11 +5871,11 @@ mod gpui_tests {
         let (window, _daemon) = harness(cx);
         window
             .update(cx, |view, _, cx| {
-                assert_eq!(view.title, "tty7");
+                assert_eq!(view.title, "agentty");
                 view.handle_event(AlacEvent::Title("vim — main.rs".into()), cx);
                 assert_eq!(view.title, "vim — main.rs");
                 view.handle_event(AlacEvent::ResetTitle, cx);
-                assert_eq!(view.title, "tty7");
+                assert_eq!(view.title, "agentty");
             })
             .unwrap();
     }
@@ -6015,7 +6015,7 @@ mod gpui_tests {
             }
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
-        panic!("an emacs-mode prompt should re-enable tty7's local editor");
+        panic!("an emacs-mode prompt should re-enable agentty's local editor");
     }
 
     fn wait_for_input_active(window: &gpui::WindowHandle<TerminalView>, cx: &mut TestAppContext) {
@@ -6172,7 +6172,7 @@ mod gpui_tests {
                     type_char(view, ch, window, cx);
                 }
                 view.complete_tab(true, cx);
-                assert!(view.completion.is_none(), "no tty7 menu while opted out");
+                assert!(view.completion.is_none(), "no agentty menu while opted out");
                 assert_eq!(view.cmd.text(), "");
             })
             .unwrap();
@@ -6398,7 +6398,7 @@ mod gpui_tests {
 
     #[gpui::test]
     fn insert_newline_action_extends_the_line_and_enter_submits_it(cx: &mut TestAppContext) {
-        let dir = std::env::temp_dir().join(format!("tty7-covtest-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("agentty-covtest-{}", std::process::id()));
         std::fs::create_dir_all(&dir).ok();
         crate::core::config::set_config_dir(dir);
 
@@ -6625,7 +6625,7 @@ mod gpui_tests {
                 view.handle_editor_key(&key("ctrl-r"), cx);
                 assert!(
                     view.reverse_search.is_none(),
-                    "no tty7 menu while opted out"
+                    "no agentty menu while opted out"
                 );
                 assert_eq!(view.cmd.text(), "", "the line went to the shell");
             })
@@ -6717,7 +6717,7 @@ mod gpui_tests {
         .unwrap();
         wait(cx, &|v| v.terminal.at_prompt(), "the initial prompt report");
 
-        let marker = format!("tty7_gpui_exit_marker_{}", std::process::id());
+        let marker = format!("agentty_gpui_exit_marker_{}", std::process::id());
         window
             .update(cx, |view, _, cx| {
                 view.cmd.set(&marker);
@@ -7341,11 +7341,11 @@ mod gpui_tests {
             .update(cx, |view, _, cx| {
                 bind_to_a_disconnected_remote_workspace(view, cx);
                 view.handle_event(AlacEvent::Exit, cx);
-                assert_eq!(view.title, "tty7 — disconnected");
+                assert_eq!(view.title, "agentty — disconnected");
 
                 view.set_workspace(None);
                 view.handle_event(AlacEvent::Exit, cx);
-                assert_eq!(view.title, "tty7 — process exited");
+                assert_eq!(view.title, "agentty — process exited");
             })
             .unwrap();
     }
@@ -7434,7 +7434,7 @@ mod gpui_tests {
                 )
                 .expect("the swap itself cannot fail");
                 assert_eq!(
-                    view.title, "tty7",
+                    view.title, "agentty",
                     "a relinked pane is not \"process exited\""
                 );
             })
@@ -7548,7 +7548,7 @@ mod gpui_tests {
             .update(cx, |view, _, cx| {
                 view.handle_event(AlacEvent::Exit, cx);
                 assert!(view.terminal.exited);
-                assert_eq!(view.title, "tty7 — process exited");
+                assert_eq!(view.title, "agentty — process exited");
             })
             .unwrap();
     }

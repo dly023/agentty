@@ -12,7 +12,7 @@ use crate::terminal::git_diff::{
     self, AUTO_COLLAPSE_LINES, DiffSnapshot, DiffStats, FileDiff, FileStatus, LineKind,
     MAX_RENDERED_FILES, Truncation,
 };
-use crate::ui::app::Tty7App;
+use crate::ui::app::AgenttyApp;
 use crate::ui::rounding;
 use crate::ui::rounding::RoundedCorners as _;
 
@@ -32,7 +32,7 @@ pub(crate) struct DiffOverlayState {
     pub(crate) focus: Option<String>,
 }
 
-impl Tty7App {
+impl AgenttyApp {
     pub(crate) fn toggle_diff_overlay_at(
         &mut self,
         host: crate::ui::host_ops::HostId,
@@ -666,7 +666,7 @@ impl Tty7App {
                         git_diff::MAX_LINES_PER_FILE
                     ),
                     Truncation::Budget => {
-                        "Body not loaded — this working tree is past tty7's diff budget. \
+                        "Body not loaded — this working tree is past agentty's diff budget. \
                          Run `git diff` in the terminal for this file."
                             .to_string()
                     }
@@ -847,8 +847,8 @@ fn oversized_summary(snap: &DiffSnapshot, stats: &DiffStats) -> String {
         (false, false) => format!("{total_lines} diff lines"),
         _ => {
             let cap = match (budget, per_file) {
-                (true, true) => "tty7's budget and the per-file cap",
-                (true, false) => "tty7's budget",
+                (true, true) => "agentty's budget and the per-file cap",
+                (true, false) => "agentty's budget",
                 _ => "the per-file cap",
             };
             format!(

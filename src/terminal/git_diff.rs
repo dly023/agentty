@@ -658,8 +658,8 @@ index 1..2 100644
     #[test]
     #[ignore = "measurement, not an assertion"]
     fn bench_stream_vs_buffer() {
+        use agentty_core::core::git::{LineSplitter, git_output, git_stream};
         use std::time::Instant;
-        use tty7_core::core::git::{LineSplitter, git_output, git_stream};
 
         let here = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
         let args = ["log", "-p", "-n", "400", "--no-color"];

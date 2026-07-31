@@ -85,7 +85,7 @@ jobs:
     # step turned into a six-hour one three times in a day.
     timeout-minutes: 60
     steps:
-      - name: Checkout tty7
+      - name: Checkout agentty
         uses: actions/checkout@v4
 
       # gpui-component is a git dependency (see Cargo.toml), so no sibling
@@ -169,7 +169,7 @@ jobs:
   # checks, and reshaping that matrix would wedge branch protection on every open
   # PR. Keep this job non-required until it has a few weeks of green.
   server-musl:
-    name: tty7-server musl (${{ matrix.target }})
+    name: agentty-server musl (${{ matrix.target }})
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
@@ -217,33 +217,33 @@ jobs:
         with:
           key: ${{ matrix.target }}
 
-      # The crate split lands separately; until `tty7-server` exists as a
+      # The crate split lands separately; until `agentty-server` exists as a
       # workspace member this job has nothing to build. Skip cleanly rather than
       # fail, so the workflow can land before the split and simply start working
       # once it arrives. `--no-deps` keeps this to a manifest parse — no
       # resolution, no network.
-      - name: Look for the tty7-server package
+      - name: Look for the agentty-server package
         id: probe
         run: |
           set -euo pipefail
           if cargo metadata --no-deps --format-version 1 \
-              | jq -e '[.packages[].name] | index("tty7-server")' >/dev/null; then
+              | jq -e '[.packages[].name] | index("agentty-server")' >/dev/null; then
             echo "present=true" >> "$GITHUB_OUTPUT"
           else
             echo "present=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::tty7-server is not a workspace member yet (crate split, M1) — nothing to build"
+            echo "::notice::agentty-server is not a workspace member yet (crate split, M1) — nothing to build"
           fi
 
-      # `-p tty7-server` addresses the package by name, so this survives whatever
+      # `-p agentty-server` addresses the package by name, so this survives whatever
       # directory layout the split settles on. It also keeps feature unification
       # scoped to the server's own dependency graph: the GUI crate is the one
-      # that turns on tty7-core's `gssapi` feature, and that feature cannot build
+      # that turns on agentty-core's `gssapi` feature, and that feature cannot build
       # under musl (libgssapi-sys wants a system MIT/Heimdal krb5). Building the
       # whole workspace here would drag it in and fail.
-      - name: Build static tty7-server
+      - name: Build static agentty-server
         if: steps.probe.outputs.present == 'true'
-        run: cargo zigbuild --release --locked -p tty7-server --target ${{ matrix.target }}
+        run: cargo zigbuild --release --locked -p agentty-server --target ${{ matrix.target }}
 
       - name: Assert the binary is static
         if: steps.probe.outputs.present == 'true'
-        run: bash .github/scripts/assert-static.sh "target/${{ matrix.target }}/release/tty7-server"
+        run: bash .github/scripts/assert-static.sh "target/${{ matrix.target }}/release/agentty-server"

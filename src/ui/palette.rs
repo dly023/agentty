@@ -463,14 +463,14 @@ impl Command {
         let application = [
             Command::new("Settings…", OpenSettings),
             Command::new("Keyboard Shortcuts", ShowKeyboardShortcuts),
-            Command::new("About tty7", About),
+            Command::new("About agentty", About),
             Command::new("Check for Updates…", CheckForUpdates),
             Command::new("Documentation", OpenDocumentation),
             Command::new("Join the Discord", OpenDiscord),
             Command::new("Report an Issue…", ReportIssue),
             Command::new("Restart Server…", RestartDaemon)
                 .with_subtitle("ends every running shell; layout is kept"),
-            Command::new("Quit tty7", Quit).with_subtitle("shells keep running"),
+            Command::new("Quit agentty", Quit).with_subtitle("shells keep running"),
         ];
 
         let mut out = Vec::new();

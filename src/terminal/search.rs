@@ -897,7 +897,7 @@ mod tests {
 
     #[test]
     fn url_at_stops_at_unbalanced_close_paren_glued_after_url() {
-        let url = "https://github.com/l0ng-ai/tty7/pull/43";
+        let url = "https://github.com/dly023/agentty/pull/43";
         let line = format!("PR 已开:#43 ({url})(Fixes #42),分支 fix-x。");
         let h = line.chars().position(|c| c == 'h').expect("scheme start");
         assert_eq!(url_at(&line, h).as_deref(), Some(url));
@@ -921,7 +921,7 @@ mod tests {
     }
 
     fn temp_file(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("tty7-link-test-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("agentty-link-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("create temporary link-test dir");
         let path = dir.join(name);
         if let Some(parent) = path.parent() {
@@ -972,10 +972,10 @@ mod tests {
     #[test]
     #[cfg(unix)]
     fn tilde_expansion_prefers_home_inferred_from_the_pane_cwd() {
-        let cwd = Path::new("/Users/alice/clone/tty7");
+        let cwd = Path::new("/Users/alice/clone/agentty");
         assert_eq!(
-            expand_home("~/clone/tty7/src/main.rs", Some(cwd)),
-            Some(PathBuf::from("/Users/alice/clone/tty7/src/main.rs"))
+            expand_home("~/clone/agentty/src/main.rs", Some(cwd)),
+            Some(PathBuf::from("/Users/alice/clone/agentty/src/main.rs"))
         );
     }
 

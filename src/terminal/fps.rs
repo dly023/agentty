@@ -3,7 +3,7 @@ use std::time::{Duration, Instant};
 
 pub fn enabled() -> bool {
     static ON: OnceLock<bool> = OnceLock::new();
-    *ON.get_or_init(|| flag_enables(std::env::var("TTY7_FPS").ok().as_deref()))
+    *ON.get_or_init(|| flag_enables(std::env::var("AGENTTY_FPS").ok().as_deref()))
 }
 
 fn flag_enables(value: Option<&str>) -> bool {

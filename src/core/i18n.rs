@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
-pub use tty7_core::core::config::LocalePreference;
+pub use agentty_core::core::config::LocalePreference;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Locale {

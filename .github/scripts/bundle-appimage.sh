@@ -1,7 +1,7 @@
 #!/bin/bash
 # Usage: bundle-appimage.sh <target-triple> <arch-label>
 # Package the release binary into a self-contained AppImage:
-#   dist/tty7-<version>-linux-<arch>.AppImage
+#   dist/agentty-<version>-linux-<arch>.AppImage
 #
 # Unlike the bare tarball (bundle-linux.sh), this bundles the x11/wayland/xkb/
 # fontconfig/freetype runtime libraries alongside the binary, so it launches on
@@ -24,7 +24,7 @@ if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
   echo "bundle-appimage: could not read a version from Cargo.toml (got '$VERSION')" >&2
   exit 1
 fi
-NAME="tty7-${VERSION}-linux-${ARCH}"
+NAME="agentty-${VERSION}-linux-${ARCH}"
 
 # AppImage tools need FUSE to self-mount; CI runners usually lack it, so extract
 # and run instead. Harmless on machines that do have FUSE.
@@ -52,40 +52,40 @@ APPDIR="dist/AppDir"
 rm -rf "$APPDIR"
 mkdir -p "$APPDIR/usr/bin"
 
-cp "target/${TARGET}/release/tty7-app" "$APPDIR/usr/bin/tty7-app"
-chmod +x "$APPDIR/usr/bin/tty7-app"
+cp "target/${TARGET}/release/agentty-app" "$APPDIR/usr/bin/agentty-app"
+chmod +x "$APPDIR/usr/bin/agentty-app"
 
 # The CLI, beside the GUI as everywhere else. Unlike the tarball, an AppImage is
 # mounted at a fresh /tmp/.mount_XXXX per run, so `core::cli_install` must copy
 # this onto PATH rather than symlink it — a link into the mount dies the moment
 # the app exits. That branch keys off $APPIMAGE, which the runtime sets.
-cp "target/${TARGET}/release/tty7" "$APPDIR/usr/bin/tty7"
-chmod +x "$APPDIR/usr/bin/tty7"
+cp "target/${TARGET}/release/agentty" "$APPDIR/usr/bin/agentty"
+chmod +x "$APPDIR/usr/bin/agentty"
 
 # A desktop entry + icon are mandatory AppImage metadata; linuxdeploy places
 # them and generates AppRun. Icon basename must match the desktop's Icon= key.
-cat > "$TOOLS/tty7.desktop" <<'DESKTOP'
+cat > "$TOOLS/agentty.desktop" <<'DESKTOP'
 [Desktop Entry]
 Type=Application
-Name=tty7
+Name=agentty
 Comment=A fast, native terminal
-Exec=tty7-app
-Icon=tty7
+Exec=agentty-app
+Icon=agentty
 Categories=System;TerminalEmulator;
 Terminal=false
-StartupWMClass=tty7
+StartupWMClass=agentty
 DESKTOP
 # linuxdeploy only accepts fixed icon resolutions (…256, 384, 512 — NOT the
 # source's 1024), so downscale to 256×256.
-convert assets/app-icon.png -resize 256x256 "$TOOLS/tty7.png"
+convert assets/app-icon.png -resize 256x256 "$TOOLS/agentty.png"
 
 # Phase 1 — populate the AppDir: copy in dependent libs (ldd + patchelf) and
 # install the desktop/icon into their standard locations.
 "$LINUXDEPLOY" \
   --appdir "$APPDIR" \
-  --executable "$APPDIR/usr/bin/tty7-app" \
-  --desktop-file "$TOOLS/tty7.desktop" \
-  --icon-file "$TOOLS/tty7.png"
+  --executable "$APPDIR/usr/bin/agentty-app" \
+  --desktop-file "$TOOLS/agentty.desktop" \
+  --icon-file "$TOOLS/agentty.png"
 
 # Runtime-loaded completion specs live beside the binary (not bundled by
 # linuxdeploy, which only tracks ELF deps), so drop them in after populate.

@@ -13,7 +13,7 @@ use gpui_component::{
     ActiveTheme as _, Icon, IconName, Sizable as _, WindowExt as _, h_flex, v_flex,
 };
 
-use crate::ui::app::Tty7App;
+use crate::ui::app::AgenttyApp;
 use crate::ui::host_ops::{HostOps, MTime, SharedHost, WatchSub};
 
 const MAX_FILE_BYTES: u64 = 4 * 1024 * 1024;
@@ -85,7 +85,7 @@ pub(crate) struct EditorPanelState {
 }
 
 impl EditorPanelState {
-    pub(crate) fn new(window: &mut Window, cx: &mut Context<Tty7App>) -> Self {
+    pub(crate) fn new(window: &mut Window, cx: &mut Context<AgenttyApp>) -> Self {
         let (tx, rx) = smol::channel::unbounded::<Vec<PathBuf>>();
         cx.spawn_in(window, async move |app, cx| {
             while let Ok(first) = rx.recv().await {
@@ -217,7 +217,7 @@ fn settle_save(ok: bool, wrote_seq: u64, current_seq: u64, pending: bool) -> Sav
     }
 }
 
-impl Tty7App {
+impl AgenttyApp {
     pub(crate) fn tab_code(&self) -> Option<&TabCode> {
         self.tabs.get(self.active)?.code.as_deref()
     }
@@ -442,7 +442,7 @@ impl Tty7App {
         });
         let sub = cx.subscribe_in(&input, window, {
             let path = path.clone();
-            move |this: &mut Tty7App, _input, ev, _window, cx| {
+            move |this: &mut AgenttyApp, _input, ev, _window, cx| {
                 if matches!(ev, InputEvent::Change) {
                     let Some(f) = this
                         .tabs
@@ -839,7 +839,7 @@ impl Tty7App {
     }
 }
 
-impl Tty7App {
+impl AgenttyApp {
     pub(crate) fn render_code_overlay(
         &mut self,
         window: &mut Window,

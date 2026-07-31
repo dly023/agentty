@@ -28,8 +28,8 @@ use crate::core::ssh_profile::{
     Algorithms, AuthMode, ForwardKind, ForwardRule, HostPort, SshProfile, to_connect_string,
 };
 use crate::ui::app::{
-    FONT_SIZE_STEP, LINE_HEIGHT_STEP, TILE_GLYPH_LINE, TILE_SIZE, TITLE_BAR_HEIGHT, ThemeEdit,
-    Tty7App,
+    AgenttyApp, FONT_SIZE_STEP, LINE_HEIGHT_STEP, TILE_GLYPH_LINE, TILE_SIZE, TITLE_BAR_HEIGHT,
+    ThemeEdit,
 };
 use crate::ui::host_ops::HostId;
 use crate::ui::presets;
@@ -372,7 +372,7 @@ fn settings_search_entries() -> &'static [SearchEntry] {
         SearchEntry {
             section: About,
             title: "Command line tool",
-            keywords: "cli tty7 path shell command install symlink terminal iterm agent script",
+            keywords: "cli agentty path shell command install symlink terminal iterm agent script",
         },
     ]
 }
@@ -478,7 +478,7 @@ fn ssh_group_key(p: &SshProfile) -> &str {
 fn ssh_group_label(key: &str) -> &str {
     match key {
         crate::core::ssh_config::IMPORTED_GROUP => "~/.ssh/config",
-        "" => "In tty7",
+        "" => "In agentty",
         other => other,
     }
 }
@@ -656,7 +656,7 @@ fn forward_row_inputs(row: &ForwardRuleForm) -> [&Entity<InputState>; 5] {
 
 fn seed_forward_row(
     window: &mut Window,
-    cx: &mut Context<Tty7App>,
+    cx: &mut Context<AgenttyApp>,
     rule: &ForwardRule,
 ) -> ForwardRuleForm {
     let port = |p: u16| if p == 0 { String::new() } else { p.to_string() };
@@ -672,7 +672,7 @@ fn seed_forward_row(
 
 fn seed_hinted(
     window: &mut Window,
-    cx: &mut Context<Tty7App>,
+    cx: &mut Context<AgenttyApp>,
     value: &str,
     placeholder: &'static str,
 ) -> Entity<InputState> {
@@ -686,7 +686,7 @@ fn seed_hinted(
 
 fn seed_input(
     window: &mut Window,
-    cx: &mut Context<Tty7App>,
+    cx: &mut Context<AgenttyApp>,
     value: &str,
     multi_line: bool,
 ) -> Entity<InputState> {
@@ -698,7 +698,7 @@ fn seed_input(
     })
 }
 
-impl Tty7App {
+impl AgenttyApp {
     pub(crate) fn render_settings(
         &self,
         window: &mut Window,
@@ -1281,7 +1281,7 @@ impl Tty7App {
         let overridden = config.window_opacity.is_some() || config.window_blur.is_some();
         let dim_inactive_panes = config.dim_inactive_panes;
         let theme = presets::by_id(cx, &crate::ui::theme::effective_preset_id(cx));
-        let opacity = Tty7App::effective_window_opacity(cx);
+        let opacity = AgenttyApp::effective_window_opacity(cx);
         let blur = cx.global::<Config>().window_blur.unwrap_or(theme.blur);
 
         let opacity_control = h_flex()
@@ -1463,7 +1463,7 @@ impl Tty7App {
             .child(self.section_intro(
                 "Custom themes",
                 "Duplicate a theme to edit its colors here, or drop your own in the \
-                 themes folder: a tty7 YAML theme or an iTerm2 .itermcolors scheme.",
+                 themes folder: a agentty YAML theme or an iTerm2 .itermcolors scheme.",
                 cx,
             ))
             .child(
@@ -1979,31 +1979,29 @@ impl Tty7App {
             "Nothing selected"
         };
 
-        let mut body = v_flex()
-            .gap_1()
-            .child(self.header_text(heading, cx))
-            .child(
-                div()
-                    .text_sm()
-                    .text_color(muted)
-                    .child("Type an address to connect now — tty7 offers to save it afterwards."),
-            )
-            .child(
-                h_flex()
-                    .mt_3()
-                    .gap_2()
-                    .child(div().w(px(320.)).child(Input::new(&input).small()))
-                    .child(
-                        Button::new("ssh-quick-connect")
-                            .label("Connect")
-                            .primary()
-                            .small()
-                            .disabled(parsed.is_none())
-                            .on_click(cx.listener(|this, _, window, cx| {
-                                this.ssh_quick_connect_from_settings(window, cx)
-                            })),
-                    ),
-            );
+        let mut body =
+            v_flex()
+                .gap_1()
+                .child(self.header_text(heading, cx))
+                .child(div().text_sm().text_color(muted).child(
+                    "Type an address to connect now — agentty offers to save it afterwards.",
+                ))
+                .child(
+                    h_flex()
+                        .mt_3()
+                        .gap_2()
+                        .child(div().w(px(320.)).child(Input::new(&input).small()))
+                        .child(
+                            Button::new("ssh-quick-connect")
+                                .label("Connect")
+                                .primary()
+                                .small()
+                                .disabled(parsed.is_none())
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.ssh_quick_connect_from_settings(window, cx)
+                                })),
+                        ),
+                );
 
         if !unlinked.is_empty() {
             let n = unlinked.len();
@@ -2083,7 +2081,7 @@ impl Tty7App {
                 self.settings_row(
                     "Import aliases",
                     "Re-reads the file and adds anything new. Edits you make here are \
-                 stored by tty7 — the file itself is never written.",
+                 stored by agentty — the file itself is never written.",
                     Button::new("ssh-defaults-import")
                         .label("Import now")
                         .small()
@@ -3259,7 +3257,7 @@ impl Tty7App {
             ))
             .child(self.settings_row(
                 "Start in",
-                "What a fresh shell starts in: tty7's launch directory, your home folder, or a fixed path.",
+                "What a fresh shell starts in: agentty's launch directory, your home folder, or a fixed path.",
                 wd_radio,
                 cx,
             ))
@@ -3499,19 +3497,19 @@ impl Tty7App {
         v_flex()
             .child(self.section_intro(
                 "Prompt",
-                "tty7's own menus at the shell prompt. Turn one off to hand the key back to the shell.",
+                "agentty's own menus at the shell prompt. Turn one off to hand the key back to the shell.",
                 cx,
             ))
             .child(self.settings_row(
                 "Tab completion",
-                "Tab at the prompt opens tty7's completion menu. When off, Tab goes to the \
+                "Tab at the prompt opens agentty's completion menu. When off, Tab goes to the \
                  shell's own completion instead.",
                 tab_completion_switch,
                 cx,
             ))
             .child(self.settings_row(
                 "History search",
-                "⌃R at the prompt opens tty7's fuzzy history menu. When off, ⌃R goes to the \
+                "⌃R at the prompt opens agentty's fuzzy history menu. When off, ⌃R goes to the \
                  shell instead — its own reverse-i-search, or whatever you've bound there \
                  (fzf, percol).",
                 history_search_switch,
@@ -3563,7 +3561,7 @@ impl Tty7App {
         let mut page = v_flex().child(self.section_intro(
             "Agents",
             "Hook integrations give panes running these agents live session status \
-             (working / waiting / done) in the tab bar. Only active inside tty7.",
+             (working / waiting / done) in the tab bar. Only active inside agentty.",
             cx,
         ));
 
@@ -3841,13 +3839,13 @@ impl Tty7App {
             .child(self.section_header("Window", cx))
             .child(self.settings_row(
                 "Startup window",
-                "Window state when tty7 launches.",
+                "Window state when agentty launches.",
                 startup_radio,
                 cx,
             ))
             .child(self.settings_row(
                 "Remember window size & position",
-                "Reopen at the size and position the window had when tty7 last quit. Off opens centered at the default size.",
+                "Reopen at the size and position the window had when agentty last quit. Off opens centered at the default size.",
                 remember_window_switch,
                 cx,
             ))
@@ -3859,7 +3857,7 @@ impl Tty7App {
             ))
             .child(self.settings_row(
                 "Confirm before closing the last window",
-                "Ask first, since that close also quits tty7. Off closes straight away — \
+                "Ask first, since that close also quits agentty. Off closes straight away — \
                  either way your shells keep running in the background.",
                 confirm_close_switch,
                 cx,
@@ -4479,7 +4477,7 @@ impl Tty7App {
                                     .text_xl()
                                     .font_weight(FontWeight::SEMIBOLD)
                                     .text_color(foreground)
-                                    .child("tty7"),
+                                    .child("agentty"),
                             )
                             .child(div().text_sm().text_color(muted_fg).child(format!(
                                 "Version {}",
@@ -4487,9 +4485,9 @@ impl Tty7App {
                             )))
                             .child(
                                 Link::new("about-github")
-                                    .href("https://github.com/l0ng-ai/tty7")
+                                    .href("https://github.com/dly023/agentty")
                                     .text_sm()
-                                    .child("github.com/l0ng-ai/tty7"),
+                                    .child("github.com/dly023/agentty"),
                             ),
                     ),
             )
@@ -4544,7 +4542,7 @@ impl Tty7App {
                         )
                     })
                     .child(div().text_sm().text_color(muted_fg).child(
-                        "Check GitHub for a newer release on launch and show it here. tty7 never updates itself — downloading happens on the Releases page.",
+                        "Check GitHub for a newer release on launch and show it here. agentty never updates itself — downloading happens on the Releases page.",
                     ))
                     .child(
                         h_flex()
@@ -4578,7 +4576,7 @@ impl Tty7App {
                             .child("Command line"),
                     )
                     .child(div().text_sm().text_color(muted_fg).child(
-                        "Put the bundled `tty7` command on your PATH at launch, so scripts and coding agents can drive tty7 from any terminal. Inside a tty7 pane it works either way. Turn this off if you keep your own `tty7` — one you built or installed yourself — and do not want it shadowed. Takes effect at next launch.",
+                        "Put the bundled `agentty` command on your PATH at launch, so scripts and coding agents can drive agentty from any terminal. Inside a agentty pane it works either way. Turn this off if you keep your own `agentty` — one you built or installed yourself — and do not want it shadowed. Takes effect at next launch.",
                     ))
                     .child(
                         h_flex()
@@ -4595,7 +4593,7 @@ impl Tty7App {
                                 div()
                                     .text_sm()
                                     .text_color(foreground)
-                                    .child("Install the `tty7` command on PATH"),
+                                    .child("Install the `agentty` command on PATH"),
                             ),
                     ),
             )
@@ -4792,7 +4790,7 @@ mod tests {
             ssh_group_label(crate::core::ssh_config::IMPORTED_GROUP),
             "~/.ssh/config"
         );
-        assert_eq!(ssh_group_label(""), "In tty7");
+        assert_eq!(ssh_group_label(""), "In agentty");
         assert_eq!(ssh_group_label("Work"), "Work");
     }
 
@@ -4819,10 +4817,10 @@ mod gpui_tests {
     use super::SettingsSection;
     use crate::core::config::Config;
     use crate::core::session::Session;
-    use crate::ui::app::Tty7App;
+    use crate::ui::app::AgenttyApp;
     use gpui::{AppContext as _, Entity, TestAppContext, VisualTestContext, px, size};
 
-    fn harness(cx: &mut TestAppContext) -> (Entity<Tty7App>, VisualTestContext) {
+    fn harness(cx: &mut TestAppContext) -> (Entity<AgenttyApp>, VisualTestContext) {
         cx.executor().allow_parking();
         cx.update(|cx| {
             gpui_component::init(cx);
@@ -4831,7 +4829,7 @@ mod gpui_tests {
         });
         let window = cx.add_window(|window, cx| {
             let app =
-                cx.new(|cx| Tty7App::with_session(None, Some(Session::default()), window, cx));
+                cx.new(|cx| AgenttyApp::with_session(None, Some(Session::default()), window, cx));
             gpui_component::Root::new(app, window, cx)
         });
         cx.background_executor.run_until_parked();
@@ -4839,8 +4837,8 @@ mod gpui_tests {
             .update(cx, |root, _, _| {
                 root.view()
                     .clone()
-                    .downcast::<Tty7App>()
-                    .unwrap_or_else(|_| panic!("window root wraps a Tty7App"))
+                    .downcast::<AgenttyApp>()
+                    .unwrap_or_else(|_| panic!("window root wraps a AgenttyApp"))
             })
             .unwrap();
         let vcx = VisualTestContext::from_window(window.into(), cx);

@@ -77,7 +77,7 @@ quality_gate:
       - remote_failure_never_falls_back_to_local_authority
       - resume_program_and_arguments_remain_typed
       - cancellation_timeout_limits_and_backpressure_are_explicit
-      - helper_upgrade_uses_existing_tty7_server_lifecycle
+      - helper_upgrade_uses_existing_agentty_server_lifecycle
     minimum_tests:
       - helper_hello_reports_protocol_and_capabilities
       - failed_scan_preserves_last_committed_rows

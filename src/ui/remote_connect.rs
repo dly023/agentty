@@ -15,8 +15,8 @@ use crate::daemon::install::{
 };
 use crate::daemon::protocol::{AuthPromptKind, AuthResponse, NativeSshSpec};
 use crate::daemon::router::RouteHeader;
-use tty7_core::host::remote::RemoteHost;
-use tty7_core::host::{Host as _, HostId};
+use agentty_core::host::remote::RemoteHost;
+use agentty_core::host::{Host as _, HostId};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HostChoice {
@@ -94,7 +94,7 @@ fn host_score(query: &str, host: &HostChoice) -> Option<i32> {
     label.into_iter().chain(detail).max()
 }
 
-pub const LOCAL_STDIO_ENV: &str = "TTY7_LOCAL_STDIO_SERVER";
+pub const LOCAL_STDIO_ENV: &str = "AGENTTY_LOCAL_STDIO_SERVER";
 
 fn local_stdio_host() -> Option<HostChoice> {
     let program = std::env::var(LOCAL_STDIO_ENV)
@@ -261,10 +261,10 @@ pub fn connect_blocking(
 ) -> Result<Connected, String> {
     note_origin(&header.target, target);
     crate::daemon::spawn::ensure_running()
-        .map_err(|e| format!("tty7's local server could not be started: {e}"))?;
+        .map_err(|e| format!("agentty's local server could not be started: {e}"))?;
 
     let stream = crate::daemon::transport::connect()
-        .map_err(|e| format!("could not reach tty7's local server: {e}"))?;
+        .map_err(|e| format!("could not reach agentty's local server: {e}"))?;
 
     let mut stream = stream;
     crate::daemon::router::negotiate(&mut stream, &header)
@@ -272,7 +272,7 @@ pub fn connect_blocking(
 
     let hello = ControlHello::host_rpc(new_session_token(), client_hostname());
     let host = handshake(stream, &target.connection_key(), &hello)
-        .map_err(|e| format!("{label} answered, but not as a tty7 server: {e}"))?;
+        .map_err(|e| format!("{label} answered, but not as a agentty server: {e}"))?;
 
     let rows = list_workspaces(&host)
         .map_err(|e| format!("connected to {label}, but its workspace list failed: {e}"))?;
@@ -339,7 +339,7 @@ fn client_hostname() -> String {
             .filter(|o| o.status.success())
             .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
             .filter(|s| !s.is_empty())
-            .unwrap_or_else(|| "a tty7 client".to_string())
+            .unwrap_or_else(|| "a agentty client".to_string())
     })
     .clone()
 }
@@ -352,7 +352,9 @@ pub struct RemoteWorkspaceRow {
     pub last_active: u64,
 }
 
-pub fn rows_from_machine(machine: &tty7_core::core::machine::Machine) -> Vec<RemoteWorkspaceRow> {
+pub fn rows_from_machine(
+    machine: &agentty_core::core::machine::Machine,
+) -> Vec<RemoteWorkspaceRow> {
     let mut rows: Vec<RemoteWorkspaceRow> = machine
         .workspaces
         .iter()
@@ -406,7 +408,7 @@ impl HostLinks {
 
 pub fn install_detail(request: &InstallRequest) -> String {
     format!(
-        "tty7 will write its server binary to {machine} so this machine can host \
+        "agentty will write its server binary to {machine} so this machine can host \
          workspaces there. Nothing else on {machine} is touched, and no sudo is used.\n\
          \n\
          Path\u{2003}{path}\n\
@@ -427,7 +429,10 @@ pub fn install_detail(request: &InstallRequest) -> String {
 }
 
 pub fn install_title(request: &InstallRequest) -> String {
-    format!("Install tty7's server on \u{201c}{}\u{201d}?", request.host)
+    format!(
+        "Install agentty's server on \u{201c}{}\u{201d}?",
+        request.host
+    )
 }
 
 pub fn human_bytes(n: u64) -> String {
@@ -625,8 +630,8 @@ pub fn mismatch_detail(m: &MismatchedRemoteDaemon) -> String {
         (None, None) => "an unknown build".to_string(),
     };
     format!(
-        "{host} is serving tty7 sessions from {running}, which speaks a protocol \
-         this client ({wanted}) cannot. tty7 has installed a matching server there, \
+        "{host} is serving agentty sessions from {running}, which speaks a protocol \
+         this client ({wanted}) cannot. agentty has installed a matching server there, \
          but the one already running is the one your sessions are on.\n\
          \n\
          Restart Server\u{2003}starts {wanted} there and ends every session it is hosting.\n\
@@ -637,7 +642,7 @@ pub fn mismatch_detail(m: &MismatchedRemoteDaemon) -> String {
 }
 
 pub fn mismatch_title(m: &MismatchedRemoteDaemon) -> String {
-    format!("Restart tty7's server on \u{201c}{}\u{201d}?", m.host)
+    format!("Restart agentty's server on \u{201c}{}\u{201d}?", m.host)
 }
 
 pub fn mismatch_target(m: &MismatchedRemoteDaemon) -> Option<RemoteTarget> {
@@ -647,15 +652,15 @@ pub fn mismatch_target(m: &MismatchedRemoteDaemon) -> Option<RemoteTarget> {
 pub fn restart_server_blocking(header: RouteHeader, label: &str) -> Result<(), String> {
     let action = header.action;
     crate::daemon::spawn::ensure_running()
-        .map_err(|e| format!("tty7's local server could not be started: {e}"))?;
+        .map_err(|e| format!("agentty's local server could not be started: {e}"))?;
     let mut stream = crate::daemon::transport::connect()
-        .map_err(|e| format!("could not reach tty7's local server: {e}"))?;
+        .map_err(|e| format!("could not reach agentty's local server: {e}"))?;
     let ack = crate::daemon::router::negotiate(&mut stream, &header)
-        .map_err(|e| format!("could not restart tty7's server on {label}: {e}"))?;
+        .map_err(|e| format!("could not restart agentty's server on {label}: {e}"))?;
     if !ack.performed(action) {
         return Err(format!(
-            "this machine's tty7 daemon is an older build and cannot restart the server on \
-             {label}. Quit tty7 (which stops the daemon) and open it again, then retry."
+            "this machine's agentty daemon is an older build and cannot restart the server on \
+             {label}. Quit agentty (which stops the daemon) and open it again, then retry."
         ));
     }
     Ok(())
@@ -669,9 +674,9 @@ mod tests {
         InstallRequest {
             host: "me@build-box:22".into(),
             version: "0.9.1".into(),
-            asset: "tty7-server-linux-x86_64-musl",
-            source_url: "https://example.invalid/v0.9.1/tty7-server".into(),
-            remote_path: "/home/me/.local/share/tty7/bin/tty7-server-0.9.1".into(),
+            asset: "agentty-server-linux-x86_64-musl",
+            source_url: "https://example.invalid/v0.9.1/agentty-server".into(),
+            remote_path: "/home/me/.local/share/agentty/bin/agentty-server-0.9.1".into(),
             size_bytes: 9_437_184,
             sha256: "abc123".into(),
         }
@@ -813,15 +818,15 @@ mod tests {
         );
 
         let local = RemoteTarget::LocalStdio {
-            program: "/opt/tty7-server".into(),
+            program: "/opt/agentty-server".into(),
             args: vec!["--stdio".into()],
         };
         let control = RT::LocalStdio {
-            program: "/opt/tty7-server".into(),
+            program: "/opt/agentty-server".into(),
             args: vec!["--stdio".into()],
         };
         let pane = RT::LocalStdio {
-            program: "/opt/tty7-server".into(),
+            program: "/opt/agentty-server".into(),
             args: vec!["--stdio".into(), "--pane".into()],
         };
         note_origin(&control, &local);
@@ -862,7 +867,7 @@ mod tests {
         let m = MismatchedRemoteDaemon {
             host: "me@build-box:22".into(),
             running_version: Some("0.8.0".into()),
-            running_exe: Some("/home/me/.local/share/tty7/bin/tty7-server-0.8.0".into()),
+            running_exe: Some("/home/me/.local/share/agentty/bin/agentty-server-0.8.0".into()),
             wanted_version: "0.9.1".into(),
         };
         let detail = mismatch_detail(&m);
@@ -901,7 +906,7 @@ mod tests {
 
     #[test]
     fn rows_from_the_tree_sort_newest_first_and_derive_names() {
-        use tty7_core::core::machine::{Machine, PaneRecord, Tab, Workspace};
+        use agentty_core::core::machine::{Machine, PaneRecord, Tab, Workspace};
         let older = WorkspaceId::new();
         let newer = WorkspaceId::new();
         let machine = Machine {

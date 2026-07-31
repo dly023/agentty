@@ -19,7 +19,7 @@ use crate::daemon::protocol::{
 };
 use crate::daemon::ssh::sftp::{remote_basename, remote_join, remote_parent, safe_local_name};
 use crate::terminal::RemoteTerminal;
-use crate::ui::app::{CONTENT_INSET, Tty7App};
+use crate::ui::app::{AgenttyApp, CONTENT_INSET};
 
 #[derive(Clone, Copy)]
 enum SftpMenuAction {
@@ -145,7 +145,7 @@ pub(crate) struct SftpPanelState {
 }
 
 impl SftpPanelState {
-    pub(crate) fn new(window: &mut Window, cx: &mut Context<Tty7App>) -> Self {
+    pub(crate) fn new(window: &mut Window, cx: &mut Context<AgenttyApp>) -> Self {
         let filter_input = cx.new(|cx| InputState::new(window, cx).placeholder("Search"));
         let sub = cx.subscribe_in(&filter_input, window, |_this, _input, ev, _w, cx| {
             if matches!(ev, gpui_component::input::InputEvent::Change) {
@@ -252,7 +252,7 @@ fn local_download_dir() -> PathBuf {
     local_home().join("Downloads")
 }
 
-impl Tty7App {
+impl AgenttyApp {
     pub(crate) fn toggle_sftp(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         use crate::core::config::RightPanelTab;
         if self.right_panel_visible && self.right_panel_tab == RightPanelTab::Files {
@@ -1607,10 +1607,10 @@ mod tests {
 mod gpui_tests {
     use crate::core::config::{Config, RightPanelTab};
     use crate::core::session::Session;
-    use crate::ui::app::Tty7App;
+    use crate::ui::app::AgenttyApp;
     use gpui::{AppContext, Entity, TestAppContext, VisualTestContext};
 
-    fn harness(cx: &mut TestAppContext) -> (Entity<Tty7App>, VisualTestContext) {
+    fn harness(cx: &mut TestAppContext) -> (Entity<AgenttyApp>, VisualTestContext) {
         cx.executor().allow_parking();
         cx.update(|cx| {
             gpui_component::init(cx);
@@ -1619,7 +1619,7 @@ mod gpui_tests {
         });
         let window = cx.add_window(|window, cx| {
             let app =
-                cx.new(|cx| Tty7App::with_session(None, Some(Session::default()), window, cx));
+                cx.new(|cx| AgenttyApp::with_session(None, Some(Session::default()), window, cx));
             gpui_component::Root::new(app, window, cx)
         });
         cx.background_executor.run_until_parked();
@@ -1627,15 +1627,15 @@ mod gpui_tests {
             .update(cx, |root, _, _| {
                 root.view()
                     .clone()
-                    .downcast::<Tty7App>()
-                    .unwrap_or_else(|_| panic!("window root wraps a Tty7App"))
+                    .downcast::<AgenttyApp>()
+                    .unwrap_or_else(|_| panic!("window root wraps a AgenttyApp"))
             })
             .unwrap();
         let vcx = VisualTestContext::from_window(window.into(), cx);
         (app, vcx)
     }
 
-    fn panel(app: &Entity<Tty7App>, vcx: &mut VisualTestContext) -> (bool, RightPanelTab) {
+    fn panel(app: &Entity<AgenttyApp>, vcx: &mut VisualTestContext) -> (bool, RightPanelTab) {
         vcx.update(|_, cx| {
             let app = app.read(cx);
             (app.right_panel_visible, app.right_panel_tab)

@@ -9,7 +9,7 @@ use gpui_component::kbd::Kbd;
 use gpui_component::{ActiveTheme as _, IconName, Sizable as _, h_flex, v_flex};
 
 use crate::core::session::{SessionPane, SessionTab};
-use crate::ui::app::Tty7App;
+use crate::ui::app::AgenttyApp;
 
 const LOGO: [&str; 4] = [
     " ▄▄▄ ▄▄▄ ▄  ▄ ▄▄▄▄",
@@ -109,7 +109,7 @@ fn key_hint(action: &str, cx: &App) -> Option<String> {
     Some(Kbd::format(&stroke))
 }
 
-impl Tty7App {
+impl AgenttyApp {
     pub(crate) fn render_home(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let theme = cx.theme();
         let (muted, foreground, accent) = (theme.muted_foreground, theme.foreground, theme.primary);
@@ -335,8 +335,8 @@ mod tests {
         unsafe { std::env::set_var("HOME", "/Users/tester") };
 
         assert_eq!(
-            display_path(std::path::Path::new("/Users/tester/repo/tty7")),
-            "~/repo/tty7"
+            display_path(std::path::Path::new("/Users/tester/repo/agentty")),
+            "~/repo/agentty"
         );
         assert_eq!(display_path(std::path::Path::new("/opt/work")), "/opt/work");
 

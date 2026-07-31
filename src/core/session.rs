@@ -1,11 +1,11 @@
-pub use tty7_core::core::session::{
+pub use agentty_core::core::session::{
     EnvironmentWindow, EnvironmentWindows, RemoteRef, RemoteTarget, Session, SessionAxis,
     SessionPane, SessionTab, WorkspaceId,
 };
-pub use tty7_core::host::HostId;
+pub use agentty_core::host::HostId;
 
 #[cfg(test)]
-pub use tty7_core::core::session::{WindowView, WindowViews};
+pub use agentty_core::core::session::{WindowView, WindowViews};
 
 pub struct WorkspaceStore {
     views: EnvironmentWindows,
@@ -90,7 +90,7 @@ impl WorkspaceStore {
         }
         store.views.save();
         crate::ui::tree_sync::fire_workspace_op(cx, id, |ws| {
-            tty7_core::daemon::control::ControlRequest::WorkspaceTouch { workspace: ws }
+            agentty_core::daemon::control::ControlRequest::WorkspaceTouch { workspace: ws }
         });
     }
 
@@ -170,7 +170,7 @@ impl WorkspaceStore {
     pub fn environment_id(
         cx: &gpui::App,
         id: WorkspaceId,
-    ) -> tty7_core::core::environment::EnvironmentId {
+    ) -> agentty_core::core::environment::EnvironmentId {
         Self::all(cx)
             .get_workspace(id)
             .map(|window| window.environment.id.clone())
@@ -179,7 +179,7 @@ impl WorkspaceStore {
 
     pub fn environment_workspace(
         cx: &gpui::App,
-        environment: &tty7_core::core::environment::EnvironmentId,
+        environment: &agentty_core::core::environment::EnvironmentId,
     ) -> Option<WorkspaceId> {
         Self::all(cx)
             .get_environment(environment)
@@ -197,7 +197,7 @@ impl WorkspaceStore {
         let Some(store) = Self::try_store(cx) else {
             return WorkspaceId::new();
         };
-        let environment = tty7_core::core::environment::EnvironmentId::for_remote(&host.target);
+        let environment = agentty_core::core::environment::EnvironmentId::for_remote(&host.target);
         let existing = store
             .views
             .get_environment(&environment)
@@ -231,7 +231,7 @@ pub(crate) fn crosses_machines(previous: HostId, current: HostId) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tty7_core::core::session::{WindowView, WindowViews};
+    use agentty_core::core::session::{WindowView, WindowViews};
 
     #[test]
     fn a_window_binds_to_exactly_one_machine() {

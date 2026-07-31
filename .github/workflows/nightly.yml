@@ -78,17 +78,17 @@ jobs:
             target: x86_64-unknown-linux-gnu
     runs-on: ${{ matrix.runner }}
     steps:
-      - name: Checkout tty7
+      - name: Checkout agentty
         uses: actions/checkout@v4
         with:
-          path: tty7
+          path: agentty
 
       # Everything versioned — the binary (CARGO_PKG_VERSION), asset names,
       # DMG plist, Inno installer — reads Cargo.toml, so stamping it is the only
       # edit needed. Shared with the server-musl job below, and it fails loudly
       # if the manifest's shape ever moves the version line out from under it.
       - name: Stamp nightly version
-        working-directory: tty7
+        working-directory: agentty
         shell: bash
         run: bash .github/scripts/stamp-version.sh "${{ needs.plan.outputs.version }}"
 
@@ -108,15 +108,15 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: tty7
+          workspaces: agentty
 
       - name: Build
-        working-directory: tty7
+        working-directory: agentty
         run: cargo build --release --target ${{ matrix.target }}
 
       - name: Bundle macOS DMG
         if: matrix.os == 'macos'
-        working-directory: tty7
+        working-directory: agentty
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
@@ -129,12 +129,12 @@ jobs:
 
       - name: Package Linux tarball
         if: matrix.os == 'linux'
-        working-directory: tty7
+        working-directory: agentty
         run: bash .github/scripts/bundle-linux.sh "${{ matrix.target }}" "${{ matrix.arch }}"
 
       - name: Package Linux AppImage
         if: matrix.os == 'linux'
-        working-directory: tty7
+        working-directory: agentty
         run: bash .github/scripts/bundle-appimage.sh "${{ matrix.target }}" "${{ matrix.arch }}"
 
       # See release.yml for why this is best-effort rather than required.
@@ -143,27 +143,27 @@ jobs:
         continue-on-error: true
         uses: actions/download-artifact@v7
         with:
-          name: nightly-tty7-server-linux-x86_64-musl
-          path: tty7/bundled-server
+          name: nightly-agentty-server-linux-x86_64-musl
+          path: agentty/bundled-server
 
       - name: Package Windows installer + zip
         if: matrix.os == 'windows'
-        working-directory: tty7
+        working-directory: agentty
         shell: pwsh
         run: '& ./.github/scripts/bundle-windows.ps1 "${{ matrix.target }}" "${{ matrix.arch }}"'
 
       # Same glob list as release.yml's Release step: the bundle scripts leave
-      # intermediates in dist/ (tty7.app, entitlements.plist, the Windows
+      # intermediates in dist/ (agentty.app, entitlements.plist, the Windows
       # staging dir) that must not reach the release assets.
       - uses: actions/upload-artifact@v7
         with:
           name: nightly-${{ matrix.os }}-${{ matrix.arch }}
           path: |
-            tty7/dist/*.dmg
-            tty7/dist/*.tar.gz
-            tty7/dist/*.zip
-            tty7/dist/*-setup.exe
-            tty7/dist/*.AppImage
+            agentty/dist/*.dmg
+            agentty/dist/*.tar.gz
+            agentty/dist/*.zip
+            agentty/dist/*-setup.exe
+            agentty/dist/*.AppImage
           if-no-files-found: error
 
   # Mirrors release.yml's server-musl job; keep the two in sync when editing.
@@ -180,24 +180,24 @@ jobs:
       matrix:
         include:
           - target: x86_64-unknown-linux-musl
-            asset: tty7-server-linux-x86_64-musl
+            asset: agentty-server-linux-x86_64-musl
           - target: aarch64-unknown-linux-musl
-            asset: tty7-server-linux-aarch64-musl
+            asset: agentty-server-linux-aarch64-musl
     runs-on: ubuntu-latest
     env:
       RUSTFLAGS: -C strip=symbols
     steps:
-      - name: Checkout tty7
+      - name: Checkout agentty
         uses: actions/checkout@v4
         with:
-          path: tty7
+          path: agentty
 
       # Stamped for the same reason the GUI builds are: the server reports
       # CARGO_PKG_VERSION over the wire during the version handshake, and a
       # nightly server claiming the last stable version would make that
       # negotiation lie. The asset *name* is version-free either way.
       - name: Stamp nightly version
-        working-directory: tty7
+        working-directory: agentty
         run: bash .github/scripts/stamp-version.sh "${{ needs.plan.outputs.version }}"
 
       - uses: dtolnay/rust-toolchain@stable
@@ -214,42 +214,42 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: tty7
+          workspaces: agentty
           key: ${{ matrix.target }}
 
-      - name: Look for the tty7-server package
+      - name: Look for the agentty-server package
         id: probe
-        working-directory: tty7
+        working-directory: agentty
         run: |
           set -euo pipefail
           if cargo metadata --no-deps --format-version 1 \
-              | jq -e '[.packages[].name] | index("tty7-server")' >/dev/null; then
+              | jq -e '[.packages[].name] | index("agentty-server")' >/dev/null; then
             echo "present=true" >> "$GITHUB_OUTPUT"
           else
             echo "present=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::tty7-server is not a workspace member yet — tonight's nightly carries no remote-server assets"
+            echo "::warning::agentty-server is not a workspace member yet — tonight's nightly carries no remote-server assets"
           fi
 
       # No `--locked` here, matching the rest of nightly: the version stamp above
       # rewrites Cargo.toml, and cargo has to be free to refresh the root
       # package's own lock entry.
-      - name: Build static tty7-server
+      - name: Build static agentty-server
         if: steps.probe.outputs.present == 'true'
-        working-directory: tty7
-        run: cargo zigbuild --release -p tty7-server --target ${{ matrix.target }}
+        working-directory: agentty
+        run: cargo zigbuild --release -p agentty-server --target ${{ matrix.target }}
 
       - name: Assert the binary is static
         if: steps.probe.outputs.present == 'true'
-        working-directory: tty7
-        run: bash .github/scripts/assert-static.sh "target/${{ matrix.target }}/release/tty7-server"
+        working-directory: agentty
+        run: bash .github/scripts/assert-static.sh "target/${{ matrix.target }}/release/agentty-server"
 
       - name: Stage the asset
         if: steps.probe.outputs.present == 'true'
-        working-directory: tty7
+        working-directory: agentty
         run: |
           set -euo pipefail
           mkdir -p dist
-          cp "target/${{ matrix.target }}/release/tty7-server" \
+          cp "target/${{ matrix.target }}/release/agentty-server" \
              "dist/${{ matrix.asset }}"
           chmod +x "dist/${{ matrix.asset }}"
 
@@ -257,7 +257,7 @@ jobs:
         if: steps.probe.outputs.present == 'true'
         with:
           name: nightly-${{ matrix.asset }}
-          path: tty7/dist/${{ matrix.asset }}
+          path: agentty/dist/${{ matrix.asset }}
           if-no-files-found: error
 
   # Single publish step after all platforms succeed, so the rolling release is

@@ -5,9 +5,9 @@ use gpui_component::{ActiveTheme as _, Icon, IconName, Sizable as _, h_flex, v_f
 
 use crate::daemon::protocol::{ForwardStatus, ManagedForward, SshForwardKind};
 use crate::terminal::view::TerminalView;
-use crate::ui::app::{CONTENT_INSET, Tty7App};
+use crate::ui::app::{AgenttyApp, CONTENT_INSET};
 
-impl Tty7App {
+impl AgenttyApp {
     pub(crate) fn render_ssh_status_strip(
         &self,
         leaf: &Entity<TerminalView>,

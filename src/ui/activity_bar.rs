@@ -5,7 +5,7 @@ use gpui::{
 use gpui_component::{ActiveTheme as _, Icon, IconName, h_flex, v_flex};
 
 use crate::core::cli_agent::{AgentSessionState, AgentStatus};
-use crate::ui::app::Tty7App;
+use crate::ui::app::AgenttyApp;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ActivityPresentation {
@@ -38,7 +38,7 @@ pub fn presentation(state: Option<&AgentSessionState>) -> ActivityPresentation {
     }
 }
 
-impl Tty7App {
+impl AgenttyApp {
     pub(crate) fn render_activity_bar(
         &mut self,
         window: &mut Window,

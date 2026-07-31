@@ -949,7 +949,7 @@ mod tests {
 
     fn temp_root(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(
-            "tty7-ssh-config-test-{name}-{}",
+            "agentty-ssh-config-test-{name}-{}",
             std::process::id()
         ));
         let _ = std::fs::remove_dir_all(&dir);
