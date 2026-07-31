@@ -8,6 +8,9 @@ use crate::ui::remote_workspace::Backoff;
 #[derive(Default)]
 pub struct LocalLink {
     client: Option<Arc<ControlClient>>,
+    /// Build stamp reported by the daemon at handshake; compared against this
+    /// binary's own stamp to detect a stale (pre-rebuild) daemon.
+    server_build: Option<String>,
     backoff: Backoff,
     next_attempt: Option<std::time::Instant>,
     attempting: bool,
@@ -38,6 +41,15 @@ impl LocalLink {
         .detach();
     }
 
+    /// The connected daemon's build stamp when it differs from this binary's
+    /// own — i.e. the daemon predates the last rebuild and a server restart
+    /// would sync them. None when matching or not connected.
+    pub fn stale_server_build(cx: &mut App) -> Option<(String, String)> {
+        let daemon = cx.default_global::<LocalLink>().server_build.clone()?;
+        let ours = agentty_core::daemon::protocol::build_stamp();
+        agentty_core::daemon::protocol::is_stale_build(&daemon, &ours).then_some((daemon, ours))
+    }
+
     pub fn client(cx: &mut App) -> Option<Arc<ControlClient>> {
         let link = cx.default_global::<LocalLink>();
         link.client.as_ref().filter(|c| c.is_connected()).cloned()
@@ -51,6 +63,7 @@ impl LocalLink {
     /// end is gone say so here, and the next tick reconnects.
     pub fn invalidate(cx: &mut App) {
         let link = cx.default_global::<LocalLink>();
+        link.server_build = None;
         if link.client.take().is_some() {
             log::info!("dropped the control link to the local daemon; it was restarted");
         }
@@ -70,6 +83,7 @@ impl LocalLink {
             }
             log::info!("lost the control link to the local daemon; reconnecting");
             link.client = None;
+            link.server_build = None;
         }
         match link.next_attempt {
             None if link.backoff.attempt() == 0 => {}
@@ -95,6 +109,7 @@ impl LocalLink {
                 match connected {
                     Ok(client) => {
                         log::info!("control link to the local daemon is up");
+                        link.server_build = Some(client.hello().build.clone());
                         link.client = Some(client);
                         link.backoff.reset();
                         link.next_attempt = None;

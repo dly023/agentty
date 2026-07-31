@@ -38,6 +38,8 @@ common.reload: Reload
 common.remove: Remove
 common.reset: Reset
 common.restart_server: Restart Server
+daemon.stale_build: The background server is a different build ({daemon}); this app is {app}. Restart it to pick up the new build.
+daemon.stale_build.dismiss: Dismiss
 common.retry: Try Again
 common.save: Save
 common.search_files: Search files…

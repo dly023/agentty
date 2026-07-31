@@ -46,6 +46,12 @@ entries:
     static_check: script/check_spec_matrix
     tests: []
     evidence: documented
+  - id: PRODUCT-BUILD-STAMP-015
+    spec: PRODUCT-BUILD-STAMP-04
+    source: [docs/specs/PRODUCT_SPEC.yaml, crates/agentty-core/build.rs, crates/agentty-core/src/daemon/protocol.rs, src/ui/local_link.rs, src/ui/app.rs]
+    static_check: script/check_version_policy
+    tests: [build_stamp_carries_semver_build_metadata, stale_build_detection_is_pure_inequality]
+    evidence: "2026-08-01: binaries stamp 0.0.1+<commit> via build.rs; ControlHelloOk.build carries the stamp; LocalLink compares handshake build with the GUI's own and a dismissible pill offers an explicit Restart Server action"
   - id: PRODUCT-NO-BYOK-006
     spec: PRODUCT-NO-MODEL-BYOK-02
     source:

@@ -20,11 +20,27 @@ pub struct DaemonVersion {
     pub instance: String,
 }
 
+/// `0.0.1+<commit>` — SemVer build metadata keeps the pinned version policy
+/// while making distinct builds distinguishable at handshake time.
+pub fn build_stamp() -> String {
+    format!(
+        "{}+{}",
+        env!("CARGO_PKG_VERSION"),
+        option_env!("AGENTTY_BUILD_SHA").unwrap_or("dev")
+    )
+}
+
+/// True when a handshake-reported peer build is not this binary's build —
+/// i.e. the peer predates (or postdates) us and a restart would sync them.
+pub fn is_stale_build(peer_build: &str, ours: &str) -> bool {
+    peer_build != ours
+}
+
 impl DaemonVersion {
     pub fn current() -> DaemonVersion {
         DaemonVersion {
             protocol: PROTOCOL_VERSION,
-            build: env!("CARGO_PKG_VERSION").to_string(),
+            build: build_stamp(),
             features: vec![FEATURE_PANE_OWNER.to_string()],
             instance: process_instance().to_string(),
         }
@@ -2101,6 +2117,24 @@ mod tests {
         msg.encode(&mut buf).unwrap();
         let (k, _) = read_frame(&mut std::io::Cursor::new(&buf)).unwrap();
         assert_eq!(k, kind::SPAWN_NATIVE_SSH);
+    }
+
+    #[test]
+    fn build_stamp_carries_semver_build_metadata() {
+        let stamp = build_stamp();
+        let (version, sha) = stamp.split_once('+').expect("stamp is version+sha");
+        assert_eq!(version, env!("CARGO_PKG_VERSION"));
+        assert!(!sha.is_empty());
+        let current = DaemonVersion::current();
+        assert_eq!(current.build, stamp);
+    }
+
+    #[test]
+    fn stale_build_detection_is_pure_inequality() {
+        assert!(is_stale_build("0.0.1+aaa", "0.0.1+bbb"));
+        assert!(!is_stale_build("0.0.1+aaa", "0.0.1+aaa"));
+        // Legacy peers without build metadata are stale to a stamped binary.
+        assert!(is_stale_build("0.0.1", "0.0.1+abc123"));
     }
 
     #[test]

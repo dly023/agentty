@@ -38,6 +38,8 @@ common.reload: 重新加载
 common.remove: 移除
 common.reset: 重置
 common.restart_server: 重启服务
+daemon.stale_build: 后台服务是不同的构建（{daemon})，当前应用为 {app}。重启服务器以启用新构建。
+daemon.stale_build.dismiss: 忽略
 common.retry: 重试
 common.save: 保存
 common.search_files: 搜索文件…

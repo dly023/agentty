@@ -284,6 +284,23 @@ milestones:
         spec: SSH-AUTH-DIAGNOSTICS-03
         tests: [diagnostic_explains_missing_default_keys_and_empty_agent, diagnostic_reports_rejected_identity_without_key_material, authentication_diagnostic_is_visible_in_environment_indicator]
         evidence: 2026-07-31 public-key failures distinguish missing defaults, empty/unavailable agent, and rejected identities without exposing key material; GUI indicator preserves the actionable diagnostic instead of collapsing it
+  - id: M7-OPERABILITY
+    title: Build-stamped daemon operability
+    status: verified
+    outcome: Distinct builds are distinguishable under the pinned 0.0.1 policy, and a stale local daemon is detected and restarted explicitly.
+    items:
+      - id: OPS-001
+        title: SemVer build stamp on every binary
+        status: verified
+        spec: PRODUCT-BUILD-STAMP-04
+        tests: [build_stamp_carries_semver_build_metadata]
+        evidence: 2026-08-01 agentty-core build.rs stamps 0.0.1+<commit>; DaemonVersion and ControlHelloOk carry the stamp; version policy gate still enforces 0.0.1
+      - id: OPS-002
+        title: Stale local daemon detection with explicit restart
+        status: verified
+        spec: PRODUCT-BUILD-STAMP-04
+        tests: [stale_build_detection_is_pure_inequality]
+        evidence: 2026-08-01 LocalLink compares the handshake build stamp with the GUI's own; a dismissible pill offers a user-initiated Restart Server, never an implicit daemon kill
 technical_debt: []
 version_policy:
   current: 0.0.1

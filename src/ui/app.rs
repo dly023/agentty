@@ -344,6 +344,9 @@ pub(crate) struct LoopbackForwardPanelState {
 }
 
 pub struct AgenttyApp {
+    /// One-shot dismissal for the "daemon is an older build" pill; reset only
+    /// by a fresh app run, so it never nags twice for the same mismatch.
+    stale_daemon_notice_dismissed: bool,
     pub(crate) tabs: Vec<Tab>,
     pub(crate) active: usize,
     pub(crate) font_size: f32,
@@ -640,6 +643,7 @@ impl AgenttyApp {
             }
         });
         let mut app = Self {
+            stale_daemon_notice_dismissed: false,
             tabs,
             active,
             font_size,
@@ -4828,6 +4832,70 @@ impl AgenttyApp {
         )
     }
 
+    fn render_stale_daemon_notice(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<gpui::AnyElement> {
+        if self.stale_daemon_notice_dismissed {
+            return None;
+        }
+        use gpui_component::Sizable as _;
+        use gpui_component::button::ButtonVariants as _;
+        let (daemon, ours) = crate::ui::local_link::LocalLink::stale_server_build(cx)?;
+        let theme = cx.theme();
+        let message = crate::core::i18n::current_format(
+            cx,
+            "daemon.stale_build",
+            &[("daemon", &daemon), ("app", &ours)],
+        );
+        Some(
+            div()
+                .absolute()
+                .left_0()
+                .right_0()
+                .top_4()
+                .flex()
+                .justify_center()
+                .child(
+                    gpui_component::h_flex()
+                        .occlude()
+                        .items_center()
+                        .gap_2()
+                        .px_3()
+                        .py_1p5()
+                        .rounded_lg()
+                        .bg(theme.popover)
+                        .border_1()
+                        .border_color(theme.warning.opacity(0.4))
+                        .shadow_md()
+                        .text_xs()
+                        .text_color(theme.muted_foreground)
+                        .child(message)
+                        .child(
+                            gpui_component::button::Button::new("stale-daemon-restart")
+                                .label(crate::core::i18n::current(cx, "common.restart_server"))
+                                .ghost()
+                                .xsmall()
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.restart_daemon(window, cx);
+                                })),
+                        )
+                        .child(
+                            gpui_component::button::Button::new("stale-daemon-dismiss")
+                                .label(crate::core::i18n::current(cx, "daemon.stale_build.dismiss"))
+                                .ghost()
+                                .xsmall()
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.stale_daemon_notice_dismissed = true;
+                                    cx.notify();
+                                })),
+                        ),
+                )
+                .into_any_element(),
+        )
+    }
+
     fn render_remote_input_notice(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
         if self.tabs.is_empty() {
             return None;
@@ -5003,6 +5071,9 @@ impl Render for AgenttyApp {
                 this.child(el)
             })
             .when_some(self.render_remote_input_notice(cx), |this, el| {
+                this.child(el)
+            })
+            .when_some(self.render_stale_daemon_notice(window, cx), |this, el| {
                 this.child(el)
             })
             .when_some(self.render_ssh_close_confirm_overlay(cx), |this, el| {

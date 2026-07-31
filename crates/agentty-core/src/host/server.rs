@@ -320,7 +320,7 @@ fn handshake<R: Read>(
     sink.send(&ControlServerMsg::HelloOk(ControlHelloOk {
         control_version: CONTROL_VERSION,
         protocol_version: crate::daemon::protocol::PROTOCOL_VERSION,
-        build: env!("CARGO_PKG_VERSION").to_string(),
+        build: crate::daemon::protocol::build_stamp(),
         separator: host.separator(),
         home: home_dir()
             .map(|p| p.to_string_lossy().into_owned())
@@ -492,7 +492,7 @@ fn run_request(
             ReplyOk::HelperHello(crate::daemon::control::HelperHello {
                 protocol_version: crate::agent_runtime::HELPER_PROTOCOL_VERSION,
                 capabilities: crate::agent_runtime::capabilities(),
-                build: env!("CARGO_PKG_VERSION").to_string(),
+                build: crate::daemon::protocol::build_stamp(),
                 instance: crate::daemon::control::server_instance().to_string(),
                 binary_hash: crate::agent_runtime::helper_binary_hash(),
                 install: crate::daemon::control::HelperInstallOutcome::BuiltIn,
@@ -818,7 +818,7 @@ fn run_request(
                 panes: conn.panes.as_ref().map(|p| p.pane_count()).unwrap_or(0),
                 control_version: CONTROL_VERSION,
                 protocol_version: crate::daemon::protocol::PROTOCOL_VERSION,
-                build: env!("CARGO_PKG_VERSION").to_string(),
+                build: crate::daemon::protocol::build_stamp(),
                 socket: control_endpoint_display(),
             }),
             Vec::new(),
@@ -1655,7 +1655,7 @@ mod aggregate_tests {
             status.protocol_version,
             crate::daemon::protocol::PROTOCOL_VERSION
         );
-        assert_eq!(status.build, env!("CARGO_PKG_VERSION"));
+        assert_eq!(status.build, crate::daemon::protocol::build_stamp());
         assert_eq!(
             status.socket,
             control_endpoint_display(),

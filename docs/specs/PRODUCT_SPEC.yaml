@@ -19,3 +19,5 @@ contracts:
     rule: Model API credentials remain owned by each CLI agent. SSH credentials and key passphrases are a separate required subsystem.
   - id: PRODUCT-QUALITY-GATE-03
     rule: Architecture changes follow SPEC -> MATRIX -> CHECK -> TEST -> IMPLEMENTATION -> VERIFY.
+  - id: PRODUCT-BUILD-STAMP-04
+    rule: Every binary carries SemVer build metadata (version+commit) so the pinned version policy never makes distinct builds indistinguishable; a stale local daemon is detected at handshake and surfaced with an explicit, user-initiated restart — never an implicit one.
