@@ -2243,6 +2243,44 @@ mod tests {
     }
 
     #[test]
+    fn helper_hello_reports_protocol_and_capabilities() {
+        let (mut sock, _hello_ok) = raw();
+        let (reply, _events) = round_trip(&mut sock, 1, ControlRequest::HelperHello);
+        let ControlReply::Ok(ReplyOk::HelperHello(hello)) = reply else {
+            panic!("expected HelperHello, got {reply:?}");
+        };
+        assert_eq!(
+            hello.protocol_version,
+            crate::agent_runtime::HELPER_PROTOCOL_VERSION
+        );
+        for capability in [
+            crate::agent_runtime::capability::SESSION_DISCOVERY,
+            crate::agent_runtime::capability::TYPED_RESUME,
+            crate::agent_runtime::capability::STRUCTURED_ACTIVITY,
+            crate::agent_runtime::capability::COMPLETION,
+            crate::agent_runtime::capability::CANCELLATION,
+        ] {
+            assert!(
+                hello.capabilities.iter().any(|c| c == capability),
+                "helper hello is missing capability {capability}"
+            );
+        }
+        assert!(!hello.build.is_empty(), "build stamp must be observable");
+        assert!(
+            !hello.instance.is_empty(),
+            "instance identity must be observable"
+        );
+        assert!(
+            !hello.binary_hash.is_empty(),
+            "binary hash must be observable"
+        );
+        assert!(matches!(
+            hello.install,
+            crate::daemon::control::HelperInstallOutcome::BuiltIn
+        ));
+    }
+
+    #[test]
     fn error_kinds_survive_the_round_trip() {
         let p = pair();
         let tmp = tempfile::TempDir::new().unwrap();

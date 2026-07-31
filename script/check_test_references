@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# Every test name referenced from the quality YAMLs (tracker, traceability,
+# asset matrices) must resolve to a real `fn <name>` in src/ or crates/.
+# This keeps evidence references from drifting when tests are renamed.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+python3 - <<'PY'
+import re, subprocess, sys
+
+files = [
+    "docs/quality/development-tracker.yaml",
+    "docs/quality/traceability.yaml",
+    "docs/quality/ASHIDE_FALLBACK_ASSET_MATRIX.yaml",
+    "docs/quality/AGENTTY_IDENTITY_MIGRATION.yaml",
+]
+
+names = {}
+ident = re.compile(r"^[a-z][a-z0-9_]*$")
+for path in files:
+    try:
+        lines = open(path, encoding="utf-8").read().splitlines()
+    except FileNotFoundError:
+        continue
+    in_tests = False
+    tests_indent = 0
+    for lineno, line in enumerate(lines, 1):
+        stripped = line.strip()
+        indent = len(line) - len(line.lstrip())
+        if in_tests and stripped and (indent <= tests_indent and not stripped.startswith("-")):
+            in_tests = False
+        m = re.match(r"^(\s*)tests:\s*(.*)$", line)
+        if m:
+            tests_indent = len(m.group(1))
+            rest = m.group(2).strip()
+            if rest.startswith("["):
+                for item in rest.strip("[]").split(","):
+                    item = item.strip()
+                    if ident.match(item):
+                        names.setdefault(item, []).append(f"{path}:{lineno}")
+                in_tests = False
+            else:
+                in_tests = True
+            continue
+        if in_tests:
+            item = stripped.lstrip("- ").split("#")[0].strip()
+            if ident.match(item):
+                names.setdefault(item, []).append(f"{path}:{lineno}")
+
+out = subprocess.run(
+    ["rg", "-o", "--no-filename", "-g", "*.rs", r"fn ([a-z][a-z0-9_]*)", "src", "crates"],
+    capture_output=True, text=True, check=True,
+).stdout
+defined = set(re.findall(r"fn ([a-z][a-z0-9_]*)", out))
+
+missing = {n: refs for n, refs in names.items() if n not in defined}
+if missing:
+    for name, refs in sorted(missing.items()):
+        print(f"[test-refs] {name} referenced at {', '.join(refs)} has no matching test fn", file=sys.stderr)
+    sys.exit(1)
+print(f"test reference checks passed ({len(names)} referenced tests all exist)")
+PY

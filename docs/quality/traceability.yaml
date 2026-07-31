@@ -175,7 +175,8 @@ entries:
     tests:
       - window_environment_is_derived_from_its_persisted_authority
       - remote_disconnect_never_becomes_local
-    evidence: "2026-07-31: implementation verified by the listed focused tests and static boundary gate"
+      - entering_remote_environment_never_retargets_current_window
+    evidence: "2026-08-01: listed focused tests exist and pass; static boundary gate green"
   - id: ENV-INDICATOR-021
     spec: ENV-INDICATOR-04
     source:
@@ -201,9 +202,9 @@ entries:
       - src/core/session.rs
       - src/ui/windows.rs
     static_check: script/check_environment_boundary
-    tests: [legacy_window_views_migrate_once, environment_window_state_round_trip, tabs_restore_without_authority_drift]
+    tests: [legacy_window_views_migrate_once, legacy_active_local_window_migrates_without_panic, environment_window_state_round_trip, tabs_restore_without_authority_drift]
     verification: cargo test -p agentty-core core::session::tests --lib --locked
-    evidence: "2026-07-31: EnvironmentWindows migration and authority-preserving round trip passed 13 focused tests"
+    evidence: "2026-08-01: migration and authority-preserving round trip pass; fixed from_legacy panic when the legacy active window was local"
   - id: ENV-VISIBILITY-024
     spec: ENV-AUTHORITY-VISIBLE-07
     source:
@@ -243,7 +244,7 @@ entries:
     tests:
       - native_ssh_environment_action_opens_a_new_window
       - terminal_ssh_does_not_mutate_window_environment
-    evidence: "2026-07-31: implementation verified by the listed focused tests and static boundary gate"
+    evidence: "2026-08-01: listed focused tests exist and pass; static boundary gate green"
   - id: ENV-DEDUP-028
     spec: ENV-OPEN-OR-FOCUS-11
     source:
@@ -252,7 +253,7 @@ entries:
     static_check: script/check_environment_boundary
     tests:
       - opening_same_environment_focuses_existing_window
-    evidence: "2026-07-31: implementation verified by the listed focused tests and static boundary gate"
+    evidence: "2026-08-01: environment dedup claim test exists and passes; static boundary gate green"
   - id: HELPER-CAPABILITY-023
     spec: HELPER-CAPABILITY-NEGOTIATION-01
     source: [docs/specs/REMOTE_HELPER_SPEC.yaml, crates/agentty-core/src/daemon/control.rs, crates/agentty-core/src/host/server.rs]
@@ -277,7 +278,7 @@ entries:
     source: [docs/specs/REMOTE_HELPER_SPEC.yaml, crates/agentty-core/src/agent_runtime/resume.rs]
     static_check: script/check_remote_helper
     tests: [typed_resume_keeps_program_and_arguments_separate, resume_invocation_is_typed_and_preserves_cwd]
-    evidence: "2026-07-31: typed resume tests passed and compatibility string renderer was removed"
+    evidence: "2026-08-01: typed resume tests pass; serde round trip keeps program/args/cwd typed and cwd is never interpolated into the terminal line"
   - id: HELPER-ACTIVITY-027
     spec: HELPER-ACTIVITY-STRUCTURED-05
     source: [docs/specs/REMOTE_HELPER_SPEC.yaml, crates/agentty-core/src/agent_runtime/activity.rs, crates/agentty-core/src/daemon/control.rs, src/ui/activity_bar.rs]
@@ -301,7 +302,7 @@ entries:
     source: [docs/specs/REMOTE_HELPER_SPEC.yaml, crates/agentty-core/src/daemon/control.rs, crates/agentty-core/src/host/server.rs]
     static_check: script/check_remote_helper
     tests: [helper_hello_reports_protocol_and_capabilities, server_messages_round_trip]
-    evidence: "2026-07-31: built-in helper reports protocol, capabilities, build, instance, hash, and install outcome without a second daemon"
+    evidence: "2026-08-01: wire-level round trip asserts protocol, all five capabilities, build, instance, hash, and install outcome without a second daemon"
   - id: HELPER-PARITY-031
     spec: HELPER-LOCAL-REMOTE-PARITY-09
     source: [docs/specs/REMOTE_HELPER_SPEC.yaml, docs/quality/ASHIDE_FALLBACK_ASSET_MATRIX.yaml, crates/agentty-core/src/agent_runtime/adapter.rs]

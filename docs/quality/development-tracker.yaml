@@ -165,7 +165,7 @@ milestones:
         required_before_implementation:
           - failed_scan_preserves_last_committed_rows
           - stale_generation_is_ignored
-          - provider_failure_does_not_publish_partial_subset
+          - partial_provider_failure_does_not_publish_subset
           - remote_authority_never_falls_back_to_local_rows
         tests: [discovers_real_sessions_on_this_machine, huge_transcripts_are_scanned_via_bounded_head_read, only_the_most_recent_candidates_are_parsed]
         evidence: 2026-08-01 Codex and Claude Host-based providers plus atomic generation reducer tests passed in agentty-core; real-machine e2e (AGENTTY_E2E_HOME) discovered 40 rows after the head-read fallback fixed FileTooLarge failing both providers on transcripts over 4MB

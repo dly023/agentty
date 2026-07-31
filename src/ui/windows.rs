@@ -689,4 +689,172 @@ mod environment_tests {
         assert_eq!(workspace_for_environment_target(&views, Some(&gpu)), None);
         assert_eq!(workspace_for_environment_target(&views, None), None);
     }
+
+    fn install_views(cx: &mut App, views: WindowViews) {
+        crate::core::config::pin_test_config_dir();
+        WorkspaceStore::install_for_test(cx, views);
+    }
+
+    fn alias(name: &str) -> RemoteTarget {
+        RemoteTarget::Alias { alias: name.into() }
+    }
+
+    #[gpui::test]
+    fn opening_same_environment_focuses_existing_window(cx: &mut gpui::TestAppContext) {
+        cx.update(|cx| {
+            install_views(cx, WindowViews::default());
+            let target = alias("build");
+            let first = WorkspaceStore::claim_remote(
+                cx,
+                RemoteRef::new(target.clone(), WorkspaceId::new()),
+            );
+            let window_count = WorkspaceStore::all(cx).windows.len();
+            let second =
+                WorkspaceStore::claim_remote(cx, RemoteRef::new(target, WorkspaceId::new()));
+            assert_eq!(
+                first, second,
+                "opening an environment that already has a window must reuse it"
+            );
+            assert_eq!(
+                WorkspaceStore::all(cx).windows.len(),
+                window_count,
+                "re-opening must not duplicate the window entry"
+            );
+            let environment = EnvironmentId::for_remote(&alias("build"));
+            assert_eq!(
+                WorkspaceStore::environment_workspace(cx, &environment),
+                Some(first),
+                "the environment resolves to the one window it already owns"
+            );
+        });
+    }
+
+    #[gpui::test]
+    fn entering_remote_environment_never_retargets_current_window(cx: &mut gpui::TestAppContext) {
+        cx.update(|cx| {
+            let local = WindowView::default();
+            let local_id = local.id;
+            install_views(
+                cx,
+                WindowViews {
+                    views: vec![local],
+                    active: None,
+                },
+            );
+
+            let build = WorkspaceStore::claim_remote(
+                cx,
+                RemoteRef::new(alias("build"), WorkspaceId::new()),
+            );
+            assert_ne!(build, local_id);
+            assert!(
+                WorkspaceStore::environment_id(cx, local_id).is_local(),
+                "entering a remote environment must not touch the current window's authority"
+            );
+            let local_view = WorkspaceStore::all(cx).get(local_id).expect("local view");
+            assert!(local_view.open, "the current window stays open");
+
+            let gpu =
+                WorkspaceStore::claim_remote(cx, RemoteRef::new(alias("gpu"), WorkspaceId::new()));
+            assert_ne!(gpu, build);
+            assert_eq!(
+                WorkspaceStore::environment_id(cx, build),
+                EnvironmentId::for_remote(&alias("build")),
+                "a second remote environment must not retarget the first remote window"
+            );
+        });
+    }
+
+    #[gpui::test]
+    fn native_ssh_environment_action_opens_a_new_window(cx: &mut gpui::TestAppContext) {
+        cx.update(|cx| {
+            // The environment indicator's SSH action goes through
+            // open_or_focus_environment; for a fresh target its store effect is
+            // a dedicated claim. Pin that this never reuses the current window.
+            let local = WindowView::default();
+            let local_id = local.id;
+            install_views(
+                cx,
+                WindowViews {
+                    views: vec![local],
+                    active: None,
+                },
+            );
+
+            let claimed =
+                WorkspaceStore::claim_remote(cx, RemoteRef::new(alias("tty7"), WorkspaceId::new()));
+            assert_ne!(
+                claimed, local_id,
+                "a managed SSH environment gets its own window, not the current one"
+            );
+            assert_eq!(
+                WorkspaceStore::environment_id(cx, claimed),
+                EnvironmentId::for_remote(&alias("tty7"))
+            );
+            assert!(
+                WorkspaceStore::environment_id(cx, local_id).is_local(),
+                "the window the action was triggered from keeps its local authority"
+            );
+        });
+    }
+
+    #[gpui::test]
+    fn terminal_ssh_does_not_mutate_window_environment(cx: &mut gpui::TestAppContext) {
+        cx.update(|cx| {
+            // Running `ssh host` inside a terminal is an OpenSSH child process:
+            // nothing in that path calls into the workspace store. Pin that
+            // environment authority and pane routing are derived solely from
+            // the persisted window binding, so terminal content cannot change
+            // them. script/check_environment_boundary greps for forbidden
+            // couplings; this pins the derivation source at runtime.
+            let local = WindowView::default();
+            let local_id = local.id;
+            install_views(
+                cx,
+                WindowViews {
+                    views: vec![local],
+                    active: None,
+                },
+            );
+
+            assert!(WorkspaceStore::environment_id(cx, local_id).is_local());
+            assert!(WorkspaceStore::remote_ref(cx, local_id).is_none());
+            assert!(matches!(
+                crate::ui::remote_workspace::pane_route_for(cx, local_id),
+                crate::terminal::PaneRoute::Local
+            ));
+        });
+    }
+
+    #[gpui::test]
+    fn remote_disconnect_never_becomes_local(cx: &mut gpui::TestAppContext) {
+        cx.update(|cx| {
+            let target = alias("build");
+            let remote = WindowView::on_remote(RemoteRef::new(target.clone(), WorkspaceId::new()));
+            let remote_id = remote.id;
+            install_views(
+                cx,
+                WindowViews {
+                    views: vec![remote],
+                    active: None,
+                },
+            );
+
+            // No HostLinks entry: the connection is down. Authority must not
+            // fall back to local just because the link is gone.
+            assert!(
+                !WorkspaceStore::machine_is_connected(cx, remote_id),
+                "test setup: the remote is disconnected"
+            );
+            assert_eq!(
+                WorkspaceStore::environment_id(cx, remote_id),
+                EnvironmentId::for_remote(&target),
+                "a disconnected remote window keeps its remote authority"
+            );
+            assert!(
+                WorkspaceStore::remote_ref(cx, remote_id).is_some(),
+                "the persisted remote binding survives the disconnect"
+            );
+        });
+    }
 }

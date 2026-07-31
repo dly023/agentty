@@ -61,6 +61,26 @@ mod tests {
     }
 
     #[test]
+    fn resume_invocation_is_typed_and_preserves_cwd() {
+        let invocation = ResumeInvocation::new(
+            "codex",
+            vec!["resume".into(), "th_1".into()],
+            Some("/repo".into()),
+        )
+        .unwrap();
+        // The wire form keeps program, args, and cwd as distinct typed fields.
+        let json = serde_json::to_string(&invocation).unwrap();
+        let decoded: ResumeInvocation = serde_json::from_str(&json).unwrap();
+        assert_eq!(decoded, invocation);
+        assert_eq!(decoded.cwd.as_deref(), Some("/repo"));
+        // Terminal materialization never interpolates cwd into the command line;
+        // cwd travels typed and is applied by the spawn boundary instead.
+        let line = String::from_utf8(shell_line(&invocation)).unwrap();
+        assert_eq!(line, "codex resume th_1\r");
+        assert!(!line.contains("/repo"));
+    }
+
+    #[test]
     fn shell_materialization_quotes_each_argument_at_the_terminal_boundary() {
         let invocation = ResumeInvocation::new(
             "codex",
