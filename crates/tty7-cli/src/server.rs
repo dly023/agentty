@@ -28,7 +28,7 @@ fn running() -> bool {
 }
 
 /// Every verb, lifecycle ones included, acts on the server named by
-/// `$TTY7_CONFIG_DIR`: `spawn::stop` dials `transport::connect`, which derives
+/// `$AGENTTY_CONFIG_DIR`: `spawn::stop` dials `transport::connect`, which derives
 /// its endpoint from the config dir, and `start` passes that same dir to the
 /// server it launches. There is nothing left to guard against here — the
 /// endpoint these verbs reach and the one `tty7 status` reports on are one and

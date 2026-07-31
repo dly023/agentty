@@ -1614,7 +1614,7 @@ mod tests {
             &Context::default(),
             &mut doctor_backend(),
         ));
-        assert!(out.contains("TTY7_CONFIG_DIR"), "{out}");
+        assert!(out.contains("AGENTTY_CONFIG_DIR"), "{out}");
         assert!(out.contains("missing"), "{out}");
         assert!(out.contains("dialect"), "{out}");
         assert!(

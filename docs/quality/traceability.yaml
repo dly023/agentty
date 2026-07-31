@@ -294,3 +294,34 @@ entries:
     static_check: script/check_remote_helper
     tests: [codex_and_claude_discovery_uses_one_shared_host_core, remote_authority_never_falls_back_to_local_rows]
     evidence: "2026-07-31: local direct adapter and capability-gated remote RPC share the same discovery core"
+  - id: IDENTITY-CANONICAL-027
+    spec: IDENTITY-CANONICAL-01
+    source: [docs/specs/PRODUCT_IDENTITY_SPEC.yaml, .github/scripts/bundle-macos.sh, AGENTS.md]
+    static_check: script/check_agentty_identity
+    tests: []
+    evidence: "2026-07-31: Agentty identity gate introduced"
+  - id: IDENTITY-CONFIG-028
+    spec: IDENTITY-CONFIG-02
+    source: [crates/tty7-core/src/core/config.rs, crates/tty7-cli/src/address.rs, crates/tty7-core/src/daemon/pane.rs]
+    static_check: script/check_agentty_identity
+    tests: [default_config_dir_uses_agentty_product_root]
+    verification: cargo test -p tty7-core default_config_dir_uses_agentty_product_root --lib --locked
+    evidence: "2026-07-31: canonical config root and override changed to Agentty"
+  - id: IDENTITY-LEGACY-029
+    spec: IDENTITY-NO-LEGACY-AUTHORITY-03
+    source: [crates/tty7-core/src/core/config.rs, crates/tty7-core/src/daemon/remote_link.rs]
+    static_check: script/check_agentty_identity
+    tests: [default_config_dir_uses_agentty_product_root, the_remote_socket_path_matches_the_servers_own_order]
+    evidence: "2026-07-31: legacy config env and directory are statically forbidden"
+  - id: IDENTITY-PACKAGE-030
+    spec: IDENTITY-PACKAGE-04
+    source: [.github/scripts/bundle-macos.sh]
+    static_check: script/check_agentty_identity
+    tests: []
+    evidence: "2026-07-31: bundle metadata changed to Agentty.app/com.dly023.agentty"
+  - id: IDENTITY-COMPAT-031
+    spec: IDENTITY-COMPATIBILITY-05
+    source: [docs/quality/AGENTTY_IDENTITY_MIGRATION.yaml]
+    static_check: script/check_agentty_identity
+    tests: []
+    evidence: "2026-07-31: executable and protocol rename boundaries inventoried for atomic follow-up"

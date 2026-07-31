@@ -528,7 +528,7 @@ fn config_dir() -> Option<PathBuf> {
     if let Some(dir) = CONFIG_DIR_OVERRIDE.get() {
         return Some(dir.clone());
     }
-    if let Some(dir) = std::env::var_os("TTY7_CONFIG_DIR").filter(|d| !d.is_empty()) {
+    if let Some(dir) = std::env::var_os("AGENTTY_CONFIG_DIR").filter(|d| !d.is_empty()) {
         return Some(PathBuf::from(dir));
     }
     default_config_dir()
@@ -537,16 +537,16 @@ fn config_dir() -> Option<PathBuf> {
 #[cfg(not(windows))]
 pub fn default_config_dir() -> Option<PathBuf> {
     let home = std::env::var_os("HOME").filter(|h| !h.is_empty())?;
-    Some(PathBuf::from(home).join(".config/tty7"))
+    Some(PathBuf::from(home).join(".config/agentty"))
 }
 
 #[cfg(windows)]
 pub fn default_config_dir() -> Option<PathBuf> {
     if let Some(appdata) = std::env::var_os("APPDATA").filter(|d| !d.is_empty()) {
-        return Some(PathBuf::from(appdata).join("tty7"));
+        return Some(PathBuf::from(appdata).join("agentty"));
     }
     let profile = std::env::var_os("USERPROFILE").filter(|d| !d.is_empty())?;
-    Some(PathBuf::from(profile).join(".config").join("tty7"))
+    Some(PathBuf::from(profile).join(".config").join("agentty"))
 }
 
 pub fn config_path(file: &str) -> Option<PathBuf> {
@@ -1201,6 +1201,17 @@ mod tests {
         assert_eq!(
             cfg.ssh_profiles[0].auth,
             crate::core::ssh_profile::AuthMode::Auto
+        );
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn default_config_dir_uses_agentty_product_root() {
+        let home =
+            std::env::var_os("HOME").expect("HOME must be available in the test environment");
+        assert_eq!(
+            default_config_dir(),
+            Some(PathBuf::from(home).join(".config/agentty"))
         );
     }
 

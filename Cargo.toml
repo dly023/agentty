@@ -67,7 +67,7 @@ uuid = { version = "1", features = ["v4", "serde"] }
 # the account scheme) stays in core, where `config.json` parsing needs it.
 keyring = "4"
 
-# Theme files. tty7 themes are authored as YAML (`~/.config/tty7/themes/*.yaml`,
+# Theme files. tty7 themes are authored as YAML (`~/.config/agentty/themes/*.yaml`,
 # our own schema); `plist` parses imported iTerm2 `.itermcolors` schemes (XML
 # plist) so the large iTerm color-scheme ecosystem drops straight in. serde_yaml
 # is already in the tree transitively, so it pins no new code; plist is pure Rust.

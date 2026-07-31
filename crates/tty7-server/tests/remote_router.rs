@@ -126,7 +126,7 @@ fn bound_control_socket(runtime_dir: Option<&str>, home: &str) -> String {
     let mut cmd = Command::new(EXE);
     cmd.arg("--daemon")
         .env("HOME", home)
-        .env_remove("TTY7_CONFIG_DIR")
+        .env_remove("AGENTTY_CONFIG_DIR")
         .env_remove("TTY7_CONTROL_SOCK")
         .stdout(Stdio::null())
         .stderr(Stdio::piped());

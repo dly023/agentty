@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+fail=0
+check_absent() {
+  local pattern="$1"; shift
+  if rg -n --hidden "$pattern" "$@"; then
+    echo "[identity] forbidden legacy identity matched: $pattern" >&2
+    fail=1
+  fi
+}
+check_absent 'TTY7_CONFIG_DIR|\.config/tty7|\.tty7-dev' \
+  .cargo .github crates src script scripts skills docs AGENTS.md Cargo.toml README.md README.zh-CN.md \
+  --glob '!docs/quality/AGENTTY_IDENTITY_MIGRATION.yaml' \
+  --glob '!docs/specs/PRODUCT_IDENTITY_SPEC.yaml' \
+  --glob '!script/check_agentty_identity'
+rg -q 'APP="dist/Agentty.app"' .github/scripts/bundle-macos.sh || { echo '[identity] macOS bundle must be Agentty.app' >&2; fail=1; }
+rg -q '<string>Agentty</string>' .github/scripts/bundle-macos.sh || { echo '[identity] macOS display name must be Agentty' >&2; fail=1; }
+rg -q '<string>com\.dly023\.agentty</string>' .github/scripts/bundle-macos.sh || { echo '[identity] macOS bundle identifier must be com.dly023.agentty' >&2; fail=1; }
+[[ "$fail" -eq 0 ]] || exit 1
+echo 'Agentty identity checks passed'

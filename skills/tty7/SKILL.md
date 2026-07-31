@@ -17,7 +17,7 @@ tty7 doctor
 
 One table, and it answers everything you need before doing anything else:
 whether a server is reachable, whether the dialect matches, and whether
-`TTY7_CONFIG_DIR` / `TTY7_WS` / `TTY7_PANE` are set — i.e. whether you are
+`AGENTTY_CONFIG_DIR` / `TTY7_WS` / `TTY7_PANE` are set — i.e. whether you are
 running *inside* a tty7 pane.
 
 Being inside a pane matters for two reasons: the address-taking verbs

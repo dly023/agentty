@@ -8,7 +8,7 @@ pub const ENV_WS: &str = "TTY7_WS";
 /// rather than a second one here. Inherited by this process, so
 /// `ControlClient::connect` / `PaneClient::local` already land on the right
 /// server without the CLI touching a path at all.
-pub const ENV_CONFIG_DIR: &str = "TTY7_CONFIG_DIR";
+pub const ENV_CONFIG_DIR: &str = "AGENTTY_CONFIG_DIR";
 
 pub const OUTSIDE_SHELL: &str = "not inside a tty7 shell — pass an explicit %pane/@tab/workspace";
 

@@ -89,7 +89,7 @@ impl Daemon {
         let own = std::env::current_exe().expect("own test binary path");
         let child = Command::new(own)
             .env(DAEMON_ENV, "1")
-            .env("TTY7_CONFIG_DIR", dir.path())
+            .env("AGENTTY_CONFIG_DIR", dir.path())
             .env("TTY7_DATA_DIR", dir.path())
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -146,7 +146,7 @@ impl Daemon {
     fn cli(&self, args: &[&str]) -> Command {
         let mut cmd = Command::new(env!("CARGO_BIN_EXE_tty7"));
         cmd.args(args)
-            .env("TTY7_CONFIG_DIR", self.dir.path())
+            .env("AGENTTY_CONFIG_DIR", self.dir.path())
             .env("TTY7_DATA_DIR", self.dir.path())
             .env_remove("TTY7_PANE")
             .env_remove("TTY7_WS")
@@ -349,12 +349,12 @@ fn config_dir_alone_resolves_both_endpoints(daemon: &Daemon) {
         .env_remove("TTY7_PANE")
         .env_remove("TTY7_WS")
         .env_remove("TTY7_SOCKET")
-        .env("TTY7_CONFIG_DIR", daemon.dir.path())
+        .env("AGENTTY_CONFIG_DIR", daemon.dir.path())
         .output()
-        .expect("run tty7 status with only TTY7_CONFIG_DIR");
+        .expect("run tty7 status with only AGENTTY_CONFIG_DIR");
     assert!(
         out.status.success(),
-        "status over TTY7_CONFIG_DIR failed ({}): {}",
+        "status over AGENTTY_CONFIG_DIR failed ({}): {}",
         out.status,
         String::from_utf8_lossy(&out.stderr)
     );
@@ -363,7 +363,7 @@ fn config_dir_alone_resolves_both_endpoints(daemon: &Daemon) {
     assert_eq!(
         status["pid"].as_u64(),
         Some(u64::from(daemon.child.id())),
-        "the answer must come from the daemon TTY7_CONFIG_DIR names: {status}"
+        "the answer must come from the daemon AGENTTY_CONFIG_DIR names: {status}"
     );
 
     // The control endpoint alone proves nothing: the bug this pins had `status`
@@ -377,9 +377,9 @@ fn config_dir_alone_resolves_both_endpoints(daemon: &Daemon) {
         .env_remove("TTY7_PANE")
         .env_remove("TTY7_WS")
         .env_remove("TTY7_SOCKET")
-        .env("TTY7_CONFIG_DIR", daemon.dir.path())
+        .env("AGENTTY_CONFIG_DIR", daemon.dir.path())
         .output()
-        .expect("run tty7 run with only TTY7_CONFIG_DIR");
+        .expect("run tty7 run with only AGENTTY_CONFIG_DIR");
     assert_eq!(
         out.status.code(),
         Some(9),

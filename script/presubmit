@@ -4,6 +4,7 @@ cd "$(dirname "$0")/.."
 mode=${1:-quick}
 
 ./script/check_agent_harness
+./script/check_agentty_identity
 ./script/check_spec_matrix
 ./script/check_development_tracker
 ./script/check_environment_boundary

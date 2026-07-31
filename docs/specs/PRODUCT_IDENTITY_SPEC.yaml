@@ -1,0 +1,29 @@
+version: 1
+product: Agentty
+status: active
+intent: >-
+  Agentty is the sole product identity for all new user-visible, persisted,
+  packaged, and documented behavior. Upstream tty7 identifiers may remain only
+  behind an explicitly tracked compatibility boundary while they are removed.
+requirements:
+  - id: IDENTITY-CANONICAL-01
+    statement: User-visible product names, desktop metadata, and new documentation use Agentty.
+  - id: IDENTITY-CONFIG-02
+    statement: The canonical configuration root is ~/.config/agentty (or the platform equivalent), selected only by AGENTTY_CONFIG_DIR.
+  - id: IDENTITY-NO-LEGACY-AUTHORITY-03
+    statement: ~/.config/tty7 and TTY7_CONFIG_DIR are never read as runtime authority.
+  - id: IDENTITY-PACKAGE-04
+    statement: macOS development and release bundles are named Agentty.app and use an Agentty bundle identifier.
+  - id: IDENTITY-COMPATIBILITY-05
+    statement: Remaining tty7 protocol, crate, binary, and wire identifiers must be inventoried, non-user-authoritative, and have an explicit removal phase.
+forbidden:
+  - fallback from AGENTTY_CONFIG_DIR to TTY7_CONFIG_DIR
+  - fallback from ~/.config/agentty to ~/.config/tty7
+  - packaging a new tty7.app
+  - adding new user-visible tty7 branding
+verification:
+  static_checks:
+    - script/check_agentty_identity
+  tests:
+    - default_config_dir_uses_agentty_product_root
+    - remote_default_config_dir_uses_agentty_product_root

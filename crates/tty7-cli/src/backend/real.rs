@@ -41,7 +41,7 @@ struct RunningCommand {
 
 impl RealBackend {
     /// The server's config dir arrives in this process's environment as
-    /// `TTY7_CONFIG_DIR`, which is what `tty7_core`'s own endpoint derivation
+    /// `AGENTTY_CONFIG_DIR`, which is what `tty7_core`'s own endpoint derivation
     /// reads. So there is nothing to plumb: `ControlClient::connect` and
     /// `PaneClient::local` resolve the same two sockets the server opened.
     pub fn new(machine: Option<String>) -> RealBackend {

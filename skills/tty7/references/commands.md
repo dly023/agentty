@@ -32,7 +32,7 @@ Set inside every tty7 pane, inherited by anything you launch from one.
 |---|---|
 | `TTY7_PANE` | This pane's id, e.g. `71` or `%71` (both forms are accepted). The default target of `split`, `send`, `capture`, `procs`, `pane close`. |
 | `TTY7_WS` | This pane's workspace id. The default for `run --keep`, `tab new`, `ws tree`. |
-| `TTY7_CONFIG_DIR` | The server's config dir. How the CLI finds the right server's sockets — you never pass a socket path. |
+| `AGENTTY_CONFIG_DIR` | The server's config dir. How the CLI finds the right server's sockets — you never pass a socket path. |
 
 Outside a tty7 shell the address-taking verbs fail with
 `not inside a tty7 shell — pass an explicit %pane/@tab/workspace`.

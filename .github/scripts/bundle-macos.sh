@@ -1,7 +1,7 @@
 #!/bin/bash
 # Usage: bundle-macos.sh <target-triple> <arch-label>
-# Package the release binary into dist/tty7.app and wrap it in a
-# drag-to-Applications DMG: dist/tty7-<version>-macos-<arch>.dmg.
+# Package the release binary into dist/Agentty.app and wrap it in a
+# drag-to-Applications DMG: dist/agentty-<version>-macos-<arch>.dmg.
 #
 # Signing posture is chosen from the environment:
 #   * Developer ID secrets present (APPLE_SIGNING_IDENTITY + APPLE_CERTIFICATE)
@@ -21,7 +21,7 @@ if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
   echo "bundle-macos: could not read a version from Cargo.toml (got '$VERSION')" >&2
   exit 1
 fi
-APP="dist/tty7.app"
+APP="dist/Agentty.app"
 
 rm -rf dist
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
@@ -46,9 +46,9 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleName</key><string>tty7</string>
-    <key>CFBundleDisplayName</key><string>tty7</string>
-    <key>CFBundleIdentifier</key><string>com.github.tty7</string>
+    <key>CFBundleName</key><string>Agentty</string>
+    <key>CFBundleDisplayName</key><string>Agentty</string>
+    <key>CFBundleIdentifier</key><string>com.dly023.agentty</string>
     <key>CFBundleVersion</key><string>${VERSION}</string>
     <key>CFBundleShortVersionString</key><string>${VERSION}</string>
     <key>CFBundleExecutable</key><string>tty7-app</string>
@@ -138,13 +138,13 @@ else
 fi
 
 # Package the (now stapled) bundle as a drag-to-Applications DMG.
-DMG="dist/tty7-${VERSION}-macos-${ARCH}.dmg"
+DMG="dist/agentty-${VERSION}-macos-${ARCH}.dmg"
 STAGE="dist/dmg-stage"
 rm -rf "$STAGE"
 mkdir "$STAGE"
 cp -R "$APP" "$STAGE/"
 ln -s /Applications "$STAGE/Applications"
-hdiutil create -volname "tty7" -srcfolder "$STAGE" -ov -format UDZO "$DMG"
+hdiutil create -volname "Agentty" -srcfolder "$STAGE" -ov -format UDZO "$DMG"
 rm -rf "$STAGE"
 if [[ -n "$SIGN_ID" && -n "${APPLE_CERTIFICATE:-}" ]]; then
     codesign --force --timestamp --sign "$SIGN_ID" "$DMG"

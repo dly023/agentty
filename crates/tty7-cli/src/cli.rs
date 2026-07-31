@@ -12,7 +12,7 @@ use clap::{ArgGroup, Args, Parser, Subcommand};
                   agents: every verb is non-interactive, and --json makes the output\n\
                   machine-readable.\n\n\
                   An agent reaches the server through this binary, not through a wire\n\
-                  protocol of its own. Inside a tty7 shell, $TTY7_CONFIG_DIR points at\n\
+                  protocol of its own. Inside a tty7 shell, $AGENTTY_CONFIG_DIR points at\n\
                   the server, and $TTY7_PANE / $TTY7_WS let the address-taking verbs run\n\
                   with no address given."
 )]

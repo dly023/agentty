@@ -1,0 +1,39 @@
+version: 1
+status: in_progress
+policy:
+  canonical_product: Agentty
+  canonical_config_env: AGENTTY_CONFIG_DIR
+  canonical_config_dir: .config/agentty
+  legacy_runtime_fallback: forbidden
+phases:
+  - id: identity-runtime
+    status: in_progress
+    scope:
+      - config root and environment override
+      - desktop display name and package metadata
+      - user documentation and developer harness
+  - id: identity-executables
+    status: pending
+    scope:
+      - Cargo package and crate names
+      - GUI, CLI, and helper executable names
+      - remote helper install paths and release assets
+    note: Must be performed atomically with protocol/install compatibility tests.
+  - id: identity-protocol
+    status: pending
+    scope:
+      - TTY7_* pane and shell integration variables
+      - wire markers, socket names, hook identifiers, and daemon process recognition
+    note: Internal compatibility boundary; no new code may expand it.
+legacy_allowlist:
+  rationale: Existing executable/protocol identifiers are temporarily retained to keep the current system buildable while the atomic rename phase is designed and tested.
+  categories:
+    - Cargo crates and binaries under crates/tty7-*
+    - TTY7_PANE, TTY7_WS, TTY7_CONTROL_SOCK, and shell-integration protocol variables
+    - tty7-server release/install artifact contract
+    - historical CHANGELOG entries
+exit_criteria:
+  - no user-visible tty7 product branding
+  - no legacy config authority
+  - Agentty.app installs and launches with version 0.0.1
+  - remaining legacy identifiers are only those explicitly listed above

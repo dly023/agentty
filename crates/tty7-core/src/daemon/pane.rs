@@ -276,7 +276,7 @@ const TERM_PROGRAM_NAME: &str = "tty7";
 /// second, independent derivation that can and did disagree with the first.
 /// Publishing the directory instead means a CLI in this shell resolves both
 /// endpoints with the very same functions the server used to open them.
-const TTY7_CONFIG_DIR_ENV: &str = "TTY7_CONFIG_DIR";
+const AGENTTY_CONFIG_DIR_ENV: &str = "AGENTTY_CONFIG_DIR";
 const TTY7_PANE_ENV: &str = "TTY7_PANE";
 const TTY7_WS_ENV: &str = "TTY7_WS";
 
@@ -317,7 +317,7 @@ fn pane_environment(
         env.push((TTY7_WS_ENV.to_string(), ws.to_string()));
     }
     if let Some(dir) = config_dir_env() {
-        env.push((TTY7_CONFIG_DIR_ENV.to_string(), dir));
+        env.push((AGENTTY_CONFIG_DIR_ENV.to_string(), dir));
     }
     env.extend(
         extra_env
@@ -3773,14 +3773,14 @@ mod tests {
         );
         match config_dir_env() {
             Some(dir) => assert_eq!(
-                env.get(TTY7_CONFIG_DIR_ENV),
+                env.get(AGENTTY_CONFIG_DIR_ENV),
                 Some(&dir),
                 "the shell is told which config dir this server runs on, so a CLI \
                  there resolves both endpoints the same way the server opened them"
             ),
             None => assert!(
-                !env.contains_key(TTY7_CONFIG_DIR_ENV),
-                "no resolvable config dir must not inject an empty TTY7_CONFIG_DIR"
+                !env.contains_key(AGENTTY_CONFIG_DIR_ENV),
+                "no resolvable config dir must not inject an empty AGENTTY_CONFIG_DIR"
             ),
         }
 
@@ -3966,7 +3966,7 @@ mod tests {
         );
         if let Some(dir) = config_dir_env() {
             assert_eq!(
-                cmd.get_env(TTY7_CONFIG_DIR_ENV).and_then(|v| v.to_str()),
+                cmd.get_env(AGENTTY_CONFIG_DIR_ENV).and_then(|v| v.to_str()),
                 Some(dir.as_str()),
                 "the daemon must tell every spawned shell which config dir it serves"
             );

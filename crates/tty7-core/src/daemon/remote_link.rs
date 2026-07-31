@@ -157,7 +157,7 @@ const ENV_MARKER: &str = "__tty7_env__";
 
 pub const REMOTE_ENV_PROBE: &str = concat!(
     "sh -c 'printf \"__tty7_env__ %s\\n\" ",
-    "\"sock=${TTY7_CONTROL_SOCK-}\" \"cfg=${TTY7_CONFIG_DIR-}\" ",
+    "\"sock=${TTY7_CONTROL_SOCK-}\" \"cfg=${AGENTTY_CONFIG_DIR-}\" ",
     "\"xdg=${XDG_RUNTIME_DIR-}\" ",
     "\"home=${HOME-}\" \"tmp=${TMPDIR-}\"'"
 );
@@ -192,15 +192,15 @@ pub fn remote_control_socket(env: &RemoteEnv) -> Option<String> {
     }
 
     // The remote server is launched with `--stdio` and no `--config-dir`, so it
-    // opens its control socket in the config dir — `$TTY7_CONFIG_DIR` if the
-    // remote sets one, otherwise `$HOME/.config/tty7`. This has to mirror
+    // opens its control socket in the config dir — `$AGENTTY_CONFIG_DIR` if the
+    // remote sets one, otherwise `$HOME/.config/agentty`. This has to mirror
     // `host::server::control_socket_path` exactly: it is the same rule applied
     // to an environment we probed instead of our own.
     let dir = match env.config_dir.as_deref().filter(|d| !d.is_empty()) {
         Some(cfg) => cfg.to_string(),
         None => {
             let home = env.home.as_deref().filter(|h| !h.is_empty())?;
-            posix_join(&posix_join(home, ".config"), "tty7")
+            posix_join(&posix_join(home, ".config"), "agentty")
         }
     };
     let runtime = env.xdg_runtime_dir.as_deref().filter(|d| !d.is_empty());
@@ -410,24 +410,24 @@ mod tests {
         // its config dir, so the path follows that and only falls back to the
         // runtime dir when the config dir is too long for sun_path.
         let explicit_cfg = RemoteEnv {
-            config_dir: Some("/home/me/.config/tty7".into()),
+            config_dir: Some("/home/me/.config/agentty".into()),
             xdg_runtime_dir: Some("/run/user/1000".into()),
             home: Some("/home/me".into()),
             ..RemoteEnv::default()
         };
         assert_eq!(
             remote_control_socket(&explicit_cfg).as_deref(),
-            Some("/home/me/.config/tty7/control.sock"),
-            "an explicit $TTY7_CONFIG_DIR names the directory"
+            Some("/home/me/.config/agentty/control.sock"),
+            "an explicit $AGENTTY_CONFIG_DIR names the directory"
         );
 
         let trailing = RemoteEnv {
-            config_dir: Some("/home/me/.config/tty7/".into()),
+            config_dir: Some("/home/me/.config/agentty/".into()),
             ..RemoteEnv::default()
         };
         assert_eq!(
             remote_control_socket(&trailing).as_deref(),
-            Some("/home/me/.config/tty7/control.sock")
+            Some("/home/me/.config/agentty/control.sock")
         );
 
         let home_only = RemoteEnv {
@@ -436,8 +436,8 @@ mod tests {
         };
         assert_eq!(
             remote_control_socket(&home_only).as_deref(),
-            Some("/home/me/.config/tty7/control.sock"),
-            "with no $TTY7_CONFIG_DIR the remote server uses $HOME/.config/tty7"
+            Some("/home/me/.config/agentty/control.sock"),
+            "with no $AGENTTY_CONFIG_DIR the remote server uses $HOME/.config/agentty"
         );
 
         assert_eq!(remote_control_socket(&RemoteEnv::default()), None);
