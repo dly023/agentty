@@ -29,7 +29,7 @@ for path in files:
         indent = len(line) - len(line.lstrip())
         if in_tests and stripped and (indent <= tests_indent and not stripped.startswith("-")):
             in_tests = False
-        m = re.match(r"^(\s*)tests:\s*(.*)$", line)
+        m = re.match(r"^(\s*)(?:minimum_)?tests:\s*(.*)$", line)
         if m:
             tests_indent = len(m.group(1))
             rest = m.group(2).strip()

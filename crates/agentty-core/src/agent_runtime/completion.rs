@@ -398,4 +398,68 @@ mod tests {
             ReplacementRange { start: 5, end: 14 }
         );
     }
+
+    #[test]
+    fn duplicate_candidate_keeps_best_rank_and_combined_provenance() {
+        // Agentty candidates carry a single source, so provenance after dedup
+        // is the winning source: the highest-ranked duplicate survives intact
+        // and the losers' weaker entries never shadow it.
+        let mut weaker = candidate("git", CompletionSourceKind::History);
+        weaker.score = 60;
+        let mut stronger = candidate("git", CompletionSourceKind::Grammar);
+        stronger.score = 100;
+        let normalized = normalize(vec![weaker, stronger]);
+        assert_eq!(normalized.len(), 1, "duplicates collapse to one row");
+        assert_eq!(normalized[0].score, 100, "the best rank wins");
+        assert_eq!(
+            normalized[0].source,
+            CompletionSourceKind::Grammar,
+            "the surviving source is the provenance"
+        );
+    }
+
+    #[test]
+    fn empty_history_does_not_disable_signature_or_filesystem_results() {
+        // An empty history source must not erase the command-signature
+        // (grammar) or filesystem candidates.
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::write(dir.path().join("notes.txt"), b"x").unwrap();
+        let request = CompletionRequest {
+            operation: OperationId(1),
+            generation: CompletionGeneration(1),
+            authority: AuthorityKind::Local,
+            cwd: Some(dir.path().to_string_lossy().into_owned()),
+            input: "no".into(),
+            cursor: 2,
+            limit: 20,
+            history: Vec::new(),
+        };
+        let host = crate::host::local::LocalHost::new();
+        let outcome = complete(host.as_ref(), &request);
+        let CompletionOutcome::Complete(candidates) = outcome else {
+            panic!("completion failed")
+        };
+        assert!(
+            candidates
+                .iter()
+                .any(|c| c.source == CompletionSourceKind::Filesystem && c.value == "notes.txt"),
+            "filesystem source survives an empty history: {candidates:?}"
+        );
+        let request = CompletionRequest {
+            input: "g".into(),
+            cursor: 1,
+            cwd: None,
+            ..request
+        };
+        let outcome = complete(host.as_ref(), &request);
+        let CompletionOutcome::Complete(candidates) = outcome else {
+            panic!("completion failed")
+        };
+        assert!(
+            candidates
+                .iter()
+                .any(|c| c.source == CompletionSourceKind::Grammar && c.value == "git"),
+            "the signature source survives an empty history: {candidates:?}"
+        );
+    }
 }

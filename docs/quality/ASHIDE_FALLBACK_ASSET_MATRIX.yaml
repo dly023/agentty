@@ -1,5 +1,5 @@
 version: 1
-updated: 2026-07-31
+updated: 2026-08-01
 purpose: Extract production fallback semantics and tests from Ashide without copying its heavy implementation architecture.
 source_policy:
   authoritative_assets:
@@ -26,13 +26,13 @@ tracks:
       - metadata_failure_preserves_entity_rows_and_cached_enrichment
       - resume_consumes_committed_render_model_without_rescanning_in_click_path
     minimum_tests:
-      - session_refresh_scan_failure_preserves_cached_rows
-      - session_refresh_complete_scan_replaces_cached_rows
+      - failed_scan_preserves_last_committed_rows
+      - complete_scan_atomically_replaces_rows
       - passive_refresh_coalesces_with_inflight_generation
       - explicit_refresh_supersedes_stuck_generation
-      - stale_scan_result_is_ignored
-      - parse_failure_does_not_publish_partial_provider_rows
-      - remote_scan_never_falls_back_to_local_rows
+      - stale_generation_is_ignored
+      - partial_provider_failure_does_not_publish_subset
+      - remote_authority_never_falls_back_to_local_rows
   tab_lifecycle:
     required_fallbacks:
       - stable_opaque_row_identity_survives_virtual_restoring_live_transitions
@@ -46,7 +46,7 @@ tracks:
     minimum_tests:
       - navigator_render_identity_uses_canonical_row_id
       - inline_edit_identity_survives_carrier_replacement
-      - coordinate_reuse_after_delete_allocates_new_row_id
+      - coordinate_reuse_after_delete_allocates_new_identity
       - restore_failure_rolls_back_without_duplicate_row
       - closing_live_carrier_hands_off_to_native_history
   completion:
@@ -62,7 +62,7 @@ tracks:
       - completion_never_auto_executes_or_mutates_terminal_before_user_acceptance
     minimum_tests:
       - stale_generation_is_ignored
-      - failed_dynamic_generator_preserves_deterministic_candidates
+      - failed_dynamic_source_preserves_deterministic_candidates
       - remote_source_failure_never_reads_local_filesystem
       - replacement_ranges_cover_quotes_escapes_and_unicode
       - duplicate_candidate_keeps_best_rank_and_combined_provenance

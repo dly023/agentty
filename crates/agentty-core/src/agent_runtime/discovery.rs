@@ -282,4 +282,62 @@ mod tests {
         assert_eq!(state.authority(), AuthorityKind::Remote);
         assert_eq!(state.rows(), &[row("old")]);
     }
+
+    #[test]
+    fn passive_refresh_coalesces_with_inflight_generation() {
+        // A passive refresh while a scan is in flight must reuse the in-flight
+        // generation instead of starting a competing one.
+        let mut state = seeded(AuthorityKind::Local);
+        assert!(state.begin(ScanGeneration(2)), "first refresh starts");
+        assert!(
+            !state.begin(ScanGeneration(2)),
+            "a duplicate passive refresh coalesces with the in-flight generation"
+        );
+        assert!(
+            !state.begin(ScanGeneration(1)),
+            "an older tick can never displace the in-flight generation"
+        );
+        // The in-flight result still lands.
+        assert_eq!(
+            state.apply(
+                AuthorityKind::Local,
+                ScanGeneration(2),
+                DiscoveryOutcome::Complete(vec![row("new")]),
+            ),
+            DiscoveryCommit::Replaced
+        );
+        assert_eq!(state.rows(), &[row("new")]);
+    }
+
+    #[test]
+    fn explicit_refresh_supersedes_stuck_generation() {
+        // An explicit refresh while an older scan is stuck starts a newer
+        // generation; the stuck scan's late result must not overwrite it.
+        let mut state = seeded(AuthorityKind::Local);
+        assert!(state.begin(ScanGeneration(2)), "scan 2 starts and stalls");
+        assert!(
+            state.begin(ScanGeneration(3)),
+            "explicit refresh supersedes the stuck generation"
+        );
+        assert_eq!(
+            state.apply(
+                AuthorityKind::Local,
+                ScanGeneration(2),
+                DiscoveryOutcome::Complete(vec![row("stale")]),
+            ),
+            DiscoveryCommit::IgnoredStale,
+            "the stuck scan's late result is ignored"
+        );
+        assert_eq!(state.rows(), &[row("old")]);
+        assert_eq!(
+            state.apply(
+                AuthorityKind::Local,
+                ScanGeneration(3),
+                DiscoveryOutcome::Complete(vec![row("fresh")]),
+            ),
+            DiscoveryCommit::Replaced
+        );
+        assert_eq!(state.rows(), &[row("fresh")]);
+        assert_eq!(state.committed_generation(), Some(ScanGeneration(3)));
+    }
 }

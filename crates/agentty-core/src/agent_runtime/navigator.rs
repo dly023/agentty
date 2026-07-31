@@ -368,4 +368,55 @@ mod tests {
         assert_eq!(model.rows[0].row_id, id);
         assert_eq!(model.rows[0].lifecycle, RowLifecycle::Virtual);
     }
+
+    #[test]
+    fn navigator_render_identity_uses_canonical_row_id() {
+        // Render identity is the canonical row id allocated from the session
+        // identity — never the physical carrier coordinates. Two sessions
+        // reusing the same tab/pane coordinates get distinct row ids, and one
+        // session keeps its row id when its carrier moves.
+        let mut model = SessionNavigator::default();
+        model.refresh(&[], &[live("s1", "t", 1)]);
+        let s1 = model.rows[0].row_id.clone();
+        model.refresh(&[], &[live("s1", "t", 1), live("s2", "t", 1)]);
+        let s2 = model
+            .rows
+            .iter()
+            .find(|row| row.session_id.as_deref() == Some("s2"))
+            .expect("s2 row")
+            .row_id
+            .clone();
+        assert_ne!(
+            s1, s2,
+            "coordinate reuse across sessions must not collapse identity"
+        );
+        model.refresh(&[], &[live("s1", "moved", 42)]);
+        let s1_after = model
+            .rows
+            .iter()
+            .find(|row| row.session_id.as_deref() == Some("s1"))
+            .expect("s1 row")
+            .row_id
+            .clone();
+        assert_eq!(s1, s1_after, "a moved carrier keeps the canonical row id");
+    }
+
+    #[test]
+    fn inline_edit_identity_survives_carrier_replacement() {
+        // Committed inline edits (alias, pin) ride on the row identity, so a
+        // full live -> history -> live carrier cycle keeps them.
+        let mut model = SessionNavigator::default();
+        model.refresh(&[], &[live("s1", "t", 1)]);
+        let id = model.rows[0].row_id.clone();
+        model.set_alias(&id, Some("renamed".into()));
+        model.set_pin(&id, true);
+        model.refresh(&[history("s1")], &[]);
+        assert_eq!(model.rows[0].row_id, id);
+        assert_eq!(model.rows[0].lifecycle, RowLifecycle::Virtual);
+        model.refresh(&[], &[live("s1", "new-tab", 99)]);
+        assert_eq!(model.rows[0].row_id, id);
+        assert_eq!(model.rows[0].lifecycle, RowLifecycle::Live);
+        assert_eq!(model.rows[0].alias.as_deref(), Some("renamed"));
+        assert!(model.rows[0].pinned);
+    }
 }
