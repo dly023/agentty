@@ -615,7 +615,10 @@ impl Tty7App {
             },
             some => tabs_from_session(pane_ws.as_ref(), workspace, some, font_size, window, cx),
         };
-        let sidebar_search = cx.new(|cx| InputState::new(window, cx).placeholder("Search tabs…"));
+        let sidebar_search = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder(crate::core::i18n::current(cx, "session.search_placeholder"))
+        });
         let sidebar_search_sub =
             cx.subscribe_in(&sidebar_search, window, |_this, _i, ev, _w, cx| {
                 if matches!(ev, InputEvent::Change) {

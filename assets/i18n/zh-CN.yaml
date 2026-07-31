@@ -6,7 +6,6 @@ environment.connecting: 正在连接
 environment.disconnected: 已断开
 environment.ssh: SSH
 environment.execution: 执行环境
-session.title: Agent 会话
 session.default_name: Agent 会话
 session.live: 运行中
 session.restoring: 正在恢复…
@@ -14,6 +13,7 @@ session.resume: 恢复
 session.discovering: 正在发现 Agent 会话…
 session.empty: 当前环境中没有发现 Codex 或 Claude 会话。
 session.no_match: 没有匹配的 Agent 会话。
+session.search_placeholder: 搜索会话…
 session.refresh: 刷新 Agent 会话
 sidebar.hide: 隐藏侧边栏
 sidebar.show: 显示侧边栏

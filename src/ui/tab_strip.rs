@@ -291,24 +291,28 @@ impl Tty7App {
         let current_id = current_environment.clone();
         let hosts = crate::ui::remote_connect::available_hosts(cx);
         let app_for_menu = cx.entity().downgrade();
-        Button::new("titlebar-environment-indicator")
+        Button::new("tabstrip-environment-indicator")
             .child(
                 h_flex()
                     .items_center()
                     .gap_1p5()
-                    .child(div().size(px(7.)).rounded_full().bg(gpui::rgb(dot)))
-                    .child(div().max_w(px(150.)).truncate().text_xs().child(label))
                     .child(
                         div()
-                            .text_xs()
-                            .text_color(cx.theme().muted_foreground)
-                            .child(state),
+                            .flex_shrink_0()
+                            .size(px(7.))
+                            .rounded_full()
+                            .bg(gpui::rgb(dot)),
                     )
-                    .child(Icon::new(IconName::ChevronDown).size(px(10.))),
+                    .child(div().max_w(px(140.)).truncate().text_xs().child(label))
+                    .child(
+                        Icon::new(IconName::ChevronDown)
+                            .size(px(10.))
+                            .text_color(cx.theme().muted_foreground),
+                    ),
             )
             .custom(chrome_tile_variant(cx))
             .rounded_lg()
-            .tooltip("Execution environment")
+            .tooltip(format!("Execution environment — {state}"))
             .dropdown_menu(move |menu, _window, _cx| {
                 let mut menu = menu.min_w(px(230.)).item(
                     PopupMenuItem::new("This Mac")
@@ -364,12 +368,6 @@ impl Tty7App {
             .gap(px(2.))
             .pr(px(tile_trailing_inset()))
             .when(!cfg!(target_os = "macos"), |this| this.pr_1())
-            .child(
-                div()
-                    .occlude()
-                    .flex_shrink_0()
-                    .child(self.environment_indicator(cx)),
-            )
             .child(
                 div().occlude().flex_shrink_0().child(
                     chrome_tile(
@@ -1094,6 +1092,17 @@ impl Tty7App {
             .when(!show_chips, |this| this.w_full())
             .pl_0()
             .min_w_0()
+            .child(
+                div()
+                    .occlude()
+                    .flex_shrink_0()
+                    .when(
+                        cfg!(target_os = "macos")
+                            && !(show_chips == false && self.left_panel_open(cx)),
+                        |d| d.ml(px(crate::ui::app::TITLE_BAR_LEAD)),
+                    )
+                    .child(self.environment_indicator(cx)),
+            )
             .when_some(left_group, |this, g| this.child(g))
             .child(chips)
             .when(show_chips, move |this| this.child(add_button))

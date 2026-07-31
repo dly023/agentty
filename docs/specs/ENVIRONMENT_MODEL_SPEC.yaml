@@ -21,7 +21,7 @@ contracts:
       - deriving_execution_host_from_incidental_application_focus
       - silently_mixing_local_and_remote_panes_in_one_window
   - id: ENV-INDICATOR-04
-    rule: The top-right Environment Indicator is always visible and displays the window authority, connection health, and open-or-focus actions for other environments.
+    rule: The Environment Indicator sits at the leading edge of the tab strip — the top-left of the content column, immediately right of the session sidebar — is always visible, and displays the window authority, connection health, and open-or-focus actions for other environments. The visible affordance is a health dot plus the environment short name; detailed state lives in the tooltip and menu.
     display:
       - icon_and_short_name
       - local_or_remote_kind

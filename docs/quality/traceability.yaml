@@ -168,10 +168,11 @@ entries:
     source:
       - docs/specs/ENVIRONMENT_MODEL_SPEC.yaml
       - src/ui/tab_strip.rs
+      - src/ui/tab_sidebar.rs
     static_check: script/check_environment_boundary
     tests:
       - environment_indicator_labels_local_and_remote_authority
-    evidence: "2026-07-31: implementation verified by the listed focused tests and static boundary gate"
+    evidence: "2026-08-01: indicator moved from the window chrome to the leading edge of the content-column tab strip as a compact dot + name selector; state detail lives in the tooltip; focused tests and static boundary gate pass"
   - id: ENV-NAVIGATOR-022
     spec: ENV-NAVIGATOR-SEPARATION-05
     source:
