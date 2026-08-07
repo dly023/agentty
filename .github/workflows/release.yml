@@ -10,13 +10,9 @@ permissions:
 
 jobs:
   build:
-    # The Windows installer embeds the Linux musl `agentty-server` so a WSL distro
-    # can be served the binary the client already shipped with, instead of
-    # downloading one (WSL installs nothing over the network). That
-    # binary comes from `server-musl`, so the two jobs can no longer run in
-    # parallel. Serialising all four platforms behind it costs a few minutes on
-    # a release — cheap next to splitting the Windows entry into its own job and
-    # duplicating the whole toolchain/caching preamble.
+    # Every desktop distribution embeds both supported static Linux helpers.
+    # Managed SSH target architecture is independent of the local desktop,
+    # therefore all platform builds wait for the complete server-musl matrix.
     needs: server-musl
     strategy:
       fail-fast: false
@@ -62,7 +58,7 @@ jobs:
             libkrb5-dev libfuse2 file imagemagick
           echo "LIBGSSAPI_IMPL=mit" >> "$GITHUB_ENV"
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@nightly-2026-07-31
         with:
           targets: ${{ matrix.target }}
 
@@ -78,6 +74,12 @@ jobs:
         working-directory: agentty
         run: cargo build --release --locked --target ${{ matrix.target }}
 
+      - name: Fetch bundled Linux servers
+        uses: actions/download-artifact@v7
+        with:
+          pattern: release-agentty-server-linux-*-musl
+          path: agentty/bundled-server
+          merge-multiple: true
       # ---- Packaging: one step per OS ----------------------------------------
       # macOS gets a signed + notarized drag-to-Applications DMG. Windows gets
       # an Inno Setup installer plus a portable zip; Linux a tarball — both
@@ -111,18 +113,6 @@ jobs:
         working-directory: agentty
         run: bash .github/scripts/bundle-appimage.sh "${{ matrix.target }}" "${{ matrix.arch }}"
 
-      # The bundled server for WSL. `continue-on-error` mirrors `server-musl`'s
-      # own probe step: if there is no server asset, the release still ships and
-      # `bundle-windows.ps1` warns. It is not silent at runtime either — a WSL
-      # connect then fails with `MissingBundled`, naming every directory it
-      # searched, rather than quietly falling back to a download.
-      - name: Fetch the bundled Linux server
-        if: matrix.os == 'windows'
-        continue-on-error: true
-        uses: actions/download-artifact@v7
-        with:
-          name: release-agentty-server-linux-x86_64-musl
-          path: agentty/bundled-server
 
       - name: Package Windows installer + zip
         if: matrix.os == 'windows'
@@ -180,7 +170,7 @@ jobs:
         with:
           path: agentty
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@nightly-2026-07-31
         with:
           targets: ${{ matrix.target }}
 
@@ -200,33 +190,22 @@ jobs:
           workspaces: agentty
           key: ${{ matrix.target }}
 
-      # Until the crate split lands there is no agentty-server to build. Skip
-      # rather than fail, so this workflow can ship ahead of the split; the
-      # release simply carries no server assets until it arrives.
-      - name: Look for the agentty-server package
-        id: probe
+      - name: Require the agentty-server package
         working-directory: agentty
         run: |
           set -euo pipefail
-          if cargo metadata --no-deps --format-version 1 \
-              | jq -e '[.packages[].name] | index("agentty-server")' >/dev/null; then
-            echo "present=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "present=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::agentty-server is not a workspace member yet — this release will carry no remote-server assets"
-          fi
+          cargo metadata --no-deps --format-version 1 \
+            | jq -e '[.packages[].name] | index("agentty-server")' >/dev/null
 
       # `--locked` for the same reason the GUI build uses it: a release ships the
       # dependency set the tag recorded. `-p agentty-server` both addresses the
       # package independently of its path and keeps feature unification off the
       # GUI's `gssapi` feature, which cannot build under musl.
       - name: Build static agentty-server
-        if: steps.probe.outputs.present == 'true'
         working-directory: agentty
         run: cargo zigbuild --release --locked -p agentty-server --target ${{ matrix.target }}
 
       - name: Assert the binary is static
-        if: steps.probe.outputs.present == 'true'
         working-directory: agentty
         run: bash .github/scripts/assert-static.sh "target/${{ matrix.target }}/release/agentty-server"
 
@@ -234,7 +213,6 @@ jobs:
       # version. See `install::asset` for the contract the client
       # installer derives this name from.
       - name: Stage the asset
-        if: steps.probe.outputs.present == 'true'
         working-directory: agentty
         run: |
           set -euo pipefail
@@ -244,7 +222,6 @@ jobs:
           chmod +x "dist/${{ matrix.asset }}"
 
       - uses: actions/upload-artifact@v7
-        if: steps.probe.outputs.present == 'true'
         with:
           name: release-${{ matrix.asset }}
           path: agentty/dist/${{ matrix.asset }}

@@ -50,10 +50,9 @@ jobs:
           echo "build=true" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-  # Mirrors release.yml's build matrix; keep the two in sync when editing.
+  # Every desktop artifact embeds both supported static Linux helpers, so the
+  # platform matrix waits for the complete server-musl matrix.
   build:
-    # Also behind server-musl: the Windows installer embeds its Linux musl
-    # binary for WSL. See the same note in release.yml.
     needs: [plan, server-musl]
     if: needs.plan.outputs.build == 'true'
     strategy:
@@ -102,7 +101,7 @@ jobs:
             libkrb5-dev libfuse2 file imagemagick
           echo "LIBGSSAPI_IMPL=mit" >> "$GITHUB_ENV"
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@nightly-2026-07-31
         with:
           targets: ${{ matrix.target }}
 
@@ -113,6 +112,13 @@ jobs:
       - name: Build
         working-directory: agentty
         run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Fetch bundled Linux servers
+        uses: actions/download-artifact@v7
+        with:
+          pattern: nightly-agentty-server-linux-*-musl
+          path: agentty/bundled-server
+          merge-multiple: true
 
       - name: Bundle macOS DMG
         if: matrix.os == 'macos'
@@ -137,14 +143,6 @@ jobs:
         working-directory: agentty
         run: bash .github/scripts/bundle-appimage.sh "${{ matrix.target }}" "${{ matrix.arch }}"
 
-      # See release.yml for why this is best-effort rather than required.
-      - name: Fetch the bundled Linux server
-        if: matrix.os == 'windows'
-        continue-on-error: true
-        uses: actions/download-artifact@v7
-        with:
-          name: nightly-agentty-server-linux-x86_64-musl
-          path: agentty/bundled-server
 
       - name: Package Windows installer + zip
         if: matrix.os == 'windows'
@@ -200,7 +198,7 @@ jobs:
         working-directory: agentty
         run: bash .github/scripts/stamp-version.sh "${{ needs.plan.outputs.version }}"
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@nightly-2026-07-31
         with:
           targets: ${{ matrix.target }}
 
@@ -217,34 +215,25 @@ jobs:
           workspaces: agentty
           key: ${{ matrix.target }}
 
-      - name: Look for the agentty-server package
-        id: probe
+      - name: Require the agentty-server package
         working-directory: agentty
         run: |
           set -euo pipefail
-          if cargo metadata --no-deps --format-version 1 \
-              | jq -e '[.packages[].name] | index("agentty-server")' >/dev/null; then
-            echo "present=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "present=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::agentty-server is not a workspace member yet — tonight's nightly carries no remote-server assets"
-          fi
+          cargo metadata --no-deps --format-version 1 \
+            | jq -e '[.packages[].name] | index("agentty-server")' >/dev/null
 
       # No `--locked` here, matching the rest of nightly: the version stamp above
       # rewrites Cargo.toml, and cargo has to be free to refresh the root
       # package's own lock entry.
       - name: Build static agentty-server
-        if: steps.probe.outputs.present == 'true'
         working-directory: agentty
         run: cargo zigbuild --release -p agentty-server --target ${{ matrix.target }}
 
       - name: Assert the binary is static
-        if: steps.probe.outputs.present == 'true'
         working-directory: agentty
         run: bash .github/scripts/assert-static.sh "target/${{ matrix.target }}/release/agentty-server"
 
       - name: Stage the asset
-        if: steps.probe.outputs.present == 'true'
         working-directory: agentty
         run: |
           set -euo pipefail
@@ -254,7 +243,6 @@ jobs:
           chmod +x "dist/${{ matrix.asset }}"
 
       - uses: actions/upload-artifact@v7
-        if: steps.probe.outputs.present == 'true'
         with:
           name: nightly-${{ matrix.asset }}
           path: agentty/dist/${{ matrix.asset }}

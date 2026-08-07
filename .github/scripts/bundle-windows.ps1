@@ -17,10 +17,14 @@ $Version = (Select-String -Path Cargo.toml -Pattern '^version\s*=\s*"([^"]+)"').
 $Name  = "agentty-$Version-windows-$Arch"
 $Stage = "dist/$Name"
 
-Remove-Item -Recurse -Force dist -ErrorAction SilentlyContinue
+# Delete this target's old stage and both final packages before copying new
+# inputs. A failed package run must not leave older artifacts looking current.
+Remove-Item -Recurse -Force $Stage -ErrorAction SilentlyContinue
+Remove-Item -Force "dist/$Name.zip", "dist/$Name-setup.exe" -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force -Path $Stage | Out-Null
 
 Copy-Item "target/$Target/release/agentty-app.exe" "$Stage/agentty-app.exe"
+Copy-Item "target/$Target/release/agentty-server.exe" "$Stage/agentty-server.exe"
 # The CLI, staged beside the GUI so both the zip and the installer carry it.
 # `core::cli_install` resolves it relative to agentty-app.exe and puts that
 # directory on the user's PATH.
@@ -30,25 +34,21 @@ Copy-Item "assets/completions/*.json" "$Stage/completions/"
 Copy-Item LICENSE "$Stage/LICENSE.txt"
 Copy-Item README.md "$Stage/README.md"
 
-# The Linux musl `agentty-server`, staged at server/ so a WSL distro can be handed
-# the binary this client shipped with (WSL downloads nothing). The
-# lookup path is a contract with `daemon::install::wsl` — it searches
-# <dir of agentty-app.exe>/server/<asset> first — so this directory name is not free to
-# change on its own. Missing is a warning, not an error, matching `server-musl`'s
-# own skip-don't-fail probe; WSL then fails at connect time with a message
-# naming the directories it searched.
-#
-# The *filename* is a contract too, not just the directory: `wsl.rs` looks for
-# `<dir>/<asset name>`, so this string has to stay whatever
-# `install::asset::ASSET_X86_64` says it is.
-$ServerAsset = "agentty-server-linux-x86_64-musl"
-$ServerSrc = "bundled-server/$ServerAsset"
-if (Test-Path $ServerSrc) {
-    New-Item -ItemType Directory -Force -Path "$Stage/server" | Out-Null
+# Both supported static Linux helpers are staged beside the client. WSL uses
+# x86_64 today, while managed SSH can target either architecture; package
+# completeness must not depend on a pre-existing GitHub Release.
+$ServerAssets = @(
+    "agentty-server-linux-x86_64-musl",
+    "agentty-server-linux-aarch64-musl"
+)
+New-Item -ItemType Directory -Force -Path "$Stage/server" | Out-Null
+foreach ($ServerAsset in $ServerAssets) {
+    $ServerSrc = "bundled-server/$ServerAsset"
+    if (-not (Test-Path $ServerSrc)) {
+        throw "missing required remote helper $ServerSrc"
+    }
     Copy-Item $ServerSrc "$Stage/server/$ServerAsset"
     Write-Host "OK bundled $ServerAsset"
-} else {
-    Write-Warning "no $ServerAsset to bundle - this build cannot serve WSL distros"
 }
 
 Compress-Archive -Path "$Stage/*" -DestinationPath "dist/$Name.zip" -Force

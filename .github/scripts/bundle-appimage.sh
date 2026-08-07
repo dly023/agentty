@@ -26,6 +26,11 @@ if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
 fi
 NAME="agentty-${VERSION}-linux-${ARCH}"
 
+# Delete this format's old stage and package before downloading tools or copying
+# inputs. The tarball step runs first, so cleanup must not wipe dist/ wholesale.
+APPDIR="dist/AppDir"
+rm -rf "$APPDIR" "dist/${NAME}.AppImage"
+
 # AppImage tools need FUSE to self-mount; CI runners usually lack it, so extract
 # and run instead. Harmless on machines that do have FUSE.
 export APPIMAGE_EXTRACT_AND_RUN=1
@@ -46,14 +51,12 @@ curl -fsSL -o "$APPIMAGETOOL" \
   "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-${LD_ARCH}.AppImage"
 chmod +x "$LINUXDEPLOY" "$APPIMAGETOOL"
 
-# NB: don't wipe dist/ — the tarball step (bundle-linux.sh) runs first and its
-# artifact must survive. Only clean our own AppDir.
-APPDIR="dist/AppDir"
-rm -rf "$APPDIR"
 mkdir -p "$APPDIR/usr/bin"
 
 cp "target/${TARGET}/release/agentty-app" "$APPDIR/usr/bin/agentty-app"
 chmod +x "$APPDIR/usr/bin/agentty-app"
+cp "target/${TARGET}/release/agentty-server" "$APPDIR/usr/bin/agentty-server"
+chmod +x "$APPDIR/usr/bin/agentty-server"
 
 # The CLI, beside the GUI as everywhere else. Unlike the tarball, an AppImage is
 # mounted at a fresh /tmp/.mount_XXXX per run, so `core::cli_install` must copy
@@ -84,6 +87,7 @@ convert assets/app-icon.png -resize 256x256 "$TOOLS/agentty.png"
 "$LINUXDEPLOY" \
   --appdir "$APPDIR" \
   --executable "$APPDIR/usr/bin/agentty-app" \
+  --executable "$APPDIR/usr/bin/agentty-server" \
   --desktop-file "$TOOLS/agentty.desktop" \
   --icon-file "$TOOLS/agentty.png"
 
@@ -91,6 +95,19 @@ convert assets/app-icon.png -resize 256x256 "$TOOLS/agentty.png"
 # linuxdeploy, which only tracks ELF deps), so drop them in after populate.
 mkdir -p "$APPDIR/usr/bin/completions"
 cp assets/completions/*.json "$APPDIR/usr/bin/completions/"
+# `BundledServerBinary::discover` searches beside the running executable. Ship
+# both remote target architectures because the local AppImage architecture does
+# not constrain the managed SSH destination.
+mkdir -p "$APPDIR/usr/bin/server"
+for asset in agentty-server-linux-x86_64-musl agentty-server-linux-aarch64-musl; do
+  src="bundled-server/$asset"
+  if [[ ! -f "$src" ]]; then
+    echo "bundle-appimage: missing required remote helper $src" >&2
+    exit 1
+  fi
+  cp "$src" "$APPDIR/usr/bin/server/$asset"
+  chmod +x "$APPDIR/usr/bin/server/$asset"
+done
 
 # Phase 2 — pack the finished AppDir. Done separately from linuxdeploy so the
 # completions added above are included.

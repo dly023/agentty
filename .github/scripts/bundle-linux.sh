@@ -24,11 +24,15 @@ fi
 NAME="agentty-${VERSION}-linux-${ARCH}"
 STAGE="dist/${NAME}"
 
-rm -rf dist
+# Delete this format's old stage and archive first. The sibling AppImage belongs
+# to the next packaging step and must survive.
+rm -rf "$STAGE" "dist/${NAME}.tar.gz"
 mkdir -p "$STAGE"
 
 cp "target/${TARGET}/release/agentty-app" "$STAGE/agentty-app"
 chmod +x "$STAGE/agentty-app"
+cp "target/${TARGET}/release/agentty-server" "$STAGE/agentty-server"
+chmod +x "$STAGE/agentty-server"
 # The CLI ships beside the GUI, which symlinks it onto PATH at launch (see
 # core::cli_install) by resolving it relative to its own executable.
 cp "target/${TARGET}/release/agentty" "$STAGE/agentty"
@@ -36,9 +40,22 @@ chmod +x "$STAGE/agentty"
 # Release builds keep symbols (thin LTO, no profile strip); drop them here so
 # the archive isn't ~100 MB of debug info.
 strip "$STAGE/agentty-app" || echo "⚠️  strip unavailable — shipping unstripped binary"
+strip "$STAGE/agentty-server" || echo "⚠️  strip unavailable — shipping unstripped server"
 strip "$STAGE/agentty" || echo "⚠️  strip unavailable — shipping unstripped CLI"
 mkdir -p "$STAGE/completions"
 cp assets/completions/*.json "$STAGE/completions/"
+# Managed SSH may target either Linux architecture regardless of the desktop
+# host architecture, so every distribution carries both static helpers.
+mkdir -p "$STAGE/server"
+for asset in agentty-server-linux-x86_64-musl agentty-server-linux-aarch64-musl; do
+  src="bundled-server/$asset"
+  if [[ ! -f "$src" ]]; then
+    echo "bundle-linux: missing required remote helper $src" >&2
+    exit 1
+  fi
+  cp "$src" "$STAGE/server/$asset"
+  chmod +x "$STAGE/server/$asset"
+done
 cp LICENSE "$STAGE/LICENSE"
 cp README.md "$STAGE/README.md"
 

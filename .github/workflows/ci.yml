@@ -43,7 +43,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@nightly-2026-07-31
         with:
           components: rustfmt
       - run: cargo fmt --check
@@ -105,7 +105,8 @@ jobs:
             libkrb5-dev
           echo "LIBGSSAPI_IMPL=mit" >> "$GITHUB_ENV"
 
-      - uses: dtolnay/rust-toolchain@stable
+      # Match rust-toolchain.toml / edition 2024 — @stable cannot compile this tree.
+      - uses: dtolnay/rust-toolchain@nightly-2026-07-31
         with:
           targets: ${{ matrix.target }}
 
@@ -187,7 +188,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@nightly-2026-07-31
         with:
           targets: ${{ matrix.target }}
 
@@ -217,22 +218,11 @@ jobs:
         with:
           key: ${{ matrix.target }}
 
-      # The crate split lands separately; until `agentty-server` exists as a
-      # workspace member this job has nothing to build. Skip cleanly rather than
-      # fail, so the workflow can land before the split and simply start working
-      # once it arrives. `--no-deps` keeps this to a manifest parse — no
-      # resolution, no network.
-      - name: Look for the agentty-server package
-        id: probe
+      - name: Require the agentty-server package
         run: |
           set -euo pipefail
-          if cargo metadata --no-deps --format-version 1 \
-              | jq -e '[.packages[].name] | index("agentty-server")' >/dev/null; then
-            echo "present=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "present=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::agentty-server is not a workspace member yet (crate split, M1) — nothing to build"
-          fi
+          cargo metadata --no-deps --format-version 1 \
+            | jq -e '[.packages[].name] | index("agentty-server")' >/dev/null
 
       # `-p agentty-server` addresses the package by name, so this survives whatever
       # directory layout the split settles on. It also keeps feature unification
@@ -241,9 +231,26 @@ jobs:
       # under musl (libgssapi-sys wants a system MIT/Heimdal krb5). Building the
       # whole workspace here would drag it in and fail.
       - name: Build static agentty-server
-        if: steps.probe.outputs.present == 'true'
         run: cargo zigbuild --release --locked -p agentty-server --target ${{ matrix.target }}
 
       - name: Assert the binary is static
-        if: steps.probe.outputs.present == 'true'
         run: bash .github/scripts/assert-static.sh "target/${{ matrix.target }}/release/agentty-server"
+
+      - name: Stage the asset
+        run: |
+          set -euo pipefail
+          case "${{ matrix.target }}" in
+            x86_64-unknown-linux-musl) asset=agentty-server-linux-x86_64-musl ;;
+            aarch64-unknown-linux-musl) asset=agentty-server-linux-aarch64-musl ;;
+            *) echo "unsupported helper target: ${{ matrix.target }}" >&2; exit 1 ;;
+          esac
+          mkdir -p dist
+          cp "target/${{ matrix.target }}/release/agentty-server" "dist/$asset"
+          chmod +x "dist/$asset"
+          echo "asset=$asset" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ci-${{ env.asset }}
+          path: dist/${{ env.asset }}
+          if-no-files-found: error

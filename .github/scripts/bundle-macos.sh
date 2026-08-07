@@ -23,10 +23,16 @@ if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
 fi
 APP="dist/Agentty.app"
 
-rm -rf dist
+# Always remove this target's old stage and package before touching new inputs.
+# A failed package run must never leave an older DMG looking current.
+rm -rf "$APP" "dist/dmg-stage" "dist/notarize.zip" "dist/agentty-${VERSION}-macos-${ARCH}.dmg"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "target/${TARGET}/release/agentty-app" "$APP/Contents/MacOS/agentty-app"
 chmod +x "$APP/Contents/MacOS/agentty-app"
+# Durable local panes are owned by the headless sibling, never by a GUI process
+# relaunched under a hidden flag.
+cp "target/${TARGET}/release/agentty-server" "$APP/Contents/MacOS/agentty-server"
+chmod +x "$APP/Contents/MacOS/agentty-server"
 # The CLI rides inside the bundle rather than beside it: a DMG is drag-to-
 # Applications, so anything not in the .app never reaches the user's disk. The
 # GUI symlinks it onto PATH at launch (see core::cli_install), which is why it
@@ -39,6 +45,20 @@ cp assets/agentty.icns "$APP/Contents/Resources/agentty.icns"
 # to the executable as ../Resources/completions — see terminal::signature.
 mkdir -p "$APP/Contents/Resources/completions"
 cp assets/completions/*.json "$APP/Contents/Resources/completions/"
+# Both supported static Linux helpers travel inside the app. Managed SSH picks
+# the target architecture after `uname -sm`; no published release is required
+# for a freshly installed desktop build to enter a remote Environment.
+SERVER_DIR="$APP/Contents/Resources/server"
+mkdir -p "$SERVER_DIR"
+for asset in agentty-server-linux-x86_64-musl agentty-server-linux-aarch64-musl; do
+  src="bundled-server/$asset"
+  if [[ ! -f "$src" ]]; then
+    echo "bundle-macos: missing required remote helper $src" >&2
+    exit 1
+  fi
+  cp "$src" "$SERVER_DIR/$asset"
+  chmod +x "$SERVER_DIR/$asset"
+done
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
@@ -112,6 +132,8 @@ ENT
     # them.
     codesign --force --options runtime --timestamp \
         --sign "$SIGN_ID" "$APP/Contents/MacOS/agentty"
+    codesign --force --options runtime --timestamp \
+        --sign "$SIGN_ID" "$APP/Contents/MacOS/agentty-server"
     codesign --force --options runtime --timestamp --entitlements "$ENTITLEMENTS" \
         --sign "$SIGN_ID" "$APP/Contents/MacOS/agentty-app"
     codesign --force --options runtime --timestamp --entitlements "$ENTITLEMENTS" \
