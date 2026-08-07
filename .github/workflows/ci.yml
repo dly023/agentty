@@ -43,8 +43,9 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly-2026-07-31
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: nightly-2026-07-31
           components: rustfmt
       - run: cargo fmt --check
 
@@ -106,8 +107,9 @@ jobs:
           echo "LIBGSSAPI_IMPL=mit" >> "$GITHUB_ENV"
 
       # Match rust-toolchain.toml / edition 2024 — @stable cannot compile this tree.
-      - uses: dtolnay/rust-toolchain@nightly-2026-07-31
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: nightly-2026-07-31
           targets: ${{ matrix.target }}
 
       - uses: Swatinem/rust-cache@v2
@@ -188,8 +190,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@nightly-2026-07-31
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: nightly-2026-07-31
           targets: ${{ matrix.target }}
 
       # zig supplies both the musl sysroot and the C cross-compiler, which is

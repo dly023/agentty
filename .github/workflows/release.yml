@@ -58,8 +58,9 @@ jobs:
             libkrb5-dev libfuse2 file imagemagick
           echo "LIBGSSAPI_IMPL=mit" >> "$GITHUB_ENV"
 
-      - uses: dtolnay/rust-toolchain@nightly-2026-07-31
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: nightly-2026-07-31
           targets: ${{ matrix.target }}
 
       - uses: Swatinem/rust-cache@v2
@@ -170,8 +171,9 @@ jobs:
         with:
           path: agentty
 
-      - uses: dtolnay/rust-toolchain@nightly-2026-07-31
+      - uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: nightly-2026-07-31
           targets: ${{ matrix.target }}
 
       # zig provides the musl sysroot and the C cross-compiler for both targets
