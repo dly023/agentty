@@ -32,6 +32,13 @@ contracts:
     rule: When DiscoverAgentSessions (or the local equivalent scan) ends in a transport or operation timeout, the Session Navigator leaves Discovering and surfaces a localized timed-out scan error the user can refresh from. A timeout must not leave an indefinite Discovering spinner with an empty error.
     forbidden:
       - indefinite_discovering_spinner_after_scan_timeout
+  - id: SESSION-JCODE-STABLE-LIST-GATE-34
+    rule: Jcode session history is not advertised as a Session Navigator provider, CLI Agent identity, scanner, store root, or resumable row until Jcode publishes a versioned machine-readable list contract that can run in the selected Environment. The future contract must default to user-root, non-debug, visible-message-bearing, resumable sessions and distinguish command, schema, partial, stale, cancellation, and timeout failure so Agentty can preserve the last complete generation. Private ~/.jcode snapshot, journal, imported, backup, filename, count, parent-only, or timestamp heuristics are never a provider boundary. While the upstream contract is absent, public Agentty discovery must remain unchanged and expose no partial Jcode integration.
+    forbidden:
+      - advertising_jcode_from_private_store_files
+      - registering_jcode_identity_without_a_stable_list_contract
+      - treating_parent_id_null_as_sufficient_user_session_filtering
+      - publishing_partial_jcode_rows_on_command_or_schema_failure
   - id: SESSION-ROW-ACTIONS-07
     rule: Every historical session row exposes safe copy actions for session id, typed resume command, cwd, and source path plus a read-only details dialog; absent metadata disables its action instead of inventing a value.
   - id: SESSION-ROW-INFORMATION-HIERARCHY-08

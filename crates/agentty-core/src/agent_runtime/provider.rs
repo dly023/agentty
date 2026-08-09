@@ -303,6 +303,21 @@ mod tests {
     }
 
     #[test]
+    fn jcode_is_not_advertised_without_stable_machine_list_contract() {
+        assert_eq!(
+            CLIAgent::from_slug("jcode"),
+            None,
+            "the public CLI Agent identity must stay absent until Jcode has a stable list API"
+        );
+        assert!(
+            PERSISTED_PROVIDER_DESCRIPTORS
+                .iter()
+                .all(|descriptor| descriptor.id.slug() != "jcode"),
+            "session discovery must not advertise a private-store Jcode provider"
+        );
+    }
+
+    #[test]
     fn registry_has_no_descriptor_for_unpersisted_agents() {
         for agent in [
             CLIAgent::Amp,

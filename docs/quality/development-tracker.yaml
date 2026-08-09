@@ -13,7 +13,7 @@ feedback_policy:
 feedback:
   - id: FEEDBACK-20260809-008
     summary: Agentty must discover Jcode user sessions without exposing the many subagent or multi-process internal session files; ashide previously solved this with a filtering mechanism that should be audited for its invariants.
-    status: triaged
+    status: promoted
     priority: high
     area: jcode_session_discovery
     decision: Do not parse ~/.jcode/sessions as an Agentty provider contract. Jcode's canonical picker merges snapshot+journal metadata, excludes imported files and conversations with zero visible messages, hides is_debug rows without spending the ordinary-session quota, and identifies user roots with parent_id=None; the installed v0.73.0 binary does not expose the machine-readable `jcode session list --json` command that Ashide Stage A assumed. Require Jcode to publish a versioned machine list whose default rows satisfy parent_id=null, is_debug=false, visible_message_count>0 and resumable=true. Agentty will invoke that target-owned API for local and remote discovery, filter non-resumable rows defensively, and preserve the last complete generation on command/schema/partial failure. Use the official MIT-licensed Jcode app icon as the asset source, adapted to Agentty's monochrome currentColor badge rather than inventing an unofficial mark.
@@ -28,7 +28,11 @@ feedback:
       - 2026-08-09 acceptance rerun: installed `jcode v0.73.0 (44ffa5528)` exposes only `session rename`; `jcode session list --json --limit 5` exits 2 with `unrecognized subcommand list`, so Agentty cannot exercise a stable end-user discovery integration path
       - 2026-08-09 real-store negative acceptance: 189 session snapshots include 86 debug roots, 0 non-root parent rows, 3 non-debug zero-message rows, 5 imported JSON files, and 186 backups; therefore parent-only, filename-only, and non-debug-only filters each admit forbidden rows
       - acceptance constraint: no Jcode provider was shipped, so there is intentionally no Agentty UI acceptance claim; the result is a fail-closed architecture decision pending an upstream versioned API
-    next_action: Upstream a versioned Jcode machine-readable native session list or equivalent stable SDK endpoint. After it ships, promote Agentty integration to SESSION-NAVIGATOR spec/matrix with local/remote command delivery and schema failure tests; do not ship a private-store parser meanwhile.
+    next_action: Upstream a versioned Jcode machine-readable native session list or equivalent stable SDK endpoint. The current Agentty fail-closed registry boundary is verified; after the API ships, replace this gate through a new spec/matrix row with local/remote command delivery and schema failure tests, never a private-store parser.
+    promoted_to:
+      spec: SESSION-JCODE-STABLE-LIST-GATE-34
+      traceability: SESSION-JCODE-STABLE-LIST-GATE-096
+      milestone: M1-SESSION-NAVIGATOR/SESSION-034
   - id: FEEDBACK-20260809-007
     summary: Continue selective tty7 non-distribution parity with platform-modifier plus wheel terminal zoom as the next independent UI slice.
     status: verified
@@ -1514,6 +1518,12 @@ milestones:
     status: in_progress
     outcome: Left sidebar discovers live and historical CLI Agent sessions for the selected environment and resumes them into typed environment tabs.
     items:
+      - id: SESSION-034
+        title: Keep Jcode discovery fail-closed until a stable machine-list contract exists
+        status: in_progress
+        spec: SESSION-JCODE-STABLE-LIST-GATE-34
+        tests: [jcode_is_not_advertised_without_stable_machine_list_contract]
+        evidence: Installed Jcode v0.73.0 has no public machine-readable list command, and real private-store rows prove parent/debug/filename filters insufficient; add a public registry regression before marking verified.
       - id: SESSION-001
         title: Provider registry and atomic generation discovery
         status: verified
