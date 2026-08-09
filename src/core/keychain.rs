@@ -72,11 +72,6 @@ pub trait CredentialStore: Send + Sync {
     fn get_ref(&self, cref: &CredentialRef) -> CredentialResult<Option<String>> {
         self.get(cref.service(), &cref.account)
     }
-
-    #[allow(dead_code)]
-    fn delete_ref(&self, cref: &CredentialRef) -> CredentialResult<()> {
-        self.delete(cref.service(), &cref.account)
-    }
 }
 
 #[derive(Debug, Default, Clone, Copy)]

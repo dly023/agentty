@@ -459,8 +459,6 @@ pub(crate) fn best_matching_section(query: &str) -> Option<SettingsSection> {
 }
 
 pub(crate) struct ThemeEditor {
-    #[allow(dead_code)]
-    pub(crate) for_id: String,
     pub(crate) seed: Vec<(ThemeEdit, String, Entity<ColorPickerState>)>,
     pub(crate) ansi: Vec<(ThemeEdit, String, Entity<ColorPickerState>)>,
     pub(crate) image_opacity_slider: Option<Entity<SliderState>>,

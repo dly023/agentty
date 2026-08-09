@@ -1792,7 +1792,6 @@ impl AgenttyApp {
 
         if let Some(s) = self.settings.as_mut() {
             s.theme_editor = Some(ThemeEditor {
-                for_id: theme.id.clone(),
                 seed,
                 ansi,
                 image_opacity_slider,
@@ -5095,26 +5094,6 @@ impl AgenttyApp {
         self.update_config(cx, |cfg| cfg.prefix = prefix);
         crate::ui::keymap::rebind(cx);
         cx.notify();
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn open_config_file(&self, cx: &Context<Self>) {
-        let Some(path) = crate::core::config::config_path("config.json") else {
-            return;
-        };
-        if !path.exists() {
-            cx.global::<Config>().save();
-        }
-        let opener = if cfg!(target_os = "macos") {
-            "open"
-        } else if cfg!(windows) {
-            "explorer"
-        } else {
-            "xdg-open"
-        };
-        if let Err(e) = std::process::Command::new(opener).arg(&path).spawn() {
-            log::warn!("failed to open {}: {e}", path.display());
-        }
     }
 
     pub(crate) fn open_releases_page(&self) {

@@ -12,4 +12,10 @@ contracts:
     forbidden:
       - pipefail_pipeline_ending_in_early_exit_matcher
       - per_gate_reimplementation_without_repository_wide_lint
+  - id: QUALITY-NO-UNOWNED-DEAD-PATHS-03
+    rule: Production modules do not retain callable helpers, fields, or side-effect entrypoints with no production or test caller. A dead-code allow annotation requires a documented external or platform boundary; convenience APIs and speculative launch paths without an owner are deleted rather than suppressed.
+    forbidden:
+      - uncalled_convenience_wrapper
+      - write_only_state_field
+      - dormant_side_effect_entrypoint
 status: verified

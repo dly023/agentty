@@ -2257,6 +2257,14 @@ milestones:
         tests: [public_help_advertises_only_implemented_verbs]
         red_test_evidence: 2026-08-09 the compiled public binary advertised ws stop, machine connect, and machine disconnect even though each parsed only to an immediate not-implemented error and had no protocol implementation.
         evidence: 2026-08-09 the compiled public `agentty ws --help` and `agentty machine --help` no longer advertise the three absent capabilities. Their parser variants, not-implemented execution branches, and obsolete mock expectations were deleted. Public help E2E, all 84 binary tests, static gate, and the full real-server CLI E2E passed.
+      - id: DEBT-DEAD-PATH-005
+        title: Delete unowned convenience APIs, write-only state, and dormant side effects
+        status: verified
+        spec: QUALITY-NO-UNOWNED-DEAD-PATHS-03
+        source: [src/ui/host_ops.rs, src/ui/host_registry.rs, src/core/keychain.rs, src/ui/settings.rs, src/ui/app.rs]
+        tests: [production_dead_path_contract]
+        red_test_evidence: 2026-08-09 exact call-site search found HostOps::run_or_notify, HostRegistry::local/len, CredentialStore::delete_ref, ThemeEditor::for_id, and AgenttyApp::open_config_file only at their own definitions or write site.
+        evidence: 2026-08-09 all six paths and their dead-code suppressions/write sites were deleted. The focused contract first failed on run_or_notify and then passed, canonical quality contracts passed, all-targets check passed, and all 1,024 non-ignored agentty-app tests passed.
 technical_debt:
   - id: DEBT-BUNDLE-VERSION-STAMP
     title: Desktop bundle version metadata cannot distinguish builds

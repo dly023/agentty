@@ -4,6 +4,7 @@ cd "$(dirname "$0")/.."
 
 rg -Fq 'QUALITY-CANONICAL-PRESUBMIT-CI-01' docs/specs/QUALITY_GATE_SPEC.yaml
 rg -Fq 'QUALITY-DETERMINISTIC-SHELL-GATES-02' docs/specs/QUALITY_GATE_SPEC.yaml
+rg -Fq 'QUALITY-NO-UNOWNED-DEAD-PATHS-03' docs/specs/QUALITY_GATE_SPEC.yaml
 
 python3 - <<'PY'
 from pathlib import Path

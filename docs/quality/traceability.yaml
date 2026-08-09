@@ -1,6 +1,13 @@
 version: 1
 updated: 2026-08-03
 entries:
+  - id: QUALITY-NO-UNOWNED-DEAD-PATHS-100
+    spec: QUALITY-NO-UNOWNED-DEAD-PATHS-03
+    source: [docs/specs/QUALITY_GATE_SPEC.yaml, src/ui/host_ops.rs, src/ui/host_registry.rs, src/core/keychain.rs, src/ui/settings.rs, src/ui/app.rs]
+    static_check: script/check_quality_gates
+    tests: [production_dead_path_contract]
+    verification: bash script/tests/production_dead_path_contract.sh && cargo test --bin agentty-app --locked && ./script/presubmit quick
+    evidence: "2026-08-09 call-site audit found six production-only APIs/state fields with zero callers or readers. The focused contract was observed red on HostOps::run_or_notify, then passed after all six definitions/write sites were deleted. The contract is part of the canonical quality suite; all-targets check and 1,024 agentty-app tests passed."
   - id: CLI-IMPLEMENTED-HELP-SURFACE-099
     spec: CLI-IMPLEMENTED-HELP-SURFACE-02
     source: [docs/specs/CLI_ORCHESTRATION_SPEC.yaml, crates/agentty-cli/src/cli.rs, crates/agentty-cli/src/commands.rs, crates/agentty-cli/tests/cli_e2e.rs]

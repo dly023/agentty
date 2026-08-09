@@ -5,6 +5,7 @@ cd "$(dirname "$0")/../.."
 ./script/check_spec_matrix
 ./script/check_feature_gap_audit
 bash script/tests/quality_infrastructure_contract.sh
+bash script/tests/production_dead_path_contract.sh
 
 ./script/check_remote_helper
 ./script/check_package_cleanup
