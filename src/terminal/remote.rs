@@ -183,6 +183,8 @@ pub struct RemoteTerminal {
     route: PaneRoute,
     proxy: EventProxy,
     reader_thread: Option<JoinHandle<()>>,
+    #[cfg(test)]
+    force_resize_echo: bool,
 }
 
 /// The workspace id a spawn carries, so the pane's shell gets `$AGENTTY_WS` and a
@@ -216,6 +218,11 @@ impl RemoteTerminal {
         shell: Option<ShellSpec>,
         owner: Option<String>,
     ) -> anyhow::Result<(Self, u64)> {
+        if !matches!(route, PaneRoute::Unroutable(_)) {
+            crate::daemon::spawn::ensure_running().map_err(|error| {
+                anyhow::anyhow!("prepare the local durable runtime before Spawn: {error}")
+            })?;
+        }
         let retry_cwd = cwd.clone();
         let retry_shell = shell.clone();
         let retry_owner = owner.clone();
@@ -483,6 +490,8 @@ impl RemoteTerminal {
             route: PaneRoute::Local,
             proxy,
             reader_thread: Some(reader_thread),
+            #[cfg(test)]
+            force_resize_echo: false,
         })
     }
 
@@ -535,7 +544,6 @@ impl RemoteTerminal {
                 let mut zle_tok = OscTokenizer::new(&[b"133"]);
                 let mut mark_scan = MarkScanner::new();
                 let mut pending: Vec<u8> = buffered;
-                let mut pending_size: Option<WinSize> = None;
                 // Kitty-graphics decode runs on its own thread with newest-frame
                 // coalescing (issue #213): inflating a full-window browser frame
                 // is ~42 ms, and doing it inline here would block PTY output and
@@ -650,19 +658,17 @@ impl RemoteTerminal {
                         match msg {
                             DaemonMsg::Size(ws) => {
                                 flush_batch!();
-                                pending_size = Some(ws);
+                                term.lock().resize(TermSize::new(
+                                    ws.cols as usize,
+                                    ws.rows as usize,
+                                ));
+                                proxy.send_event(AlacEvent::Wakeup);
                             }
                             DaemonMsg::Snapshot(bytes) => {
                                 flush_batch!();
                                 proxy.replaying.store(true, Ordering::Relaxed);
                                 {
                                     let mut term = term.lock();
-                                    if let Some(ws) = pending_size.take() {
-                                        term.resize(TermSize::new(
-                                            ws.cols as usize,
-                                            ws.rows as usize,
-                                        ));
-                                    }
                                     processor.advance(&mut *term, &bytes);
                                     if processor.sync_timeout().sync_timeout().is_some() {
                                         processor.stop_sync(&mut *term);
@@ -796,6 +802,9 @@ impl RemoteTerminal {
                                 if let Ok(mut guard) = agent.lock() {
                                     *guard = a;
                                 }
+                                // Wake so poll_agent_status can stamp live_binding
+                                // without waiting for output or AgentStatus.
+                                proxy.send_event(AlacEvent::Wakeup);
                             }
                             DaemonMsg::AgentStatus(state) => {
                                 flush_batch!();
@@ -900,7 +909,19 @@ impl RemoteTerminal {
         }
     }
 
+    fn resize_echoed(&self) -> bool {
+        #[cfg(test)]
+        if self.force_resize_echo {
+            return true;
+        }
+        self.route.is_local()
+            && crate::daemon::spawn::local_daemon_supports(
+                crate::daemon::protocol::FEATURE_RESIZE_ECHO,
+            )
+    }
+
     pub fn resize(&mut self, size: TermSize, cell_w: u16, cell_h: u16) {
+        let echoed = self.resize_echoed();
         // The cell size has to be part of the early-out, not just cols/rows: it
         // is reported in *device* pixels, so moving the window between a 2x and
         // a 1x display changes `ws_xpixel`/`ws_ypixel` while the grid stays
@@ -917,7 +938,9 @@ impl RemoteTerminal {
         self.synced_size = true;
         self.size = size;
         self.synced_cell = cell;
-        self.term.lock().resize(size);
+        if !echoed {
+            self.term.lock().resize(size);
+        }
 
         let win = win_size(size, cell_w, cell_h);
         if let Ok(mut writer) = self.writer.lock() {
@@ -1521,8 +1544,51 @@ fn stale_mode_resets(mode: TermMode) -> Vec<u8> {
 }
 
 pub(crate) fn notify_desktop(title: Option<&str>, body: &str) {
-    let summary = title.unwrap_or("agentty").to_string();
-    let body = body.to_string();
+    notify_desktop_for_pane(title, body, None);
+}
+
+const NOTIFY_TITLE_MAX: usize = 96;
+const NOTIFY_BODY_MAX: usize = 512;
+
+fn sanitize_notification_text(text: &str, max_chars: usize) -> String {
+    let clean: String = text
+        .chars()
+        .filter(|ch| !ch.is_control() || matches!(ch, '\t' | '\n' | '\r'))
+        .collect();
+    let mut chars = clean.chars();
+    let mut out: String = chars.by_ref().take(max_chars).collect();
+    if chars.next().is_some() {
+        out.push('…');
+    }
+    out
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum NotificationDelivery {
+    Clickable,
+    Plain,
+}
+
+fn notification_delivery(clickable_accepted: bool) -> NotificationDelivery {
+    if clickable_accepted {
+        NotificationDelivery::Clickable
+    } else {
+        NotificationDelivery::Plain
+    }
+}
+
+pub(crate) fn notify_desktop_for_pane(
+    title: Option<&str>,
+    body: &str,
+    target: Option<crate::ui::composer::PaneIdentity>,
+) {
+    let summary = sanitize_notification_text(title.unwrap_or("agentty"), NOTIFY_TITLE_MAX);
+    let body = sanitize_notification_text(body, NOTIFY_BODY_MAX);
+    if let Some(target) = target
+        && try_clickable_notification(&summary, &body, target)
+    {
+        return;
+    }
     std::thread::spawn(move || {
         #[cfg(target_os = "macos")]
         ensure_notification_app();
@@ -1531,6 +1597,171 @@ pub(crate) fn notify_desktop(title: Option<&str>, body: &str) {
             .body(&body)
             .show();
     });
+}
+
+#[cfg(all(target_os = "macos", not(test)))]
+fn try_clickable_notification(
+    title: &str,
+    body: &str,
+    target: crate::ui::composer::PaneIdentity,
+) -> bool {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static PENDING: AtomicUsize = AtomicUsize::new(0);
+    if PENDING
+        .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
+            (n < 8).then_some(n + 1)
+        })
+        .is_err()
+    {
+        return false;
+    }
+    let (title, body) = (title.to_owned(), body.to_owned());
+    std::thread::spawn(move || {
+        ensure_notification_app();
+        let result = mac_notification_sys::Notification::new()
+            .title(&title)
+            .message(&body)
+            .wait_for_click(true)
+            .send();
+        if matches!(
+            result,
+            Ok(mac_notification_sys::NotificationResponse::Click)
+        ) {
+            if let Some(tx) = crate::ui::tray::sender() {
+                let _ = tx.try_send(crate::ui::tray::TrayAction::RevealPane { target });
+            }
+        }
+        PENDING.fetch_sub(1, Ordering::AcqRel);
+    });
+    true
+}
+
+#[cfg(all(target_os = "windows", not(test)))]
+fn current_process_aumid() -> Option<String> {
+    use windows::Win32::System::Com::CoTaskMemFree;
+    use windows::Win32::UI::Shell::GetCurrentProcessExplicitAppUserModelID;
+
+    // Read only. Packaging or the launcher may already have assigned an
+    // identity; Agentty never creates or rewrites a Start Menu shortcut here.
+    let raw = unsafe { GetCurrentProcessExplicitAppUserModelID().ok()? };
+    let id = unsafe { raw.to_string().ok() };
+    unsafe { CoTaskMemFree(Some(raw.0.cast())) };
+    id.filter(|id| !id.is_empty())
+}
+
+#[cfg(all(target_os = "windows", not(test)))]
+fn try_clickable_notification(
+    title: &str,
+    body: &str,
+    target: crate::ui::composer::PaneIdentity,
+) -> bool {
+    let Some(app_id) = current_process_aumid() else {
+        return false;
+    };
+    let Some(tx) = toast_thread() else {
+        return false;
+    };
+    tx.try_send(ToastRequest {
+        title: title.to_owned(),
+        body: body.to_owned(),
+        target,
+        app_id,
+    })
+    .is_ok()
+}
+
+#[cfg(all(target_os = "windows", not(test)))]
+struct ToastRequest {
+    title: String,
+    body: String,
+    target: crate::ui::composer::PaneIdentity,
+    app_id: String,
+}
+
+#[cfg(all(target_os = "windows", not(test)))]
+fn toast_thread() -> Option<&'static std::sync::mpsc::SyncSender<ToastRequest>> {
+    use std::sync::{OnceLock, mpsc::sync_channel};
+    static TX: OnceLock<Option<std::sync::mpsc::SyncSender<ToastRequest>>> = OnceLock::new();
+    TX.get_or_init(|| {
+        let (tx, rx) = sync_channel(32);
+        std::thread::Builder::new()
+            .name("agentty-toasts".into())
+            .spawn(move || toast_loop(rx))
+            .map_err(|error| log::warn!("failed to start toast thread: {error}"))
+            .ok()
+            .map(|_| tx)
+    })
+    .as_ref()
+}
+
+#[cfg(all(target_os = "windows", not(test)))]
+fn toast_loop(rx: std::sync::mpsc::Receiver<ToastRequest>) {
+    use std::collections::VecDeque;
+    use windows::UI::Notifications::ToastNotification;
+    use windows::Win32::System::Com::{COINIT_MULTITHREADED, CoInitializeEx};
+    unsafe {
+        let _ = CoInitializeEx(None, COINIT_MULTITHREADED);
+    }
+    let mut live = VecDeque::<ToastNotification>::new();
+    while let Ok(request) = rx.recv() {
+        if let Some(toast) = show_windows_toast(request) {
+            if live.len() == 32 {
+                live.pop_front();
+            }
+            live.push_back(toast);
+        }
+    }
+}
+
+#[cfg(all(target_os = "windows", not(test)))]
+fn show_windows_toast(
+    request: ToastRequest,
+) -> Option<windows::UI::Notifications::ToastNotification> {
+    use windows::Data::Xml::Dom::XmlDocument;
+    use windows::Foundation::TypedEventHandler;
+    use windows::UI::Notifications::{ToastNotification, ToastNotificationManager};
+    use windows::core::IInspectable;
+
+    let escape = |text: &str| {
+        text.replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+            .replace('"', "&quot;")
+            .replace('\'', "&apos;")
+    };
+    let xml = format!(
+        r#"<toast><visual><binding template="ToastText02"><text id="1">{}</text><text id="2">{}</text></binding></visual></toast>"#,
+        escape(&request.title),
+        escape(&request.body)
+    );
+    let doc = XmlDocument::new().ok()?;
+    doc.LoadXml(&xml.into()).ok()?;
+    let toast = ToastNotification::CreateToastNotification(&doc).ok()?;
+    let target = request.target;
+    toast
+        .Activated(&TypedEventHandler::new(
+            move |_: &Option<ToastNotification>, _: &Option<IInspectable>| {
+                if let Some(tx) = crate::ui::tray::sender() {
+                    let _ = tx.try_send(crate::ui::tray::TrayAction::RevealPane {
+                        target: target.clone(),
+                    });
+                }
+                Ok(())
+            },
+        ))
+        .ok()?;
+    let notifier =
+        ToastNotificationManager::CreateToastNotifierWithId(&request.app_id.into()).ok()?;
+    notifier.Show(&toast).ok()?;
+    Some(toast)
+}
+
+#[cfg(not(any(
+    all(target_os = "macos", not(test)),
+    all(target_os = "windows", not(test))
+)))]
+fn try_clickable_notification(_: &str, _: &str, _: crate::ui::composer::PaneIdentity) -> bool {
+    false
 }
 
 #[cfg(target_os = "macos")]
@@ -1542,6 +1773,24 @@ fn ensure_notification_app() {
             let _ = notify_rust::set_application("com.apple.Terminal");
         }
     });
+}
+
+#[cfg(test)]
+mod notification_contract_tests {
+    use super::*;
+
+    #[test]
+    fn notification_text_removes_unsafe_controls_and_clamps_unicode() {
+        assert_eq!(
+            sanitize_notification_text("账\u{1b}\u{7}本安全", 2),
+            "账本…"
+        );
+    }
+
+    #[test]
+    fn saturated_click_backend_falls_back_to_plain_notification() {
+        assert_eq!(notification_delivery(false), NotificationDelivery::Plain);
+    }
 }
 
 struct OscNotifyScanner {
@@ -1618,6 +1867,7 @@ fn terminal_config_from_user(user_config: &crate::core::config::Config) -> Confi
         default_cursor_style: alacritty_cursor_style(user_config.cursor_style),
         semantic_escape_chars: user_config.word_separators.clone(),
         kitty_keyboard: true,
+        conpty_resize: cfg!(windows),
         ..Config::default()
     }
 }
@@ -2519,6 +2769,62 @@ mod tests {
             }
             other => panic!("expected Resize, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn resize_echo_defers_local_grid_reflow_until_size_frame() {
+        crate::core::config::pin_test_config_dir();
+        use alacritty_terminal::grid::Dimensions as _;
+        let (client_side, mut daemon_side) = UnixStream::pair().unwrap();
+        let mut term = RemoteTerminal::from_stream(client_side, TermSize::new(80, 24)).unwrap();
+        term.force_resize_echo = true;
+
+        term.resize(TermSize::new(120, 30), 8, 17);
+        assert!(
+            matches!(ClientMsg::read(&mut daemon_side).unwrap(), ClientMsg::Resize(ws) if ws.cols == 120 && ws.rows == 30)
+        );
+        assert_eq!(term.term.lock().columns(), 80);
+
+        DaemonMsg::Size(WinSize {
+            cols: 120,
+            rows: 30,
+            cell_w: 8,
+            cell_h: 17,
+        })
+        .encode(&mut daemon_side)
+        .unwrap();
+        daemon_side.flush().unwrap();
+        for _ in 0..200 {
+            if term.term.lock().columns() == 120 {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        panic!("size echo did not reflow the grid");
+    }
+
+    #[test]
+    fn live_size_frame_reflows_without_waiting_for_snapshot() {
+        crate::core::config::pin_test_config_dir();
+        use alacritty_terminal::grid::Dimensions as _;
+        let (client_side, mut daemon_side) = UnixStream::pair().unwrap();
+        let term = RemoteTerminal::from_stream(client_side, TermSize::new(80, 24)).unwrap();
+        DaemonMsg::Size(WinSize {
+            cols: 100,
+            rows: 40,
+            cell_w: 8,
+            cell_h: 17,
+        })
+        .encode(&mut daemon_side)
+        .unwrap();
+        daemon_side.flush().unwrap();
+        for _ in 0..200 {
+            if term.term.lock().columns() == 100 {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        panic!("live Size waited for a Snapshot");
     }
 
     #[test]

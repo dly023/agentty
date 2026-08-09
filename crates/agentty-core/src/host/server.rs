@@ -3,7 +3,7 @@ use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::core::machine::{self, Attachment, MachineStore};
 use crate::daemon::control::{
@@ -33,6 +33,7 @@ pub struct Services {
     pub machine: Option<Arc<MachineStore>>,
     pub attachments: Arc<AttachRegistry>,
     pub panes: Option<Arc<dyn PaneDirectory>>,
+    pub runtime_lease: Option<crate::daemon::lease::RuntimeLease>,
 }
 
 impl Services {
@@ -45,6 +46,7 @@ impl Services {
             machine: Some(store),
             attachments: Arc::new(AttachRegistry::default()),
             panes: None,
+            runtime_lease: None,
         }
     }
 }
@@ -241,6 +243,7 @@ where
         machine_origin: machine_sub.as_ref().map(machine::Subscription::id),
         attachments: Arc::clone(&services.attachments),
         panes: services.panes.clone(),
+        runtime_lease: services.runtime_lease.clone(),
         id: NEXT_CONN.fetch_add(1, Ordering::Relaxed),
         holder: Holder {
             token: hello.client_token.clone(),
@@ -317,14 +320,19 @@ fn handshake<R: Read>(
         features.push(feature::MACHINE_TREE.to_string());
     }
 
+    let home = home_dir();
+    let store_roots = home
+        .as_deref()
+        .map(crate::agent_runtime::AgentStoreRoots::for_current_process);
     sink.send(&ControlServerMsg::HelloOk(ControlHelloOk {
         control_version: CONTROL_VERSION,
         protocol_version: crate::daemon::protocol::PROTOCOL_VERSION,
         build: crate::daemon::protocol::build_stamp(),
         separator: host.separator(),
-        home: home_dir()
-            .map(|p| p.to_string_lossy().into_owned())
+        home: home
+            .map(|path| path.to_string_lossy().into_owned())
             .unwrap_or_default(),
+        store_roots,
         features,
         instance: crate::daemon::control::server_instance().to_string(),
     }))?;
@@ -453,6 +461,10 @@ fn submit(conn: &Arc<Conn>, req_id: u64, req: ControlRequest, blob: Vec<u8>) {
 }
 
 fn run_job(conn: &Arc<Conn>, req_id: u64, req: ControlRequest, blob: Vec<u8>) {
+    let _operation = conn
+        .runtime_lease
+        .as_ref()
+        .map(|lease| lease.begin_operation(Instant::now()));
     if conn.is_cancelled(req_id) {
         conn.forget(req_id);
         return;
@@ -511,14 +523,14 @@ fn run_request(
             physical_source_limit,
             ..
         } => {
-            let server_authority = if h.id() == crate::host::HostId::LOCAL {
-                crate::agent_runtime::AuthorityKind::Local
-            } else {
-                crate::agent_runtime::AuthorityKind::Remote
-            };
-            let outcome = if authority != server_authority {
+            // DiscoverAgentSessions is the remote-helper RPC boundary. The Host is
+            // local relative to the helper process but remote relative to the GUI;
+            // deriving Environment authority from HostId::LOCAL rejects every real
+            // managed-SSH discovery request. The request must remain explicitly
+            // remote and its target-owned roots snapshot is consumed unchanged.
+            let outcome = if authority != crate::agent_runtime::AuthorityKind::Remote {
                 crate::agent_runtime::DiscoveryOutcome::Failed {
-                    message: "requested authority does not match helper host".into(),
+                    message: "agent session helper RPC requires remote authority".into(),
                 }
             } else {
                 crate::agent_runtime::discover(
@@ -866,6 +878,7 @@ struct Conn {
     machine_origin: Option<machine::SubscriberId>,
     attachments: Arc<AttachRegistry>,
     panes: Option<Arc<dyn PaneDirectory>>,
+    runtime_lease: Option<crate::daemon::lease::RuntimeLease>,
     id: u64,
     holder: Holder,
 }
@@ -1436,6 +1449,23 @@ mod sock {
         Ok(listener)
     }
 
+    pub(crate) fn remove_control_endpoint_at(path: &Path) {
+        match std::fs::remove_file(path) {
+            Ok(()) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => log::warn!(
+                "could not remove Host control endpoint {}: {error}",
+                path.display()
+            ),
+        }
+    }
+
+    pub fn remove_control_endpoint() {
+        if let Ok(path) = control_socket_path() {
+            remove_control_endpoint_at(&path);
+        }
+    }
+
     pub(super) fn bind_private(path: &Path) -> io::Result<UnixListener> {
         static UMASK: Mutex<()> = Mutex::new(());
         let _held = UMASK.lock().unwrap_or_else(|e| e.into_inner());
@@ -1487,20 +1517,24 @@ mod sock {
         super::server_started();
         let path = control_socket_path()?;
         let listener = bind_control_socket(&path)?;
-        std::thread::Builder::new()
+        let spawned = std::thread::Builder::new()
             .name("agentty-control-listener".into())
-            .spawn(move || serve_listener_with(listener, host, services))?;
+            .spawn(move || serve_listener_with(listener, host, services));
+        if let Err(error) = spawned {
+            remove_control_endpoint_at(&path);
+            return Err(error);
+        }
         Ok(path)
     }
 }
 
-#[cfg(all(unix, test))]
-pub(crate) use sock::socket_path_in;
 #[cfg(unix)]
 pub use sock::{
-    bind_control_socket, control_socket_path, serve_listener, serve_listener_with,
-    spawn_control_listener, spawn_control_listener_with,
+    bind_control_socket, control_socket_path, remove_control_endpoint, serve_listener,
+    serve_listener_with, spawn_control_listener, spawn_control_listener_with,
 };
+#[cfg(all(unix, test))]
+pub(crate) use sock::{remove_control_endpoint_at, socket_path_in};
 
 #[cfg(windows)]
 mod wsock {
@@ -1536,9 +1570,13 @@ mod wsock {
         }
         let (listener, token) =
             transport::bind_endpoint(CONTROL_PORT_FILE).map_err(io::Error::other)?;
-        std::thread::Builder::new()
+        let spawned = std::thread::Builder::new()
             .name("agentty-control-listener".into())
-            .spawn(move || serve_listener_with(listener, token, host, services))?;
+            .spawn(move || serve_listener_with(listener, token, host, services));
+        if let Err(error) = spawned {
+            transport::remove_endpoint(CONTROL_PORT_FILE);
+            return Err(error);
+        }
         Ok(path)
     }
 
@@ -2137,6 +2175,43 @@ mod tests {
     }
 
     #[test]
+    fn remote_discovery_request_uses_target_roots_end_to_end() {
+        let temp = tempfile::tempdir().unwrap();
+        let roots = crate::agent_runtime::AgentStoreRoots::for_home(temp.path().to_path_buf());
+        std::fs::create_dir_all(roots.codex_sessions()).unwrap();
+        std::fs::write(
+            roots.codex_sessions().join("remote.jsonl"),
+            r#"{"type":"session_meta","payload":{"id":"019fa76a-6276-7b03-b302-c640686b2033","cwd":"/remote"}}
+{"type":"event_msg","payload":{"type":"user_message","message":"Remote session"}}
+"#,
+        )
+        .unwrap();
+        let (mut socket, _) = raw();
+        let (reply, _) = round_trip(
+            &mut socket,
+            77,
+            ControlRequest::DiscoverAgentSessions {
+                operation: crate::agent_runtime::OperationId(1),
+                generation: crate::agent_runtime::ScanGeneration(1),
+                authority: crate::agent_runtime::AuthorityKind::Remote,
+                roots,
+                providers: vec![crate::agent_runtime::ProviderId::Codex],
+                logical_limit: 40,
+                physical_source_limit: 2_000,
+            },
+        );
+        let ControlReply::Ok(ReplyOk::AgentSessionDiscovery(
+            crate::agent_runtime::DiscoveryOutcome::Complete(rows),
+        )) = reply
+        else {
+            panic!("remote discovery RPC failed: {reply:?}");
+        };
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].key.provider, "codex");
+        assert_eq!(rows[0].title.as_deref(), Some("Remote session"));
+    }
+
+    #[test]
     fn a_version_mismatch_is_answered_then_closed() {
         let (server, mut client) = UnixStream::pair().unwrap();
         std::thread::spawn(move || {
@@ -2172,6 +2247,7 @@ mod tests {
                 build: "other".into(),
                 separator: '/',
                 home: "/root".into(),
+                store_roots: None,
                 features: vec![],
                 instance: "other-instance".into(),
             })
@@ -2743,6 +2819,17 @@ mod tests {
                 Err(_) => std::thread::sleep(Duration::from_millis(20)),
             }
         }
+    }
+
+    #[test]
+    fn graceful_shutdown_removes_control_endpoint() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let sock = dir.path().join("control.sock");
+        let listener = bind_control_socket(&sock).unwrap();
+        drop(listener);
+        assert!(sock.exists());
+        remove_control_endpoint_at(&sock);
+        assert!(!sock.exists());
     }
 
     #[test]

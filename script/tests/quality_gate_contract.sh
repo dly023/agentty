@@ -8,3 +8,4 @@ cd "$(dirname "$0")/../.."
 ./script/check_remote_helper
 ./script/check_package_cleanup
 bash script/tests/nightly_version_contract.sh
+bash script/tests/i18n_exhaustive_contract.sh

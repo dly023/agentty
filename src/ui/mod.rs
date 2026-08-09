@@ -1,9 +1,12 @@
 pub mod activity_bar;
+pub mod agent_icon;
 pub mod app;
 pub mod assets;
 pub mod code_editor;
+pub mod completion_surface;
 pub mod composer;
 pub mod diff_overlay;
+pub mod environment_session;
 pub mod file_tree;
 pub mod forwards;
 pub mod hints;
@@ -12,11 +15,14 @@ pub mod home;
 pub mod host_ops;
 #[allow(dead_code)]
 pub mod host_registry;
+pub mod kbd;
 pub mod keymap;
 pub mod local_link;
 pub mod machine_mirror;
+pub mod notice;
 pub mod palette;
 pub mod pane;
+pub mod panel_chrome;
 pub mod pending_pane;
 pub mod perf;
 pub mod presets;

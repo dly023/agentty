@@ -1,0 +1,51 @@
+version: 1
+updated: 2026-08-07
+reference_artifact:
+  path: /Users/admin/Desktop/啊啊啊.png
+  sha256: 23fb0f1a39ec6c2f41283daf146d11f4919013f94466f2442ab2268bbadd503f
+  dimensions: 3372x2166
+principle: Reuse interaction invariants and information hierarchy, not Ashide's heavyweight framework or editor stack.
+reviews:
+  - dimension: session_navigation
+    ashide_evidence: [/Users/admin/ashide/app/src/workspace/view/vertical_tabs.rs, /Users/admin/ashide/docs/design/global-performance-interaction-optimization.md:31]
+    agentty_evidence: [src/ui/session_navigator.rs, src/ui/tab_sidebar.rs]
+    decision: already_present
+    rationale: Stable RowId, selected/hover/restoring states, hover details, split-unit projection, newest-first insertion, and variable-height viewport rendering are canonical Agentty behavior.
+    verification: [session_viewport_projection_preserves_split_siblings, newly_discovered_units_enter_at_the_head_of_their_pin_partition]
+  - dimension: global_search
+    ashide_evidence: [/Users/admin/ashide/app/src/workspace/view/global_search/view.rs, /Users/admin/ashide/docs/design/global-performance-interaction-optimization.md:37]
+    agentty_evidence: [src/ui/palette.rs, src/ui/windows.rs, src/ui/session_navigator.rs]
+    decision: already_present
+    rationale: Agentty indexes committed per-Environment documents, never scans during query, and activates by EnvironmentId plus NavigatorRowId across windows.
+    verification: [palette_search_uses_committed_rows_without_discovery, closing_window_removes_its_session_search_partition]
+  - dimension: tab_hierarchy
+    ashide_evidence: [/Users/admin/ashide/app/src/workspace/view/vertical_tabs.rs]
+    agentty_evidence: [src/ui/tab_strip.rs, src/ui/session_navigator.rs, src/ui/tab_sidebar.rs]
+    decision: reuse
+    rationale: Keep primary title, contextual cwd subtitle, provider icon, execution badge, and split siblings as one visual/reorder unit; do not repeat provider text in the visible subtitle.
+    verification: [navigator_subtitle_uses_session_context_without_repeating_provider, filtered_projection_keeps_the_whole_split_unit]
+  - dimension: terminal_editor_balance
+    ashide_evidence: [/Users/admin/ashide/app/src/workspace/view/vertical_tabs.rs, /Users/admin/Desktop/啊啊啊.png]
+    agentty_evidence: [src/ui/code_editor.rs, src/ui/file_tree.rs, src/ui/right_panel.rs]
+    decision: deliberately_not_ported
+    rationale: Agentty remains terminal-first with an optional Host-backed editor and side panels. Ashide's editor-centric workspace shell and BYOK surfaces would weaken the product boundary without adding missing authority behavior.
+    verification: [docs/quality/NATIVE_EDITOR_CAPABILITY_AUDIT.yaml]
+  - dimension: status_presentation
+    ashide_evidence: [/Users/admin/ashide/app/src/workspace/view/vertical_tabs.rs]
+    agentty_evidence: [crates/agentty-core/src/agent_runtime/navigator.rs, src/ui/tab_sidebar.rs, src/ui/right_panel.rs]
+    decision: already_present
+    rationale: Typed restoring, waiting, running, focused-live, background-live, and completed-unread badges carry status; terminal heuristics never become authoritative agent execution state.
+    verification: [execution_badge_precedence_is_restoring_then_waiting_then_running_then_focused_live_then_background_live, historical_rows_never_show_live_execution]
+  - dimension: density
+    ashide_evidence: [/Users/admin/Desktop/啊啊啊.png, /Users/admin/ashide/app/src/workspace/view/vertical_tabs.rs]
+    agentty_evidence: [src/ui/tab_sidebar.rs]
+    decision: actionable_gap
+    rationale: Retain compact rows, informative suffix truncation, scan-aware empty states, and distinct selected/hover/cursor states; finish destructive delete hover treatment and lock all presentation rules with tests/static checks.
+    verification: [smart_path_truncation_keeps_informative_suffix, session_row_visual_contract_is_distinct]
+conclusion:
+  status: in_progress
+  actionable_gap: rendered_agentty_pixel_baseline_pending
+  reopened_by: FEEDBACK-20260803-003
+  notes_baseline: docs/quality/RENDERED_UI_BASELINE_20260807.yaml
+  evidence_limit: Existing source and focused tests prove local interaction/style rules only; 2026-08-07 notes baseline inventories contract coverage, but pixel whole-window hierarchy/geometry/contrast evidence is still blocked pending interactive screenshot.
+  non_goals: [copy_ashide_editor_stack, copy_byok_chat_surface, pixel_match_reference_screenshot]

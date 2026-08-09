@@ -12,9 +12,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::core::actions::{
-    OpenSettings, SelectWorkspace1, SelectWorkspace2, SelectWorkspace3, SelectWorkspace4,
-    SelectWorkspace5, SelectWorkspace6, SelectWorkspace7, SelectWorkspace8, SelectWorkspace9,
-    TogglePalette,
+    SelectWorkspace1, SelectWorkspace2, SelectWorkspace3, SelectWorkspace4, SelectWorkspace5,
+    SelectWorkspace6, SelectWorkspace7, SelectWorkspace8, SelectWorkspace9,
 };
 use crate::core::config::RightPanelTab;
 use crate::daemon::protocol::ShellSpec;
@@ -26,6 +25,75 @@ use crate::ui::reorder::{self, Reorder, Surface};
 
 pub(crate) const REORDER_SLIDE_MS: u64 = 140;
 const CHIP_GAP: f32 = 6.;
+/// Chip minimum widths (UI-TAB-OVERFLOW-05): the natural minimum yields to
+/// the compression floor before any tab is hidden.
+pub(crate) const CHIP_MIN_NATURAL: f32 = 100.;
+pub(crate) const CHIP_MIN_FLOOR: f32 = 72.;
+/// Width reserved for each overflow affordance chip.
+pub(crate) const OVERFLOW_CHIP_W: f32 = 40.;
+
+/// The rendered chip window when tabs exceed strip capacity
+/// (UI-TAB-OVERFLOW-05). The window always contains the active tab and
+/// exposes hidden-tab counts on both edges.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct TabChipWindow {
+    pub start: usize,
+    pub visible: usize,
+    pub chip_min_w: f32,
+    pub leading_hidden: usize,
+    pub trailing_hidden: usize,
+}
+
+/// One pure capacity mapping: compress chips from the natural minimum to the
+/// floor, then page with leading/trailing overflow affordances while keeping
+/// the active tab inside the rendered window.
+pub(crate) fn tab_chip_window(avail: f32, count: usize, active: usize) -> TabChipWindow {
+    let fits = |min_w: f32, n: usize, reserve: f32| {
+        n as f32 * min_w + n.saturating_sub(1) as f32 * CHIP_GAP + reserve <= avail
+    };
+    if count == 0 || fits(CHIP_MIN_NATURAL, count, 0.) {
+        return TabChipWindow {
+            start: 0,
+            visible: count,
+            chip_min_w: CHIP_MIN_NATURAL,
+            leading_hidden: 0,
+            trailing_hidden: 0,
+        };
+    }
+    if fits(CHIP_MIN_FLOOR, count, 0.) {
+        return TabChipWindow {
+            start: 0,
+            visible: count,
+            chip_min_w: CHIP_MIN_FLOOR,
+            leading_hidden: 0,
+            trailing_hidden: 0,
+        };
+    }
+    let active = active.min(count - 1);
+    let mut visible = count;
+    loop {
+        let start = if active >= visible {
+            (active + 1 - visible).min(count - visible)
+        } else {
+            0
+        };
+        let leading = start > 0;
+        let trailing = start + visible < count;
+        let reserve = (leading as usize + trailing as usize) as f32 * (OVERFLOW_CHIP_W + CHIP_GAP);
+        let capacity =
+            (((avail - reserve + CHIP_GAP) / (CHIP_MIN_FLOOR + CHIP_GAP)).floor() as usize).max(1);
+        if capacity >= visible || visible == 1 {
+            return TabChipWindow {
+                start,
+                visible,
+                chip_min_w: CHIP_MIN_FLOOR,
+                leading_hidden: start,
+                trailing_hidden: count - start - visible,
+            };
+        }
+        visible -= 1;
+    }
+}
 
 pub(crate) const GRAB_HANDLE_W: f32 = 80.;
 
@@ -117,6 +185,32 @@ pub(crate) struct DragTab;
 impl Render for DragTab {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         div()
+    }
+}
+
+/// Environment Indicator machine-kind glyph (ENV-INDICATOR-GLYPH-13). The
+/// glyph derives from the window Environment authority, never from focus or
+/// transport state; connection health stays on the dot and tooltip.
+fn environment_indicator_icon(is_remote: bool) -> &'static str {
+    if is_remote {
+        "icons/machine-remote.svg"
+    } else {
+        "icons/machine-local.svg"
+    }
+}
+
+/// Active-tab hierarchy mapping (UI-TAB-HIERARCHY-02). The active tab is an
+/// elevated surface with a bottom accent indicator; inactive tabs stay flat.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct TabChipHierarchy {
+    pub(crate) elevated: bool,
+    pub(crate) indicator: bool,
+}
+
+fn tab_chip_hierarchy(is_active: bool) -> TabChipHierarchy {
+    TabChipHierarchy {
+        elevated: is_active,
+        indicator: is_active,
     }
 }
 
@@ -215,49 +309,72 @@ pub(crate) fn select_workspace_action(index: usize) -> Option<Box<dyn gpui::Acti
     })
 }
 
+/// Where each title-bar chrome action is anchored (UI-TITLEBAR-CHROME-06).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum TitlebarChromeAnchor {
+    ContentLeading,
+    ContentTrailing,
+    WindowChrome,
+}
+
+/// Pure placement map for the split Settings / Command Palette chrome.
+pub(crate) fn titlebar_chrome_anchor(action: &str) -> Option<TitlebarChromeAnchor> {
+    match action {
+        "environment" => Some(TitlebarChromeAnchor::ContentLeading),
+        "command_palette" => Some(TitlebarChromeAnchor::ContentTrailing),
+        "settings" => Some(TitlebarChromeAnchor::WindowChrome),
+        _ => None,
+    }
+}
+
 impl AgenttyApp {
-    pub(crate) fn app_menu_tile(
-        &self,
-        window: &Window,
-        cx: &mut Context<Self>,
-    ) -> impl IntoElement + use<> {
-        let action_ctx = self
-            .tabs
-            .get(self.active)
-            .and_then(|t| t.pane.focused_or_first(window, cx))
-            .map(|leaf| leaf.read(cx).focus_handle.clone())
-            .unwrap_or_else(|| self.home_focus.clone());
+    /// Command Palette icon on the content title bar trailing edge
+    /// (UI-TITLEBAR-CHROME-06), opposite the Environment Indicator.
+    pub(crate) fn command_palette_tile(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         div().occlude().flex_shrink_0().child(
             chrome_tile(
-                Button::new("titlebar-app-menu").icon(IconName::Ellipsis),
+                Button::new("titlebar-command-palette").icon(IconName::Search),
                 false,
                 cx,
             )
             .rounded_lg()
-            .tooltip(crate::core::i18n::current(cx, "common.more"))
-            .dropdown_menu_with_anchor(
-                gpui::Anchor::TopRight,
-                move |menu, _window, _cx| {
-                    menu.min_w(px(200.))
-                        .action_context(action_ctx.clone())
-                        .menu("Command Palette…", Box::new(TogglePalette))
-                        .menu("Settings…", Box::new(OpenSettings))
-                },
-            ),
+            .tooltip(crate::core::i18n::current(cx, "home.shortcut.palette"))
+            .on_click(cx.listener(|this, _, window, cx| {
+                this.toggle_palette(window, cx);
+            })),
+        )
+    }
+
+    /// Direct Settings icon in window chrome — replaces the ellipsis nest
+    /// (UI-TITLEBAR-CHROME-06).
+    pub(crate) fn settings_tile(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        div().occlude().flex_shrink_0().child(
+            chrome_tile(
+                Button::new("titlebar-settings").icon(IconName::Settings2),
+                false,
+                cx,
+            )
+            .rounded_lg()
+            .tooltip(crate::core::i18n::current(cx, "home.shortcut.settings"))
+            .on_click(cx.listener(|this, _, window, cx| {
+                this.toggle_settings(window, cx);
+            })),
         )
     }
 
     fn environment_indicator_state(
         remote: Option<&crate::core::session::RemoteRef>,
+        remote_label: Option<&str>,
         status: Option<&crate::ui::remote_workspace::RemoteStatus>,
         locale: crate::core::i18n::Locale,
-    ) -> (String, String, u32) {
+    ) -> (String, String, u32, &'static str) {
         use crate::core::i18n::{tr, trf};
         match remote {
             None => (
                 tr(locale, "environment.local.label").into(),
                 tr(locale, "environment.local.detail").into(),
                 0x22C55E,
+                environment_indicator_icon(false),
             ),
             Some(remote) => {
                 let state = match status {
@@ -284,23 +401,34 @@ impl AgenttyApp {
                     Some(crate::ui::remote_workspace::RemoteStatus::Failed(_)) => 0xEF4444,
                     _ => UNKNOWN_DOT,
                 };
-                (remote.target.to_string(), state, color)
+                (
+                    remote_label
+                        .map(str::to_owned)
+                        .unwrap_or_else(|| remote.target.to_string()),
+                    state,
+                    color,
+                    environment_indicator_icon(true),
+                )
             }
         }
     }
 
-    fn environment_indicator_label(&self, cx: &App) -> (String, String, u32) {
+    fn environment_indicator_label(&self, cx: &App) -> (String, String, u32, &'static str) {
         let remote = crate::core::session::WorkspaceStore::remote_ref(cx, self.workspace);
         let status = remote.as_ref().and_then(|_| self.remote_status(cx));
+        let label = remote
+            .as_ref()
+            .map(|remote| crate::ui::remote_connect::label_for(&remote.target, cx));
         Self::environment_indicator_state(
             remote.as_ref(),
+            label.as_deref(),
             status.as_ref(),
             cx.global::<crate::core::config::Config>().locale.resolve(),
         )
     }
 
     pub(crate) fn environment_indicator(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
-        let (label, state, dot) = self.environment_indicator_label(cx);
+        let (label, state, dot, icon) = self.environment_indicator_label(cx);
         let current_environment =
             crate::core::session::WorkspaceStore::environment_id(cx, self.workspace);
         let current_id = current_environment.clone();
@@ -310,7 +438,14 @@ impl AgenttyApp {
             .child(
                 h_flex()
                     .items_center()
-                    .gap_1p5()
+                    .gap_1()
+                    .child(
+                        gpui::svg()
+                            .path(icon)
+                            .flex_shrink_0()
+                            .size(px(13.))
+                            .text_color(cx.theme().muted_foreground),
+                    )
                     .child(
                         div()
                             .flex_shrink_0()
@@ -379,7 +514,7 @@ impl AgenttyApp {
 
     pub(crate) fn window_chrome(
         &self,
-        window: &Window,
+        _window: &Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
         let panel_open = self.right_panel_open(cx);
@@ -387,7 +522,7 @@ impl AgenttyApp {
             .flex_shrink_0()
             .items_center()
             .gap(px(2.))
-            .pr(px(tile_trailing_inset()))
+            .pr(px(crate::ui::app::panel_split_chrome_inset()))
             .when(!cfg!(target_os = "macos"), |this| this.pr_1())
             .child(
                 div().occlude().flex_shrink_0().child(
@@ -399,16 +534,16 @@ impl AgenttyApp {
                     )
                     .rounded_lg()
                     .tooltip(if panel_open {
-                        "Hide Detail Panel"
+                        crate::core::i18n::current(cx, "panel.hide_detail")
                     } else {
-                        "Show Detail Panel"
+                        crate::core::i18n::current(cx, "panel.show_detail")
                     })
                     .on_click(cx.listener(|this, _, _window, cx| {
                         this.toggle_right_panel(cx);
                     })),
                 ),
             )
-            .child(self.app_menu_tile(window, cx))
+            .child(self.settings_tile(cx))
     }
 
     pub(crate) fn right_panel_tabs(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
@@ -531,32 +666,36 @@ impl AgenttyApp {
                 let dot = status
                     .and_then(|s| s.dot_rgb())
                     .map(|rgb| Self::status_dot(rgb, unread, size, cx.theme().background));
+                let radius = (size * 0.28).clamp(4.0, 8.0);
                 base.relative()
-                    .rounded_full()
-                    .bg(gpui::rgb(agent.accent_rgb()))
-                    .child(
-                        gpui::svg()
-                            .path(agent.icon_path())
-                            .size(px(size * 0.54))
-                            .text_color(gpui::white()),
-                    )
+                    .child(crate::ui::agent_icon::agent_icon_badge(
+                        agent.icon_path(),
+                        size,
+                        radius,
+                        agent.accent_rgb(),
+                        agent.glyph_rgb(),
+                        size * 0.54,
+                        cx,
+                    ))
                     .when_some(dot, |b, dot| b.child(dot))
                     .into_any_element()
             }
-            None => base
-                .relative()
-                .rounded_full()
-                .bg(cx.theme().muted)
-                .child(
-                    gpui::svg()
-                        .path("icons/terminal.svg")
-                        .size(px(size * 0.56))
-                        .text_color(cx.theme().foreground.opacity(0.65)),
-                )
-                .when_some(ssh, |b, rgb| {
-                    b.child(Self::status_dot(rgb, 0, size, cx.theme().background))
-                })
-                .into_any_element(),
+            None => {
+                let radius = crate::ui::panel_chrome::unbranded_avatar_radius(size);
+                base.relative()
+                    .rounded(px(radius))
+                    .bg(cx.theme().muted)
+                    .child(
+                        gpui::svg()
+                            .path("icons/terminal.svg")
+                            .size(px(size * 0.56))
+                            .text_color(cx.theme().foreground.opacity(0.65)),
+                    )
+                    .when_some(ssh, |b, rgb| {
+                        b.child(Self::status_dot(rgb, 0, size, cx.theme().background))
+                    })
+                    .into_any_element()
+            }
         }
     }
 
@@ -798,9 +937,9 @@ impl AgenttyApp {
             )
             .item(
                 PopupMenuItem::new(if below_wording {
-                    "Close Tabs Below"
+                    crate::core::i18n::current(cx, "menu.close_tabs_below")
                 } else {
-                    "Close Tabs to the Right"
+                    crate::core::i18n::current(cx, "menu.close_tabs_right")
                 })
                 .disabled(index + 1 >= tab_count)
                 .on_click({
@@ -829,15 +968,23 @@ impl AgenttyApp {
         let chrome_band_w = (!cfg!(target_os = "macos") && self.right_panel_open(cx)).then(|| {
             (self.right_panel_px(window, cx) - crate::ui::app::WINDOW_CONTROLS_W - 1.).max(0.)
         });
+        // Content trailing always hosts the Command Palette tile
+        // (UI-TITLEBAR-CHROME-06); window chrome may add panel + Settings.
+        let palette_w = crate::ui::app::TILE_SIZE + 2.;
+        let chrome_on_strip = !self.right_panel_open(cx) || !cfg!(target_os = "macos");
         let corner_w = chrome_band_w.unwrap_or_else(|| {
             let trailing_pad = if cfg!(target_os = "macos") {
                 tile_trailing_inset()
             } else {
                 4.
             };
-            trailing_pad + crate::ui::app::TILE_SIZE + 2. + crate::ui::app::TILE_SIZE
+            if chrome_on_strip {
+                trailing_pad + crate::ui::app::TILE_SIZE + 2. + crate::ui::app::TILE_SIZE
+            } else {
+                trailing_pad
+            }
         });
-        let fixed_w = 3. * CHIP_GAP + crate::ui::app::TILE_SIZE + corner_w;
+        let fixed_w = 3. * CHIP_GAP + crate::ui::app::TILE_SIZE + palette_w + corner_w;
         let chips_avail = (strip_w - px(fixed_w + GRAB_HANDLE_W)).max(px(80.));
         let mut chips = h_flex()
             .items_center()
@@ -845,6 +992,7 @@ impl AgenttyApp {
             .min_w_0()
             .max_w(chips_avail)
             .overflow_hidden();
+        let chip_window = tab_chip_window(f32::from(chips_avail), self.tabs.len(), active);
 
         let slots: Rc<RefCell<Vec<Bounds<Pixels>>>> =
             Rc::new(RefCell::new(vec![Bounds::default(); self.tabs.len()]));
@@ -862,9 +1010,50 @@ impl AgenttyApp {
             None => (0..self.tabs.len()).collect(),
         };
 
+        let render_all = preview.is_some();
+        if !render_all && chip_window.leading_hidden > 0 {
+            let target = chip_window.start - 1;
+            let hidden = chip_window.leading_hidden;
+            chips = chips.child(
+                h_flex()
+                    .id("tab-overflow-leading")
+                    .occlude()
+                    .flex_shrink_0()
+                    .cursor_pointer()
+                    .items_center()
+                    .justify_center()
+                    .gap_1()
+                    .h(px(30.))
+                    .min_w(px(OVERFLOW_CHIP_W))
+                    .px_2()
+                    .rounded_lg()
+                    .text_xs()
+                    .text_color(cx.theme().muted_foreground)
+                    .hover(|s| s.bg(cx.theme().muted))
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, _: &MouseDownEvent, window, cx| {
+                            cx.stop_propagation();
+                            this.activate(target, window, cx);
+                        }),
+                    )
+                    .child(
+                        Icon::new(IconName::ChevronLeft)
+                            .size(px(10.))
+                            .text_color(cx.theme().muted_foreground),
+                    )
+                    .child(format!("{hidden}")),
+            );
+        }
+
         for i in display {
             if !show_chips {
                 break;
+            }
+            if !render_all
+                && (i < chip_window.start || i >= chip_window.start + chip_window.visible)
+            {
+                continue;
             }
             let dragged = preview.as_ref().is_some_and(|p| p.from == i);
             let tab = &self.tabs[i];
@@ -924,15 +1113,18 @@ impl AgenttyApp {
                 .justify_between()
                 .gap_1p5()
                 .h(px(30.))
-                .min_w(px(100.))
+                .min_w(px(chip_window.chip_min_w))
                 .flex_shrink(1.)
                 .pl_3()
                 .pr_1p5()
                 .rounded_lg()
-                .when(is_active, |s| {
-                    s.bg(cx.theme().secondary).text_color(cx.theme().foreground)
+                .when(tab_chip_hierarchy(is_active).elevated, |s| {
+                    s.bg(cx.theme().secondary)
+                        .text_color(cx.theme().foreground)
+                        .border_1()
+                        .border_color(cx.theme().border)
                 })
-                .when(!is_active, |s| {
+                .when(!tab_chip_hierarchy(is_active).elevated, |s| {
                     s.text_color(cx.theme().muted_foreground)
                         .hover(|s| s.bg(cx.theme().muted))
                 })
@@ -952,6 +1144,18 @@ impl AgenttyApp {
                     .absolute()
                     .inset_0(),
                 )
+                .when(tab_chip_hierarchy(is_active).indicator, |chip| {
+                    chip.child(
+                        div()
+                            .absolute()
+                            .left(px(10.))
+                            .right(px(10.))
+                            .bottom(px(1.5))
+                            .h(px(2.))
+                            .rounded_full()
+                            .bg(cx.theme().accent),
+                    )
+                })
                 .on_mouse_down(
                     MouseButton::Left,
                     cx.listener(move |this, ev: &MouseDownEvent, window, cx| {
@@ -1060,19 +1264,61 @@ impl AgenttyApp {
             });
         }
 
-        let add_button = div().occlude().flex_shrink_0().child(
-            self.attach_new_tab_menu(
-                chrome_tile_sized(
-                    Button::new("tab-add").icon(Icon::new(IconName::Plus)),
-                    TILE_SIZE,
-                    TILE_GLYPH_LINE,
-                    false,
+        if !render_all && chip_window.trailing_hidden > 0 {
+            let target = chip_window.start + chip_window.visible;
+            let hidden = chip_window.trailing_hidden;
+            chips = chips.child(
+                h_flex()
+                    .id("tab-overflow-trailing")
+                    .occlude()
+                    .flex_shrink_0()
+                    .cursor_pointer()
+                    .items_center()
+                    .justify_center()
+                    .gap_1()
+                    .h(px(30.))
+                    .min_w(px(OVERFLOW_CHIP_W))
+                    .px_2()
+                    .rounded_lg()
+                    .text_xs()
+                    .text_color(cx.theme().muted_foreground)
+                    .hover(|s| s.bg(cx.theme().muted))
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(move |this, _: &MouseDownEvent, window, cx| {
+                            cx.stop_propagation();
+                            this.activate(target, window, cx);
+                        }),
+                    )
+                    .child(format!("{hidden}"))
+                    .child(
+                        Icon::new(IconName::ChevronRight)
+                            .size(px(10.))
+                            .text_color(cx.theme().muted_foreground),
+                    ),
+            );
+        }
+
+        let make_add = |id: &'static str, this: &Self, cx: &mut Context<Self>| {
+            div().occlude().flex_shrink_0().child(
+                this.attach_new_tab_menu(
+                    chrome_tile_sized(
+                        Button::new(id).icon(Icon::new(IconName::Plus)),
+                        TILE_SIZE,
+                        TILE_GLYPH_LINE,
+                        false,
+                        cx,
+                    )
+                    .rounded_lg(),
                     cx,
-                )
-                .rounded_lg(),
-                cx,
-            ),
-        );
+                ),
+            )
+        };
+        // Chip strip owns Plus when horizontal; left-rail open owns Plus beside
+        // the Environment Indicator (UI-TITLEBAR-CHROME-06).
+        let strip_add = show_chips.then(|| make_add("tab-add", self, cx));
+        let rail_new_tab = (!show_chips && self.left_panel_open(cx))
+            .then(|| make_add("titlebar-add-rail", self, cx));
 
         let rail_collapsed = !show_chips && !self.left_panel_open(cx);
         let left_group = rail_collapsed.then(|| {
@@ -1125,6 +1371,8 @@ impl AgenttyApp {
         let panel_open = self.right_panel_open(cx);
         let right_chrome =
             (!panel_open || !cfg!(target_os = "macos")).then(|| self.window_chrome(window, cx));
+        let split_chrome = crate::ui::app::panel_split_chrome_inset();
+        let needs_trailing_split_pad = right_chrome.is_none();
 
         h_flex()
             .id("tab-strip")
@@ -1138,28 +1386,31 @@ impl AgenttyApp {
                 div()
                     .occlude()
                     .flex_shrink_0()
-                    .when(
-                        cfg!(target_os = "macos")
-                            && !(show_chips == false && self.left_panel_open(cx)),
-                        |d| d.ml(px(crate::ui::app::TITLE_BAR_LEAD)),
-                    )
+                    .ml(px(crate::ui::app::title_bar_content_lead(
+                        self.left_panel_open(cx),
+                    )))
                     .child(self.environment_indicator(cx)),
             )
+            .when_some(rail_new_tab, |this, add| this.child(add))
             .when_some(left_group, |this, g| this.child(g))
             .child(chips)
-            .when(show_chips, move |this| this.child(add_button))
+            .when_some(strip_add, |this, add| this.child(add))
             .child(div().flex_1().min_w(px(GRAB_HANDLE_W)))
+            .child(self.command_palette_tile(cx))
             .when_some(right_chrome, |this, chrome| match chrome_band_w {
                 Some(w) => this.child(
                     h_flex()
                         .flex_none()
                         .w(px(w))
                         .items_center()
-                        .pl(px(tile_trailing_inset()))
+                        .pl(px(split_chrome))
                         .child(chrome),
                 ),
                 None => this.child(chrome),
             })
+            // When the right panel owns window chrome, the content column still
+            // needs the shared split inset behind the trailing palette tile.
+            .when(needs_trailing_split_pad, |this| this.pr(px(split_chrome)))
     }
 }
 
@@ -1193,11 +1444,20 @@ mod tests {
 
     #[test]
     fn environment_indicator_labels_local_and_remote_authority() {
-        let (label, state, color) =
-            AgenttyApp::environment_indicator_state(None, None, crate::core::i18n::Locale::EnUs);
+        let (label, state, color, icon) = AgenttyApp::environment_indicator_state(
+            None,
+            None,
+            None,
+            crate::core::i18n::Locale::EnUs,
+        );
         assert_eq!(
-            (label.as_str(), state.as_str(), color),
-            ("This Mac", "Local environment", 0x22C55E)
+            (label.as_str(), state.as_str(), color, icon),
+            (
+                "This Mac",
+                "Local environment",
+                0x22C55E,
+                "icons/machine-local.svg"
+            )
         );
 
         let remote = crate::core::session::RemoteRef::new(
@@ -1206,14 +1466,46 @@ mod tests {
             },
             crate::core::session::WorkspaceId::new(),
         );
-        let (label, state, color) = AgenttyApp::environment_indicator_state(
+        let (label, state, color, icon) = AgenttyApp::environment_indicator_state(
             Some(&remote),
+            Some("build"),
             Some(&crate::ui::remote_workspace::RemoteStatus::Attached),
             crate::core::i18n::Locale::EnUs,
         );
         assert_eq!(label, "build");
         assert_eq!(state, "SSH");
         assert_eq!(color, 0x22C55E);
+        assert_eq!(icon, "icons/machine-remote.svg");
+    }
+
+    #[test]
+    fn profile_environment_uses_profile_name_without_changing_environment_identity() {
+        let mut config = crate::core::config::Config::default();
+        let mut profile = crate::core::ssh_profile::SshProfile::new("o1");
+        profile.host = "161.153.45.244".into();
+        let target = crate::core::session::RemoteTarget::Profile { id: profile.id };
+        let identity =
+            agentty_core::core::environment::EnvironmentId::for_remote(&target).to_string();
+        config.ssh_profiles.push(profile);
+
+        assert_eq!(
+            crate::ui::remote_connect::label_for_config(&target, &config),
+            "o1"
+        );
+        assert!(identity.starts_with("ssh-profile:"));
+        assert!(!identity.contains("o1"));
+    }
+
+    #[test]
+    fn missing_profile_uses_stable_non_uuid_label() {
+        let id = uuid::Uuid::parse_str("13929bd1-48a9-43b8-a211-2adfd707608d").unwrap();
+        let target = crate::core::session::RemoteTarget::Profile { id };
+        let label = crate::ui::remote_connect::label_for_config(
+            &target,
+            &crate::core::config::Config::default(),
+        );
+        assert_eq!(label, "SSH profile 13929bd1");
+        assert!(!label.contains(&id.to_string()));
     }
 
     #[test]
@@ -1225,13 +1517,15 @@ mod tests {
             crate::core::session::WorkspaceId::new(),
         );
         let detail = "no default identity files and SSH agent has no identities";
-        let (_, state, color) = AgenttyApp::environment_indicator_state(
+        let (_, state, color, icon) = AgenttyApp::environment_indicator_state(
             Some(&remote),
+            Some("build"),
             Some(&crate::ui::remote_workspace::RemoteStatus::Failed(
                 detail.into(),
             )),
             crate::core::i18n::Locale::EnUs,
         );
+        assert_eq!(icon, "icons/machine-remote.svg");
         assert!(state.contains(detail));
         assert_ne!(state, "Authentication error");
         assert_eq!(color, 0xEF4444);
@@ -1244,5 +1538,145 @@ mod tests {
         let out = short_title(&long);
         assert_eq!(out.chars().count(), 41);
         assert!(out.ends_with('…'));
+    }
+    #[test]
+    fn environment_indicator_distinguishes_local_and_remote_glyphs() {
+        assert_eq!(environment_indicator_icon(false), "icons/machine-local.svg");
+        assert_eq!(environment_indicator_icon(true), "icons/machine-remote.svg");
+        assert_ne!(
+            environment_indicator_icon(false),
+            environment_indicator_icon(true)
+        );
+    }
+
+    #[test]
+    fn titlebar_chrome_places_palette_on_content_bar_and_settings_direct() {
+        assert_eq!(
+            titlebar_chrome_anchor("environment"),
+            Some(TitlebarChromeAnchor::ContentLeading)
+        );
+        assert_eq!(
+            titlebar_chrome_anchor("command_palette"),
+            Some(TitlebarChromeAnchor::ContentTrailing)
+        );
+        assert_eq!(
+            titlebar_chrome_anchor("settings"),
+            Some(TitlebarChromeAnchor::WindowChrome)
+        );
+        let source = include_str!("tab_strip.rs");
+        let prod = source.split("#[cfg(test)]").next().unwrap_or(source);
+        assert!(
+            prod.contains("titlebar-command-palette") && prod.contains("command_palette_tile(cx)"),
+            "Command Palette must be a content title-bar icon"
+        );
+        assert!(
+            prod.contains("titlebar-settings") && prod.contains("settings_tile(cx)"),
+            "Settings must be a direct window-chrome icon"
+        );
+        assert!(
+            !prod.contains("titlebar-app-menu") && !prod.contains("IconName::Ellipsis"),
+            "ellipsis app menu nesting palette+settings is forbidden"
+        );
+    }
+
+    #[test]
+    fn left_rail_keeps_new_tab_affordance() {
+        let source = include_str!("tab_strip.rs");
+        let prod = source.split("#[cfg(test)]").next().unwrap_or(source);
+        assert!(
+            prod.contains("titlebar-add-rail")
+                && prod.contains("left_panel_open(cx)")
+                && prod.contains("rail_new_tab"),
+            "left-rail open must keep New Tab Plus beside the Environment Indicator"
+        );
+        assert!(
+            !prod.contains("\"Close Tabs Below\"") && !prod.contains("\"Close Tabs to the Right\""),
+            "tab close-direction menus must use i18n keys"
+        );
+        assert!(
+            prod.contains("menu.close_tabs_below") && prod.contains("menu.close_tabs_right"),
+            "close-tabs direction labels must be localized"
+        );
+    }
+
+    #[test]
+    fn content_column_trailing_respects_panel_split_chrome_inset() {
+        let source = include_str!("tab_strip.rs");
+        let prod = source.split("#[cfg(test)]").next().unwrap_or(source);
+        assert!(
+            prod.contains("needs_trailing_split_pad")
+                && prod.contains("panel_split_chrome_inset()")
+                && prod.contains(".when(needs_trailing_split_pad"),
+            "when the right panel owns window chrome, the content column must pad the trailing palette with panel_split_chrome_inset"
+        );
+    }
+
+    #[test]
+    fn tab_chip_hierarchy_elevates_active_tab_with_indicator() {
+        let active = tab_chip_hierarchy(true);
+        assert!(active.elevated, "active tab must be an elevated surface");
+        assert!(
+            active.indicator,
+            "active tab must show the accent indicator"
+        );
+        let inactive = tab_chip_hierarchy(false);
+        assert!(!inactive.elevated, "inactive tabs stay flat");
+        assert!(
+            !inactive.indicator,
+            "inactive tabs never show the accent indicator"
+        );
+    }
+    #[test]
+    fn tab_chip_window_compresses_before_overflowing() {
+        // Wide enough for every chip at the natural minimum: no overflow.
+        let wide = tab_chip_window(1200., 5, 2);
+        assert_eq!(wide.visible, 5);
+        assert_eq!(wide.chip_min_w, CHIP_MIN_NATURAL);
+        assert_eq!((wide.leading_hidden, wide.trailing_hidden), (0, 0));
+
+        // Too narrow for the natural minimum but wide enough at the floor:
+        // compress first, still no overflow.
+        let squeezed = tab_chip_window(400., 5, 2);
+        assert_eq!(squeezed.visible, 5);
+        assert_eq!(squeezed.chip_min_w, CHIP_MIN_FLOOR);
+        assert_eq!((squeezed.leading_hidden, squeezed.trailing_hidden), (0, 0));
+
+        // Below the floor capacity: overflow with an affordance count.
+        let clipped = tab_chip_window(200., 10, 0);
+        assert!(clipped.visible < 10);
+        assert_eq!(clipped.chip_min_w, CHIP_MIN_FLOOR);
+        assert_eq!(clipped.leading_hidden, 0);
+        assert_eq!(clipped.trailing_hidden, 10 - clipped.visible);
+        assert!(clipped.trailing_hidden > 0);
+    }
+
+    #[test]
+    fn tab_chip_window_keeps_active_tab_visible() {
+        for avail in [120., 200., 320., 515.] {
+            for count in 1..24usize {
+                for active in 0..count {
+                    let w = tab_chip_window(avail, count, active);
+                    assert!(w.visible >= 1, "avail={avail} count={count}");
+                    assert!(
+                        w.start <= active && active < w.start + w.visible,
+                        "avail={avail} count={count} active={active}: window {:?} hides the active tab",
+                        w
+                    );
+                    assert_eq!(w.start, w.leading_hidden);
+                    assert_eq!(w.start + w.visible + w.trailing_hidden, count);
+                }
+            }
+        }
+        // Middle-active overflow pages both directions.
+        let mid = tab_chip_window(200., 10, 5);
+        assert!(mid.start <= 5 && 5 < mid.start + mid.visible);
+        assert!(
+            mid.leading_hidden > 0,
+            "expected hidden tabs before the window"
+        );
+        assert!(
+            mid.trailing_hidden > 0,
+            "expected hidden tabs after the window"
+        );
     }
 }

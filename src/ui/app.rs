@@ -29,6 +29,7 @@ use crate::terminal::view::{ChildExited, TerminalView};
 use crate::ui::host_registry::HostId;
 use crate::ui::palette::{
     ChromeState, Command, CommandGroup, CommandKind, PaletteEvent, PaletteView,
+    session_commands_from_documents,
 };
 use crate::ui::pane::{CloseOutcome, Dir, Pane, PaneSlot};
 use crate::ui::presets::Fill;
@@ -83,6 +84,36 @@ const DOCS_URL: &str = "https://github.com/dly023/agentty#readme";
 const DISCORD_URL: &str = "https://discord.gg/s3dethqz2V";
 const ISSUES_URL: &str = "https://github.com/dly023/agentty/issues/new";
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LocalQuitChoice {
+    Keep,
+    Stop,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LocalQuitAction {
+    QuitWithoutRuntime,
+    QuitKeepingRuntime,
+    StopRuntimeThenQuit,
+}
+
+fn local_quit_action(live_panes: usize, choice: LocalQuitChoice) -> LocalQuitAction {
+    if live_panes == 0 {
+        LocalQuitAction::QuitWithoutRuntime
+    } else {
+        match choice {
+            LocalQuitChoice::Keep => LocalQuitAction::QuitKeepingRuntime,
+            LocalQuitChoice::Stop => LocalQuitAction::StopRuntimeThenQuit,
+        }
+    }
+}
+
+fn local_live_pane_count() -> usize {
+    crate::terminal::RemoteTerminal::try_list_panes_on(&crate::terminal::PaneRoute::Local)
+        .map(|panes| panes.into_iter().filter(|pane| pane.alive).count())
+        .unwrap_or(0)
+}
+
 pub(crate) const CONTENT_INSET: f32 = 12.;
 
 const TILE_EDGE_GAP: f32 = 5.;
@@ -95,9 +126,45 @@ pub(crate) fn tile_trailing_inset_sm() -> f32 {
     (CONTENT_INSET - TILE_PAD_SM).max(TILE_EDGE_GAP)
 }
 
+/// Shared side-panel content distance to a panel edge or vertical split
+/// (UI-PANEL-EDGE-GUTTER-08). Left navigator outer gutter and right-panel
+/// body/search padding both consume this authority.
+pub(crate) fn panel_content_gutter() -> f32 {
+    CONTENT_INSET
+}
+
+/// Shared chrome-tile distance to a vertical split (UI-PANEL-EDGE-GUTTER-08).
+/// Content-column title-bar controls, left-sidebar trailing actions, and
+/// right-panel leading tabs all consume this authority.
+pub(crate) fn panel_split_chrome_inset() -> f32 {
+    tile_trailing_inset()
+}
+
 pub(crate) const TITLE_BAR_LEAD: f32 = if cfg!(target_os = "macos") { 80. } else { 12. };
 
 pub(crate) const WINDOW_CONTROLS_W: f32 = if cfg!(target_os = "macos") { 0. } else { 102. };
+
+/// Horizontal lead before the first content-column title-bar control
+/// (ENV-INDICATOR-LEAD-14 / UI-PANEL-EDGE-GUTTER-08).
+///
+/// This is the sole lead authority for the content column. The gpui-component
+/// `TitleBar` shell must use [`title_bar_shell_leading_pad`] so its built-in
+/// macOS 80px traffic-light pad does not stack on top of this mapping.
+pub(crate) fn title_bar_content_lead(left_panel_open: bool) -> f32 {
+    if left_panel_open {
+        panel_split_chrome_inset()
+    } else {
+        TITLE_BAR_LEAD
+    }
+}
+
+/// Leading pad on the content-column `TitleBar` shell itself.
+///
+/// Always zero: traffic-light clearance and split hugging both live in
+/// [`title_bar_content_lead`], not in gpui-component's default 80px pad.
+pub(crate) fn title_bar_shell_leading_pad() -> f32 {
+    0.
+}
 
 pub(crate) fn title_bar_hug_offset() -> f32 {
     if cfg!(target_os = "macos") {
@@ -330,6 +397,12 @@ pub(crate) struct WorkspaceRename {
     pub(crate) input: Entity<InputState>,
     _subs: Vec<Subscription>,
 }
+pub(crate) struct SessionAliasEdit {
+    pub(crate) row_id: agentty_core::agent_runtime::NavigatorRowId,
+    pub(crate) identity: agentty_core::agent_runtime::SessionIdentity,
+    pub(crate) input: Entity<InputState>,
+    pub(crate) _subscription: Subscription,
+}
 
 pub(crate) struct LoopbackForwardPanelState {
     pub(crate) form_pane_id: Option<u64>,
@@ -347,8 +420,14 @@ pub struct AgenttyApp {
     /// One-shot dismissal for the "daemon is an older build" pill; reset only
     /// by a fresh app run, so it never nags twice for the same mismatch.
     stale_daemon_notice_dismissed: bool,
+    /// Remote helper build mismatches waiting for Restart Server (or dismiss).
+    pub(crate) pending_remote_mismatches: Vec<crate::daemon::install::MismatchedRemoteDaemon>,
+    /// Host labels the user dismissed from the remote mismatch notice.
+    pub(crate) remote_mismatch_notice_dismissed: Vec<String>,
     pub(crate) tabs: Vec<Tab>,
     pub(crate) active: usize,
+    tab_switch_mru: Vec<agentty_core::core::machine::TabId>,
+    pub(crate) tab_switch: crate::ui::switcher::TabSwitchState,
     pub(crate) font_size: f32,
     pub(crate) line_height: f32,
     pub(crate) font_family: String,
@@ -391,16 +470,31 @@ pub struct AgenttyApp {
     pub(crate) right_panel_visible: bool,
     pub(crate) right_panel_tab: RightPanelTab,
     pub(crate) sidebar_collapsed: bool,
-    pub(crate) sidebar_scroll: gpui::ScrollHandle,
+    pub(crate) session_list_state: gpui::ListState,
+    pub(crate) session_viewport_projection: crate::ui::session_navigator::SessionViewportProjection,
     pub(crate) reorder: Rc<RefCell<Option<crate::ui::reorder::Reorder>>>,
     pub(crate) sidebar_search: Entity<InputState>,
+    pub(crate) session_keyboard_cursor: crate::ui::session_navigator::SessionKeyboardCursor,
     pub(crate) session_navigator: agentty_core::agent_runtime::SessionNavigator,
     pub(crate) session_history: Vec<agentty_core::agent_runtime::AgentSessionRecord>,
     pub(crate) session_refresh: crate::ui::session_navigator::SessionRefreshState,
     pub(crate) session_scan_error: Option<String>,
     pub(crate) session_scan_started: bool,
+    pub(crate) session_user_state: agentty_core::agent_runtime::SessionUserStateStore,
+    pub(crate) session_user_state_path: Option<std::path::PathBuf>,
+    pub(crate) session_store_roots: Option<agentty_core::agent_runtime::AgentStoreRoots>,
+    pub(crate) session_alias_environment: Option<agentty_core::core::environment::EnvironmentId>,
+    pub(crate) session_alias_edit: Option<SessionAliasEdit>,
+    /// When true, session-row HoverCards are unmounted so the context menu owns priority.
+    pub(crate) session_row_menu_open: Rc<Cell<bool>>,
+    /// Bumped when a row menu opens so remounted HoverCards start from a closed keyed state.
+    pub(crate) session_hover_epoch: Rc<Cell<u64>>,
+    pub(crate) session_row_menu_dismiss: Option<Subscription>,
     pub(crate) composer: Option<crate::ui::composer::ComposerState>,
     pub(crate) composer_drafts: crate::ui::composer::ComposerDraftStore,
+    pub(crate) composer_visibility: crate::ui::composer::ComposerVisibilityOverrides,
+    pub(crate) composer_completion: Option<crate::ui::completion_surface::ComposerCompletionState>,
+    pub(crate) composer_completion_generation: u64,
     pub(crate) file_search: Entity<InputState>,
     _sidebar_search_sub: Subscription,
     _file_search_sub: Subscription,
@@ -412,6 +506,8 @@ pub struct AgenttyApp {
     pub(crate) workspace_rename: Option<WorkspaceRename>,
     window_title: std::cell::RefCell<String>,
     pub(crate) connect: Option<crate::ui::remote_workspace::ConnectFlow>,
+    pending_tree_materializations:
+        std::collections::HashMap<u64, Entity<crate::ui::pending_pane::PendingPane>>,
     pub(crate) switcher: Option<crate::ui::switcher::Switcher>,
     pub(crate) host_snapshots: std::collections::HashMap<
         crate::ui::host_registry::HostId,
@@ -457,7 +553,7 @@ impl AgenttyApp {
             .is_some_and(|w| w.is_remote());
         let hydrate = known && (restore || is_remote);
         let session = hydrate.then(Session::default);
-        let app = Self::with_session(Some(workspace), session, window, cx);
+        let mut app = Self::with_session(Some(workspace), session, window, cx);
         if hydrate {
             crate::ui::tree_sync::hydrate_window_from_tree(cx, workspace);
         } else {
@@ -469,7 +565,7 @@ impl AgenttyApp {
         Self::prompt_daemon_version_mismatch(window, cx);
         crate::ui::remote_connect::register(cx);
         crate::ui::remote_connect::sweep_wsl(cx);
-        Self::prompt_remote_daemon_mismatch(window, cx);
+        app.prompt_remote_daemon_mismatch(window, cx);
         app.reopen_remote_at_startup(cx);
         app
     }
@@ -478,29 +574,27 @@ impl AgenttyApp {
         let Some(mismatch) = crate::daemon::spawn::take_mismatched_daemon() else {
             return;
         };
-        let ours = crate::daemon::protocol::PROTOCOL_VERSION;
+        let ours = crate::daemon::protocol::PROTOCOL_VERSION.to_string();
         let detail = match mismatch.version {
-            Some(v) => format!(
-                "The server holding your shells is from another build \
-                 (v{}, protocol {} — this app speaks {}). You can keep using it and \
-                 your shells stay, but features whose wire format changed may \
-                 misbehave until it's restarted. Restarting starts a clean server: \
-                 tabs reopen with fresh shells and anything running in them is \
-                 terminated.",
-                v.build, v.protocol, ours
+            Some(v) => crate::core::i18n::current_format(
+                cx,
+                "daemon.mismatch_detail_version",
+                &[
+                    ("build", &v.build.to_string()),
+                    ("protocol", &v.protocol.to_string()),
+                    ("ours", &ours),
+                ],
             ),
-            None => "The server holding your shells is from an older \
-                 version of the app. You can keep using it and your shells stay, \
-                 but newer features may misbehave until it's restarted. Restarting \
-                 starts a clean server: tabs reopen with fresh shells and anything \
-                 running in them is terminated."
-                .to_string(),
+            None => crate::core::i18n::current(cx, "daemon.mismatch_detail_unknown").to_string(),
         };
         let answer = window.prompt(
             PromptLevel::Warning,
-            "Restart Server?",
+            crate::core::i18n::current(cx, "daemon.mismatch_title"),
             Some(&detail),
-            &["Keep Shells", "Restart"],
+            &[
+                crate::core::i18n::current(cx, "daemon.keep_shells"),
+                crate::core::i18n::current(cx, "daemon.restart"),
+            ],
             cx,
         );
         cx.spawn(async move |this, cx| {
@@ -587,6 +681,8 @@ impl AgenttyApp {
             if window.is_window_active() {
                 WorkspaceStore::focus(cx, this.workspace);
                 this.refresh_git_status_all(cx);
+            } else {
+                this.finish_tab_switch(false, window, cx);
             }
         });
         let this = cx.weak_entity();
@@ -628,8 +724,9 @@ impl AgenttyApp {
                 .placeholder(crate::core::i18n::current(cx, "session.search_placeholder"))
         });
         let sidebar_search_sub =
-            cx.subscribe_in(&sidebar_search, window, |_this, _i, ev, _w, cx| {
+            cx.subscribe_in(&sidebar_search, window, |this, _i, ev, _w, cx| {
                 if matches!(ev, InputEvent::Change) {
+                    this.normalize_session_keyboard_cursor(cx);
                     cx.notify();
                 }
             });
@@ -644,8 +741,12 @@ impl AgenttyApp {
         });
         let mut app = Self {
             stale_daemon_notice_dismissed: false,
+            pending_remote_mismatches: Vec::new(),
+            remote_mismatch_notice_dismissed: Vec::new(),
             tabs,
             active,
+            tab_switch_mru: Vec::new(),
+            tab_switch: Default::default(),
             font_size,
             line_height,
             font_family,
@@ -696,16 +797,29 @@ impl AgenttyApp {
             right_panel_visible,
             right_panel_tab,
             sidebar_collapsed,
-            sidebar_scroll: gpui::ScrollHandle::new(),
+            session_list_state: gpui::ListState::new(0, gpui::ListAlignment::Top, px(600.)),
+            session_viewport_projection: Default::default(),
             reorder: Rc::new(RefCell::new(None)),
             sidebar_search,
+            session_keyboard_cursor: Default::default(),
             session_navigator: agentty_core::agent_runtime::SessionNavigator::default(),
             session_history: Vec::new(),
             session_refresh: Default::default(),
             session_scan_error: None,
             session_scan_started: false,
+            session_user_state: Default::default(),
+            session_user_state_path: None,
+            session_store_roots: None,
+            session_alias_environment: None,
+            session_alias_edit: None,
+            session_row_menu_open: Rc::new(Cell::new(false)),
+            session_hover_epoch: Rc::new(Cell::new(0)),
+            session_row_menu_dismiss: None,
             composer: None,
             composer_drafts: Default::default(),
+            composer_visibility: Default::default(),
+            composer_completion: None,
+            composer_completion_generation: 0,
             _sidebar_search_sub: sidebar_search_sub,
             file_search,
             _file_search_sub: file_search_sub,
@@ -717,9 +831,11 @@ impl AgenttyApp {
             workspace_rename: None,
             window_title: std::cell::RefCell::new(String::new()),
             connect: None,
+            pending_tree_materializations: std::collections::HashMap::new(),
             switcher: None,
             host_snapshots: std::collections::HashMap::new(),
         };
+        app.tab_switch_mru = app.live_tab_ids();
         if !cfg!(test) && crate::ui::windows::WindowRegistry::count(cx) == 0 {
             crate::ui::tray::init(cx);
         }
@@ -737,54 +853,76 @@ impl AgenttyApp {
         .detach();
 
         let close_confirmed = std::rc::Rc::new(std::cell::Cell::new(false));
+        let close_decision_pending = std::rc::Rc::new(std::cell::Cell::new(false));
         let weak_app = cx.weak_entity();
         window.on_window_should_close(cx, move |window, cx| {
             if close_confirmed.get() {
                 return true;
             }
             let last_window = crate::ui::windows::WindowRegistry::count(cx) <= 1;
-            let empty = weak_app
-                .upgrade()
-                .is_some_and(|app| app.read(cx).tabs.is_empty());
-
-            let confirm = cx.global::<Config>().confirm_window_close;
-            if !last_window || empty || !confirm {
+            if !last_window {
                 if let Some(app) = weak_app.upgrade() {
                     app.update(cx, |app, cx| app.detach_workspace(cx));
                 }
-                if last_window {
-                    cx.spawn(async move |cx| {
-                        let _ = cx.update(|cx| cx.quit());
-                    })
-                    .detach();
-                }
                 return true;
             }
+            if close_decision_pending.replace(true) {
+                return false;
+            }
 
-            let answer = window.prompt(
-                PromptLevel::Info,
-                "Close Window?",
-                Some(
-                    "Your sessions keep running in the background. This \
-                     workspace will be waiting on the home page, and in the \
-                     workspace menu in the title bar, the next time you open \
-                     agentty.",
-                ),
-                &["Cancel", "Close"],
-                cx,
-            );
             let close_confirmed = close_confirmed.clone();
+            let close_decision_pending = close_decision_pending.clone();
             let weak_app = weak_app.clone();
+            let handle = window.window_handle();
             cx.spawn(async move |cx| {
-                if let Ok(1) = answer.await {
-                    close_confirmed.set(true);
-                    let _ = cx.update(|cx| {
-                        if let Some(app) = weak_app.upgrade() {
-                            app.update(cx, |app, cx| app.detach_workspace(cx));
-                        }
-                        cx.quit();
-                    });
+                let live_panes = cx.background_spawn(async { local_live_pane_count() }).await;
+                let choice = if live_panes == 0 {
+                    Some(LocalQuitChoice::Keep)
+                } else {
+                    let Ok(answer) = handle.update(cx, |_, window, cx| {
+                        let title = crate::core::i18n::current(cx, "local_runtime.quit_title");
+                        let detail = crate::core::i18n::current_format(
+                            cx,
+                            "local_runtime.quit_detail",
+                            &[("count", &live_panes.to_string())],
+                        );
+                        let cancel = crate::core::i18n::current(cx, "common.cancel");
+                        let keep = crate::core::i18n::current(cx, "local_runtime.quit_keep");
+                        let stop = crate::core::i18n::current(cx, "local_runtime.quit_stop");
+                        window.prompt(
+                            PromptLevel::Warning,
+                            &title,
+                            Some(&detail),
+                            &[cancel, keep, stop],
+                            cx,
+                        )
+                    }) else {
+                        close_decision_pending.set(false);
+                        return;
+                    };
+                    match answer.await {
+                        Ok(1) => Some(LocalQuitChoice::Keep),
+                        Ok(2) => Some(LocalQuitChoice::Stop),
+                        _ => None,
+                    }
+                };
+
+                let Some(choice) = choice else {
+                    close_decision_pending.set(false);
+                    return;
+                };
+                let action = local_quit_action(live_panes, choice);
+                if action == LocalQuitAction::StopRuntimeThenQuit {
+                    cx.background_spawn(async { crate::daemon::spawn::stop() })
+                        .await;
                 }
+                close_confirmed.set(true);
+                let _ = cx.update(|cx| {
+                    if let Some(app) = weak_app.upgrade() {
+                        app.update(cx, |app, cx| app.detach_workspace(cx));
+                    }
+                    cx.quit();
+                });
             })
             .detach();
             false
@@ -986,7 +1124,7 @@ impl AgenttyApp {
             window,
             cx,
         ) else {
-            window.push_notification("Could not reopen the tab: no terminal started", cx);
+            window.push_notification(crate::core::i18n::current(cx, "notify.reopen_failed"), cx);
             self.closed.push(st);
             return;
         };
@@ -1065,7 +1203,7 @@ impl AgenttyApp {
         }
         match action {
             TrayAction::ShowWindow => surface_window(window, cx),
-            TrayAction::RevealPane { leaf_id } => {
+            TrayAction::RevealLeaf { leaf_id } => {
                 let tab_ix = self.tabs.iter().position(|t| {
                     t.pane
                         .leaves()
@@ -1094,6 +1232,26 @@ impl AgenttyApp {
                 }
                 surface_window(window, cx);
             }
+            TrayAction::RevealPane { target } => {
+                let tab_ix = self.tabs.iter().position(|tab| {
+                    tab.pane
+                        .terminals()
+                        .into_iter()
+                        .any(|terminal| terminal.read(cx).pane_id() == target.pane_id)
+                });
+                let Some(ix) = tab_ix else { return };
+                self.activate(ix, window, cx);
+                self.maximized = None;
+                if let Some(leaf) = self.tabs[ix].pane.leaves().into_iter().find(|leaf| {
+                    leaf.terminal()
+                        .is_some_and(|terminal| terminal.read(cx).pane_id() == target.pane_id)
+                }) {
+                    self.tabs[ix].last_focused = Some(leaf.entity_id());
+                    self.focus_leaf(&leaf, window, cx);
+                    surface_window(window, cx);
+                    cx.notify();
+                }
+            }
             TrayAction::SetNotifyMode(mode) => self.set_notify_mode(mode, cx),
             TrayAction::OpenSettings => {
                 surface_window(window, cx);
@@ -1110,19 +1268,30 @@ impl AgenttyApp {
         }
     }
 
+    pub(crate) fn owns_pane_identity(
+        &self,
+        target: &crate::ui::composer::PaneIdentity,
+        cx: &gpui::App,
+    ) -> bool {
+        self.tabs.iter().any(|tab| {
+            tab.pane
+                .terminals()
+                .into_iter()
+                .any(|terminal| terminal.read(cx).pane_id() == target.pane_id)
+        })
+    }
+
     fn quit_stop_sessions(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         cx.activate(true);
         window.activate_window();
         let answer = window.prompt(
             PromptLevel::Warning,
-            "Quit and Stop Server?",
-            Some(
-                "This quits agentty and stops the background server — anything \
-                 still running in your shells is terminated. Your tabs and \
-                 layout are kept and reopen with fresh shells next launch. \
-                 (Plain Quit keeps shells running.)",
-            ),
-            &["Cancel", "Quit and Stop"],
+            crate::core::i18n::current(cx, "daemon.quit_stop_title"),
+            Some(crate::core::i18n::current(cx, "daemon.quit_stop_detail")),
+            &[
+                crate::core::i18n::current(cx, "common.cancel"),
+                crate::core::i18n::current(cx, "daemon.quit_stop_confirm"),
+            ],
             cx,
         );
         cx.spawn(async move |_this, cx| {
@@ -1143,11 +1312,12 @@ impl AgenttyApp {
         };
         let target = remote.target.clone();
         let label = crate::ui::remote_connect::label_for(&target, cx);
-        if !target.is_ssh() {
+        if !target.can_restart_server() {
             window.push_notification(
-                format!(
-                    "agentty can only restart the server on machines it reaches over SSH. \
-                     {label} is served from this computer — stop its workspace instead."
+                crate::core::i18n::current_format(
+                    cx,
+                    "daemon.restart_remote_only",
+                    &[("label", &label)],
                 ),
                 cx,
             );
@@ -1159,13 +1329,12 @@ impl AgenttyApp {
     pub(crate) fn restart_daemon(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let answer = window.prompt(
             PromptLevel::Warning,
-            "Restart Server?",
-            Some(
-                "This stops every running shell on this computer — anything still \
-                 running in them will be terminated. Your tabs and layout are kept \
-                 and reopened with fresh shells.",
-            ),
-            &["Cancel", "Restart"],
+            crate::core::i18n::current(cx, "daemon.restart_title"),
+            Some(crate::core::i18n::current(cx, "daemon.restart_detail")),
+            &[
+                crate::core::i18n::current(cx, "common.cancel"),
+                crate::core::i18n::current(cx, "daemon.restart"),
+            ],
             cx,
         );
         cx.spawn(async move |this, cx| {
@@ -2078,6 +2247,10 @@ impl AgenttyApp {
         });
     }
 
+    pub(crate) fn set_smooth_scroll(&mut self, on: bool, cx: &mut Context<Self>) {
+        self.update_config(cx, |cfg| cfg.smooth_scroll = on);
+    }
+
     pub(crate) fn set_clipboard_trim(&mut self, on: bool, cx: &mut Context<Self>) {
         self.update_config(cx, |cfg| cfg.clipboard_trim_trailing_spaces = on);
     }
@@ -2166,7 +2339,7 @@ impl AgenttyApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let parts = match parts {
+        let mut parts = match parts {
             Ok(parts) => parts,
             Err(reason) => {
                 let navigator_row_id = pending.read(cx).spawn.navigator_row_id.clone();
@@ -2182,6 +2355,7 @@ impl AgenttyApp {
                 return;
             }
         };
+        let tracks_remote_tree_materialization = parts.workspace.is_some() && !parts.restored;
         let still_there = self
             .tabs
             .iter()
@@ -2196,23 +2370,28 @@ impl AgenttyApp {
             return;
         }
         let was_focused = pending.read(cx).focus_handle.contains_focused(window, cx);
-        let (resume, navigator_row_id) = {
+        let (resume, navigator_row_id, live_binding) = {
             let spawn = &pending.read(cx).spawn;
             let resume = (!parts.restored)
                 .then(|| {
                     spawn.resume_invocation.clone().or_else(|| {
                         agent_resume_invocation(
-                            &spawn.agent,
-                            spawn.agent_session_id.as_deref(),
-                            spawn.agent_launch_argv.as_deref(),
+                            &spawn.live_binding.agent,
+                            spawn.live_binding.session_id.as_deref(),
+                            Some(spawn.live_binding.launch_argv.as_slice()),
                             spawn.working_directory.as_ref(),
                             cx,
                         )
                     })
                 })
                 .flatten();
-            (resume, spawn.navigator_row_id.clone())
+            (
+                resume,
+                spawn.navigator_row_id.clone(),
+                spawn.live_binding.clone(),
+            )
         };
+        parts.live_binding = live_binding;
         let view = build_terminal_view(parts, font_size, window, cx);
         if let Some(invocation) = resume {
             view.read(cx).run_invocation(&invocation, cx);
@@ -2221,12 +2400,17 @@ impl AgenttyApp {
         self.tabs
             .iter_mut()
             .any(|tab| tab.pane.replace_leaf(slot_id, slot.clone()));
+        if tracks_remote_tree_materialization {
+            self.pending_tree_materializations
+                .insert(view.read(cx).pane_id, pending.clone());
+        }
         if was_focused {
             self.focus_leaf(&slot, window, cx);
         }
         if let Some(row_id) = navigator_row_id {
             let carrier = self.live_session_rows(cx).into_iter().find_map(|live| {
-                (live.carrier.pane_id == view.read(cx).pane_id()).then_some(live.carrier)
+                (live.carrier.container_id == view.read(cx).live_binding().container_id)
+                    .then_some(live.carrier)
             });
             if let Some(carrier) = carrier {
                 let _ = self.session_navigator.finish_restore(
@@ -2245,6 +2429,52 @@ impl AgenttyApp {
         self.rebuild_session_navigator(cx);
         self.save_session(cx);
         cx.notify();
+    }
+
+    pub(crate) fn finish_remote_tree_materialization(&mut self, pane_id: u64) {
+        self.pending_tree_materializations.remove(&pane_id);
+    }
+
+    pub(crate) fn fail_remote_tree_materialization(
+        &mut self,
+        pane_id: u64,
+        reason: String,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        let Some(pending) = self.pending_tree_materializations.remove(&pane_id) else {
+            return false;
+        };
+        let message = crate::core::i18n::current_format(
+            cx,
+            "pending.tree_commit_failed",
+            &[("reason", &reason)],
+        );
+        pending.update(cx, |pending, cx| {
+            pending.spawn.restore_pane = None;
+            pending.fail(message, cx);
+        });
+        let ready = self
+            .tabs
+            .iter()
+            .flat_map(|tab| tab.pane.leaves())
+            .find_map(|slot| {
+                let PaneSlot::Ready(view) = slot else {
+                    return None;
+                };
+                (view.read(cx).pane_id == pane_id).then_some(view.entity_id())
+            });
+        if let Some(ready) = ready {
+            let replacement = PaneSlot::Connecting(pending.clone());
+            self.tabs
+                .iter_mut()
+                .any(|tab| tab.pane.replace_leaf(ready, replacement.clone()));
+        }
+        let route =
+            crate::terminal::PaneRoute::for_workspace(pending.read(cx).spawn.workspace.as_ref());
+        kill_pane_off_thread(route, pane_id, cx);
+        self.rebuild_session_navigator(cx);
+        cx.notify();
+        true
     }
 
     fn refresh_git_status_all(&mut self, cx: &mut Context<Self>) {
@@ -2472,6 +2702,9 @@ impl AgenttyApp {
                 .find(|l| l.contains_focused(window, cx))
                 .and_then(|l| l.terminal().cloned())
         });
+        let closed_agent_carrier = focused
+            .as_ref()
+            .is_some_and(|leaf| leaf.read(cx).is_agent_bound());
         let outcome = match self.tabs.get_mut(self.active) {
             Some(tab) => tab.pane.close_focused(window, cx),
             None => return,
@@ -2495,6 +2728,12 @@ impl AgenttyApp {
                 }
                 self.focus_active(window, cx);
                 self.save_session(cx);
+                if closed_agent_carrier {
+                    self.refresh_session_navigator_for(
+                        crate::ui::session_navigator::SessionRefreshIntent::AgentCarrierClosed,
+                        cx,
+                    );
+                }
                 cx.notify();
             }
         }
@@ -2604,16 +2843,84 @@ impl AgenttyApp {
     }
 
     fn cycle_tab(&mut self, forward: bool, window: &mut Window, cx: &mut Context<Self>) {
-        let n = self.tabs.len();
-        if n < 2 {
+        let Some(active) = self.tabs.get(self.active).map(|tab| tab.tree_id.get()) else {
+            return;
+        };
+        let live = self.live_tab_ids();
+        self.tab_switch_mru.retain(|id| live.contains(id));
+        for id in &live {
+            if !self.tab_switch_mru.contains(id) {
+                self.tab_switch_mru.push(*id);
+            }
+        }
+        let Some(next) = self.tab_switch.step(active, &self.tab_switch_mru, forward) else {
+            return;
+        };
+        self.preview_tab_id(next, window, cx);
+    }
+
+    fn live_tab_ids(&self) -> Vec<agentty_core::core::machine::TabId> {
+        self.tabs.iter().map(|tab| tab.tree_id.get()).collect()
+    }
+
+    fn preview_tab_id(
+        &mut self,
+        id: agentty_core::core::machine::TabId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(index) = self.tabs.iter().position(|tab| tab.tree_id.get() == id) else {
+            return;
+        };
+        if index == self.active {
             return;
         }
-        let next = if forward {
-            (self.active + 1) % n
+        self.remember_active_pane(window, cx);
+        self.maximized = None;
+        self.active = index;
+        self.maybe_refresh_diff_overlay(cx);
+        self.focus_active(window, cx);
+        cx.notify();
+    }
+
+    pub(crate) fn finish_tab_switch(
+        &mut self,
+        commit: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        use crate::ui::switcher::{TabSwitchFinish, TabSwitchFinishKind};
+        let live = self.live_tab_ids();
+        let finish = if commit {
+            self.tab_switch.release(&live)
         } else {
-            (self.active + n - 1) % n
+            self.tab_switch
+                .cancel(&live, TabSwitchFinishKind::Deactivation)
         };
-        self.activate(next, window, cx);
+        let Some(finish) = finish else { return };
+        let id = match finish {
+            TabSwitchFinish::Commit(id) | TabSwitchFinish::Restore(id) => id,
+        };
+        self.preview_tab_id(id, window, cx);
+        if matches!(finish, TabSwitchFinish::Commit(_)) {
+            self.tab_switch_mru.retain(|other| *other != id);
+            self.tab_switch_mru.insert(0, id);
+            self.save_session(cx);
+        }
+    }
+
+    fn cancel_tab_switch_escape(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        use crate::ui::switcher::{TabSwitchFinish, TabSwitchFinishKind};
+        if !self.tab_switch.is_holding() {
+            return false;
+        }
+        let live = self.live_tab_ids();
+        if let Some(TabSwitchFinish::Restore(id)) =
+            self.tab_switch.cancel(&live, TabSwitchFinishKind::Escape)
+        {
+            self.preview_tab_id(id, window, cx);
+        }
+        true
     }
 
     pub(crate) fn activate(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
@@ -2621,8 +2928,10 @@ impl AgenttyApp {
             self.remember_active_pane(window, cx);
             self.maximized = None;
             self.active = index;
+            let id = self.tabs[index].tree_id.get();
+            self.tab_switch_mru.retain(|other| *other != id);
+            self.tab_switch_mru.insert(0, id);
             self.maybe_refresh_diff_overlay(cx);
-            self.sidebar_scroll.scroll_to_item(index);
             if self.code_panel_visible() {
                 self.file_tree_refresh_roots(window, cx);
                 self.file_tree.focus_handle.focus(window, cx);
@@ -2670,6 +2979,11 @@ impl AgenttyApp {
         self.maximized = None;
         self.renaming = None;
         let worktree_cwd = self.tab_host_cwd(index, window, cx);
+        let closed_agent_carrier = self.tabs[index]
+            .pane
+            .terminals()
+            .iter()
+            .any(|leaf| leaf.read(cx).is_agent_bound());
         let snapshot = tab_to_session(&self.tabs[index], cx);
         self.closed.push(snapshot);
         if self.closed.len() > MAX_CLOSED_TABS {
@@ -2688,6 +3002,12 @@ impl AgenttyApp {
         }
         self.focus_active(window, cx);
         self.save_session(cx);
+        if closed_agent_carrier {
+            self.refresh_session_navigator_for(
+                crate::ui::session_navigator::SessionRefreshIntent::AgentCarrierClosed,
+                cx,
+            );
+        }
         cx.notify();
         self.offer_worktree_cleanup(worktree_cwd, cx);
     }
@@ -2718,31 +3038,44 @@ impl AgenttyApp {
             },
             move |_this, found, cx| {
                 let Some(wt) = found else { return };
+                let path = wt.path.display().to_string();
                 let detail = if wt.dirty {
-                    format!(
-                        "The closed tab's worktree at {} has uncommitted changes.",
-                        wt.path.display()
+                    crate::core::i18n::current_format(
+                        cx,
+                        "worktree.remove_dirty",
+                        &[("path", &path)],
                     )
                 } else {
-                    format!(
-                        "The closed tab's worktree at {} is clean.",
-                        wt.path.display()
+                    crate::core::i18n::current_format(
+                        cx,
+                        "worktree.remove_clean",
+                        &[("path", &path)],
                     )
                 };
-                let title = format!("Remove worktree \"{}\"?", wt.branch);
+                let title = crate::core::i18n::current_format(
+                    cx,
+                    "worktree.remove_title",
+                    &[("branch", &wt.branch)],
+                );
                 let level = if wt.dirty {
                     PromptLevel::Warning
                 } else {
                     PromptLevel::Info
                 };
                 let remove_label = if wt.dirty {
-                    "Discard Changes & Remove"
+                    crate::core::i18n::current(cx, "worktree.remove_discard")
                 } else {
-                    "Remove Worktree"
+                    crate::core::i18n::current(cx, "worktree.remove_clean_btn")
                 };
                 cx.spawn(async move |this, cx| {
                     let Ok(answer) = this.update_in(cx, |_, window, cx| {
-                        window.prompt(level, &title, Some(&detail), &["Keep", remove_label], cx)
+                        window.prompt(
+                            level,
+                            &title,
+                            Some(&detail),
+                            &[crate::core::i18n::current(cx, "common.keep"), remove_label],
+                            cx,
+                        )
                     }) else {
                         return;
                     };
@@ -2759,7 +3092,11 @@ impl AgenttyApp {
                             move |h| crate::core::worktree::remove(h, &wt, force),
                             move |_this, result, window, cx| match result {
                                 Ok(()) => window.push_notification(
-                                    format!("Removed worktree \"{branch}\""),
+                                    crate::core::i18n::current_format(
+                                        cx,
+                                        "worktree.removed",
+                                        &[("branch", &branch)],
+                                    ),
                                     cx,
                                 ),
                                 Err(e) => window.push_notification(
@@ -2925,7 +3262,7 @@ impl AgenttyApp {
         };
         let Some(terminal) = new.terminal() else {
             log::error!("fork spawn produced a pane that is still connecting");
-            window.push_notification("Could not fork: the pane is still connecting", cx);
+            window.push_notification(crate::core::i18n::current(cx, "notify.fork_connecting"), cx);
             return;
         };
         terminal.read(cx).run_command_line(&cmd, cx);
@@ -2991,7 +3328,7 @@ impl AgenttyApp {
         let view = source.read(cx);
         let (agent, session, remote) = (view.agent(), view.agent_session(), view.remote_context());
         let Some(agent) = agent else {
-            window.push_notification("This pane isn't running a coding agent", cx);
+            window.push_notification(crate::core::i18n::current(cx, "notify.no_agent"), cx);
             return None;
         };
         let name = agent.display_name();
@@ -3078,7 +3415,7 @@ impl AgenttyApp {
         cx: &mut Context<Self>,
     ) {
         let Some((host, cwd)) = self.tab_host_cwd(index, window, cx) else {
-            window.push_notification("This tab has no working directory yet", cx);
+            window.push_notification(crate::core::i18n::current(cx, "notify.no_cwd"), cx);
             return;
         };
         let sheet_host = host.clone();
@@ -3268,7 +3605,7 @@ impl AgenttyApp {
             };
             commands.push(
                 Command::new(
-                    format!("SSH: {title}"),
+                    crate::core::i18n::current_format(cx, "palette.ssh_tab", &[("title", &title)]),
                     CommandKind::ConnectSavedProfile(p.id),
                 )
                 .with_subtitle(subtitle)
@@ -3283,16 +3620,23 @@ impl AgenttyApp {
             let label = self.tab_label(tab, i, None, cx);
             commands.push(
                 Command::new(
-                    format!("Switch to Tab: {label}"),
+                    crate::core::i18n::current_format(
+                        cx,
+                        "palette.switch_tab",
+                        &[("label", &label)],
+                    ),
                     CommandKind::ActivateTab(i),
                 )
                 .in_group(CommandGroup::TabsPanes),
             );
         }
+        commands.extend(session_commands_from_documents(
+            crate::ui::windows::WindowRegistry::session_documents(cx),
+        ));
         commands
     }
 
-    fn toggle_palette(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn toggle_palette(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.palette.is_some() {
             self.close_palette(window, cx);
             return;
@@ -3465,6 +3809,32 @@ impl AgenttyApp {
             SendGitDiffToAgent => self.send_git_diff_to_agent(window, cx),
             OpenThemePicker | OpenSshConnectInput => {}
             ActivateTab(i) => self.activate(i, window, cx),
+            ActivateSession { workspace, id } => {
+                let environment = WorkspaceStore::environment_id(cx, workspace);
+                if id.environment() != &environment {
+                    return;
+                }
+                let row_id = id.row_id().clone();
+                if workspace == self.workspace {
+                    self.activate_navigator_row(row_id, window, cx);
+                    return;
+                }
+                let Some(handle) = crate::ui::windows::WindowRegistry::window_for(cx, workspace)
+                else {
+                    return;
+                };
+                let Some(target_app) = crate::ui::windows::WindowRegistry::app_for(cx, workspace)
+                    .and_then(|app| app.upgrade())
+                else {
+                    return;
+                };
+                let _ = handle.update(cx, move |_, target_window, cx| {
+                    target_window.activate_window();
+                    target_app.update(cx, |app, cx| {
+                        app.activate_navigator_row(row_id, target_window, cx);
+                    });
+                });
+            }
         }
     }
 
@@ -3487,7 +3857,7 @@ impl AgenttyApp {
         let Some(target) = self.agent_target_leaf(cx) else {
             crate::terminal::notify_desktop(
                 Some("agentty"),
-                "No running coding agent found — start one (claude, codex, …) in a pane first.",
+                crate::core::i18n::current(cx, "notify.no_coding_agent"),
             );
             return;
         };
@@ -3513,7 +3883,7 @@ impl AgenttyApp {
         let Some(selection) = selection else {
             crate::terminal::notify_desktop(
                 Some("agentty"),
-                "Nothing selected — select some terminal output first.",
+                crate::core::i18n::current(cx, "notify.nothing_selected"),
             );
             return;
         };
@@ -3535,7 +3905,10 @@ impl AgenttyApp {
             Some((view.host(cx)?, view.host_cwd()?))
         });
         let Some((host, cwd)) = target else {
-            crate::terminal::notify_desktop(Some("agentty"), "This pane has no known directory.");
+            crate::terminal::notify_desktop(
+                Some("agentty"),
+                crate::core::i18n::current(cx, "notify.no_directory"),
+            );
             return;
         };
         crate::ui::host_ops::HostOps::run_in(
@@ -3556,16 +3929,20 @@ impl AgenttyApp {
             move |this, (diff, cwd_s), window, cx| {
                 match crate::core::agent_prompt::build_diff_review_prompt(&diff, Some(&cwd_s)) {
                     Some(prompt) => this.deliver_agent_prompt(&prompt, window, cx),
-                    None => crate::terminal::notify_desktop(
-                        Some("agentty"),
-                        &format!("No uncommitted changes in {cwd_s} (or not a git repository)."),
-                    ),
+                    None => {
+                        let msg = crate::core::i18n::current_format(
+                            cx,
+                            "notify.clean_tree",
+                            &[("cwd", &cwd_s)],
+                        );
+                        crate::terminal::notify_desktop(Some("agentty"), &msg);
+                    }
                 }
             },
         );
     }
 
-    fn toggle_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn toggle_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.settings.is_some() {
             self.close_settings(window, cx);
             return;
@@ -4788,20 +5165,9 @@ impl AgenttyApp {
         let message = status.strip_message(&machine, cx)?;
         let action = status.action_label(cx);
         let theme = cx.theme();
-        let bar = gpui_component::h_flex()
-            .occlude()
-            .items_center()
-            .gap_2()
-            .px_3()
-            .py_1p5()
-            .rounded_lg()
-            .bg(theme.popover)
-            .border_1()
-            .border_color(theme.border)
-            .shadow_md()
-            .text_xs()
-            .text_color(theme.muted_foreground)
-            .child(gpui_component::Icon::new(gpui_component::IconName::Globe))
+        let severity = crate::ui::notice::NoticeSeverity::Info;
+        let bar = crate::ui::notice::notice_surface(severity, cx)
+            .child(crate::ui::notice::notice_icon(severity, cx))
             .child(
                 div()
                     .font_weight(gpui::FontWeight::MEDIUM)
@@ -4834,7 +5200,7 @@ impl AgenttyApp {
 
     fn render_stale_daemon_notice(
         &mut self,
-        window: &mut Window,
+        _window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Option<gpui::AnyElement> {
         if self.stale_daemon_notice_dismissed {
@@ -4843,12 +5209,12 @@ impl AgenttyApp {
         use gpui_component::Sizable as _;
         use gpui_component::button::ButtonVariants as _;
         let (daemon, ours) = crate::ui::local_link::LocalLink::stale_server_build(cx)?;
-        let theme = cx.theme();
         let message = crate::core::i18n::current_format(
             cx,
             "daemon.stale_build",
             &[("daemon", &daemon), ("app", &ours)],
         );
+        let severity = crate::ui::notice::NoticeSeverity::Warning;
         Some(
             div()
                 .absolute()
@@ -4858,19 +5224,8 @@ impl AgenttyApp {
                 .flex()
                 .justify_center()
                 .child(
-                    gpui_component::h_flex()
-                        .occlude()
-                        .items_center()
-                        .gap_2()
-                        .px_3()
-                        .py_1p5()
-                        .rounded_lg()
-                        .bg(theme.popover)
-                        .border_1()
-                        .border_color(theme.warning.opacity(0.4))
-                        .shadow_md()
-                        .text_xs()
-                        .text_color(theme.muted_foreground)
+                    crate::ui::notice::notice_surface(severity, cx)
+                        .child(crate::ui::notice::notice_icon(severity, cx))
                         .child(message)
                         .child(
                             gpui_component::button::Button::new("stale-daemon-restart")
@@ -4896,12 +5251,94 @@ impl AgenttyApp {
         )
     }
 
+    fn render_remote_mismatch_notice(
+        &mut self,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Option<gpui::AnyElement> {
+        let mismatch = self
+            .pending_remote_mismatches
+            .iter()
+            .find(|entry| {
+                !self
+                    .remote_mismatch_notice_dismissed
+                    .iter()
+                    .any(|host| host == &entry.host)
+            })?
+            .clone();
+        use gpui_component::Sizable as _;
+        use gpui_component::button::ButtonVariants as _;
+        let running = mismatch.running_version.clone().unwrap_or_else(|| {
+            crate::core::i18n::current(cx, "daemon.remote_mismatch.unknown_running").into()
+        });
+        let message = crate::core::i18n::current_format(
+            cx,
+            "daemon.remote_mismatch",
+            &[
+                ("host", &mismatch.host),
+                ("running", &running),
+                ("wanted", &mismatch.wanted_version),
+            ],
+        );
+        let severity = crate::ui::notice::NoticeSeverity::Warning;
+        let mismatch_for_replace = mismatch.clone();
+        let host_for_dismiss = mismatch.host.clone();
+        Some(
+            div()
+                .absolute()
+                .left_0()
+                .right_0()
+                .top_12()
+                .flex()
+                .justify_center()
+                .child(
+                    crate::ui::notice::notice_surface(severity, cx)
+                        .child(crate::ui::notice::notice_icon(severity, cx))
+                        .child(message)
+                        .child(
+                            gpui_component::button::Button::new("remote-mismatch-replace")
+                                .label(crate::core::i18n::current(cx, "common.replace_server"))
+                                .ghost()
+                                .xsmall()
+                                .on_click(cx.listener(move |this, _, window, cx| {
+                                    this.replace_mismatched_remote_server(
+                                        mismatch_for_replace.clone(),
+                                        window,
+                                        cx,
+                                    );
+                                })),
+                        )
+                        .child(
+                            gpui_component::button::Button::new("remote-mismatch-dismiss")
+                                .label(crate::core::i18n::current(
+                                    cx,
+                                    "daemon.remote_mismatch.dismiss",
+                                ))
+                                .ghost()
+                                .xsmall()
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    if !this
+                                        .remote_mismatch_notice_dismissed
+                                        .iter()
+                                        .any(|h| h == &host_for_dismiss)
+                                    {
+                                        this.remote_mismatch_notice_dismissed
+                                            .push(host_for_dismiss.clone());
+                                    }
+                                    cx.notify();
+                                })),
+                        ),
+                )
+                .into_any_element(),
+        )
+    }
+
     fn render_remote_input_notice(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
         if self.tabs.is_empty() {
             return None;
         }
         let notice = self.remote_status(cx)?.input_notice(cx)?;
-        let theme = cx.theme();
+        let severity = crate::ui::notice::NoticeSeverity::Warning;
         Some(
             div()
                 .absolute()
@@ -4911,19 +5348,8 @@ impl AgenttyApp {
                 .flex()
                 .justify_center()
                 .child(
-                    gpui_component::h_flex()
-                        .occlude()
-                        .items_center()
-                        .gap_2()
-                        .px_3()
-                        .py_1p5()
-                        .rounded_lg()
-                        .bg(theme.popover)
-                        .border_1()
-                        .border_color(theme.warning.opacity(0.4))
-                        .shadow_md()
-                        .text_xs()
-                        .text_color(theme.muted_foreground)
+                    crate::ui::notice::notice_surface(severity, cx)
+                        .child(crate::ui::notice::notice_icon(severity, cx))
                         .child(notice),
                 )
                 .into_any_element(),
@@ -5007,11 +5433,17 @@ impl Render for AgenttyApp {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         #[cfg(test)]
         render_probe::record();
+        let _ = self.sync_composer_dock(window, cx);
         let prof = crate::ui::perf::enabled().then(std::time::Instant::now);
         if cx.has_active_drag() {
             crate::ui::reorder::clear_pending(&self.reorder);
-        } else if let Some(order) = crate::ui::reorder::take_pending(&self.reorder) {
-            self.apply_tab_order(&order, cx);
+        } else if let Some((surface, order)) = crate::ui::reorder::take_pending(&self.reorder) {
+            match surface {
+                crate::ui::reorder::Surface::Strip => self.apply_tab_order(&order, cx),
+                crate::ui::reorder::Surface::Navigator => {
+                    self.apply_session_reorder(&order, window, cx)
+                }
+            }
         }
         if self.reorder.borrow().is_some()
             && cx.active_drag_cursor_style() != Some(gpui::CursorStyle::ClosedHand)
@@ -5055,6 +5487,9 @@ impl Render for AgenttyApp {
 
         let title_bar = TitleBar::new()
             .h(px(TITLE_BAR_HEIGHT))
+            // Override gpui-component's macOS 80px traffic-light pad — lead is
+            // owned by title_bar_content_lead inside the strip (ENV-INDICATOR-LEAD-14).
+            .pl(px(title_bar_shell_leading_pad()))
             .bg(cx.theme().transparent)
             .border_color(cx.theme().transparent)
             .child(strip);
@@ -5076,6 +5511,10 @@ impl Render for AgenttyApp {
             .when_some(self.render_stale_daemon_notice(window, cx), |this, el| {
                 this.child(el)
             })
+            .when_some(
+                self.render_remote_mismatch_notice(window, cx),
+                |this, el| this.child(el),
+            )
             .when_some(self.render_ssh_close_confirm_overlay(cx), |this, el| {
                 this.child(el)
             })
@@ -5204,6 +5643,11 @@ impl Render for AgenttyApp {
                 .bg(window_bg)
                 .text_color(cx.theme().foreground)
                 .on_modifiers_changed(cx.listener(Self::on_modifiers_changed))
+                .on_key_down(cx.listener(|this, ev: &gpui::KeyDownEvent, window, cx| {
+                    if ev.keystroke.key == "escape" && this.cancel_tab_switch_escape(window, cx) {
+                        cx.stop_propagation();
+                    }
+                }))
                 .on_action(cx.listener(|this, _: &NewTab, window, cx| this.new_tab(window, cx)))
                 .on_action(cx.listener(|this, _: &SelectWorkspace1, window, cx| {
                     this.select_workspace_slot(0, window, cx)
@@ -5391,6 +5835,14 @@ impl Render for AgenttyApp {
                 .on_action(cx.listener(|this, _: &ToggleComposer, window, cx| {
                     this.toggle_composer(window, cx)
                 }))
+                .on_action(cx.listener(|this, _: &CompleteFocusedSurface, window, cx| {
+                    this.complete_focused_surface(true, window, cx)
+                }))
+                .on_action(
+                    cx.listener(|this, _: &CompleteFocusedSurfaceBack, window, cx| {
+                        this.complete_focused_surface(false, window, cx)
+                    }),
+                )
                 .on_action(cx.listener(|this, _: &EditorSave, window, cx| {
                     if !this.editor_has_focus(window, cx) {
                         cx.propagate();
@@ -5531,9 +5983,7 @@ fn pane_to_session(pane: &Pane, cx: &App) -> SessionPane {
                 cwd: spawn.working_directory.clone(),
                 pane_id: spawn.restore_pane,
                 ssh_spec: None,
-                agent: spawn.agent,
-                agent_session_id: spawn.agent_session_id.clone(),
-                agent_launch_argv: spawn.agent_launch_argv.clone(),
+                live_binding: spawn.live_binding.clone(),
             }
         }
         Pane::Leaf(PaneSlot::Ready(view)) => {
@@ -5542,9 +5992,7 @@ fn pane_to_session(pane: &Pane, cx: &App) -> SessionPane {
                 cwd: view.spawnable_cwd(),
                 pane_id: Some(view.pane_id),
                 ssh_spec: view.ssh_spec(),
-                agent: view.agent(),
-                agent_session_id: view.agent_session().and_then(|s| s.session_id),
-                agent_launch_argv: view.agent_session().and_then(|s| s.launch_argv),
+                live_binding: view.live_binding().clone(),
             }
         }
         Pane::Split {
@@ -5562,9 +6010,7 @@ fn pane_to_session(pane: &Pane, cx: &App) -> SessionPane {
             cwd: None,
             pane_id: None,
             ssh_spec: None,
-            agent: None,
-            agent_session_id: None,
-            agent_launch_argv: None,
+            live_binding: Default::default(),
         },
     }
 }
@@ -5658,9 +6104,7 @@ fn session_to_pane(
             cwd,
             pane_id,
             ssh_spec,
-            agent,
-            agent_session_id,
-            agent_launch_argv,
+            live_binding,
         } => {
             let same_daemon =
                 leaf_shares_the_window_daemon(workspace.is_some(), ssh_spec.is_some());
@@ -5694,23 +6138,25 @@ fn session_to_pane(
                 }
             };
             match &view {
-                PaneSlot::Ready(terminal) if !terminal.read(cx).restored() => {
-                    if let Some(invocation) = agent_resume_invocation(
-                        agent,
-                        agent_session_id.as_deref(),
-                        agent_launch_argv.as_deref(),
-                        cwd.as_ref(),
-                        cx,
-                    ) {
+                PaneSlot::Ready(terminal) => {
+                    terminal.update(cx, |terminal, cx| {
+                        terminal.set_live_binding(live_binding.clone(), cx)
+                    });
+                    if !terminal.read(cx).restored()
+                        && let Some(invocation) = agent_resume_invocation(
+                            &live_binding.agent,
+                            live_binding.session_id.as_deref(),
+                            Some(live_binding.launch_argv.as_slice()),
+                            cwd.as_ref(),
+                            cx,
+                        )
+                    {
                         terminal.read(cx).run_invocation(&invocation, cx);
                     }
                 }
-                PaneSlot::Ready(_) => {}
                 PaneSlot::Connecting(pending) => {
                     pending.update(cx, |pending, _| {
-                        pending.spawn.agent = *agent;
-                        pending.spawn.agent_session_id = agent_session_id.clone();
-                        pending.spawn.agent_launch_argv = agent_launch_argv.clone();
+                        pending.spawn.live_binding = live_binding.clone();
                     });
                 }
             }
@@ -5764,9 +6210,7 @@ pub(crate) fn new_terminal(
         working_directory,
         restore_pane,
         shell,
-        agent: None,
-        agent_session_id: None,
-        agent_launch_argv: None,
+        live_binding: Default::default(),
         resume_invocation: None,
         navigator_row_id: None,
         owner,
@@ -5837,8 +6281,13 @@ fn build_terminal_view(
     cx.subscribe_in(
         &view,
         window,
-        |app, _view, _: &crate::terminal::view::AgentSessionChanged, _window, cx| {
-            app.save_session(cx);
+        |app, view, _: &crate::terminal::view::AgentSessionChanged, window, cx| {
+            let binding = view.read(cx).live_binding().clone();
+            // Rebuild so Live rows appear as soon as agent is stamped, even
+            // before provider session_id arrives (no discovery scan).
+            app.rebuild_session_navigator(cx);
+            app.persist_live_binding_rebind(&binding, window, cx);
+            cx.notify();
         },
     )
     .detach();
@@ -6279,9 +6728,67 @@ mod window_drag_tests {
 #[cfg(test)]
 mod tests {
     use super::{
-        TabAgentSession, leaf_shares_the_window_daemon, pane_attachable, parse_ssh_connect_input,
-        parse_ssh_option_words,
+        LocalQuitAction, LocalQuitChoice, TITLE_BAR_LEAD, TabAgentSession,
+        leaf_shares_the_window_daemon, local_quit_action, pane_attachable, panel_content_gutter,
+        panel_split_chrome_inset, parse_ssh_connect_input, parse_ssh_option_words,
+        tile_trailing_inset, title_bar_content_lead, title_bar_shell_leading_pad,
     };
+
+    #[test]
+    fn title_bar_content_lead_hugs_split_when_sidebar_open() {
+        assert_eq!(title_bar_content_lead(true), panel_split_chrome_inset());
+        assert!(
+            title_bar_content_lead(true) < TITLE_BAR_LEAD,
+            "sidebar-open lead must not reserve the traffic-light inset"
+        );
+        assert_eq!(title_bar_content_lead(false), TITLE_BAR_LEAD);
+    }
+
+    #[test]
+    fn title_bar_shell_does_not_stack_traffic_light_pad() {
+        assert_eq!(
+            title_bar_shell_leading_pad(),
+            0.0,
+            "TitleBar shell pad must be zero; lead belongs to title_bar_content_lead"
+        );
+        let source = include_str!("app.rs");
+        let title_bar_site = source
+            .split("let title_bar = TitleBar::new()")
+            .nth(1)
+            .and_then(|rest| rest.split(".child(strip)").next())
+            .unwrap_or("");
+        assert!(
+            title_bar_site.contains("title_bar_shell_leading_pad()"),
+            "content-column TitleBar must consume title_bar_shell_leading_pad"
+        );
+    }
+
+    #[test]
+    fn panel_edge_gutters_share_one_authority() {
+        assert_eq!(panel_content_gutter(), super::CONTENT_INSET);
+        assert_eq!(panel_split_chrome_inset(), tile_trailing_inset());
+        assert_eq!(
+            title_bar_content_lead(true),
+            panel_split_chrome_inset(),
+            "content-column split lead must match right-panel chrome inset"
+        );
+    }
+
+    #[test]
+    fn quit_policy_distinguishes_keep_and_stop() {
+        assert_eq!(
+            local_quit_action(2, LocalQuitChoice::Keep),
+            LocalQuitAction::QuitKeepingRuntime
+        );
+        assert_eq!(
+            local_quit_action(2, LocalQuitChoice::Stop),
+            LocalQuitAction::StopRuntimeThenQuit
+        );
+        assert_eq!(
+            local_quit_action(0, LocalQuitChoice::Keep),
+            LocalQuitAction::QuitWithoutRuntime
+        );
+    }
 
     #[test]
     fn restore_only_attaches_panes_the_workspace_owns_or_nobody_claims() {
@@ -6357,9 +6864,11 @@ mod tests {
                         working_directory: Some(std::path::PathBuf::from("/work")),
                         restore_pane: Some(7),
                         shell: None,
-                        agent: Some(CLIAgent::Claude),
-                        agent_session_id: Some("sid-abc".to_string()),
-                        agent_launch_argv: Some(vec!["claude".to_string()]),
+                        live_binding: agentty_core::core::session::LiveContainerBinding::new(
+                            Some(CLIAgent::Claude),
+                            Some("sid-abc".to_string()),
+                            vec!["claude".to_string()],
+                        ),
                         resume_invocation: None,
                         navigator_row_id: None,
                         owner: None,
@@ -6371,18 +6880,16 @@ mod tests {
             let saved = super::pane_to_session(&Pane::leaf(PaneSlot::Connecting(pending)), cx);
             let SessionPane::Leaf {
                 pane_id,
-                agent,
-                agent_session_id,
-                agent_launch_argv,
+                live_binding,
                 ..
             } = saved
             else {
                 panic!("a leaf saves as a leaf");
             };
             assert_eq!(pane_id, Some(7), "the id it is re-attaching to");
-            assert_eq!(agent, Some(CLIAgent::Claude));
-            assert_eq!(agent_session_id.as_deref(), Some("sid-abc"));
-            assert_eq!(agent_launch_argv, Some(vec!["claude".to_string()]));
+            assert_eq!(live_binding.agent, Some(CLIAgent::Claude));
+            assert_eq!(live_binding.session_id.as_deref(), Some("sid-abc"));
+            assert_eq!(live_binding.launch_argv, vec!["claude".to_string()]);
         });
     }
 

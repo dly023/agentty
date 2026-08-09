@@ -20,6 +20,20 @@ fn main() {
         return;
     }
 
+    let standalone_tests: &[(&str, fn())] = &[
+        (
+            "concurrent_server_start_callers_converge_on_one_runtime",
+            concurrent_server_start_callers_converge_on_one_runtime,
+        ),
+        (
+            "server_lifecycle_uses_canonical_dual_endpoint_readiness",
+            server_lifecycle_uses_canonical_dual_endpoint_readiness,
+        ),
+        (
+            "idle_server_exits_after_zero_resource_grace",
+            idle_server_exits_after_zero_resource_grace,
+        ),
+    ];
     let tests: &[(&str, fn(&Daemon))] = &[
         ("ls_on_an_empty_server", ls_on_an_empty_server),
         (
@@ -58,6 +72,15 @@ fn main() {
     ];
 
     let mut failed = 0;
+    for (name, test) in standalone_tests {
+        match std::panic::catch_unwind(*test) {
+            Ok(()) => println!("test {name} ... ok"),
+            Err(_) => {
+                failed += 1;
+                println!("test {name} ... FAILED");
+            }
+        }
+    }
     for (name, test) in tests {
         let daemon = Daemon::start();
         let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| test(&daemon)));
@@ -74,6 +97,164 @@ fn main() {
         eprintln!("{failed} e2e test(s) failed");
         std::process::exit(1);
     }
+}
+
+fn concurrent_server_start_callers_converge_on_one_runtime() {
+    let dir = tempfile::TempDir::new().expect("a temp dir for concurrent server starts");
+    let own = std::env::current_exe().expect("the e2e binary can act as agentty-server");
+    let mut callers = Vec::new();
+    for _ in 0..8 {
+        callers.push(
+            Command::new(env!("CARGO_BIN_EXE_agentty"))
+                .args(["server", "start", "--json"])
+                .env("AGENTTY_CONFIG_DIR", dir.path())
+                .env("AGENTTY_DATA_DIR", dir.path())
+                .env("AGENTTY_SERVER_EXE", &own)
+                .env("AGENTTY_IDLE_SHUTDOWN_GRACE_MS", "30000")
+                .env(DAEMON_ENV, "1")
+                .stdout(Stdio::piped())
+                .stderr(Stdio::piped())
+                .spawn()
+                .expect("spawn concurrent server start caller"),
+        );
+    }
+
+    for caller in callers {
+        let output = caller.wait_with_output().expect("join server start caller");
+        assert!(
+            output.status.success(),
+            "concurrent server start failed: {}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    let control = dir.path().join(if cfg!(windows) {
+        "control.port"
+    } else {
+        "control.sock"
+    });
+    let pane = dir.path().join(if cfg!(windows) {
+        "daemon.port"
+    } else {
+        "daemon.sock"
+    });
+    let hello = ControlHello::host_rpc("concurrent-start-e2e", "concurrent-start-e2e");
+    assert!(ControlClient::connect_at(&control, &hello).is_ok());
+    assert!(PaneClient::at(pane).version().is_ok());
+
+    let output = Command::new(env!("CARGO_BIN_EXE_agentty"))
+        .args(["server", "stop", "--json"])
+        .env("AGENTTY_CONFIG_DIR", dir.path())
+        .env("AGENTTY_DATA_DIR", dir.path())
+        .output()
+        .expect("stop concurrent-start server");
+    assert!(output.status.success());
+}
+
+fn server_lifecycle_uses_canonical_dual_endpoint_readiness() {
+    let dir = tempfile::TempDir::new().expect("a temp dir for the lifecycle server");
+    let own = std::env::current_exe().expect("the e2e binary can act as agentty-server");
+    let mut start = Command::new(env!("CARGO_BIN_EXE_agentty"));
+    let output = start
+        .args(["server", "start", "--json"])
+        .env("AGENTTY_CONFIG_DIR", dir.path())
+        .env("AGENTTY_DATA_DIR", dir.path())
+        .env("AGENTTY_SERVER_EXE", &own)
+        .env(DAEMON_ENV, "1")
+        .output()
+        .expect("agentty server start runs");
+    assert!(
+        output.status.success(),
+        "server start failed: {}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let control = dir.path().join(if cfg!(windows) {
+        "control.port"
+    } else {
+        "control.sock"
+    });
+    let pane = dir.path().join(if cfg!(windows) {
+        "daemon.port"
+    } else {
+        "daemon.sock"
+    });
+    let hello = ControlHello::host_rpc("lifecycle-e2e", "lifecycle-e2e");
+    assert!(
+        ControlClient::connect_at(&control, &hello).is_ok(),
+        "server start must make the Host control endpoint ready"
+    );
+    assert!(
+        PaneClient::at(pane).version().is_ok(),
+        "server start must make the pane endpoint ready"
+    );
+
+    let output = Command::new(env!("CARGO_BIN_EXE_agentty"))
+        .args(["server", "stop", "--json"])
+        .env("AGENTTY_CONFIG_DIR", dir.path())
+        .env("AGENTTY_DATA_DIR", dir.path())
+        .output()
+        .expect("agentty server stop runs");
+    assert!(
+        output.status.success(),
+        "server stop failed: {}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!control.exists(), "graceful stop removes control endpoint");
+    assert!(
+        !dir.path()
+            .join(if cfg!(windows) {
+                "daemon.port"
+            } else {
+                "daemon.sock"
+            })
+            .exists(),
+        "graceful stop removes pane endpoint"
+    );
+}
+
+fn idle_server_exits_after_zero_resource_grace() {
+    let dir = tempfile::TempDir::new().expect("a temp dir for the idle server");
+    let own = std::env::current_exe().expect("the e2e binary can act as agentty-server");
+    let output = Command::new(env!("CARGO_BIN_EXE_agentty"))
+        .args(["server", "start", "--json"])
+        .env("AGENTTY_CONFIG_DIR", dir.path())
+        .env("AGENTTY_DATA_DIR", dir.path())
+        .env("AGENTTY_SERVER_EXE", &own)
+        .env("AGENTTY_IDLE_SHUTDOWN_GRACE_MS", "250")
+        .env(DAEMON_ENV, "1")
+        .output()
+        .expect("agentty server start runs");
+    assert!(
+        output.status.success(),
+        "server start failed: {}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let control = dir.path().join(if cfg!(windows) {
+        "control.port"
+    } else {
+        "control.sock"
+    });
+    let pane = dir.path().join(if cfg!(windows) {
+        "daemon.port"
+    } else {
+        "daemon.sock"
+    });
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while Instant::now() < deadline && (control.exists() || pane.exists()) {
+        std::thread::sleep(Duration::from_millis(25));
+    }
+    assert!(!control.exists(), "idle shutdown removes control endpoint");
+    assert!(!pane.exists(), "idle shutdown removes pane endpoint");
+    assert!(
+        !dir.path().join("daemon.pid").exists(),
+        "idle shutdown removes the pid record"
+    );
 }
 
 struct Daemon {

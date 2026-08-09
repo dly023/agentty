@@ -1,0 +1,55 @@
+version: 1
+updated: 2026-08-02
+domain: systematic_feature_gap_audit
+contracts:
+  - id: AUDIT-SYSTEMATIC-FEATURE-GAPS-01
+    rule: Before further Ashide-derived feature implementation, Agentty maintains a source-grounded capability matrix covering domain models, user flows, interaction surfaces, persistence, failure semantics, local and remote parity, regression history, test evidence, and tracking accuracy.
+  - id: AUDIT-REFERENCE-HISTORY-02
+    rule: Every Ashide-derived capability audit reads the current specification, development tracker, regression tests, and relevant fix commits; rejected historical models and negative cases become explicit Agentty gaps or verified non-applicable decisions.
+  - id: AUDIT-EVIDENCE-STATUS-03
+    rule: A capability is complete only when current Agentty source and verification prove its full observable contract; partial shells, compile success, and adjacent tests cannot support verified status, and unsupported statuses must be downgraded.
+  - id: AUDIT-PREIMPLEMENTATION-RED-04
+    rule: Every actionable implementation gap is promoted through SPEC, tracker, matrix, and a fail-closed static check, then receives an observable-contract test that is run and recorded failing before implementation.
+  - id: AUDIT-EIGHT-PRINCIPLES-GATE-05
+    rule: Immediately before implementation, the engineer recites and checks all eight repository engineering principles; implementation remains blocked while any principle or required predecessor artifact is unsatisfied.
+  - id: AUDIT-NATIVE-EDITOR-CAPABILITY-06
+    rule: Agentty maintains a local and managed-SSH native editor capability matrix for open, edit, save, external-change watch, conflict handling, binary rejection, large-file rejection, reconnect, and mutation rollback. Every row names the canonical Host authority, failure semantics, source, and focused verification; a remote reconnect replaces stale watch ownership without discarding dirty buffers or falling back to local filesystem access.
+  - id: AUDIT-ASHIDE-UI-REFERENCE-07
+    rule: Ashide UI reference work records source-grounded decisions for session navigation, global search, tab hierarchy, terminal-editor balance, status presentation, and density. Each decision is classified as reuse, already present, deliberately not ported, or actionable gap, and visual similarity alone never justifies framework or editor-stack migration.
+required_dimensions:
+  - domain_model
+  - user_flow
+  - interaction_surface
+  - persistence_and_recovery
+  - failure_and_rollback
+  - local_remote_authority
+  - concurrency_and_stale_results
+  - keyboard_and_accessibility
+  - regression_history
+  - tests_and_runtime_evidence
+  - tracker_status_accuracy
+required_reference_sources:
+  - /Users/admin/ashide/docs/SESSION_NAVIGATOR_SPEC.yaml
+  - /Users/admin/ashide/docs/LOCAL_REMOTE_PARITY_SPEC.yaml
+  - /Users/admin/ashide/docs/design/local-remote-parity-tracker.yaml
+  - /Users/admin/ashide/docs/design/init-release-test-matrix.yaml
+  - /Users/admin/ashide/app/src/workspace/view/session_navigator_reducer_tests.rs
+  - /Users/admin/ashide/app/src/workspace/view/session_navigator_scan_tests.rs
+  - /Users/admin/ashide/app/src/workspace/view/vertical_tabs_tests.rs
+  - relevant Ashide fix commits
+required_outputs:
+  - docs/quality/ASHIDE_AGENTTY_FEATURE_GAP_AUDIT.yaml
+  - docs/quality/NATIVE_EDITOR_CAPABILITY_AUDIT.yaml
+  - docs/quality/ASHIDE_AGENTTY_UI_GAP_REVIEW.yaml
+  - one stable gap id per independently actionable capability
+  - explicit present_partial_missing_non_applicable status
+  - exact Agentty and Ashide evidence paths
+  - rejected historical model and required negative cases
+  - target spec matrix check and preimplementation test ids
+forbidden:
+  - implementing_before_audit_chain
+  - treating_visual_shell_as_complete_capability
+  - relying_on_conversation_memory_for_product_failures
+  - verified_status_without_current_end_to_end_evidence
+  - combining_independent_gaps_into_one_unverifiable_item
+status: verified

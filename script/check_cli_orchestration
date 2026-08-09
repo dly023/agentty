@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+rg -q 'CLI-AGENT-WAIT-01' docs/specs/CLI_ORCHESTRATION_SPEC.yaml
+rg -q 'Wait\(WaitArgs\)' crates/agentty-cli/src/cli.rs
+rg -q 'ControlRequest::AgentStates' crates/agentty-cli/src/commands.rs
+rg -q 'wait_timeout_uses_exit_code_124' crates/agentty-cli/src/commands.rs
+rg -q 'wait_changed_refuses_the_state_it_arrived_in' crates/agentty-cli/src/commands.rs
+rg -q 'wait_rechecks_liveness_for_a_reporting_agent' crates/agentty-cli/src/commands.rs
+rg -q 'pane_is_live' crates/agentty-cli/src/commands.rs
+rg -q 'pub changed: bool' crates/agentty-cli/src/cli.rs
+if rg -n 'capture\(|screen::|ControlEvent' crates/agentty-cli/src/commands.rs | rg 'fn wait|wait_' -C 3; then
+  echo '[cli-orchestration] wait must use aggregate state, not screen scraping or events' >&2
+  exit 1
+fi
+echo 'cli orchestration checks passed'

@@ -97,9 +97,16 @@ pub trait AssetFetcher: Send + Sync {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BinaryOrigin {
+    Bundled,
+    Downloaded,
+}
+
 pub struct LoadedBinary {
     pub bytes: Vec<u8>,
     pub origin: String,
+    pub origin_kind: BinaryOrigin,
 }
 
 impl std::fmt::Debug for LoadedBinary {
@@ -107,6 +114,7 @@ impl std::fmt::Debug for LoadedBinary {
         f.debug_struct("LoadedBinary")
             .field("bytes", &format_args!("{} bytes", self.bytes.len()))
             .field("origin", &self.origin)
+            .field("origin_kind", &self.origin_kind)
             .finish()
     }
 }
@@ -128,13 +136,22 @@ pub trait ServerBinarySource: Send + Sync {
 pub struct BundledOrRelease<'a> {
     pub fetch: &'a dyn AssetFetcher,
     pub bundled: Option<wsl::BundledServerBinary>,
+    /// An explicit `AGENTTY_BUNDLED_SERVER_DIR` override is a promise: if the
+    /// asset is not there, report `MissingBundled` instead of silently falling
+    /// back to the network. The implicit exe-relative discovery is only a
+    /// hint — a build without bundled servers must still reach the release.
+    bundled_strict: bool,
 }
 
 impl<'a> BundledOrRelease<'a> {
     pub fn from_env(fetch: &'a dyn AssetFetcher) -> Self {
+        let strict = std::env::var_os(wsl::BUNDLED_DIR_ENV)
+            .filter(|v| !v.is_empty())
+            .is_some();
         Self {
             fetch,
-            bundled: wsl::BundledServerBinary::from_env_only(),
+            bundled: Some(wsl::BundledServerBinary::discover()),
+            bundled_strict: strict,
         }
     }
 }
@@ -151,8 +168,10 @@ impl ServerBinarySource for BundledOrRelease<'_> {
         on_progress: &dyn Fn(u64, Option<u64>),
     ) -> Result<LoadedBinary, InstallError> {
         match &self.bundled {
-            Some(bundled) => bundled.load(version, asset),
-            None => ReleaseDownload { fetch: self.fetch }.load_with_progress(
+            Some(bundled) if self.bundled_strict || bundled.locate(asset).is_some() => {
+                bundled.load(version, asset)
+            }
+            _ => ReleaseDownload { fetch: self.fetch }.load_with_progress(
                 version,
                 asset,
                 on_progress,
@@ -203,6 +222,7 @@ impl ServerBinarySource for ReleaseDownload<'_> {
         Ok(LoadedBinary {
             bytes,
             origin: asset_url,
+            origin_kind: BinaryOrigin::Downloaded,
         })
     }
 }
@@ -761,10 +781,11 @@ impl<'a> Installer<'a> {
         let LoadedBinary {
             bytes,
             origin: asset_url,
+            origin_kind,
         } = self.load_binary(asset)?;
         let asset_origin = asset_url.clone();
 
-        let confirmed = if self.is_first_install(paths) {
+        let confirmed = if self.is_first_install(paths) && origin_kind == BinaryOrigin::Downloaded {
             let request = InstallRequest {
                 host: self.host.clone(),
                 version: self.version.clone(),

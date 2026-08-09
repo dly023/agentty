@@ -10,6 +10,57 @@ pub enum SessionAxis {
     Vertical,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LiveContainerBinding {
+    #[serde(default = "new_live_container_id")]
+    pub container_id: String,
+    #[serde(default)]
+    pub agent: Option<crate::core::cli_agent::CLIAgent>,
+    #[serde(default, rename = "agent_session_id")]
+    pub session_id: Option<String>,
+    #[serde(default, rename = "agent_launch_argv")]
+    pub launch_argv: Vec<String>,
+}
+
+fn new_live_container_id() -> String {
+    uuid::Uuid::new_v4().to_string()
+}
+
+impl LiveContainerBinding {
+    pub fn new(
+        agent: Option<crate::core::cli_agent::CLIAgent>,
+        session_id: Option<String>,
+        launch_argv: Vec<String>,
+    ) -> Self {
+        Self {
+            container_id: new_live_container_id(),
+            agent,
+            session_id,
+            launch_argv,
+        }
+    }
+
+    pub fn restored(
+        container_id: String,
+        agent: Option<crate::core::cli_agent::CLIAgent>,
+        session_id: Option<String>,
+        launch_argv: Vec<String>,
+    ) -> Self {
+        Self {
+            container_id,
+            agent,
+            session_id,
+            launch_argv,
+        }
+    }
+}
+
+impl Default for LiveContainerBinding {
+    fn default() -> Self {
+        Self::new(None, None, Vec::new())
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SessionPane {
     Leaf {
@@ -19,12 +70,8 @@ pub enum SessionPane {
         pane_id: Option<u64>,
         #[serde(default)]
         ssh_spec: Option<Box<NativeSshSpec>>,
-        #[serde(default)]
-        agent: Option<crate::core::cli_agent::CLIAgent>,
-        #[serde(default)]
-        agent_session_id: Option<String>,
-        #[serde(default)]
-        agent_launch_argv: Option<Vec<String>>,
+        #[serde(flatten)]
+        live_binding: LiveContainerBinding,
     },
     Split {
         axis: SessionAxis,
@@ -160,6 +207,16 @@ impl RemoteTarget {
             | RemoteTarget::Direct { .. } => true,
             RemoteTarget::Wsl { .. } | RemoteTarget::LocalStdio { .. } => false,
         }
+    }
+
+    pub fn can_restart_server(&self) -> bool {
+        matches!(
+            self,
+            RemoteTarget::Profile { .. }
+                | RemoteTarget::Alias { .. }
+                | RemoteTarget::Direct { .. }
+                | RemoteTarget::Wsl { .. }
+        )
     }
 
     pub fn host_id(&self) -> crate::host::HostId {
@@ -833,7 +890,7 @@ mod tests {
     }
 
     #[test]
-    fn only_ssh_machines_have_a_server_to_restart() {
+    fn wsl_is_restartable_without_becoming_an_ssh_target() {
         assert!(
             RemoteTarget::Profile {
                 id: uuid::Uuid::nil()
@@ -847,6 +904,7 @@ mod tests {
             .is_ssh()
         );
         assert!(RemoteTarget::direct("me", "box.local", 22).is_ssh());
+        assert!(RemoteTarget::direct("me", "box.local", 22).can_restart_server());
         assert!(
             !RemoteTarget::Wsl {
                 distro: "Ubuntu".into()
@@ -855,12 +913,26 @@ mod tests {
             "a distribution's server is started by this client"
         );
         assert!(
+            RemoteTarget::Wsl {
+                distro: "Ubuntu".into()
+            }
+            .can_restart_server(),
+            "a WSL distribution has a managed server lifecycle without being SSH"
+        );
+        assert!(
             !RemoteTarget::LocalStdio {
                 program: "agentty-server".into(),
                 args: vec!["--stdio".into()],
             }
             .is_ssh(),
             "a stdio machine is a child process per connection"
+        );
+        assert!(
+            !RemoteTarget::LocalStdio {
+                program: "agentty-server".into(),
+                args: vec!["--stdio".into()],
+            }
+            .can_restart_server()
         );
     }
 
@@ -1036,5 +1108,31 @@ mod tests {
             views: vec![open_one, detached],
         };
         assert_eq!(all.workspace_to_restore(), Some(open_id));
+    }
+}
+
+#[cfg(test)]
+mod live_container_binding_tests {
+    use super::*;
+
+    #[test]
+    fn restored_live_binding_survives_placeholder_and_restart() {
+        let binding = LiveContainerBinding::new(
+            Some(crate::core::cli_agent::CLIAgent::Codex),
+            Some("session-1".into()),
+            vec!["codex".into(), "resume".into(), "session-1".into()],
+        );
+        let pane = SessionPane::Leaf {
+            cwd: None,
+            pane_id: Some(7),
+            ssh_spec: None,
+            live_binding: binding.clone(),
+        };
+        let encoded = serde_json::to_string(&pane).unwrap();
+        let decoded: SessionPane = serde_json::from_str(&encoded).unwrap();
+        let SessionPane::Leaf { live_binding, .. } = decoded else {
+            panic!("leaf")
+        };
+        assert_eq!(live_binding, binding);
     }
 }

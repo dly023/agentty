@@ -576,6 +576,70 @@ fn a_release_missing_our_asset_aborts() {
 }
 
 #[test]
+fn a_bundled_first_install_does_not_prompt_for_download_approval() {
+    let dir = std::env::temp_dir().join(format!("agentty-bundled-install-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join(ASSET_X86_64), SERVER_BYTES).unwrap();
+
+    let remote = FakeRemote::new();
+    let source = wsl::BundledServerBinary::in_dirs(vec![dir.clone()]);
+    let user = FakeUser::declining();
+    let report = Installer::with_source(&remote, &source, &user, "me@fresh-box:22")
+        .with_version(VERSION)
+        .with_dialect(CONTROL, PROTOCOL)
+        .run()
+        .unwrap();
+
+    assert!(report.installed);
+    assert!(!report.confirmed, "bundled bytes are already user-shipped");
+    assert!(
+        user.asked().is_empty(),
+        "only network downloads need explicit approval"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn replacing_prefers_a_matching_bundled_helper() {
+    let dir = std::env::temp_dir().join(format!("agentty-bundled-replace-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join(ASSET_X86_64), SERVER_BYTES).unwrap();
+
+    let remote = FakeRemote::new().with_previous_install().speaking(
+        BINARY,
+        RemoteProtocol {
+            control: CONTROL - 1,
+            ..ours()
+        },
+    );
+    let release = FakeRelease::new();
+    let source = BundledOrRelease {
+        fetch: &release,
+        bundled: Some(wsl::BundledServerBinary::in_dirs(vec![dir.clone()])),
+        bundled_strict: false,
+    };
+    let user = FakeUser::declining();
+
+    Installer::with_source(&remote, &source, &user, "me@skew-box:22")
+        .with_version(VERSION)
+        .with_dialect(CONTROL, PROTOCOL)
+        .replace()
+        .expect("matching bundled bytes replace the stale helper");
+
+    assert!(release.fetched().is_empty(), "bundle must win over network");
+    assert!(
+        remote
+            .writes()
+            .iter()
+            .any(|entry| matches!(entry, Journal::Put { .. })),
+        "replacement must publish the bundled helper"
+    );
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
 fn the_confirmation_states_path_size_and_origin() {
     let remote = FakeRemote::new();
     let release = FakeRelease::new();
@@ -982,6 +1046,7 @@ fn without_a_bundle_the_source_is_the_plain_download() {
     let source = BundledOrRelease {
         fetch: &release,
         bundled: None,
+        bundled_strict: false,
     };
     let loaded = source.load("26.7.5", ASSET_X86_64).expect("downloads");
     assert_eq!(loaded.bytes, SERVER_BYTES);
@@ -1003,6 +1068,7 @@ fn a_bundle_is_used_instead_of_downloading() {
     let source = BundledOrRelease {
         fetch: &release,
         bundled: Some(wsl::BundledServerBinary::in_dirs(vec![dir.clone()])),
+        bundled_strict: false,
     };
     let loaded = source.load("26.7.5", ASSET_X86_64).expect("loads locally");
     assert_eq!(loaded.bytes, b"\x7fELF local build");
@@ -1019,7 +1085,29 @@ fn a_bundle_is_used_instead_of_downloading() {
 }
 
 #[test]
-fn a_bundle_that_lacks_the_asset_does_not_fall_back_to_the_network() {
+fn an_implicit_bundle_that_lacks_the_asset_falls_back_to_the_release() {
+    let dir = std::env::temp_dir().join(format!("agentty-bundle-hint-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let release = FakeRelease::new();
+    let source = BundledOrRelease {
+        fetch: &release,
+        bundled: Some(wsl::BundledServerBinary::in_dirs(vec![dir.clone()])),
+        bundled_strict: false,
+    };
+    let loaded = source.load("26.7.5", ASSET_X86_64).expect("downloads");
+    assert_eq!(loaded.bytes, SERVER_BYTES);
+    assert_eq!(
+        release.fetched().len(),
+        2,
+        "a hinted-but-empty bundle is not a promise; the release path serves the asset"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn an_explicit_bundle_that_lacks_the_asset_does_not_fall_back_to_the_network() {
     let dir = std::env::temp_dir().join(format!("agentty-bundle-empty-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
@@ -1028,6 +1116,7 @@ fn a_bundle_that_lacks_the_asset_does_not_fall_back_to_the_network() {
     let source = BundledOrRelease {
         fetch: &release,
         bundled: Some(wsl::BundledServerBinary::in_dirs(vec![dir.clone()])),
+        bundled_strict: true,
     };
     let err = source.load("26.7.5", ASSET_X86_64).expect_err("no binary");
     assert!(matches!(err, InstallError::MissingBundled { .. }), "{err}");

@@ -138,6 +138,7 @@ pub mod mock {
                 build: "mock".into(),
                 separator: '\\',
                 home: "C:\\Users\\mock".into(),
+                store_roots: None,
                 features: vec![feature::CONTROL.into(), feature::MACHINE_TREE.into()],
                 instance: "mock-instance".into(),
             })

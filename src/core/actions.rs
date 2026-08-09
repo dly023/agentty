@@ -87,6 +87,8 @@ actions!(
         ShowSshForwards,
         ToggleCodePanel,
         ToggleComposer,
+        CompleteFocusedSurface,
+        CompleteFocusedSurfaceBack,
         EditorSave,
         OpenSshProfiles,
         RestartSshSession,

@@ -1,6 +1,7 @@
 pub mod activity;
 pub mod adapter;
 pub mod completion;
+pub mod delete;
 pub mod discovery;
 pub mod navigator;
 pub mod operation;
@@ -9,6 +10,7 @@ pub mod provider;
 pub mod resume;
 pub mod service;
 pub mod stores;
+pub mod user_state;
 
 pub use activity::{
     ActivityAppend, ActivityKind, ActivityStore, ActivityTrust, AgentActivityEvent,
@@ -20,19 +22,29 @@ pub use completion::{
     CompletionReducer, CompletionRequest, CompletionSourceKind, ReplacementRange, complete,
     replacement_range,
 };
+pub use delete::{
+    SessionDeleteSource, apply_session_delete_source, apply_session_delete_transaction,
+    apply_session_user_state_delete, plan_close_and_delete_source, plan_session_delete_source,
+};
 pub use discovery::{
     AgentSessionKey, AgentSessionRecord, AuthorityKind, DiscoveryCommit, DiscoveryOutcome,
     DiscoveryReducer, OperationId, ScanGeneration,
 };
 pub use navigator::{
-    LiveCarrier, LiveSession, NavigatorRow, NavigatorRowId, RestoreOutcome, RowLifecycle,
-    SessionIdentity, SessionNavigator,
+    ExecutionBadge, LiveCarrier, LiveExecutionState, LiveSession, NavigatorRow, NavigatorRowId,
+    RestoreOutcome, RowLifecycle, SessionIdentity, SessionNavigator, SessionReorderUnit,
+    execution_badge, execution_message, session_display_title,
 };
 pub use operation::{BoundedBatch, OperationLimits, OperationRegistry};
-pub use provider::{AgentSessionProvider, ProviderId, ProviderRegistry, RegistryError};
-pub use resume::{ResumeInvocation, shell_line};
+pub use parse::first_user_title_candidate;
+pub use provider::{
+    PERSISTED_PROVIDER_DESCRIPTORS, ProviderDescriptor, ProviderId, ProviderScanner,
+    descriptor_for_agent, descriptor_for_id,
+};
+pub use resume::{ResumeInvocation, shell_command, shell_line};
 pub use service::{DiscoveryRequest, discover};
 pub use stores::AgentStoreRoots;
+pub use user_state::{AliasError, SessionUserStateStore};
 
 pub const HELPER_PROTOCOL_VERSION: u32 = 2;
 

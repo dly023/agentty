@@ -9,13 +9,50 @@ use crate::ui::host_registry::HostRegistry;
 use gpui::prelude::*;
 use gpui::{
     AnyElement, App, Context, Entity, ExternalPaths, FocusHandle, KeyDownEvent, MouseButton,
-    PromptLevel, SharedString, Subscription, Window, div, px,
+    PromptLevel, SharedString, Subscription, Window, div, linear_color_stop, linear_gradient, px,
 };
 use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::menu::{ContextMenuExt as _, PopupMenu, PopupMenuItem};
 use gpui_component::{ActiveTheme as _, Icon, IconName, Sizable as _, h_flex, v_flex};
 
 const INDENT: f32 = 14.0;
+const TREE_TEXT_FADE_WIDTH: f32 = 18.0;
+
+/// Trailing overflow fade for file-tree labels (matches row fill Surfaces, no ellipsis).
+fn tree_row_text_fade(selected: bool, cx: &App) -> gpui::Div {
+    // Same ladder as render_tree_row fills (Surfaces.popover).
+    let sf = &cx.global::<crate::ui::presets::Surfaces>().popover;
+    let solid: gpui::Hsla = if selected {
+        gpui::rgb(sf.selected).into()
+    } else {
+        gpui::rgb(sf.base).into()
+    };
+    let hover: gpui::Hsla = gpui::rgb(sf.hover).into();
+    let mut from = solid;
+    from.a = 0.;
+    let mut hover_from = hover;
+    hover_from.a = 0.;
+    div()
+        .absolute()
+        .top_0()
+        .right_0()
+        .bottom_0()
+        .w(px(TREE_TEXT_FADE_WIDTH))
+        .bg(linear_gradient(
+            90.,
+            linear_color_stop(from, 0.),
+            linear_color_stop(solid, 1.),
+        ))
+        .when(!selected, |fade| {
+            fade.group_hover("file-tree-row", move |fade| {
+                fade.bg(linear_gradient(
+                    90.,
+                    linear_color_stop(hover_from, 0.),
+                    linear_color_stop(hover, 1.),
+                ))
+            })
+        })
+}
 
 const REFRESH_DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(200);
 
@@ -1200,7 +1237,7 @@ impl AgenttyApp {
             .min_h_0()
             .overflow_y_scroll()
             .track_scroll(&self.right_panel.tree_scroll)
-            .px_1()
+            .px(px(crate::ui::app::panel_content_gutter()))
             .pb_1()
             .track_focus(&self.file_tree.focus_handle)
             .on_key_down(cx.listener(|this, ev: &KeyDownEvent, window, cx| {
@@ -1256,21 +1293,25 @@ impl AgenttyApp {
             div()
                 .flex_1()
                 .min_w_0()
-                .text_ellipsis()
+                .relative()
+                .overflow_hidden()
+                .whitespace_nowrap()
                 .text_sm()
                 .when(row.entry.ignored, |d| {
                     d.italic().text_color(muted.opacity(0.7))
                 })
                 .when(row.is_root, |d| d.font_weight(gpui::FontWeight::MEDIUM))
                 .child(SharedString::from(row.entry.name.clone()))
+                .child(tree_row_text_fade(selected, cx))
                 .into_any_element()
         };
 
         let row_el = h_flex()
             .id(SharedString::from(format!("tree-{}", path.display())))
+            .group("file-tree-row")
             .items_center()
             .gap_1()
-            .pl(px(6.0 + row.depth as f32 * INDENT))
+            .pl(px(row.depth as f32 * INDENT))
             .pr_1()
             .py_1()
             .rounded(cx.theme().radius)
@@ -1342,7 +1383,7 @@ impl AgenttyApp {
                     h_flex()
                         .items_center()
                         .gap_1()
-                        .pl(px(6.0 + (row.depth + 1) as f32 * INDENT))
+                        .pl(px((row.depth + 1) as f32 * INDENT))
                         .pr_1()
                         .py_0p5()
                         .child(Input::new(&input).xsmall())
@@ -1480,7 +1521,9 @@ impl AgenttyApp {
                 }),
             );
 
-        menu = menu.separator().item(dotfiles_menu_item(show_hidden, app));
+        menu = menu
+            .separator()
+            .item(dotfiles_menu_item(show_hidden, app, cx));
 
         if !is_root {
             menu = menu.separator().item(
@@ -1503,12 +1546,16 @@ impl AgenttyApp {
     }
 }
 
-fn dotfiles_menu_item(show_hidden: bool, app: &gpui::WeakEntity<AgenttyApp>) -> PopupMenuItem {
+fn dotfiles_menu_item(
+    show_hidden: bool,
+    app: &gpui::WeakEntity<AgenttyApp>,
+    cx: &gpui::App,
+) -> PopupMenuItem {
     let app = app.clone();
     PopupMenuItem::new(if show_hidden {
-        "Hide Dotfiles"
+        crate::core::i18n::current(cx, "file_tree.hide_dotfiles")
     } else {
-        "Show Dotfiles"
+        crate::core::i18n::current(cx, "file_tree.show_dotfiles")
     })
     .on_click(move |_, _window, cx| {
         let _ = app.update(cx, |this, cx| {

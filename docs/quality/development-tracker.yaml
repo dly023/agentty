@@ -1,9 +1,1056 @@
 version: 1
-updated: 2026-08-01
+updated: 2026-08-09
 policy:
   source_of_truth: docs/quality/development-tracker.yaml
   allowed_statuses: [planned, specified, in_progress, blocked, implemented, verified, removed]
   required_flow: [spec, tracker, matrix, check, test, implementation, verify, delete_old_path]
+feedback_policy:
+  purpose: Persist actionable user product, interaction, architecture, and quality feedback across attention and session switches.
+  allowed_statuses: [captured, triaged, promoted, implemented, verified, declined, superseded]
+  required_fields: [id, summary, status, area, decision, next_action]
+  promotion_rule: Before implementation, promote the feedback into a stable spec contract, milestone item, traceability row, static check, and failing focused test as applicable.
+  retention_rule: Never delete feedback silently; declined or superseded entries retain the reason and replacement ID when one exists.
+feedback:
+  - id: FEEDBACK-20260809-006
+    summary: Absorb the useful tty7 feature set except distribution, in-app update channels, and system proxy behavior; begin with remote and WSL parity.
+    status: promoted
+    priority: high
+    area: tty7_non_distribution_feature_absorption
+    decision: Implement each capability through Agentty's existing Environment, Host, route, configuration, and UI primitives rather than merging tty7 wholesale. Distribution, Stable/Nightly update behavior, and system proxy behavior are explicitly excluded. The first closed slice is WSL Restart Server parity through the canonical typed route.
+    evidence:
+      - user direction 2026-08-09: "分发不学。其他实现一下"
+      - source audit: restart_wsl_daemon already exists while router::restart_server rejects every non-SSH target
+    promoted_to:
+      spec: WSL-SERVER-LIFECYCLE-PARITY-15
+      traceability: WSL-SERVER-LIFECYCLE-PARITY-086
+      milestone: M0.5-REMOTE-HELPER/HELPER-014
+    next_action: Complete the WSL restart route red test, implementation, focused verification, and quick presubmit before advancing to WSL completion and remote image paste.
+  - id: FEEDBACK-20260809-005
+    summary: The installed v7 client must completely repair a v6 remote helper mismatch; every mismatch prompt and persistent notice must invoke Replace Server rather than the restart-only path.
+    status: verified
+    priority: high
+    area: remote_helper_mismatch_replace_route
+    decision: Keep explicit user consent, but collapse all known dialect-mismatch actions onto the canonical ReplaceServer route and label. Never clear the pending mismatch before replacement succeeds; a failed replacement keeps the same retryable Replace Server affordance.
+    evidence:
+      - user direction 2026-08-09: "把问题彻底修复"
+      - installed client reports control v7 while dnyx226 runs agentty-server-c6p5; package contains byte-identical c7p5 x86_64/aarch64 helpers
+      - code audit found the modal and persistent notice still labeled Restart Server and called restart_mismatched_remote_server, bypassing bundled-first replacement
+      - 2026-08-09 every_remote_mismatch_action_routes_to_replace_server proves canonical ReplaceServer action and localized label; all focused mismatch tests passed
+      - 2026-08-09 live_replace_remote_helper_full_chain replaced dnyx226 c6p5 with the packaged c7p5 bytes, then live_open_remote_link_full_chain passed
+      - 2026-08-09 presubmit quick and full passed; rebuilt DMG sha256 ac51f060142beb7fc48e307bc10b9a039dea302a80e00cd696cc741af10ae203; repaired app installed and running control v7
+    promoted_to:
+      spec: HELPER-VERSION-MISMATCH-NOTICE-13
+      traceability: HELPER-VERSION-MISMATCH-NOTICE-082
+      milestone: M0.5-REMOTE-HELPER/HELPER-013
+    next_action: None — canonical replacement, live remote repair, full gates, rebuilt package, and installed runtime are verified.
+  - id: FEEDBACK-20260809-004
+    summary: The bottom Agent Activity Bar should be the compact handle that collapses and restores the Composer instead of leaving a large prompt surface that can be shown but not directly put away.
+    status: promoted
+    priority: high
+    area: composer_activity_bar_toggle
+    decision: Keep the Activity Bar visible and make it toggle a transient, pane-scoped Composer expansion override. Collapsing preserves the draft and focuses the terminal; expanding restores and focuses the Composer. Do not mutate the persisted auto / always / off preference from this direct manipulation.
+    evidence:
+      - user direction 2026-08-09: "为啥那个 composer 能放不能收？底下那一栏没啥用吧，不能用来放收纳吗"
+      - user screenshot 2026-08-09: expanded Composer sits directly above the otherwise non-interactive "暂无 Agent 活动" bar
+    promoted_to:
+      spec: INPUT-COMPOSER-ACTIVITY-BAR-07
+      traceability: INPUT-COMPOSER-ACTIVITY-BAR-085
+      milestone: M2-COMPOSER/COMPOSER-003
+    next_action: Add the failing pane-scoped toggle test, wire the Activity Bar as the expand/collapse handle, then verify the installed app interaction.
+  - id: FEEDBACK-20260809-003
+    summary: Add tty7-#372-class missing-translation fail-closed while keeping yaml catalogs — exhaustive non-empty values and no silent cross-locale gap for shipped keys.
+    status: implemented
+    priority: medium
+    area: i18n_exhaustive_translation
+    decision: Keep assets/i18n/*.yaml; strengthen I18N-EXHAUSTIVE-TRANSLATION-06 via check_i18n + build.rs compile validation + unit tests (identical key sets, no empty/duplicate values, preferred locale self-sufficient). Do not migrate to per-language Rust match modules.
+    evidence:
+      - user direction 2026-08-09: agree yaml stays; only add 漏译防呆
+      - 2026-08-09 check_i18n parity/empty/dup gate + i18n_exhaustive_contract.sh + build.rs validate_i18n_catalogs + i18n::tests green
+    promoted_to:
+      spec: I18N-EXHAUSTIVE-TRANSLATION-06
+      traceability: I18N-EXHAUSTIVE-079
+    next_action: None — presubmit quick; adding ja-JP later is one new yaml file + Locale wiring.
+  - id: FEEDBACK-20260809-002
+    summary: Session titles should prefer a meaningful agent-authored title, otherwise the first real user message; Codex row 019fdcef-a254-72e3-8b8f-32c0a443e689 stuck on 「Agent 会话」 despite a real first user turn.
+    status: implemented
+    priority: high
+    area: session_title_precedence_codex_user_message
+    decision: Keep SESSION-TITLE-PRECEDENCE-11 — meaningful provider title wins, else first real User message, else localized fallback. Fix Codex parser to read response_item role=user when event_msg.user_message is absent, and skip AGENTS.md / environment_context injections.
+    evidence:
+      - user direction 2026-08-09: "如果agent自己能解决标题，那我就读取标题，否则以用户消息为准"
+      - session 019fdcef… has no provider title; history.jsonl text is the real user prompt; transcript has 0 event_msg.user_message and first response_item user is AGENTS.md injection
+      - 2026-08-09 codex_response_item_user_message_names_session_after_skipping_injections + parse suite green; real rollout resolves to coharu prompt; presubmit quick passed
+    promoted_to:
+      spec: SESSION-TITLE-PRECEDENCE-11
+      traceability: SESSION-TITLE-PRECEDENCE-039
+    next_action: Rebuild/relaunch app and refresh Navigator so 019fdcef… shows the first user message instead of 「Agent 会话」.
+  - id: FEEDBACK-20260809-001
+    summary: Remote SSH workspace fails with control connection lost / unknown variant `grok` when local WIP client talks to an old remote agentty-server that lacks the Grok CLIAgent enum.
+    status: verified
+    priority: high
+    area: remote_helper_dialect_skew
+    decision: Advance the control dialect whenever the typed request vocabulary changes; negotiate before requests, fail closed at handshake, and expose only the canonical Replace Server action in the affected machine group. Replacement uses the verified bundled-musl-first installer and never falls back to local authority or an old helper.
+    evidence:
+      - user report 2026-08-09 screenshot: 无法连接 / control connection lost (request 9) / 未连接 — 输入无效
+      - remote log: unknown variant `grok`, expected one of claude,codex,droid,open_code,copilot,pi,cursor,antigravity,omp
+      - remote binary dated 2026-08-05; local WIP CLIAgent includes Grok
+      - 2026-08-09 zigbuild musl + install to /root/.local/share/agentty/bin/agentty-server-c6p5 and restart daemon
+      - 2026-08-09 live dnyx226 c6p5 → c7p5 replacement used packaged x86_64 helper sha256 7e930ee6ef69bab97bbc095c3c96726f391f7d7919f634f0a600e2fd9600a8c1; post-replacement control link passed
+    promoted_to:
+      spec: REMOTE-HELPER-DIALECT-SKEW-14
+      traceability: REMOTE-HELPER-DIALECT-SKEW-084
+      milestone: M0.5-REMOTE-HELPER/HELPER-013
+    next_action: None — M1 verified by focused tests, presubmit full, installed app smoke test, and live dnyx226 replacement.
+  - id: FEEDBACK-20260807-007
+    summary: After deleting a session, remaining stock sessions' relative order appears to reshuffle; new insertions are fine, but survivors should keep relative positions.
+    status: implemented
+    priority: high
+    area: session_order_on_delete
+    decision: Ashide-aligned — position only on FirstObserved and Reorder; commit_delete and follow-on refresh must preserve survivor relative order; reuse first-seen insertion_order/display_order on RowId reinsert; never renumber survivors.
+    evidence:
+      - user direction on 2026-08-07: "我删除会话后，会话的排序好像有变动。随着会话情况更新，有新增我可以理解，但存量会话的相对位置不适合变动？ashide是怎么处理的？"
+      - Ashide reducer: display_order only Refresh.FirstObserved + Reorder; DeleteCommitted touches identity/lifecycle only
+      - 2026-08-07 upsert entry().or_insert + display_order_by_row; delete_preserves_survivor_relative_order + refresh_reinsert_preserves_first_observed_insertion_order green
+    promoted_to:
+      spec: SESSION-STABLE-REORDER-17
+      traceability: SESSION-STABLE-REORDER-045
+    next_action: Confirm delete no longer reshuffles survivors after relaunch.
+  - id: FEEDBACK-20260807-006
+    summary: Live-row Close and Delete still feels disabled — brand-new sessions without a provider source_path error or no-op after confirm.
+    status: implemented
+    priority: high
+    area: session_close_and_delete
+    decision: Keep menu entry. When plan has no provider backing source, close carrier, tombstone, and clear user state without a false delete-failed toast; real source paths keep the Host delete transaction.
+    evidence:
+      - user direction on 2026-08-07: "会话的「退出并删除」菜单好像还没启用？"
+      - close_and_delete_live_session_row notified delete_failed on "session has no backing source" after closing
+      - 2026-08-07 plan_close_and_delete_source + apply_session_user_state_delete path
+      - 2026-08-07 automated: close_and_delete_handles_missing_provider_source + live_session_menu_exposes_close_and_delete green; agentty-app rebuilt
+    promoted_to:
+      spec: SESSION-PERMANENT-DELETE-TRANSACTION-09
+      traceability: SESSION-PERMANENT-DELETE-037
+    next_action: Interactive relaunch confirm on a brand-new live Codex row (automated gate passed).
+  - id: FEEDBACK-20260807-005
+    summary: Just-created Codex (and similar) sessions should live-update the Navigator display title from the first user message when the agent has not set a title/alias yet.
+    status: implemented
+    priority: high
+    area: session_live_first_user_title
+    decision: On first successful AgentPrompt delivery, stamp a once-only live_first_user_title via first_user_title_candidate and project it as LiveSession.title; never publish tab/OSC/product placeholders; later prompts and aliases do not overwrite.
+    evidence:
+      - user direction on 2026-08-07: "我刚创建 codex 会话，输入第一条 user 消息，如果 agent 自己没更新别名，那么我就应该把第一条user消息实时更新为会话别名"
+      - 2026-08-07 stamp_live_first_user_title + composer submit wiring
+      - 2026-08-07 automated: note_first_user_prompt_stamps_once + live_session_rows_omit_tab_and_terminal_titles green
+    promoted_to:
+      spec: SESSION-TITLE-PRECEDENCE-11
+      traceability: SESSION-TITLE-PRECEDENCE-039
+    next_action: Interactive relaunch confirm first composer prompt renames a new Codex row (automated gate passed).
+  - id: FEEDBACK-20260807-004
+    summary: Alias edit should default-select the existing display name so one keystroke clears it for replacement.
+    status: implemented
+    priority: medium
+    area: session_alias_edit_select
+    decision: begin_session_alias_edit seeds current display_title and dispatches SelectAll on the focused Input.
+    evidence:
+      - user direction on 2026-08-07: "我设置别名的时候，应该默认选择旧名称，方便我一键删除吧"
+      - 2026-08-07 SelectAll after focus in begin_session_alias_edit
+      - 2026-08-07 automated: begin_session_alias_edit_selects_existing_display_title green
+    promoted_to:
+      spec: SESSION-ALIAS-BUSINESS-MODEL-10
+      traceability: SESSION-ALIAS-BUSINESS-MODEL-038
+    next_action: Interactive relaunch confirm Set Alias selects the old name (automated gate passed).
+  - id: FEEDBACK-20260807-003
+    summary: After smart composer landed, autocomplete should be re-architected to Ashide editor-attached completion and wired into the docked composer surface.
+    status: implemented
+    priority: high
+    area: completion_composer_surface
+    decision: Attach one CompletionSurface to the focused editor (composer Input when focused, else terminal cmd). Accept mutates that buffer only; no auto-submit/PTY write. Keep signature enrichment in terminal::completion for this slice; do not yet force GUI through CompleteAgentInput RPC only.
+    evidence:
+      - user direction on 2026-08-07: "自动补全的实现应该可以梳理。对标 ashide。并且架构适配增加了 composer 的界面"
+      - Ashide warp_completer + Input overlays; Agentty terminal-only CompletionSession today
+      - INPUT-COMPLETION-EDITOR-SURFACE-06 / CompleteFocusedSurface Tab routing
+    promoted_to:
+      spec: INPUT-COMPLETION-EDITOR-SURFACE-06
+      traceability: INPUT-COMPLETION-SURFACE-083
+    next_action: None — focused surface tests and check_completion_surface pass.
+  - id: FEEDBACK-20260807-002
+    summary: Design question — default always-visible ~2-line bottom input while terminal remains typeable; seek product judgment before rich-input implementation.
+    status: implemented
+    priority: high
+    area: rich_input_default_layout
+    decision: Ship persisted composer_mode auto|always|off (default auto). Auto docks ~2 lines for CLI-agent panes; Always for every pane; Off closed. ToggleComposer (⌘L) cycles and saves. Terminal input stays available.
+    evidence:
+      - user confirmation on 2026-08-07: "你来定吧…智能些，并且存一下用户偏好，可以自由切换"
+      - Ashide auto_toggle_rich_input / auto_open on CLI agent start
+      - Kooky on-demand ⌘L composer; Agentty INPUT-COMPOSER-SMART-PREFERENCE-05
+    promoted_to:
+      spec: INPUT-COMPOSER-SMART-PREFERENCE-05
+      traceability: INPUT-COMPOSER-SMART-079
+    next_action: None — verified via composer_mode / dock policy tests and ToggleComposer keymap.
+  - id: FEEDBACK-20260807-001
+    summary: Phase-2 priority stack — (1) remote discovery timeout visibility + one-click server replace; (2) more CLI agent history discovery (user still unsure Grok shipped); (3 most important) Ashide/Kooky-class rich input / composer experience as the completion and prompt surface.
+    status: implemented
+    priority: high
+    area: phase2_priorities_rich_input
+    decision: Composer modes (002), remote timeout + persistent Restart notice (010), Gemini discovery (SESSION-GEMINI-DISCOVERY-32). Grok already in prior DMG. No silent auto-swap of remote daemon.
+    evidence:
+      - user direction on 2026-08-07 listing remote reliability, more discovery (questioning Grok), and rich input as most important
+      - INPUT-COMPOSER-SMART-079 / SESSION-GEMINI-DISCOVERY-080 / SESSION-DISCOVERY-TIMEOUT-081 / HELPER-VERSION-MISMATCH-NOTICE-082
+    promoted_to:
+      spec: INPUT-COMPOSER-SMART-PREFERENCE-05
+      traceability: INPUT-COMPOSER-SMART-079
+    next_action: Rebuild local DMG so Gemini + mismatch notice ship; user confirms remote Restart clears iris Discovering.
+  - id: FEEDBACK-20260806-011
+    summary: Ship a usable local macOS package now; Phase 2 should pursue Ashide experience parity without embedding a built-in agent, and accept further user requirements iteratively.
+    status: captured
+    priority: high
+    area: phase2_ashide_parity_packaging
+    decision: Keep product boundary terminal-native (no BYOK/hosted agent). Phase 2 candidates prioritize Ashide interaction/UX parity and remote reliability over new agent runtimes. Local DMG packaging is the immediate delivery vehicle.
+    evidence:
+      - user direction on 2026-08-06: "你先构建一个本地包，我用着挺好的现在。第二期功能你可以自己想想可以做哪些。我也会提一些新的要求。除了没有自带 agent。我还是希望体验还原 ashide 的"
+      - docs/quality/ASHIDE_AGENTTY_FEATURE_GAP_AUDIT.yaml GAP-ASHIDE-UI-REVIEW still partial
+      - docs/quality/ASHIDE_AGENTTY_UI_GAP_REVIEW.yaml whole-window baseline still open
+      - 2026-08-06 local package: dist/agentty-0.0.1-macos-arm64.dmg (adhoc signed)
+    next_action: User installs DMG; triage Phase-2 candidates against new requirements as they arrive.
+  - id: FEEDBACK-20260806-010
+    summary: Remote iris window stuck on "正在发现 Agent 会话…" while SSH shell is healthy; user asks whether remote version mismatch should auto-update.
+    status: implemented
+    priority: high
+    area: remote_session_discovery_hang
+    decision: Never silent auto-replace. Timeout leaves Discovering and shows navigator.scan_timed_out. A known helper dialect mismatch keeps a Replace Server notice after Cancel; the user-triggered action installs the matching bundled helper before restarting (needed after ProviderId additions like Grok/Gemini).
+    evidence:
+      - user screenshot 2026-08-06 iris remote with green health and discovering spinner
+      - user question: "这是什么原因。如果是远程版本对不上，应该有自动更新机制？"
+      - SESSION-DISCOVERY-TIMEOUT-VISIBLE-33 / HELPER-VERSION-MISMATCH-NOTICE-13
+    promoted_to:
+      spec: SESSION-DISCOVERY-TIMEOUT-VISIBLE-33
+      traceability: SESSION-DISCOVERY-TIMEOUT-081
+    next_action: Superseded by FEEDBACK-20260809-005 — verify the canonical Replace Server action clears the mismatch and restores discovery.
+  - id: FEEDBACK-20260806-009
+    summary: Assess / finish Grok Build adaptation — live hooks/resume/fork already exist; Navigator still cannot discover persisted ~/.grok/sessions history.
+    status: implemented
+    priority: high
+    area: grok_build_session_discovery
+    decision: Register ProviderId::Grok with a summary.json scanner under ~/.grok/sessions; Orca/refs launch-only adaptations are not a substitute. Detection first; delete removes the whole session directory.
+    evidence:
+      - user direction on 2026-08-06: "orca 我记得有发现agent会话功能。没适配 grok 吗？你先把检测那些做了"
+      - CLIAgent::Grok + hooks/resume/fork already shipped; PERSISTED_PROVIDER_DESCRIPTORS omitted Grok
+      - local store layout confirmed under ~/.grok/sessions with summary.json
+      - 2026-08-06 grok_discovery_* / grok_resume / expanded_provider tests and session navigator gate
+    promoted_to:
+      spec: SESSION-GROK-DISCOVERY-31
+      traceability: SESSION-GROK-DISCOVERY-078
+    next_action: Relaunch Navigator and confirm Grok history rows appear with resume.
+  - id: FEEDBACK-20260806-008
+    summary: Session hover/details "更新时间" shows raw unix-millis (e.g. 1784303401029) instead of a readable datetime.
+    status: implemented
+    priority: high
+    area: session_updated_at_display
+    decision: Format updated_at_unix_ms as local YYYY-MM-DD HH:MM for hover detail and details dialog; forbid millis.to_string() as the visible Updated value.
+    evidence:
+      - user direction on 2026-08-06: "甚至更新时间是 时间戳"
+      - screenshot hover card Updated field showing 1784303401029
+      - 2026-08-06 format_unix_ms_local / session_updated_display tests and session navigator gate
+    promoted_to:
+      spec: SESSION-HOVER-DETAILS-13
+      traceability: SESSION-HOVER-DETAILS-041
+    next_action: Relaunch and confirm hover Updated shows YYYY-MM-DD HH:MM.
+  - id: FEEDBACK-20260806-007
+    summary: Session naming shows catch-all "Agent 会话" instead of first user message, so history cannot be filtered by meaningful titles.
+    status: implemented
+    priority: high
+    area: session_title_generic_placeholder
+    decision: Treat localized default-name / catch-all phrases (Agent session, Agent 会话, Untitled, …) as absent title candidates so first non-empty User message wins in resolved_title and stuck placeholders clear on refresh.
+    evidence:
+      - user direction on 2026-08-06: "会话命名上 首条用户消息的优先级应该高于 agent 会话 这种万能词。我需要根据会话名筛选"
+      - screenshot with selected row titled Agent 会话 while peers use first-message titles
+      - 2026-08-06 catch_all_* tests and session navigator gate passed
+    promoted_to:
+      spec: SESSION-TITLE-PRECEDENCE-11
+      traceability: SESSION-TITLE-PRECEDENCE-039
+    next_action: Refresh Navigator / relaunch and confirm filter matches first-user titles.
+  - id: FEEDBACK-20260806-006
+    summary: Live session requires Close then Delete as two steps; user wants a one-shot Close and Delete action.
+    status: implemented
+    priority: high
+    area: session_close_and_delete
+    decision: Keep soft Close (history retained). Add Close and Delete for live/restoring — confirm, capture plan_close_and_delete, close carrier, then provider delete transaction.
+    evidence:
+      - user direction on 2026-08-06: "为啥需要先关闭再删除？感觉可以加一个 关闭并删除 的按钮一步到位？"
+      - 2026-08-06 plan_close_and_delete + live menu Close and Delete; focused tests and session navigator gate passed
+      - follow-up FEEDBACK-20260807-006 for no-source Close and Delete path
+    promoted_to:
+      spec: SESSION-PERMANENT-DELETE-TRANSACTION-09
+      traceability: SESSION-PERMANENT-DELETE-037
+    next_action: None — menu shipped; no-source failure tracked as FEEDBACK-20260807-006.
+  - id: FEEDBACK-20260806-005
+    summary: Claude Code (and other TUI tools) still render monochrome in Agentty because panes inherit NO_COLOR=1 / FORCE_COLOR=0 from the Cursor-launched daemon process, despite TERM/COLORTERM/CLICOLOR being set.
+    status: implemented
+    priority: critical
+    area: pane_color_no_color_strip
+    decision: Ashide-parity strip of NO_COLOR and FORCE_COLOR on every durable pane spawn (LOCAL-RUNTIME-PANE-COLOR-ENV-06); rebuild agentty-server and require new tab/session.
+    evidence:
+      - user direction on 2026-08-06: "claude code 还是旧颜色？" with monochrome Claude Code screenshot
+      - live claude PID env showed NO_COLOR=1 FORCE_COLOR=0 alongside COLORTERM=truecolor CLICOLOR=1
+      - 2026-08-06 pane_environment_strips_inherited_color_suppressors + rebuilt agentty-server
+    promoted_to:
+      spec: LOCAL-RUNTIME-PANE-COLOR-ENV-06
+      traceability: LOCAL-RUNTIME-PANE-COLOR-ENV-076
+    next_action: Confirm Claude Code shows accents after new tab (old Claude process keeps old env).
+  - id: FEEDBACK-20260806-004
+    summary: After i18n/color relaunch, right-click menus stayed English and terminal colors still missing — root causes were LANG=C.UTF-8 overriding AppleLanguages zh, and stale target/debug/agentty-server (Aug 3) without CLICOLOR while app was rebuilt.
+    status: implemented
+    priority: critical
+    area: i18n_and_pane_color_runtime
+    decision: Treat C/POSIX LANG as neutral and fall through to AppleLanguages (I18N-SYSTEM-C-LOCALE-05); rebuild/restart dedicated agentty-server so LOCAL-RUNTIME-PANE-COLOR-ENV-06 reaches new panes.
+    evidence:
+      - user direction on 2026-08-06: "彩色没生效，以及右键菜单还全是英文"
+      - AppleLanguages zh-Hans-CN with LANG=C.UTF-8; agentty-server mtime 2026-08-03 lacked CLICOLOR string
+      - 2026-08-06 rebuilt agentty-server, relaunched with fresh daemon; neutral_posix_lang test green
+    promoted_to:
+      spec: [I18N-SYSTEM-C-LOCALE-05, LOCAL-RUNTIME-PANE-COLOR-ENV-06]
+      traceability: [I18N-SYSTEM-C-LOCALE-078, LOCAL-RUNTIME-PANE-COLOR-ENV-076]
+    next_action: Confirm zh context menus; open a new tab and run ls to verify ANSI colors.
+  - id: FEEDBACK-20260806-003
+    summary: Fill remaining localization gaps — zh leftovers identical to en, missing opt.* slugs, and hardcoded OS/tray/context menus, prompts, and notifications bypassing the catalog.
+    status: implemented
+    priority: high
+    area: i18n_full_coverage
+    decision: Polish zh catalog; add missing opt/menu/tray/notify keys; wire theme OS menus, tray, terminal context menu, and major window.prompt/push_notification paths; tighten check_i18n for opt.* segmented labels.
+    evidence:
+      - user direction on 2026-08-06: "你趁这个机会把本地化也搞一下吧，缺失的都补上"
+    promoted_to:
+      spec: I18N-FULL-COVERAGE-04
+      traceability: I18N-COVERAGE-014
+    next_action: Confirm zh-CN OS menu, tray, dialogs after relaunch.
+  - id: FEEDBACK-20260806-002
+    summary: Development default terminal looks monochrome — macOS BSD tools need CLICOLOR, and Config::default used a light black-on-white preset instead of a colorful dark theme.
+    status: implemented
+    priority: high
+    area: terminal_color_defaults
+    decision: Pane spawn publishes CLICOLOR=1 alongside TERM/COLORTERM; Config::default theme_preset is dracula (Ashide parity). Existing config.json is not rewritten.
+    evidence:
+      - user direction on 2026-08-06: "开发版默认终端是黑白的。我需要彩色的喔"
+    promoted_to:
+      spec: [LOCAL-RUNTIME-PANE-COLOR-ENV-06, UI-DEFAULT-THEME-PRESET-11]
+      traceability: [LOCAL-RUNTIME-PANE-COLOR-ENV-076, UI-DEFAULT-THEME-PRESET-077]
+    next_action: Open a new tab after relaunch and confirm ls/git show ANSI colors under Dracula.
+  - id: FEEDBACK-20260806-001
+    summary: Typing codex triggers agent recognition but Live Navigator enter/exit can flicker — binding stamps late, Agent messages skip Wakeup, exit drops observed-only rows, and carrier-close refresh gates on runtime session alone; Codex blossom also reads optically smaller than sibling agent marks.
+    status: implemented
+    priority: critical
+    area: live_agent_binding_and_codex_icon
+    decision: Stamp live_binding.agent on foreground detect without session_id; never clear on process exit; Wakeup on DaemonMsg::Agent; AgentCarrierClosed uses binding.or(session); scale/crop Codex SVG for optical fill under shared badge (no per-agent glyph_size). Keep agent detect free of provider discovery (Ashide passive_rule).
+    evidence:
+      - user direction on 2026-08-05: curiosity about codex detect refreshing session list and Ashide enter/exit matrix
+      - user direction on 2026-08-05: "总觉得 codex 的图标比别的 agent 小"
+      - user direction on 2026-08-06: implement Live Agent 进出稳态 + Codex 图标 plan
+      - focused tests foreground_agent_stamps_binding_without_session_id, agent_exit_does_not_clear_live_binding_agent, agent_bound_carrier_close_uses_binding_or_session, codex_svg_is_optically_scaled_for_badge_fill
+    promoted_to:
+      spec: [SESSION-LIVE-CONTAINER-BINDING-15, UI-AGENT-BRAND-ICON-07]
+      traceability: [SESSION-LIVE-CONTAINER-BINDING-043, UI-AGENT-BRAND-ICON-075]
+    next_action: Confirm Live row on codex detect, exit stability, and Codex icon optical size after relaunch.
+  - id: FEEDBACK-20260805-028
+    summary: Remote Environment session discovery still empty after Navigator UX retry — Aug 1 remote agentty-server omits HelloOk.store_roots and the agent-helper feature string while still speaking DiscoverAgentSessions, so client resolve/gate refused discovery permanently.
+    status: implemented
+    priority: critical
+    area: remote_session_discovery_hello_compat
+    decision: Derive target-owned AgentStoreRoots from HelloOk.home when store_roots is omitted; gate DiscoverAgentSessions on discovery_available (agent-helper OR resolved roots), not agent-helper alone. Activity/completion remain agent-helper-gated. Prefer pushing a current musl server when packaging allows.
+    evidence:
+      - user direction on 2026-08-05: "远程环境会话发现还是有问题啊"
+      - dnyx226 binary sha256 matches bundled Aug 1 musl; strings lack agent-helper and store_roots; sessions exist under /root/.codex etc.
+      - store_roots_derive_from_hello_home_when_omitted passed; dnyx226 restarted on rebuilt musl helper with store_roots
+    promoted_to:
+      spec: [HELPER-CAPABILITY-NEGOTIATION-01, SESSION-REFRESH-INTENT-18]
+      traceability: [HELPER-CAPABILITY-023, SESSION-REFRESH-INTENT-047]
+    next_action: Relaunch GUI, reconnect remote Environment, confirm Navigator lists remote sessions.
+  - id: FEEDBACK-20260805-027
+    summary: Pinned sessions have no explicit visible marker — only sort order changes.
+    status: implemented
+    priority: high
+    area: session_navigator_pin_marker
+    decision: Render a muted pin glyph on pinned Navigator rows; extend SESSION-PIN-BUSINESS-MODEL-16.
+    evidence:
+      - user direction on 2026-08-05: "会话置顶没有显式标记"
+    promoted_to:
+      spec: SESSION-PIN-BUSINESS-MODEL-16
+      traceability: SESSION-PIN-BUSINESS-MODEL-044
+    next_action: Confirm pin glyph after relaunch.
+  - id: FEEDBACK-20260805-026
+    summary: In three-column / left-rail layout the New Tab (+) button is hidden.
+    status: implemented
+    priority: critical
+    area: titlebar_new_tab_left_rail
+    decision: When show_chips is false and left panel is open, keep attach_new_tab_menu Plus beside Environment Indicator (UI-TITLEBAR-CHROME-06).
+    evidence:
+      - user direction on 2026-08-05: "三栏视图下，新建会话的按钮也被隐藏了"
+    promoted_to:
+      spec: UI-TITLEBAR-CHROME-06
+      traceability: UI-TITLEBAR-CHROME-074
+    next_action: Confirm Plus visible with left rail open.
+  - id: FEEDBACK-20260805-025
+    summary: Session alias model exists but manual set-alias entry is not visually discoverable.
+    status: implemented
+    priority: high
+    area: session_alias_discoverability
+    decision: Add context-menu Set Alias that opens the same begin_session_alias_edit as double-click; keep double-click.
+    evidence:
+      - user direction on 2026-08-05: "会话别名模型，手动设置别名功能入口我也肉眼见不到？"
+    promoted_to:
+      spec: SESSION-ALIAS-BUSINESS-MODEL-10
+      traceability: SESSION-ALIAS-BUSINESS-MODEL-038
+    next_action: Confirm context-menu alias entry after relaunch.
+  - id: FEEDBACK-20260805-024
+    summary: Menu Chinese localization gaps (hardcoded English menu items when locale is zh-CN).
+    status: implemented
+    priority: medium
+    area: i18n_menus
+    decision: Replace hardcoded Close Tabs Right/Below strings with menu.close_tabs_* i18n keys; sweep tab_strip menu literals.
+    evidence:
+      - user direction on 2026-08-05: "菜单的中文化，看到就做一下吧"
+    promoted_to:
+      spec: I18N-FULL-COVERAGE-04
+      traceability: I18N-COVERAGE-014
+    next_action: Confirm zh-CN tab menus.
+  - id: FEEDBACK-20260805-023
+    summary: Remote Session Navigator still discovers no sessions after connect despite remote disk having Codex/Claude/Omp history.
+    status: implemented
+    priority: critical
+    area: remote_session_discovery_retry
+    decision: After transient Host/roots resolve failure, sidebar must RemoteLinkUp-retry once EnvironmentSessionContext can resolve; keep finish_connect/Attached refresh_host_agent_sessions.
+    evidence:
+      - user direction on 2026-08-05: "远程会话确实发现不了" / "确定远程会话发现解决了？"
+    promoted_to:
+      spec: SESSION-REFRESH-INTENT-18
+      traceability: SESSION-REFRESH-INTENT-048
+    next_action: Confirm remote Environment lists sessions after connect.
+  - id: FEEDBACK-20260805-022
+    summary: Session title still jumps across resume — first sidebar title, then "agentty" on click, then a third title after resume lands.
+    status: implemented
+    priority: critical
+    area: session_display_title_alias
+    decision: Live carrier projection must not publish tab.name / terminal OSC / product "agentty" as session titles; normalize treats product placeholders as absent so last-good provider/first-user title survives pending→ready.
+    evidence:
+      - user direction on 2026-08-05: "希望一开始看到会话title是啥样...整个周期内都稳定" / "一开始有title，点击的时候变成 agentty，resume 完毕又变成另外一套 title"
+    promoted_to:
+      spec: SESSION-TITLE-PRECEDENCE-11
+      traceability: SESSION-TITLE-PRECEDENCE-039
+      milestone: M1-SESSION-NAVIGATOR/SESSION-011
+    next_action: Confirm title stays fixed through resume after relaunch.
+  - id: FEEDBACK-20260805-021
+    summary: Omp badge still obscured after dark plate; omp.sh hero uses a light warm body, not the favicon dark field.
+    status: verified
+    priority: high
+    area: agent_brand_icons
+    decision: Match site hero — accent 0xEFEDE9 light plate + glyph_rgb 0x9B4DFF brand purple; badge helper takes contrasting glyph (forbid hard-coded white-on-light); crop omp.svg viewBox.
+    evidence:
+      - user direction on 2026-08-05: "还是被遮住了？" / "官网我看是浅色底呀"
+      - user acceptance on 2026-08-05: "完美，现在好美丽！"
+    promoted_to:
+      spec: UI-AGENT-BRAND-ICON-07
+      traceability: UI-AGENT-BRAND-ICON-075
+    next_action: None.
+  - id: FEEDBACK-20260805-020
+    summary: Omp π badge is washed out on brand-purple accent plate; needs a different background for white glyph contrast.
+    status: superseded
+    priority: medium
+    area: agent_brand_icons
+    decision: Dark favicon plate 0x0F0A14 was the wrong reference; superseded by FEEDBACK-20260805-021 (light site hero plate).
+    evidence:
+      - user direction on 2026-08-05: "好像被紫色的背景淹没了。是不是适合别的颜色背景"
+    promoted_to:
+      spec: UI-AGENT-BRAND-ICON-07
+      traceability: UI-AGENT-BRAND-ICON-075
+    next_action: None — superseded by FEEDBACK-20260805-021.
+    superseded_by: FEEDBACK-20260805-021
+  - id: FEEDBACK-20260805-019
+    summary: Omp agent icon falls back to generic bot.svg and looks wrong; pull the official π mark from https://omp.sh/ hero aside SVG.
+    status: implemented
+    priority: medium
+    area: agent_brand_icons
+    decision: Bundle assets/icons/agents/omp.svg from omp.sh hero path; plate/glyph pairing corrected under FEEDBACK-20260805-021.
+    evidence:
+      - user direction on 2026-08-05: "omp 的图标为啥现在这么丑？https://omp.sh/？ … #top > div > aside … > svg 看能不能拔一下之类的？"
+    promoted_to:
+      spec: UI-AGENT-BRAND-ICON-07
+      traceability: UI-AGENT-BRAND-ICON-075
+    next_action: Done; contrast follow-up in FEEDBACK-20260805-021.
+  - id: FEEDBACK-20260805-018
+    summary: Session Navigator scrollbar stays permanently visible and looks rough; prefer hidden by default with a bottom fade/mask hint that more sessions exist so users scroll and the scrollbar appears while scrolling.
+    status: implemented
+    priority: high
+    area: session_navigator_scrollbar
+    decision: Force ScrollbarShow::Scrolling on side-panel scroll helpers and theme (never Always from OS preference); bottom overflow fade when more content is below.
+    evidence:
+      - user direction on 2026-08-05: "话说滚动条为啥要常驻显示呢？也挺难看的..."
+      - user follow-up on 2026-08-05: "滚动条不是还在吗"
+    promoted_to:
+      spec: UI-SIDE-PANEL-SCROLL-11
+      traceability: UI-SIDE-PANEL-SCROLL-079
+      milestone: M1-SESSION-NAVIGATOR/POLISH-019
+    next_action: Confirm rendered acceptance after relaunch.
+  - id: FEEDBACK-20260805-017
+    summary: Running/live sessions do not highlight on click and Delete does nothing.
+    status: implemented
+    priority: critical
+    area: session_live_row_activation
+    decision: Always SessionNavigator.select on activate; live/restoring menu uses Close running session via tab close, never provider-file delete.
+    evidence:
+      - user direction on 2026-08-05: "运行中的会话，点击突出并删除没反应"
+    promoted_to:
+      spec: SESSION-ROW-ACTIVATION-30
+      follow_up_spec: SESSION-PERMANENT-DELETE-TRANSACTION-09
+      traceability: SESSION-ROW-ACTIVATION-076
+      milestone: M1-SESSION-NAVIGATOR/SESSION-030
+    next_action: Confirm rendered acceptance after relaunch.
+  - id: FEEDBACK-20260805-016
+    summary: Remote Session Navigator stays empty; UI must address Environment session ops without local/remote branching.
+    status: implemented
+    priority: critical
+    area: remote_session_discovery_env_facade
+    decision: EnvironmentSessionContext facade for Host/home/roots/discover; finish_connect and pump Attached refresh open Environment windows; UI never is_local-branches discovery.
+    evidence:
+      - user direction on 2026-08-05: "我发现远程的会话发现机制并没有发挥作用" / "远程会话是空的"
+      - user direction on 2026-08-05: "对本地和远程的抽象也需要做好。在 ui 层只知道针对环境执行某动作"
+    promoted_to:
+      spec: ENV-SESSION-OPS-FACADE-15
+      follow_up_spec: SESSION-REFRESH-INTENT-18
+      traceability: ENV-SESSION-OPS-FACADE-075
+      milestone: M1-SESSION-NAVIGATOR/SESSION-018
+    next_action: Confirm remote Environment lists sessions after connect/relaunch.
+  - id: FEEDBACK-20260805-015
+    summary: Build a stable per-session local alias/title model so left-sidebar display names never jump from UI churn; user alias is highest priority. Learn from Ashide alias failure modes. Remote aliases stay on the selected Host config path.
+    status: implemented
+    priority: critical
+    area: session_display_title_alias
+    decision: One pure session_display_title authority (alias → resolved title → localized fallback); never session_id/provider/agent as display name; blank refresh preserves last good title; all Navigator surfaces share the mapping; aliases remain Environment-scoped selected-Host session-aliases.json with no local fallback for remote. Resume/live placeholder overwrite closed under FEEDBACK-20260805-022.
+    evidence:
+      - user direction on 2026-08-05: "期望是每个会话有个相对稳定的别名/title显示。任何情况下ui的变动都不会导致左侧便签的显示名变动。用于可以自定义一个最高优先级的本地别名。参考 ashide"
+      - user confirmation that remote aliases belong on the remote Host config path
+      - Ashide pitfalls — post-reducer render clone, session_id/provider as title, blank wipe, UI churn re-derivation, carrier replacement losing alias
+    promoted_to:
+      spec: SESSION-TITLE-PRECEDENCE-11
+      traceability: SESSION-TITLE-PRECEDENCE-039
+      milestone: M1-SESSION-NAVIGATOR/SESSION-011
+    next_action: Closed by FEEDBACK-20260805-022 for resume-cycle jumps.
+  - id: FEEDBACK-20260805-014
+    summary: Session Navigator hover detail and right-click context menu feel too slow — check for intentional delay and refresh/performance issues.
+    status: implemented
+    priority: high
+    area: session_navigator_interaction_latency
+    decision: Cut HoverCard open/close delays to a snappy band (180ms/120ms) and remove the extra AgenttyApp notify on context-menu open so ContextMenu's deferred window.refresh is the only refresh on that frame.
+    evidence:
+      - user direction on 2026-08-05: "hover 和 右键的反应好像都有点太慢了，看一下性能问题"
+    promoted_to:
+      spec: SESSION-HOVER-DETAILS-13
+      traceability: SESSION-HOVER-DETAILS-041
+      milestone: M1-SESSION-NAVIGATOR/SESSION-013
+    next_action: Confirm rendered acceptance after relaunch.
+  - id: FEEDBACK-20260805-013
+    summary: This Mac / Environment Indicator still sits far from the left sidebar split even after title_bar_content_lead hugged the split.
+    status: implemented
+    priority: critical
+    area: environment_indicator_lead
+    decision: Zero the content-column TitleBar shell leading pad (title_bar_shell_leading_pad) so gpui-component's built-in macOS 80px traffic-light pad no longer stacks on title_bar_content_lead.
+    evidence:
+      - user direction on 2026-08-05: "this mac 距离左侧分割线的间距依旧非常异常"
+    promoted_to:
+      spec: ENV-INDICATOR-LEAD-14
+      traceability: ENV-INDICATOR-LEAD-072
+      milestone: M1-SESSION-NAVIGATOR/POLISH-014
+    next_action: Confirm rendered acceptance after relaunch.
+  - id: FEEDBACK-20260805-012
+    summary: Orca/kooky agent brand marks are invisible at sidebar density; restore the original bundled currentColor SVG silhouettes with accent plate + white glyph.
+    status: implemented
+    priority: critical
+    area: agent_brand_icons
+    decision: Revert assets and icon_path to the pre-Orca SVG set; agent_icon_badge and tray avatars again use accent fill + white currentColor glyph; unbranded agents including Omp use icons/bot.svg. FEEDBACK-20260805-008/009 declined.
+    evidence:
+      - user direction on 2026-08-05: "你的新图标根本看不见…… 算了你还是恢复吧？ 恢复原来最初的版本？"
+    promoted_to:
+      spec: UI-AGENT-BRAND-ICON-07
+      traceability: UI-AGENT-BRAND-ICON-075
+      milestone: M1-SESSION-NAVIGATOR/POLISH-016
+    next_action: Confirm rendered acceptance after relaunch.
+  - id: FEEDBACK-20260805-011
+    summary: After gutter unification, remaining three-column visual drift — bare right-panel search vs framed left search, text-only right empties, file-tree gutter/ellipsis vs session fade, and circular unbranded tab avatars — should be fixed in one shared-chrome pass.
+    status: implemented
+    priority: high
+    area: side_panel_visual_chrome
+    decision: Introduce side_panel_search_surface and side_panel_empty_surface; wire file-tree/list gutters to panel_content_gutter; trailing-fade file labels; unbranded_avatar_radius for terminal tab plates.
+    evidence:
+      - user direction on 2026-08-05: "还有哪些视觉上的问题，你一起改"
+    promoted_to:
+      search_spec: UI-SIDE-PANEL-SEARCH-09
+      empty_spec: UI-SIDE-PANEL-EMPTY-10
+      traceability: UI-SIDE-PANEL-SEARCH-077
+      milestone: M1-SESSION-NAVIGATOR/POLISH-018
+    next_action: Confirm rendered acceptance after relaunch.
+  - id: FEEDBACK-20260805-010
+    summary: Left-navigator icons sit tighter to the window/split edge than right-panel content; split-adjacent chrome (and the content-bar Command Palette) must share one gutter authority instead of ad-hoc left/right padding.
+    status: implemented
+    priority: critical
+    area: panel_edge_gutters
+    decision: Introduce panel_content_gutter (CONTENT_INSET) and panel_split_chrome_inset (tile_trailing_inset); wire Session Navigator outer gutter, right-panel search/body leads, content-column split lead, and trailing palette pad to those helpers; delete TITLE_BAR_SPLIT_HUG.
+    evidence:
+      - user screenshot on 2026-08-05 calling out divergent left vs right icon-to-split distances
+    promoted_to:
+      spec: UI-PANEL-EDGE-GUTTER-08
+      traceability: UI-PANEL-EDGE-GUTTER-076
+      milestone: M1-SESSION-NAVIGATOR/POLISH-017
+    next_action: Confirm rendered acceptance after relaunch.
+  - id: FEEDBACK-20260805-009
+    summary: Kooky/lobe-icons marks looked ugly at sidebar size; retry by copying Orca's agent-catalog icons instead.
+    status: declined
+    priority: critical
+    area: agent_brand_icons
+    decision: Declined — Orca marks were invisible at sidebar density; restored original bundled silhouettes under FEEDBACK-20260805-012.
+    evidence:
+      - user direction on 2026-08-05: "图标好丑…… 要不你再试试抄 orca ？"
+      - user rejection on 2026-08-05: "你的新图标根本看不见…… 算了你还是恢复吧？"
+    promoted_to:
+      superseded_by: FEEDBACK-20260805-012
+    next_action: None — declined.
+  - id: FEEDBACK-20260805-008
+    summary: Use kooky/lobe-icons brand marks for omp and other agents instead of hand-rolled SVGs; fall back to assets in refs/kooky-main when a mark is missing.
+    status: declined
+    priority: high
+    area: agent_brand_icons
+    decision: Declined with the Orca retry; original bundled SVG silhouettes restored under FEEDBACK-20260805-012.
+    evidence:
+      - user direction on 2026-08-05: "omp等图标你不妨直接抄 /Users/admin/agentty/refs/kooky-main 。如果缺少图标的话从这些里面找就是"
+      - user rejection on 2026-08-05: "你的新图标根本看不见…… 算了你还是恢复吧？"
+    promoted_to:
+      superseded_by: FEEDBACK-20260805-012
+    next_action: None — declined.
+  - id: FEEDBACK-20260805-007
+    summary: Tear down the title-bar "…" menu — Settings should replace the dots as a direct icon, and Command Palette should move to the middle column's trailing edge so This Mac is left-aligned and palette is right-aligned on that bar.
+    status: implemented
+    priority: critical
+    area: titlebar_chrome_composition
+    decision: Remove the ellipsis app menu. Place a Command Palette icon on the content title bar trailing edge opposite the Environment Indicator, and expose Settings as a direct icon tile in window chrome.
+    evidence:
+      - user screenshot on 2026-08-05 of right-panel chrome with "…" opening Command Palette / Settings
+      - user direction on 2026-08-05: "这里我觉得适合拆掉，settings 取代那几个点。而 命令行面板迁移到中间栏的右边，等于说 this mac 左对齐，命令行面板改成图标右对齐。一左一右位于中间栏？"
+      - 2026-08-05 titlebar_chrome_places_palette_on_content_bar_and_settings_direct and ui-visual static gate passed
+    promoted_to:
+      spec: UI-TITLEBAR-CHROME-06
+      traceability: UI-TITLEBAR-CHROME-074
+      milestone: M1-SESSION-NAVIGATOR/POLISH-015
+    next_action: Confirm rendered acceptance after relaunch.
+  - id: FEEDBACK-20260805-006
+    summary: Sidebar left/right padding still looks wrong versus Cursor Agents; overflow should fade at the trailing edge instead of ellipsis; provider icons should be rounded rectangles like the kooky/Claude reference rather than circles.
+    status: implemented
+    priority: critical
+    area: session_navigator_sidebar_density
+    decision: Tighten content inset to a Cursor-like 10–14px band, replace ellipsis truncation with a trailing fade gradient matched to the row surface, and render provider icons as rounded rectangles.
+    evidence:
+      - Cursor Agents screenshot on 2026-08-05 showing tight selection padding and trailing text cut/fade
+      - kooky/Claude reference screenshot preferring rounded-rect icons
+      - user direction on 2026-08-05: "左侧栏左边和右边的padding也很丑 。或者你看 cursor 自己的设计，好像末端文字有个溢出渐隐效果？第二张图是另外的，我感觉圆角矩形图标也许更适合"
+    promoted_to:
+      spec: SESSION-SIDEBAR-ROW-DENSITY-29
+      traceability: SESSION-SIDEBAR-ROW-DENSITY-073
+    next_action: Confirm rendered acceptance after relaunch.
+  - id: FEEDBACK-20260805-005
+    summary: After the density pass the sidebar got worse — outer_gutter and row_pad_x stacked into mysterious left/right padding, and a permanent resume flex slot stole title width so text truncates beside empty space.
+    status: implemented
+    priority: critical
+    area: session_navigator_sidebar_density
+    decision: Cap content inset (outer_gutter + row_pad_x) at 12–16px, overlay the resume affordance so it does not reserve flex width, and retune metrics away from the previous 12+10 stack.
+    evidence:
+      - user screenshot on 2026-08-05 with left and right red padding callouts
+      - user rejection on 2026-08-05: "更丑了。莫名其妙的 padding"
+      - 2026-08-05 content inset 14px + overlay affordance tests and static gate passed
+    promoted_to:
+      spec: SESSION-SIDEBAR-ROW-DENSITY-29
+      affordance_spec: SESSION-ROW-ACTION-AFFORDANCE-27
+      traceability: SESSION-SIDEBAR-ROW-DENSITY-073
+    next_action: Confirm rendered acceptance after relaunch.
+  - id: FEEDBACK-20260805-004
+    summary: Session Navigator sidebar density fails classic product rhythm — icons hug the left edge, selection border shifts content, rows are too short, and icon/text/padding alignment feels wrong.
+    status: implemented
+    priority: critical
+    area: session_navigator_sidebar_density
+    decision: Promote one density contract with a pure metrics mapping (gutter ≥12, row ≥48, icon box/gaps, stable border reservation) and rework row chrome so selected/hover/keyboard states never shift horizontal content.
+    evidence:
+      - user screenshot on 2026-08-05 of the session list
+      - user direction on 2026-08-05: "这个左侧边栏你看符合经典产品的那种吗？我怎么总觉得不对了，图标也好对齐也好 padding 也好"
+      - user direction on 2026-08-05: "记得更新spec matrix 和 test 哈"
+    promoted_to:
+      spec: SESSION-SIDEBAR-ROW-DENSITY-29
+      traceability: SESSION-SIDEBAR-ROW-DENSITY-073
+      milestone: M1-SESSION-NAVIGATOR/SESSION-026
+    next_action: Confirm rendered acceptance with the user after quick presubmit.
+  - id: FEEDBACK-20260805-003
+    summary: Session row HoverCard and right-click context menu compete at the same deferred priority, so the hover sidecar steals z-order and pointer focus from the open menu.
+    status: implemented
+    priority: critical
+    area: session_navigator_hover_details
+    decision: Suppress HoverCard while any session-row context menu is open (Ashide invariant), bump hover element epoch on menu open so remount after dismiss starts closed, and keep canonical HoverCard ownership for delayed open/close.
+    evidence:
+      - user direction on 2026-08-05: "好像hover 和 右键菜单会抢优先级"
+      - 2026-08-05 session_hover_yields_to_open_context_menu and session navigator static gate passed
+    promoted_to:
+      spec: SESSION-HOVER-DETAILS-13
+      traceability: SESSION-HOVER-DETAILS-041
+    next_action: Confirm rendered acceptance with the user after quick presubmit.
+  - id: FEEDBACK-20260805-002
+    summary: Session hover detail card opens with TopLeft overlay placement and covers the Navigator search control and row list instead of sitting as a trailing sidecar past the sidebar split.
+    status: implemented
+    priority: critical
+    area: session_navigator_hover_details
+    decision: Keep canonical HoverCard ownership, but place the card with one pure sidecar lead inset so it opens immediately right of the left-sidebar split and no longer occludes navigator rows or search.
+    evidence:
+      - user screenshot on 2026-08-05 with the manga_data hover card covering the sidebar
+      - user direction on 2026-08-05: "这个弹窗的位置是不是也很难看"
+      - 2026-08-05 session_hover_sidecar_lead + pointer_safe_region GPUI geometry assertion passed
+    promoted_to:
+      spec: SESSION-HOVER-DETAILS-13
+      traceability: SESSION-HOVER-DETAILS-041
+    next_action: Confirm rendered acceptance with the user after quick presubmit.
+  - id: FEEDBACK-20260805-001
+    summary: Sidebar chrome puts a redundant "会话/Sessions" title under the macOS close button, and the Environment Indicator sits too far from the sidebar split — proximity, contrast, alignment, and repetition are all failing in the title-bar composition.
+    status: implemented
+    priority: critical
+    area: rendered_ui_title_bar_composition
+    decision: Remove the navigator section title from sidebar chrome so traffic lights own the top-left. Put Environment Indicator lead inset behind one pure mapping that hugs the sidebar split when the left panel is open, and reuse that mapping for other content-column title-bar headers.
+    evidence:
+      - user screenshot on 2026-08-05 comparing local and iris windows with four callouts
+      - user direction on 2026-08-05: "左上角关闭按钮 跟 会话 这个字重复了。去掉这个不知道为啥加的 会话"
+      - user direction on 2026-08-05: "本地远程会话，距离左边的分割线过远，太难看。设计原则的 亲密对比对齐重复 一个都没做好"
+      - 2026-08-05 focused lead test and static gates passed
+    promoted_to:
+      sidebar_chrome_spec: SESSION-SIDEBAR-SURFACE-HIERARCHY-25
+      indicator_lead_spec: ENV-INDICATOR-LEAD-14
+      indicator_lead_traceability: ENV-INDICATOR-LEAD-072
+    next_action: Confirm rendered acceptance with the user after quick presubmit.
+  - id: FEEDBACK-20260803-004
+    summary: The session row hover shows a literal "恢复" text label, the Environment Indicator has no glyph distinguishing this Mac from a remote server, and the overall UI needs a systemic visual upgrade rather than point fixes.
+    status: implemented
+    priority: critical
+    area: rendered_ui_visual_system
+    decision: Promote the two named defects plus the systemic complaint into one visual-system batch: environment indicator glyph, icon-based row action affordance, hierarchical empty states, one shared floating notice surface, and explicit active-tab hierarchy. Whole-window rendered acceptance remains open under FEEDBACK-20260803-003.
+    evidence:
+      - user rejection on 2026-08-03: "瞧瞧你现在每个标签 hover 恢复 两个字，真他妈丑爆了"
+      - user rejection on 2026-08-03: "环境标识也没个图标…… 本机和远程服务器的区别都看不出来"
+      - user direction on 2026-08-03: "你不要只修我说的两个点。是整体来一次 UI UX 的升级"
+    promoted_to:
+      env_glyph_spec: ENV-INDICATOR-GLYPH-13
+      row_affordance_spec: SESSION-ROW-ACTION-AFFORDANCE-27
+      empty_state_spec: SESSION-EMPTY-STATE-SURFACE-28
+      notice_surface_spec: UI-NOTICE-SURFACE-01
+      tab_hierarchy_spec: UI-TAB-HIERARCHY-02
+    next_action: Add the five contracts, matrix rows 064-068, static checks, and failing focused tests; then implement and verify through quick and full presubmit.
+  - id: FEEDBACK-20260803-003
+    summary: The current Agentty UI is still judged visually poor; passing behavior tests and static visual rules are not acceptable evidence that the rendered product is polished or usable.
+    status: promoted
+    priority: critical
+    area: rendered_ui_quality_and_acceptance
+    decision: Reopen the Ashide UI review and Session Navigator polish milestone. Preserve already-proven local behavior contracts, but do not call the overall UI verified until an isolated current build has been rendered, inspected at representative window sizes and states, and compared with explicit before/after evidence.
+    evidence:
+      - user rejection on 2026-08-03: "ui 肯定还是非常垃圾"
+      - no current Agentty rendered-window screenshot was used in the previous verification
+      - existing tests cover local style branches rather than whole-window hierarchy, geometry, contrast, or visual balance
+    promoted_to:
+      hierarchy_spec: SESSION-SIDEBAR-SURFACE-HIERARCHY-25
+      hierarchy_milestone: M1-SESSION-NAVIGATOR/SESSION-024
+      hierarchy_traceability: SESSION-SIDEBAR-SURFACE-HIERARCHY-062
+      split_group_spec: SESSION-SPLIT-GROUP-PRESENTATION-26
+      split_group_milestone: M1-SESSION-NAVIGATOR/SESSION-025
+      split_group_traceability: SESSION-SPLIT-GROUP-PRESENTATION-063
+    next_action: Code-level Surfaces.sidebar row ladder + right-panel panel.empty.* i18n landed 2026-08-07; remaining gate is interactive screenshot at docs/quality/baselines/agentty-window-20260807.png then sign off POLISH-008.
+  - id: FEEDBACK-20260803-001
+    summary: Newly created or newly discovered Session Navigator groups should appear at the top rather than being appended below older sessions.
+    status: verified
+    priority: current
+    area: session_default_insertion_order
+    decision: Extend stable reorder semantics so pinned units remain first, while each unpinned or pinned partition places previously unordered new tab/session units before older units without disturbing the relative order explicitly persisted by the user. Split siblings remain one tab unit and query projections never mutate canonical order.
+    evidence:
+      - user correction on 2026-08-03
+      - crates/agentty-core/src/agent_runtime/navigator.rs
+      - crates/agentty-core/src/agent_runtime/user_state.rs
+    promoted_to:
+      spec: SESSION-STABLE-REORDER-17
+      milestone: M1-SESSION-NAVIGATOR/SESSION-017
+      traceability: SESSION-STABLE-REORDER-045
+    next_action: Verified on 2026-08-03 by newest unordered unit insertion, manual-order preservation, split-unit grouping, rollback, quick presubmit, and full presubmit tests.
+  - id: FEEDBACK-20260803-002
+    summary: The local background session service frequently reports errors during normal GUI use.
+    status: verified
+    priority: critical
+    area: local_daemon_reliability
+    decision: Treat pane transport and Host control transport as one readiness boundary. The initial split-brain and lease fixes were necessary but the repeated live report reopens reliability: serialize all local lifecycle mutation as one process-wide single-flight operation and make control-listener startup failure fatal so concurrent pane restores cannot manufacture competing or pane-only servers.
+    evidence:
+      - user runtime report on 2026-08-03
+      - crates/agentty-core/src/daemon/spawn.rs
+      - crates/agentty-core/src/daemon/server.rs
+      - src/main.rs
+      - src/ui/app.rs
+      - live 2026-08-03 state: control.sock existed but refused connections, with no daemon pid or default log
+    promoted_to:
+      spec: LOCAL-RUNTIME-READINESS-01
+      milestone: M9-LOCAL-RUNTIME/LOCAL-RUNTIME-001
+      traceability: LOCAL-RUNTIME-READINESS-049
+      follow_up_spec: LOCAL-RUNTIME-START-SINGLEFLIGHT-05
+      follow_up_milestone: M9-LOCAL-RUNTIME/LOCAL-RUNTIME-005
+      follow_up_traceability: LOCAL-RUNTIME-START-SINGLEFLIGHT-057
+    next_action: Verified on 2026-08-03 by the config-scoped host-wide lifecycle lock, fatal pre-pane control listener failure, owned-endpoint cleanup, deterministic core tests, concurrent-start CLI E2E, and a 20-caller isolated live stress with 0 failures and one ready runtime.
+  - id: FEEDBACK-20260801-001
+    summary: Agentty may already provide the native file editor capability that was initially considered for wholesale migration from Ashide.
+    status: verified
+    priority: deferred
+    area: native_local_and_remote_file_editing
+    decision: Do not transplant Ashide's editor wholesale until Agentty's existing file tree, code editor, and Host-backed local/managed-SSH behavior have been inventoried and gap-tested.
+    evidence:
+      - src/ui/code_editor.rs
+      - src/ui/file_tree.rs
+      - crates/agentty-core/src/host/mod.rs
+      - crates/agentty-core/src/host/local.rs
+      - crates/agentty-core/src/host/remote.rs
+    promoted_to:
+      spec: AUDIT-NATIVE-EDITOR-CAPABILITY-06
+      matrix: NATIVE-EDITOR-CAPABILITY-058
+      artifact: docs/quality/NATIVE_EDITOR_CAPABILITY_AUDIT.yaml
+    next_action: Verified on 2026-08-03 by the nine-row local/managed-SSH matrix, Host authority evidence, focused editor/tree tests, and reconnect-time watcher rebind; Ashide's editor stack is not ported.
+  - id: FEEDBACK-20260801-002
+    summary: Review the Ashide interface screenshot for interaction and information-architecture patterns that Agentty can reuse without copying Ashide's heavyweight editor stack.
+    status: promoted
+    priority: next
+    area: product_ui_reference_review
+    decision: Extract focused interaction patterns and information hierarchy; do not treat visual similarity or framework reuse as a goal by itself.
+    evidence:
+      source_artifact: /Users/admin/Desktop/啊啊啊.png
+      sha256: 23fb0f1a39ec6c2f41283daf146d11f4919013f94466f2442ab2268bbadd503f
+      dimensions: 3372x2166
+    promoted_to:
+      spec: AUDIT-ASHIDE-UI-REFERENCE-07
+      matrix: ASHIDE-UI-REFERENCE-059
+      artifact: docs/quality/ASHIDE_AGENTTY_UI_GAP_REVIEW.yaml
+      visual_contract: SESSION-NAVIGATOR-VISUAL-23
+    next_action: Source-grounded review is retained, but rendered UI acceptance was reopened by FEEDBACK-20260803-003. Capture and inspect the current application window before deciding which hierarchy and density gaps are actually closed.
+  - id: FEEDBACK-20260801-003
+    summary: Session Navigator subtitles currently repeat the CLI Agent provider name even though the leading canonical provider icon already identifies it.
+    status: verified
+    priority: current
+    area: session_navigator_information_hierarchy
+    decision: Reserve the subtitle for session-specific context such as cwd, repository, branch, activity, or recency; retain textual provider identity in search, tooltip, accessibility, and details rather than consuming visible subtitle space.
+    evidence:
+      - src/ui/tab_sidebar.rs
+      - docs/specs/SESSION_NAVIGATOR_SPEC.yaml#SESSION-PROVIDER-ICON-05
+    promoted_to:
+      spec: SESSION-ROW-INFORMATION-HIERARCHY-08
+      milestone_item: SESSION-008
+      traceability: SESSION-ROW-INFORMATION-HIERARCHY-036
+    next_action: Keep the subtitle contract in script/check_session_navigator and preserve provider identity in search and details.
+  - id: FEEDBACK-20260801-004
+    summary: Make cohesion, explicit layering, canonical capability reuse, unit-style feature extension, uniform project patterns, immediate dead-code deletion, and architectural simplicity mandatory engineering principles.
+    status: verified
+    area: engineering_architecture_governance
+    decision: Adopt the principles as repository-wide instructions in AGENTS.md so future changes are evaluated against them rather than relying on conversational memory.
+    evidence:
+      - AGENTS.md#工程架构原则
+    next_action: Apply these principles during design and review; when a recurring violation can be checked deterministically, add a focused fail-closed static gate instead of duplicating defensive runtime paths.
+  - id: FEEDBACK-20260802-001
+    summary: The alias system business model must be explicit rather than treated as a row-local presentation field.
+    status: verified
+    priority: current
+    area: session_alias_business_model
+    decision: Define canonical identity, alias scope and uniqueness, persistence authority, rename propagation, historical session resolution, local/remote behavior, conflict handling, and deletion semantics in the domain spec before implementing alias editing.
+    evidence:
+      - docs/quality/ASHIDE_FALLBACK_ASSET_MATRIX.yaml#tab_lifecycle
+      - docs/specs/SESSION_NAVIGATOR_SPEC.yaml
+    next_action: Keep SESSION-ALIAS-BUSINESS-MODEL-10, its selected-Host store tests, and the single-authority static gate green.
+  - id: FEEDBACK-20260802-002
+    summary: Explicit session aliases must take effect immediately for live sessions rather than only after a provider backing file exists.
+    status: verified
+    priority: current
+    area: session_alias_live_history_continuity
+    decision: Key committed aliases by canonical Environment-scoped SessionIdentity so live, restoring, and historical carriers resolve the same alias before and after provider persistence appears.
+    evidence:
+      - crates/agentty-core/src/agent_runtime/navigator.rs
+      - docs/quality/ASHIDE_FALLBACK_ASSET_MATRIX.yaml#tab_lifecycle
+    next_action: Keep live-only and provider-source continuity tests green; explicit aliases remain separate from provider identity.
+  - id: FEEDBACK-20260802-003
+    summary: An unnamed Agent session must use the first non-empty User message as its fallback name instead of using the Agent or provider name as a session alias.
+    status: verified
+    priority: current
+    area: session_display_name_precedence
+    decision: Resolve display names in the strict order explicit user alias, explicit Agent session title, first non-empty User message, localized unnamed-session fallback; provider identity remains separate and is never a session alias.
+    evidence:
+      - crates/agentty-core/src/agent_runtime/discovery.rs
+      - crates/agentty-core/src/agent_runtime/navigator.rs
+      - src/ui/tab_sidebar.rs
+    next_action: Keep SESSION-TITLE-PRECEDENCE-11 and provider-title/first-user/provider-identity regression tests green.
+  - id: FEEDBACK-20260802-004
+    summary: Permanent Session Navigator deletion must remove the provider-backed source through the selected Environment authority and must not leave half-applied UI or user-state changes when a side effect fails.
+    status: verified
+    priority: current
+    area: session_permanent_deletion
+    decision: Reuse the canonical Host local/SSH removal capability and implement plan, reducer, atomic side effects, commit, and rollback semantics; never introduce a parallel local-only deletion channel.
+    evidence:
+      - crates/agentty-core/src/host/mod.rs
+      - crates/agentty-core/src/agent_runtime/navigator.rs
+      - /Users/admin/ashide/app/src/workspace/view/session_navigator.rs
+    next_action: Keep the selected-Host provider-plus-alias transaction tests and identity tombstone gate green.
+  - id: FEEDBACK-20260802-005
+    summary: Every actionable product, interaction, architecture, and quality instruction from the user must be durably tracked rather than retained only in conversation or an ephemeral todo list.
+    status: verified
+    priority: standing
+    area: development_feedback_governance
+    decision: Enforce the repository feedback policy for prior and future feedback, using one stable entry per independently actionable concern and promotion into the normative development flow before implementation.
+    evidence:
+      - AGENTS.md#用户反馈追踪纪律
+      - docs/quality/development-tracker.yaml#feedback_policy
+    next_action: Audit feedback coverage whenever scope changes and keep declined or superseded entries with explicit reasons instead of deleting them.
+  - id: FEEDBACK-20260802-006
+    summary: Reference-feature work must proactively recover historical product failures and model corrections; waiting for the user to recall prior regressions produces superficially working but semantically incomplete implementations.
+    status: verified
+    priority: standing
+    area: reference_asset_failure_semantics
+    decision: Before defining an Agentty contract for any Ashide-derived capability, audit the relevant current spec, tracker, regression tests, and fix commits; record the rejected historical models and negative cases in Agentty's fallback matrix and focused tests before implementation.
+    evidence:
+      - AGENTS.md#参考项目资产提取纪律
+      - docs/quality/ASHIDE_FALLBACK_ASSET_MATRIX.yaml
+      - /Users/admin/ashide/docs/SESSION_NAVIGATOR_SPEC.yaml
+      - /Users/admin/ashide/app/src/app_state_tests.rs
+      - /Users/admin/ashide commit 15f1f1d
+    next_action: Apply the verified audit rule to every gap promotion and future Ashide-derived capability; no implementation may bypass current spec, tracker, regression-test, and fix-commit review.
+  - id: FEEDBACK-20260802-007
+    summary: Agentty's current Agent running-state presentation is only a coarse status dot and does not implement Ashide's complete Agent execution state system.
+    status: verified
+    priority: current
+    area: agent_execution_state_system
+    decision: Recover the full typed state model, event precedence, lifecycle transitions, stale-event rules, active/background/focused distinctions, waiting-for-user semantics, completion/unread behavior, local/remote parity, and visible Navigator presentation from Ashide specs, tests, and fix history before defining the Agentty contract.
+    evidence:
+      - crates/agentty-core/src/core/cli_agent.rs
+      - crates/agentty-core/src/agent_runtime/activity.rs
+      - src/ui/activity_bar.rs
+      - src/ui/tab_sidebar.rs
+    next_action: Keep AGENT-EXECUTION-STATE-SYSTEM-12, activity_seq stale rejection, live terminal authority, and badge-precedence tests green.
+  - id: FEEDBACK-20260802-008
+    summary: Session Navigator hover details and its action menu were omitted; a right-click static details dialog is not an equivalent interaction.
+    status: verified
+    priority: current
+    area: session_navigator_hover_details
+    decision: Recover Ashide's hover-card ownership, delayed open and close rules, stable RowId anchoring, status and metadata content, actionable affordances, keyboard and accessibility path, stale-hover cancellation, and local/remote behavior rather than substituting a context-menu-only shell.
+    evidence:
+      - src/ui/tab_sidebar.rs
+      - /Users/admin/ashide/app/src/workspace/view/vertical_tabs.rs
+      - /Users/admin/ashide/docs/SESSION_NAVIGATOR_SPEC.yaml
+    next_action: Keep SESSION-HOVER-DETAILS-13, canonical HoverCard ownership, stable RowId resolution, stale-target fail-closed behavior, and pointer-migration tests green.
+  - id: FEEDBACK-20260802-009
+    summary: Feature migration quality must be judged by complete user-visible behavior and historical failure semantics, not by the presence of the simplest visible shell.
+    status: verified
+    priority: standing
+    area: feature_migration_completeness
+    decision: Do not mark a capability complete when state, hover, keyboard, lifecycle, persistence, failure, or local/remote semantics are absent.
+    evidence:
+      - AGENTS.md#参考项目资产提取纪律
+      - docs/quality/ASHIDE_FALLBACK_ASSET_MATRIX.yaml
+      - docs/quality/development-tracker.yaml
+    next_action: Keep the audit static gate in presubmit and downgrade any future completion claim that lacks full observable evidence.
+  - id: FEEDBACK-20260802-010
+    summary: Prioritize and durably track a systematic inventory of functional gaps and omissions before continuing feature implementation.
+    status: verified
+    priority: current
+    area: systematic_feature_gap_audit
+    decision: Freeze feature implementation until a source-grounded Ashide-to-Agentty capability matrix covers domain models, user flows, interaction surfaces, persistence, failure semantics, local/remote parity, regression history, tests, and tracking accuracy. Every implementation gap follows SPEC, tracker, matrix, static CHECK, failing TEST, implementation, and verification; applicable tests are written and observed failing before implementation.
+    evidence:
+      - /Users/admin/ashide/docs/SESSION_NAVIGATOR_SPEC.yaml
+      - /Users/admin/ashide/docs/design/local-remote-parity-tracker.yaml
+      - docs/quality/development-tracker.yaml
+      - docs/quality/ASHIDE_FALLBACK_ASSET_MATRIX.yaml
+    promoted_to:
+      spec: AUDIT-SYSTEMATIC-FEATURE-GAPS-01
+      milestone: M0.6-SYSTEMATIC-GAP-AUDIT
+      traceability: AUDIT-SYSTEMATIC-FEATURE-GAPS-037
+      audit: docs/quality/ASHIDE_AGENTTY_FEATURE_GAP_AUDIT.yaml
+    next_action: Promote each partial or missing audit capability through its own SPEC, milestone, matrix, static check, and observed preimplementation failing tests before implementation.
+  - id: FEEDBACK-20260802-011
+    summary: Managed remote connection has never completed successfully in real use despite remote connection, SSH, and helper tracker items being marked verified.
+    status: verified
+    priority: critical
+    area: managed_remote_connection_end_to_end
+    decision: Treat the verified claims as contradicted by live runtime evidence and reopen the complete connection path. Audit one real flow from the UI action through Environment selection, connection state, russh authentication, helper deployment/startup, protocol attach, and first usable remote terminal; do not narrow the investigation to default-key ordering or unit-test fixtures.
+    evidence:
+      - user runtime report on 2026-08-02: remote connection has never succeeded
+      - src/ui/remote_connect.rs
+      - src/ui/remote_workspace.rs
+      - crates/agentty-core/src/daemon/ssh/mod.rs
+      - crates/agentty-core/src/agent_runtime/adapter.rs
+    promoted_to:
+      spec: REMOTE-FIRST-PANE-MATERIALIZATION-12
+      milestone: M0.5-REMOTE-HELPER/HELPER-012
+      traceability: REMOTE-FIRST-PANE-MATERIALIZATION-046
+    next_action: Verified on 2026-08-03: the user confirmed managed SSH connection now succeeds; link-up hydration preserves the owed tree commit, refused materialization kills the orphan and surfaces retry, and full presubmit passed.
+  - id: FEEDBACK-20260802-012
+    summary: A connected SSH profile must show its human profile name rather than exposing the profile UUID as the remote Environment label.
+    status: verified
+    priority: current
+    area: remote_environment_display_identity
+    decision: Keep the stable profile UUID in Environment identity and routing, but resolve the user-visible label from the selected profile registry with an explicit missing-profile fallback; profile rename must not change Environment identity.
+    evidence:
+      - user runtime report on 2026-08-02: the connected remote display name is unreadable
+      - crates/agentty-core/src/core/environment.rs
+      - src/ui/remote_workspace.rs
+    promoted_to:
+      spec: ENV-PROFILE-DISPLAY-LABEL-12
+      milestone: M0-ARCHITECTURE-RESET/ENV-008
+      traceability: ENV-PROFILE-LABEL-047
+    next_action: Verified profile-registry label resolution and stable missing-profile fallback; preserve UUID only as Environment identity and routing authority.
+  - id: FEEDBACK-20260802-013
+    summary: A successfully connected remote Environment does not discover its remote Codex, Claude, or Omp sessions.
+    status: verified
+    priority: critical
+    area: remote_agent_session_discovery
+    decision: Trace discovery through the selected Environment and Host authority into RemoteAgentRuntime and provider registry discovery; remote failure must remain visible and must never fall back to local session files.
+    evidence:
+      - user runtime report on 2026-08-02: remote terminal connects but remote sessions are absent
+      - src/ui/session_navigator.rs
+      - crates/agentty-core/src/agent_runtime/service.rs
+      - crates/agentty-core/src/host/remote.rs
+    promoted_to:
+      spec: SESSION-REFRESH-INTENT-18
+      milestone: M1-SESSION-NAVIGATOR/SESSION-018
+      traceability: SESSION-REFRESH-INTENT-048
+      follow_up_spec: SESSION-SCHEMA-BOUNDED-DISCOVERY-24
+      follow_up_milestone: M1-SESSION-NAVIGATOR/SESSION-023
+      follow_up_traceability: SESSION-SCHEMA-BOUNDED-DISCOVERY-061
+    next_action: Verified on 2026-08-03 by target-owned handshake roots, corrected remote-helper authority semantics, the remote_discovery_request_uses_target_roots_end-to-end RPC test, schema-bounded provider traversal, a real standard-store discovery commit of 40 rows with Omp present, focused discovery tests, and full presubmit.
+  - id: FEEDBACK-20260802-014
+    summary: Session Navigator reorder must treat all panes produced by one split tab as one visible and persisted tag group.
+    status: verified
+    priority: current
+    area: session_split_group_reorder
+    decision: Reuse the canonical reorder primitive and measure drag hit targets, preview, placeholder, drop position, and persistence by stable tab group rather than individual pane rows; filtered search disables reorder.
+    evidence:
+      - user clarification on 2026-08-02: split-created tag groups must be implemented
+      - crates/agentty-core/src/agent_runtime/navigator.rs
+      - src/ui/reorder.rs
+      - src/ui/session_navigator.rs
+    promoted_to:
+      spec: SESSION-STABLE-REORDER-17
+      milestone: M1-SESSION-NAVIGATOR/SESSION-017
+      traceability: SESSION-STABLE-REORDER-045
+    next_action: "Verified on 2026-08-03: the production sidebar renders one drag wrapper per canonical tab unit, split siblings move and persist together, query mode disables reorder, rollback preserves visible order, and full presubmit passed."
+  - id: FEEDBACK-20260802-015
+    summary: Opening the local GUI unexpectedly leaves a local background server, and the product must make this lifecycle difference from Ashide explicit and intentional.
+    status: verified
+    priority: current
+    area: local_daemon_lifecycle
+    decision: "Keep a headless session runtime because durable PTYs must not be owned by a fallible GUI, but make it resource-leased rather than GUI-leased: do not start it for an idle GUI, start lazily on the first durable pane, exit after a grace period when there are no panes, clients, or pending mutations, and make Quit with live panes an explicit Ask/Keep/Stop policy. Package and launch the headless agentty-server binary rather than disguising the GUI executable as --daemon. Local and remote share domain primitives, not necessarily identical process topology; local discovery and filesystem work may remain direct when durability does not require the daemon."
+    evidence:
+      - user architecture question on 2026-08-02
+      - src/main.rs
+      - crates/agentty-server/src/main.rs
+      - crates/agentty-core/src/daemon/spawn.rs
+      - /Users/admin/ashide/app/src/terminal/local_tty
+      - /Users/admin/ashide/crates/remote_server
+    promoted_to:
+      spec: LOCAL-RUNTIME-RESOURCE-LEASE-04
+      milestone: M9-LOCAL-RUNTIME/LOCAL-RUNTIME-004
+      traceability: LOCAL-RUNTIME-RESOURCE-LEASE-052
+    next_action: Verified on 2026-08-03 by focused GUI policy tests, deterministic lease-state tests, isolated zero-resource server E2E, and live isolated GUI smoke: bootstrap stayed healthy with no warning/error, the immediately created first durable terminal pane started one dual-endpoint runtime as designed, forced GUI termination preserved that pane/runtime, and explicit Stop removed all three endpoint/pid artifacts. Quick and full presubmit passed.
 milestones:
   - id: M0-ARCHITECTURE-RESET
     title: Environment-window authority architecture
@@ -83,6 +1130,19 @@ milestones:
           - terminal_ssh_does_not_mutate_window_environment
         evidence: 2026-07-31 managed SSH entry no longer calls switch_workspace; environment boundary gate passed
         old_path_removal: none
+      - id: ENV-008
+        title: Resolve saved SSH profile display labels without changing Environment identity
+        status: verified
+        spec: ENV-PROFILE-DISPLAY-LABEL-12
+        source:
+          - src/ui/remote_connect.rs
+          - src/ui/tab_strip.rs
+        tests:
+          - profile_environment_uses_profile_name_without_changing_environment_identity
+          - missing_profile_uses_stable_non_uuid_label
+        red_test_evidence: 2026-08-03 profile label tests failed before label_for_config replaced direct RemoteTarget formatting.
+        evidence: 2026-08-03 profile_environment_uses_profile_name_without_changing_environment_identity and missing_profile_uses_stable_non_uuid_label passed; full presubmit passed.
+        old_path_removal: Replace direct RemoteTarget formatting on user-visible Environment surfaces with the canonical registry label resolver.
   - id: M0.5-REMOTE-HELPER
     title: Lightweight local/remote Agent helper
     status: verified
@@ -98,7 +1158,7 @@ milestones:
         title: Shared provider registry
         status: verified
         spec: HELPER-SHARED-CORE-02
-        tests: [registry_rejects_duplicate_provider_ids, codex_and_claude_discovery_uses_one_shared_host_core, huge_transcripts_are_scanned_via_bounded_head_read, only_the_most_recent_candidates_are_parsed]
+        tests: [every_provider_id_has_one_descriptor, codex_and_claude_discovery_uses_one_shared_host_core, huge_transcripts_are_scanned_via_bounded_head_read, only_the_most_recent_candidates_are_parsed]
         evidence: 2026-08-01 Codex and Claude providers execute through one Host-based core used by LocalAgentRuntime and agentty-server RPC; transcripts are read via Host::read_file_prefix as a bounded 256KiB head (truncated tail line dropped) so multi-GB rollouts cannot fail a provider, and only the most recent parse candidates are read
       - id: HELPER-003
         title: Atomic session discovery reducer
@@ -151,9 +1211,256 @@ milestones:
         spec: HELPER-LOCAL-REMOTE-PARITY-09
         tests: [codex_and_claude_discovery_uses_one_shared_host_core, remote_authority_never_falls_back_to_local_rows]
         evidence: 2026-07-31 LocalAgentRuntime calls shared discovery directly and RemoteAgentRuntime requires advertised agent-helper before RPC; remote authority mismatch fails closed
+      - id: HELPER-010
+        title: Bundle both Linux helper architectures into desktop distributions
+        status: verified
+        spec: HELPER-BUNDLED-INSTALL-10
+        source:
+          - crates/agentty-core/src/daemon/install/mod.rs
+          - crates/agentty-core/src/daemon/install/wsl.rs
+          - .github/workflows/ci.yml
+          - .github/workflows/release.yml
+          - .github/workflows/nightly.yml
+          - .github/scripts/bundle-macos.sh
+          - .github/scripts/bundle-windows.ps1
+          - .github/scripts/bundle-linux.sh
+          - .github/scripts/bundle-appimage.sh
+        tests:
+          - an_implicit_bundle_that_lacks_the_asset_falls_back_to_the_release
+          - an_explicit_bundle_that_lacks_the_asset_does_not_fall_back_to_the_network
+          - a_bundled_first_install_does_not_prompt_for_download_approval
+          - the_search_order_is_specific_first_and_deduplicated
+        evidence: 2026-08-01 both musl helper architectures were embedded byte-identically in the ad-hoc-signed macOS bundle and installed /Applications/Agentty.app; the DMG checksum, deep strict codesign, running GUI/daemon processes, and live_open_remote_link_full_chain against 172.16.70.226 all passed
+        old_path_removal: Remove the release-only remote install dependency and the Windows-only single-architecture bundle path.
+      - id: HELPER-013
+        title: Fail-closed remote helper dialect skew replacement
+        status: verified
+        spec: REMOTE-HELPER-DIALECT-SKEW-14
+        source:
+          - crates/agentty-core/src/daemon/control.rs
+          - crates/agentty-core/src/daemon/install/mod.rs
+          - src/ui/switcher.rs
+          - src/ui/remote_workspace.rs
+          - src/ui/app.rs
+        tests:
+          - provider_enum_growth_advances_the_control_dialect
+          - known_dialect_skew_offers_only_replace_server
+          - remote_mismatch_remains_after_modal_cancel
+          - every_remote_mismatch_action_routes_to_replace_server
+          - replacing_prefers_a_matching_bundled_helper
+        red_test_evidence: 2026-08-09 provider_enum_growth_advances_the_control_dialect failed because CONTROL_VERSION remained 6; known_dialect_skew_offers_only_replace_server failed to compile because no canonical failure-action classifier existed; live dnyx226 audit then found modal and persistent notice callsites still invoked restart-only and could not publish the bundled c7p5 helper.
+        evidence: 2026-08-09 CONTROL_VERSION 7 rejects c6p5 at handshake; every mismatch surface routes only to ReplaceServer; live_replace_remote_helper_full_chain published the packaged c7p5 x86_64 helper to dnyx226, stopped c6p5, started c7p5, and live_open_remote_link_full_chain passed; focused tests plus presubmit quick/full passed; rebuilt DMG sha256 ac51f060142beb7fc48e307bc10b9a039dea302a80e00cd696cc741af10ae203 installed successfully.
+        old_path_removal: Remove generic Retry and every restart-only action for known dialect refusal; all mismatch surfaces use the canonical bundled-first ReplaceServer route.
+      - id: HELPER-014
+        title: Route WSL Restart Server through the canonical lifecycle primitive
+        status: verified
+        spec: WSL-SERVER-LIFECYCLE-PARITY-15
+        source:
+          - crates/agentty-core/src/core/session.rs
+          - crates/agentty-core/src/daemon/router.rs
+          - crates/agentty-core/src/daemon/install/wsl.rs
+          - src/ui/app.rs
+          - src/ui/switcher.rs
+          - src/ui/remote_workspace.rs
+        tests:
+          - wsl_is_restartable_without_becoming_an_ssh_target
+          - wsl_restart_is_supported_but_replace_remains_explicitly_unsupported
+        red_test_evidence: 2026-08-09 the route focused test failed to compile because server_lifecycle_dispatch and ServerLifecycleDispatch did not exist; the capability focused test then failed because can_restart_server did not exist and both UI entrypoints incorrectly inferred restartability from is_ssh.
+        evidence: 2026-08-09 WSL is restartable without becoming an SSH transport; the window and machine-menu entrypoints expose Restart Server, and the typed route dispatches to restart_wsl_daemon through RouteSetup::blocking. ReplaceServer remains unsupported. cargo fmt --check, both focused tests, check_remote_helper, and presubmit quick passed.
+        old_path_removal: Remove the SSH-only rejection for WSL RestartServer without broadening WSL ReplaceServer semantics.
+      - id: HELPER-015
+        title: Keep WSL path completion in target authority
+        status: verified
+        spec: WSL-COMPLETION-AUTHORITY-16
+        source:
+          - src/terminal/view.rs
+          - crates/agentty-core/src/agent_runtime/completion.rs
+        tests:
+          - a_remote_workspace_pane_reports_its_cwd_as_remote
+          - remote_source_failure_never_reads_local_filesystem
+          - wsl_workspace_completion_uses_remote_authority
+        evidence: 2026-08-09 Agentty routes completion through the selected Host and marks a WSL workspace host as remote; unlike tty7, it does not need or permit a GUI-local \\wsl$ fallback. Explicit WSL authority and remote-failure negative tests plus presubmit quick passed.
+        old_path_removal: Do not import tty7's local share workaround because it would bypass Agentty's Host authority.
+      - id: HELPER-016
+        title: Paste clipboard images into SSH and WSL panes by target-visible paths
+        status: verified
+        spec: REMOTE-IMAGE-PASTE-17
+        source:
+          - src/terminal/view.rs
+          - src/ui/sftp.rs
+        tests:
+          - remote_image_paste_stages_on_every_platform
+          - wsl_image_path_uses_the_distro_automount_view
+          - remote_paste_selects_only_ssh_authority
+          - remote_clipboard_directory_requires_owner_only_permissions
+          - clipboard_image_transcodes_tiff_to_png
+        red_test_evidence: 2026-08-09 focused tests failed to compile because remote staging selection, WSL path translation, SSH authority selection, private directory verification, and explicit completion authority helpers did not exist.
+        evidence: 2026-08-09 native SSH and SSH workspace panes stage cross-platform image bytes, prepare an owner-only remote directory, upload through canonical SftpRoute, verify completion and mode 0600, then paste only the remote path. WSL rewrites absolute Windows paths to /mnt/<drive>; local macOS retains SYN. TIFF transcodes to PNG. Upload failure is visible and never inserts an unreachable GUI-local path. All focused tests, i18n, remote-helper static gate, and presubmit quick passed.
+        old_path_removal: Remove platform-wide cfg gates that disable staging and upload on macOS remote panes.
+      - id: HELPER-017
+        title: Add stateless CLI wait for agent orchestration
+        status: verified
+        spec: CLI-AGENT-WAIT-01
+        source:
+          - crates/agentty-cli/src/cli.rs
+          - crates/agentty-cli/src/commands.rs
+        tests:
+          - wait_returns_when_agent_state_matches
+          - wait_treats_live_agentless_pane_as_idle
+          - wait_timeout_uses_exit_code_124
+          - wait_refuses_unrequested_pane_exit
+          - wait_changed_refuses_the_state_it_arrived_in
+          - wait_rechecks_liveness_for_a_reporting_agent
+        evidence: 2026-08-09 red compile/test failures observed; six focused wait tests, the full agentty-cli test package, static gate, and presubmit quick passed. The implementation uses AgentStates plus throttled MachineGet liveness, structured exit reports, activity-aware changed mode, validated intervals, and deadline-bounded sleep.
+        old_path_removal: Do not add screen scraping or a parallel event subscription protocol.
+      - id: INPUT-018
+        title: Frame-align discrete wheel smooth scrolling
+        status: verified
+        spec: INPUT-FRAME-ALIGNED-SMOOTH-SCROLL-08
+        source:
+          - crates/agentty-core/src/core/config.rs
+          - src/terminal/view.rs
+          - src/ui/settings.rs
+        tests:
+          - scroll_anim_step_decays_and_lands
+          - a_stale_frame_after_cancellation_does_not_walk
+          - scroll_anim_step_accounts_for_dropped_frames_and_snaps_tail
+        evidence: 2026-08-09 implementation began behind a failing static gate. tty7 d992d6d and 45e5a1a failure semantics were adapted: phase distinguishes trackpad from wheel, quantized application routes stay direct, relative distance accumulates, GPUI next-frame callbacks advance elapsed-time decay, queueing wakes idle windows, clamps and stale epochs stop safely, and settings persist with localized labels. Focused pure and GPUI tests, i18n, static gate, and presubmit quick passed.
+        old_path_removal: Replace direct discrete-wheel jumps only; retain direct trackpad and application mouse reporting routes.
+      - id: INPUT-019
+        title: Include authoritative fish history in completion and reverse search
+        status: verified
+        spec: INPUT-FISH-HISTORY-AUTHORITY-09
+        source:
+          - src/terminal/history.rs
+          - src/terminal/view.rs
+        tests:
+          - fish_writes_commands_unquoted_so_yaml_punctuation_is_just_text
+          - fish_escapes_only_backslash_and_newline
+          - a_multiline_fish_command_is_skipped_not_half_recalled
+          - a_remote_scope_routes_fish_bytes_by_source_name
+        evidence: 2026-08-09 exact regressions first failed to compile because the fish parser and named remote source type did not exist. The canonical history loader now discovers non-empty XDG_DATA_HOME before HOME fallback, parses fish's non-YAML records and timestamps, preserves punctuation and escaping, excludes multiline commands, and carries remote source names without reading local history. Five fish-focused tests, existing remote zsh/bash coverage, static/check references, matrix, tracker, formatting, presubmit quick, and workspace full passed.
+        old_path_removal: Replace unnamed remote shell byte blobs with named sources; do not add a parallel history store.
+      - id: TERMINAL-020
+        title: Apply ConPTY resize semantics in output-stream order
+        status: verified
+        spec: TERMINAL-CONPTY-STREAM-RESIZE-01
+        source:
+          - Cargo.toml
+          - crates/agentty-core/src/daemon/protocol.rs
+          - crates/agentty-core/src/daemon/pane.rs
+          - src/terminal/remote.rs
+        tests:
+          - resize_echoes_size_to_the_controller_between_old_and_new_output
+          - resize_echo_feature_is_advertised
+          - resize_echo_defers_local_grid_reflow_until_size_frame
+          - live_size_frame_reflows_without_waiting_for_snapshot
+        evidence: Static gate was observed failing before implementation. Focused daemon feature/order tests and client deferred/live Size tests pass on macOS; the alacritty fork revision carries the Windows ConPTY behavior and the platform config is statically locked. Aggregate quick and workspace full presubmit pass.
+        old_path_removal: Replace snapshot-only Size application for the canonical reader; retain eager resize only as the explicit old/unknown peer fallback.
+      - id: NOTIFY-021
+        title: Reveal the environment-qualified pane from a desktop notification
+        status: verified
+        spec: NOTIFY-CLICK-REVEAL-01
+        source:
+          - src/terminal/remote.rs
+          - src/terminal/view.rs
+          - src/ui/tray/mod.rs
+          - src/ui/windows.rs
+        tests:
+          - notification_text_removes_unsafe_controls_and_clamps_unicode
+          - notification_reveal_targets_environment_and_pane_not_entity_id
+          - stale_notification_target_is_a_noop
+          - saturated_click_backend_falls_back_to_plain_notification
+        evidence: Static and test-reference gates were observed red before implementation. Four mapped focused tests pass on macOS. macOS uses a bounded click wait; Windows uses a bounded WinRT toast thread only when a read-only current-process AUMID exists, otherwise both preserve plain notification fallback. A minimal x86_64-pc-windows-msvc crate compiled the exact Windows-only AUMID/WinRT block; the full cross-check reached ring and was acceptance-blocked by missing MSVC C headers. Aggregate quick and workspace full presubmit pass.
+        old_path_removal: Extend the canonical tray dispatch and existing notification sender; do not introduce a second pane registry or use ephemeral GPUI identity.
+      - id: INPUT-022
+        title: IDEA-style MRU Ctrl+Tab within one window
+        status: verified
+        spec: TAB-SWITCHER-MRU-HOLD-01
+        source:
+          - src/ui/app.rs
+          - src/ui/switcher.rs
+          - src/ui/keymap.rs
+        tests:
+          - tab_switch_hold_uses_a_fixed_mru_snapshot
+          - tab_switch_release_commits_exactly_once
+          - tab_switch_escape_and_deactivation_restore_the_origin
+          - tab_switch_revalidates_removed_origin_and_candidate
+          - tab_switch_single_tab_is_a_noop
+        evidence: Static/test-reference gates and stale-origin assertion were observed red before implementation. Five focused reducer tests pass, including fixed snapshot, single commit, Escape/deactivation, removed identities, and single-tab no-op. Aggregate quick and workspace full presubmit pass.
+        old_path_removal: Route both action and key-event callers through one tab-switch reducer; do not keep direct index cycling as a parallel Ctrl+Tab behavior.
+      - id: HELPER-011
+        title: Delete stale package outputs before every desktop package build
+        status: verified
+        spec: PACKAGE-CLEAN-BEFORE-BUILD-11
+        source:
+          - AGENTS.md
+          - .github/scripts/bundle-macos.sh
+          - .github/scripts/bundle-windows.ps1
+          - .github/scripts/bundle-linux.sh
+          - .github/scripts/bundle-appimage.sh
+          - script/check_package_cleanup
+        tests: []
+        evidence: 2026-08-01 all four desktop bundle entrypoints delete their platform-and-architecture stage and final outputs before packaging; script/check_package_cleanup rejects missing cleanup and broad dist deletion; quick presubmit passed
+        old_path_removal: Remove output-overwrite behavior that can leave a stale package when packaging exits early.
+      - id: HELPER-012
+        title: First remote pane materializes atomically into the remote workspace tree
+        status: verified
+        spec: REMOTE-FIRST-PANE-MATERIALIZATION-12
+        source:
+          - src/ui/tree_sync.rs
+          - src/ui/app.rs
+          - src/ui/pending_pane.rs
+        tests:
+          - link_up_hydration_preserves_pending_local_tree_commit
+          - failed_remote_tree_commit_cleans_orphan_and_surfaces_retryable_error
+        red_test_evidence: 2026-08-02 observed missing begin_hydration and remote_materialization_failure compile errors before implementation; output captured in /tmp/remote-materialization-red.out
+        evidence: 2026-08-03 the user confirmed managed SSH connection succeeds; focused tests prove link-up hydration preserves the pending tree commit and refused remote materialization cleans the orphan with a retryable error; full presubmit passed.
+        old_path_removal: Removed the path where attached control state counted as a usable terminal and hydration reset an owed local tree commit.
+  - id: M0.6-SYSTEMATIC-GAP-AUDIT
+    title: Systematic Ashide-to-Agentty feature gap audit
+    status: verified
+    outcome: Establish a source-grounded inventory of complete, partial, missing, and non-applicable capabilities before any further Ashide-derived implementation.
+    items:
+      - id: AUDIT-001
+        title: Inventory reference capabilities and historical failures
+        status: verified
+        spec: AUDIT-SYSTEMATIC-FEATURE-GAPS-01
+        source:
+          - docs/specs/FEATURE_GAP_AUDIT_SPEC.yaml
+          - docs/quality/ASHIDE_AGENTTY_FEATURE_GAP_AUDIT.yaml
+          - /Users/admin/ashide/docs/SESSION_NAVIGATOR_SPEC.yaml
+          - /Users/admin/ashide/docs/design/local-remote-parity-tracker.yaml
+        tests: [feature_gap_audit_contract]
+        evidence: 2026-08-02 the audit inventories tracked Agentty domains and Ashide Session Navigator history across domain, interaction, persistence, failure, authority, concurrency, accessibility, regression, tests, and tracker accuracy; feature_gap_audit_contract passed
+      - id: AUDIT-002
+        title: Recover reference fix history and rejected models
+        status: verified
+        spec: AUDIT-REFERENCE-HISTORY-02
+        tests: [feature_gap_audit_contract]
+        evidence: 2026-08-02 six rejected historical models are recorded with negative tests, including source-only aliases, provider-as-title, row-local user state, status-dot shell, context-menu substitution, and local-only deletion; Ashide fix commit 15f1f1d is mapped
+      - id: AUDIT-003
+        title: Correct unsupported completion claims
+        status: verified
+        spec: AUDIT-EVIDENCE-STATUS-03
+        tests: [feature_gap_audit_contract]
+        evidence: 2026-08-02 Session Navigator aggregate status changed to in_progress; SESSION-004 and SESSION-007 remain verified only for their narrow written contracts, while pin, alias, reorder, keyboard, hover, state, and delete are independent missing or partial gaps
+      - id: AUDIT-004
+        title: Require preimplementation red tests for every gap
+        status: verified
+        spec: AUDIT-PREIMPLEMENTATION-RED-04
+        tests: [feature_gap_audit_contract]
+        evidence: 2026-08-03 every formerly partial or missing capability completed its declared target artifacts and recorded red-test evidence before implementation; the audit now has no unsupported partial or missing status.
+      - id: AUDIT-005
+        title: Gate implementation on the eight principles
+        status: verified
+        spec: AUDIT-EIGHT-PRINCIPLES-GATE-05
+        source: [AGENTS.md, docs/specs/FEATURE_GAP_AUDIT_SPEC.yaml, script/check_feature_gap_audit]
+        tests: [feature_gap_audit_contract]
+        evidence: 2026-08-02 AGENTS.md contains exactly eight engineering principles and mandates their recital immediately before implementation; check_feature_gap_audit and its mutation fixtures passed
   - id: M1-SESSION-NAVIGATOR
     title: Environment-scoped Agent Session Navigator
-    status: verified
+    status: in_progress
     outcome: Left sidebar discovers live and historical CLI Agent sessions for the selected environment and resumes them into typed environment tabs.
     items:
       - id: SESSION-001
@@ -194,6 +1501,361 @@ milestones:
         tests: [opaque_row_identity_survives_carrier_replacement, coordinate_reuse_after_delete_allocates_new_identity, restore_failure_rolls_back_without_duplicate_row, passive_refreshes_coalesce_while_a_scan_is_running, explicit_refresh_supersedes_the_inflight_generation]
         evidence: 2026-07-31 GPUI sidebar renders Environment-scoped sessions; opaque identity, rollback, passive coalescing, explicit supersede, and reconnect-triggered refresh tests/checks pass
         old_path_removal: Removed repository grouping settings, sidebar drag surfaces, workspace header renderer, and sidebar-only diff toggle; no legacy grouped-sidebar symbols remain.
+      - id: SESSION-005
+        title: Render canonical CLI Agent identity in every Navigator row
+        status: verified
+        spec: SESSION-PROVIDER-ICON-05
+        source:
+          - crates/agentty-core/src/core/cli_agent.rs
+          - src/ui/assets.rs
+          - src/ui/tab_sidebar.rs
+        tests:
+          - every_agent_icon_resolves
+          - navigator_rows_use_their_agent_icon
+        evidence: 2026-08-01 every_agent_icon_resolves and navigator_rows_use_their_agent_icon passed; installed /Applications/Agentty.app launched from the freshly bundled binary, while OS screen capture and both Browser/Computer Use attachment paths were unavailable, so no visual screenshot is claimed
+        old_path_removal: Remove the generic Bot/SquareTerminal row icon mapping.
+      - id: SESSION-006
+        title: Discover Omp sessions through the shared local/remote scanner
+        status: verified
+        spec: SESSION-OMP-DISCOVERY-06
+        source:
+          - crates/agentty-core/src/agent_runtime/stores.rs
+          - crates/agentty-core/src/agent_runtime/parse.rs
+          - crates/agentty-core/src/agent_runtime/service.rs
+        tests:
+          - omp_discovery_reads_one_project_level_and_ignores_diagnostic_only_files
+          - omp_session_header_requires_filename_identity_match
+          - omp_resume_uses_the_native_session_flag
+          - missing_optional_provider_does_not_hide_complete_rows
+        evidence: 2026-08-01 focused Omp classification, filename/header identity, optional-store, and typed resume tests passed; AGENTTY_E2E_HOME=/Users/admin real-store E2E used the standard Codex/Claude/Omp request, discovered 40 canonical rows, and asserted an Omp row because ~/.omp/agent/sessions exists
+        old_path_removal: Remove the Codex-and-Claude-only default request.
+      - id: SESSION-007
+        title: Session row copy actions and details dialog
+        status: verified
+        spec: SESSION-ROW-ACTIONS-07
+        source:
+          - crates/agentty-core/src/agent_runtime/discovery.rs
+          - crates/agentty-core/src/agent_runtime/navigator.rs
+          - crates/agentty-core/src/agent_runtime/resume.rs
+          - src/ui/tab_sidebar.rs
+        tests:
+          - navigator_rows_use_their_agent_icon
+          - shell_materialization_quotes_each_argument_at_the_terminal_boundary
+        evidence: 2026-08-01 safe typed resume rendering, Navigator menu compilation/tests, i18n catalog gate, session static gate, fresh macOS bundle/install, and installed-app launch passed; direct menu clicking was unavailable because native GPUI is not CDP-capable and ScreenCapture/Computer Use failed
+        old_path_removal: none
+      - id: SESSION-008
+        title: Reserve the Navigator subtitle for session-specific context
+        status: verified
+        spec: SESSION-ROW-INFORMATION-HIERARCHY-08
+        source:
+          - src/ui/tab_sidebar.rs
+        tests:
+          - navigator_subtitle_uses_session_context_without_repeating_provider
+          - provider_identity_remains_searchable_when_hidden_from_subtitle
+        evidence: 2026-08-02 preimplementation red test observed `codex · /repo/agentty`; implementation now renders only `/repo/agentty` while search indexes both provider slug and display name; 3 focused tab_sidebar tests and session/test-reference gates passed
+        old_path_removal: Removed visible provider composition from the subtitle; provider identity remains in canonical icon, search text, and details.
+      - id: SESSION-009
+        title: Permanent session deletion with confirmation and Host-backed file removal
+        status: verified
+        spec: SESSION-PERMANENT-DELETE-TRANSACTION-09
+        source:
+          - crates/agentty-core/src/agent_runtime/navigator.rs
+          - crates/agentty-core/src/host/mod.rs
+          - src/ui/tab_sidebar.rs
+        tests:
+          - delete_plan_captures_source_and_identity_before_mutation
+          - commit_delete_removes_row_and_file_atomically
+          - rollback_delete_restores_row_on_file_failure
+          - tombstone_prevents_reappearance_in_same_generation
+          - direct_session_delete_source_removes_only_backing_file
+          - codex_index_delete_source_rewrites_only_matching_entry
+          - malformed_codex_index_fails_without_overwriting_source
+        red_test_evidence: 2026-08-02 observed — 5 focused Navigator tests passed before UI wiring; plan_delete rejects live/restoring rows, commit_delete removes row and registers tombstone, rollback_delete restores, and tombstone blocks re-insertion in same generation
+        evidence: 2026-08-02 selected-environment Host mutation now completes before Navigator commit; direct files remove only the backing transcript, Codex session_index.jsonl rewrites only the matching entry, malformed indexes remain unchanged, stable SessionIdentity tombstones prevent refresh resurrection, and Host errors leave the row visible with a notification; focused delete tests and static gate passed
+        old_path_removal: none
+      - id: SESSION-010
+        title: Environment-scoped session alias with inline editing and persistence
+        status: verified
+        spec: SESSION-ALIAS-BUSINESS-MODEL-10
+        source:
+          - crates/agentty-core/src/agent_runtime/navigator.rs
+          - src/ui/tab_sidebar.rs
+        tests:
+          - alias_state_is_partitioned_by_environment_identity
+          - alias_mutation_failure_rolls_back_visible_state
+          - deleted_session_clears_alias_state
+          - inline_edit_identity_survives_carrier_replacement
+          - live_only_alias_is_immediately_visible
+          - provider_source_appearance_preserves_explicit_alias
+        red_test_evidence: 2026-08-02 observed compile failure before SessionAliasStore existed; environment partition, failed-write non-commit, deletion cleanup, selected-Host round-trip, live-only projection, and provider-source continuity tests now pass
+        evidence: 2026-08-02 SessionAliasStore is the single Environment-scoped authority at the selected Host home; double-click inline editing writes a candidate before visible commit, Escape/blur cancel without mutation, duplicate aliases fail, deletion and alias state commit in one rollback-safe Host transaction, and stable SessionIdentity preserves explicit aliases across live/history replacement
+        old_path_removal: Removed Navigator-owned alias HashMap, set_alias, hydrate_aliases, aliases_snapshot, and load_aliases parallel paths.
+      - id: SESSION-011
+        title: Deterministic session title precedence and first-user fallback
+        status: verified
+        spec: SESSION-TITLE-PRECEDENCE-11
+        source:
+          - crates/agentty-core/src/agent_runtime/parse.rs
+          - crates/agentty-core/src/agent_runtime/navigator.rs
+          - crates/agentty-core/src/agent_runtime/service.rs
+          - src/ui/tab_sidebar.rs
+          - src/ui/session_navigator.rs
+        tests:
+          - provider_title_wins_even_when_it_appears_after_first_user_message
+          - first_user_message_names_untitled_session
+          - provider_identity_is_never_a_session_alias
+          - session_display_title_prefers_alias_over_title_and_fallback
+          - session_display_title_ignores_blank_candidates
+          - session_display_title_never_uses_session_id
+          - refresh_blank_title_preserves_last_good_title_and_alias_display
+          - display_title_stable_across_identical_ui_inputs
+          - refresh_product_placeholder_title_preserves_settled_session_title
+          - live_session_rows_omit_tab_and_terminal_titles
+        red_test_evidence: 2026-08-02 observed missing resolved_title; 2026-08-05 UI still re-derived titles with session_id fallback before session_display_title; 2026-08-05 live resume published agentty/tab OSC titles over settled rows
+        evidence: 2026-08-05 session_display_title is the sole display authority; blank/placeholder refresh preserves last good title; live carrier projection omits tab/OSC/product titles so resume no longer jumps (FEEDBACK-20260805-015/022); focused tests and static gate passed
+        old_path_removal: Removed per-callsite alias.or(title).or(session_id) display chains from sidebar, hover, and palette documents; removed live_session_rows tab.name/agentty title publication.
+      - id: SESSION-012
+        title: Typed Agent execution state projection in Session Navigator
+        status: verified
+        spec: AGENT-EXECUTION-STATE-SYSTEM-12
+        source:
+          - crates/agentty-core/src/core/cli_agent.rs
+          - crates/agentty-core/src/agent_runtime/navigator.rs
+          - src/ui/session_navigator.rs
+          - src/ui/tab_sidebar.rs
+        tests:
+          - execution_badge_precedence_is_restoring_then_waiting_then_running_then_focused_live_then_background_live
+          - historical_rows_never_show_live_execution
+          - stale_execution_event_cannot_replace_current_state
+          - waiting_message_remains_actionable
+        red_test_evidence: 2026-08-02 observed missing LiveExecutionState, ExecutionBadge, execution_badge, execution_message, and NavigatorRow execution fields before implementation
+        evidence: 2026-08-02 Navigator projects canonical TerminalView AgentSessionState with focused and unread state; activity_seq rejects stale replacement; UI badge precedence and waiting detail focused tests pass; lifecycle-only status-dot path removed.
+        old_path_removal: Removed lifecycle-only success/warning status dots.
+      - id: SESSION-013
+        title: Stable RowId hover detail card with pointer-safe ownership
+        status: implemented
+        spec: SESSION-HOVER-DETAILS-13
+        source:
+          - crates/agentty-core/src/agent_runtime/navigator.rs
+          - src/ui/tab_sidebar.rs
+        tests:
+          - hover_target_survives_carrier_replacement
+          - stale_hover_target_closes_fail_closed
+          - pointer_safe_region_keeps_detail_open
+          - session_hover_sidecar_lead_clears_the_sidebar_split
+          - session_hover_delays_stay_in_the_snappy_band
+        red_test_evidence: 2026-08-02 observed missing SessionNavigator::detail_row compile failure before implementation; 2026-08-05 geometry assertion added for trailing sidecar placement.
+        evidence: 2026-08-05 HoverCard open/close 180/120ms after FEEDBACK-20260805-014; menu-open skips extra notify; sidecar lead parks the card past the split; hover yields to open row menus; pointer-migration still cancels close.
+        old_path_removal: Removed TopLeft overlay placement that covered navigator rows and search; removed hover/menu same-priority competition by suppressing hover during an open row menu; context-menu details remain the keyboard path.
+      - id: SESSION-014
+        title: Stable transient keyboard cursor for filtered Navigator rows
+        status: verified
+        spec: SESSION-KEYBOARD-CURSOR-14
+        source:
+          - src/ui/app.rs
+          - src/ui/session_navigator.rs
+          - src/ui/tab_sidebar.rs
+        tests:
+          - keyboard_cursor_uses_row_identity_not_list_index
+          - enter_activates_filtered_cursor_and_escape_clears_transient_state
+        red_test_evidence: 2026-08-02 observed unresolved SessionKeyboardCursor compile failure before implementation
+        evidence: 2026-08-02 transient SessionKeyboardCursor stores stable NavigatorRowId, normalizes against query-filtered committed rows, preserves identity across reorder, scrolls by temporary visible index only, routes Up/Down/Enter/Escape through existing activate and focus paths, and leaves canonical SessionNavigator selection untouched.
+        old_path_removal: Keyboard cursor is not written into SessionNavigator selected state or persistent user state.
+      - id: SESSION-015
+        title: Persisted live container identity before first projection
+        status: verified
+        spec: SESSION-LIVE-CONTAINER-BINDING-15
+        source:
+          - crates/agentty-core/src/core/session.rs
+          - crates/agentty-core/src/agent_runtime/navigator.rs
+          - src/ui/pending_pane.rs
+          - src/terminal/view.rs
+          - src/ui/session_navigator.rs
+          - src/ui/app.rs
+        tests:
+          - resume_carrier_is_bound_before_first_projection
+          - restored_live_binding_survives_placeholder_and_restart
+          - provider_identity_rebind_preserves_container_row
+        red_test_evidence: 2026-08-02 observed missing LiveContainerBinding, SessionPane live_binding, LiveCarrier container_id, and birth-binding helper compile failures before implementation
+        evidence: 2026-08-02 persisted LiveContainerBinding now crosses SessionPane JSON, machine AgentFacts, PendingSpawn, ShellParts, TerminalView, local and remote materialization, and Navigator projection; resume seeds binding before pane projection; runtime events enrich but do not create identity; provider rebind preserves RowId and pin; focused and lifecycle regression tests pass.
+        old_path_removal: Removed pane numeric identity fallback from live Navigator projection and made tab/pane coordinates optional routing only.
+      - id: SESSION-016
+        title: Environment-scoped persisted session pin model
+        status: verified
+        spec: SESSION-PIN-BUSINESS-MODEL-16
+        source:
+          - crates/agentty-core/src/agent_runtime/user_state.rs
+          - crates/agentty-core/src/agent_runtime/navigator.rs
+          - crates/agentty-core/src/agent_runtime/delete.rs
+          - src/ui/session_navigator.rs
+          - src/ui/tab_sidebar.rs
+        tests:
+          - pin_survives_live_history_replacement_and_restart
+          - failed_remote_pin_rolls_back_without_local_fallback
+          - deleted_session_clears_pin_and_alias_state
+        red_test_evidence: 2026-08-02 observed missing SessionUserStateStore and pin API compile failures before implementation
+        evidence: 2026-08-02 unified Environment-scoped SessionUserStateStore persists aliases and pins atomically in the backward-compatible selected-Host session-aliases.json; candidate-save-before-visible commit and failure rollback are shared; pinned-first ordering is projection-only; delete clears both; live container to provider identity rebind preserves alias and pin; context menu uses the production Host transaction.
+        old_path_removal: Removed row-local SessionNavigator set_pin mutation authority; Navigator now exposes project_pins only.
+      - id: SESSION-017
+        title: Stable persisted session and split-unit reorder
+        status: verified
+        spec: SESSION-STABLE-REORDER-17
+        source:
+          - crates/agentty-core/src/agent_runtime/navigator.rs
+          - crates/agentty-core/src/agent_runtime/user_state.rs
+          - src/ui/reorder.rs
+          - src/ui/session_navigator.rs
+          - src/ui/tab_sidebar.rs
+          - src/ui/app.rs
+        tests:
+          - reorder_preserves_active_selection_and_row_identity
+          - split_siblings_move_as_one_reorder_unit
+          - failed_reorder_persistence_preserves_visible_order
+        red_test_evidence: 2026-08-03 observed missing stable unit-order APIs and failing order-preservation assertions before implementation.
+        evidence: 2026-08-03 new or newly discovered units enter the head of their pin partition, persisted manual order remains stable, split siblings move as one unit, failed persistence rolls visible order back, and focused Navigator/reorder tests plus quick presubmit passed.
+        old_path_removal: Removed row-local/index-based reorder authority; the sidebar reuses the canonical reorder primitive and never persists viewport indices.
+      - id: SESSION-018
+        title: Semantic refresh intent across remote disconnect and link-up
+        status: verified
+        spec: SESSION-REFRESH-INTENT-18
+        source:
+          - src/ui/session_navigator.rs
+          - src/ui/remote_workspace.rs
+          - src/ui/environment_session.rs
+        tests:
+          - unavailable_remote_refresh_does_not_poison_link_up_refresh
+          - connect_and_link_up_share_passive_refresh_intent
+          - environment_session_context_resolve_is_the_discovery_authority
+        red_test_evidence: 2026-08-03 abandon/link-up; 2026-08-05 finish_connect and pump Attached skipped Environment session refresh
+        evidence: 2026-08-05 EnvironmentSessionContext owns discovery; finish_connect and pump Attached call refresh_host_agent_sessions; focused tests and quick presubmit passed
+        old_path_removal: Removed UI is_local discovery branches from session_navigator refresh; connect/Attached now share Environment refresh
+      - id: SESSION-030
+        title: Navigator row activation selects by RowId; live Close closes carrier
+        status: verified
+        spec: SESSION-ROW-ACTIVATION-30
+        source:
+          - src/ui/session_navigator.rs
+          - src/ui/tab_sidebar.rs
+        tests:
+          - activate_selects_row_before_carrier_focus
+          - live_session_menu_uses_close_not_provider_delete
+          - historical_delete_still_plans_provider_transaction
+        red_test_evidence: 2026-08-05 production UI never called SessionNavigator::select; live delete menu disabled with silent no-op
+        evidence: 2026-08-05 activate selects by RowId; live menu Close uses close_live_session_row; historical permanent delete unchanged; focused tests and quick presubmit passed
+        old_path_removal: Removed disabled silent delete on live rows; live Close never calls apply_session_delete_transaction
+      - id: SESSION-019
+        title: Descriptor-driven persisted provider discovery registry
+        status: verified
+        spec: SESSION-PROVIDER-REGISTRY-19
+        source:
+          - crates/agentty-core/src/agent_runtime/provider.rs
+          - crates/agentty-core/src/agent_runtime/service.rs
+          - crates/agentty-core/src/agent_runtime/stores.rs
+        tests:
+          - standard_discovery_covers_registered_persisted_providers
+          - provider_descriptor_rejects_noncanonical_sources
+          - registry_has_no_descriptor_for_unpersisted_agents
+        red_test_evidence: 2026-08-03 observed compile failures for missing ProviderDescriptor, typed ProviderId dispatch, registered scanners, canonical source validation, and expanded provider parsers before implementation.
+        evidence: 2026-08-03 descriptor-driven discovery covers every registered persisted provider, canonical source validation and parser regressions pass, and full presubmit passed.
+        old_path_removal: Deleted the unused runtime-mutable trait registry, handwritten provider slug list, Vec<String> dispatch, and provider string matching.
+      - id: SESSION-020
+        title: Target-owned operation-scoped Agent store roots
+        status: verified
+        spec: SESSION-STORE-ROOT-CONTEXT-20
+        source:
+          - crates/agentty-core/src/agent_runtime/stores.rs
+          - crates/agentty-core/src/daemon/control.rs
+          - crates/agentty-core/src/host/server.rs
+          - crates/agentty-core/src/host/remote.rs
+          - src/ui/remote_connect.rs
+          - src/ui/session_navigator.rs
+        tests:
+          - custom_codex_and_claude_roots_apply_to_scan_and_mutation
+          - remote_helper_never_guesses_daemon_process_roots
+        red_test_evidence: 2026-08-03 observed compile failures for missing target environment root fields, operation-scoped roots APIs, handshake store_roots, and roots-aware mutation validation before implementation.
+        evidence: 2026-08-03 local and remote targets resolve provider roots once against target HOME, handshake carries the snapshot, discovery and deletion share it, remote helper authority is exercised end to end, and full presubmit passed.
+        old_path_removal: Removed GUI-side remote AgentStoreRoots::for_home reconstruction, helper-side environment guessing after handshake, and delete validation against daemon-process defaults.
+      - id: SESSION-021
+        title: Viewport-bounded Session Navigator projection
+        status: verified
+        spec: SESSION-VIEWPORT-PROJECTION-21
+        source:
+          - src/ui/session_navigator.rs
+          - src/ui/tab_sidebar.rs
+          - src/ui/app.rs
+          - src/ui/reorder.rs
+        tests:
+          - viewport_indices_never_become_row_identity
+          - offscreen_rows_are_not_built_but_keep_canonical_order
+          - filtered_projection_keeps_split_siblings_as_one_unit
+        red_test_evidence: 2026-08-03 cargo test --bin agentty-app session_viewport_projection --locked failed with unresolved import SessionViewportProjection before implementation; the static gate also failed closed on the missing projection/list symbols.
+        evidence: 2026-08-03 stable unit projection, split-sibling filtered grouping, ListState splice-by-unit identity, viewport-only GPUI construction, keyboard RowId scrolling, focused projection/reorder tests, static gate, and quick presubmit passed.
+        old_path_removal: Deleted eager rows().to_vec() plus v_flex child construction for every committed row and removed the shared ScrollHandle/index scroll path in favor of one variable-height ListState projection.
+      - id: SESSION-022
+        title: Cross-window global committed-session search
+        status: verified
+        spec: SESSION-GLOBAL-SEARCH-22
+        source:
+          - src/ui/session_navigator.rs
+          - src/ui/windows.rs
+          - src/ui/palette.rs
+          - src/ui/app.rs
+        tests:
+          - palette_search_uses_committed_rows_without_discovery
+          - closing_window_removes_its_session_search_partition
+          - session_search_identity_combines_environment_and_row_id
+        red_test_evidence: 2026-08-03 cargo test --bin agentty-app session_search --locked failed before implementation with missing SessionSearchDocumentId, SessionSearchDocument, SessionSearchIndex, and session_commands_from_documents; the static gate also failed closed.
+        evidence: 2026-08-03 committed Navigator rows publish Environment-scoped documents into per-window registry partitions; the palette freezes that shared snapshot when opened, filters title/subtitle/search metadata without discovery, and activates the owning window by WorkspaceId plus stable NavigatorRowId. Focused search tests, fail-closed static gate, and quick presubmit passed.
+        old_path_removal: Removed the palette's current-window-only session visibility limitation without adding a second discovery path, pane-coordinate identity, or viewport-index activation path.
+      - id: SESSION-023
+        title: Schema-bounded provider discovery budgets
+        status: verified
+        spec: SESSION-SCHEMA-BOUNDED-DISCOVERY-24
+        source:
+          - crates/agentty-core/src/agent_runtime/service.rs
+          - crates/agentty-core/src/agent_runtime/provider.rs
+        tests:
+          - cursor_scanner_ignores_unrelated_project_cache_nodes
+          - discovers_real_sessions_on_this_machine
+        red_test_evidence: 2026-08-03 real-store smoke failed with SourceLimitExceeded for ~/.cursor/projects at 2000 nodes, then the focused budget-8 fixture failed before the schema-aware Cursor collector existed.
+        evidence: 2026-08-03 Cursor discovery budgets only project entries and agent-transcripts descendants, ignores unrelated canvases/mcps/cache trees, remains bounded and symlink-safe, and real standard discovery commits 40 rows with the Omp assertion passing.
+        old_path_removal: Removed Cursor's use of the generic whole-project-tree traversal; all Cursor discovery now uses the single schema-aware collector.
+      - id: SESSION-024
+        title: Explicit Session Navigator sidebar surface hierarchy
+        status: implemented
+        spec: SESSION-SIDEBAR-SURFACE-HIERARCHY-25
+        source:
+          - src/ui/tab_sidebar.rs
+        tests:
+          - session_sidebar_surface_metrics_are_explicit
+          - rendered_sidebar_uses_search_surface_and_split_group_geometry
+        red_test_evidence: 2026-08-03 script/check_session_navigator failed because the required surface helpers and tests were absent; the focused Rust test then failed to compile with unresolved session_sidebar_surface_metrics before implementation.
+        evidence: 2026-08-05 sidebar chrome no longer renders a redundant section title under macOS traffic lights; hierarchy is chrome actions + framed search + shared gutter from session_sidebar_surface_metrics, with the GPUI geometry test over the production surface helper. Row density floors live under SESSION-026 / SESSION-SIDEBAR-ROW-DENSITY-29. Whole-window screenshot acceptance remains pending under FEEDBACK-20260803-003.
+      - id: SESSION-025
+        title: Shared visual container for split-session siblings
+        status: implemented
+        spec: SESSION-SPLIT-GROUP-PRESENTATION-26
+        source:
+          - src/ui/tab_sidebar.rs
+          - src/ui/session_navigator.rs
+        tests:
+          - split_session_units_use_one_visual_container
+          - rendered_sidebar_uses_search_surface_and_split_group_geometry
+        red_test_evidence: 2026-08-03 the focused Rust test failed to compile with unresolved session_unit_visual_kind and SessionUnitVisualKind before implementation.
+        evidence: 2026-08-03 multi-row projection units now render inside one bordered tinted container with a persistent accent rail and selected-group boundary while every child retains its canonical row identity and activation. The production surface helper's GPUI geometry test proves one container encloses both 40px sibling rows; whole-window screenshot acceptance remains pending.
+      - id: SESSION-026
+        title: Classic sidebar row density and stable selection inset
+        status: implemented
+        spec: SESSION-SIDEBAR-ROW-DENSITY-29
+        source:
+          - src/ui/tab_sidebar.rs
+        tests:
+          - session_sidebar_surface_metrics_are_explicit
+          - session_row_selection_keeps_stable_horizontal_inset
+          - session_resume_affordance_overlays_without_flex_slot
+          - session_row_text_overflow_uses_trailing_fade_not_ellipsis
+        red_test_evidence: Started 2026-08-05 after FEEDBACK-20260805-004; previous metrics locked 8px gutter and 40px rows with selection border that shifted content.
+        evidence: 2026-08-05 outer_gutter equals panel_content_gutter (12) with row_pad_x 4 → content inset 16 after FEEDBACK-20260805-010; rounded-rect icons; trailing text fade; resume affordance overlays without stealing title width; focused density tests and session-navigator static gate passed.
   - id: M2-COMPOSER
     title: Optional free-form Composer
     status: verified
@@ -210,6 +1872,14 @@ milestones:
         spec: INPUT-COMPOSER-OPTIONAL-01
         tests: [drafts_are_isolated_per_pane, successful_delivery_clears_only_target_draft]
         evidence: 2026-08-01 optional multiline Composer preserves native terminal input, captures a stable target, retains failed drafts, and clears only successful target drafts; discoverable via cmd-alt-enter keybinding and the localized command palette entry (palette.cmd.composer)
+      - id: COMPOSER-003
+        title: Activity Bar Composer expand and collapse handle
+        status: specified
+        spec: INPUT-COMPOSER-ACTIVITY-BAR-07
+        source: [src/ui/composer.rs, src/ui/activity_bar.rs, src/ui/app.rs]
+        tests: [activity_bar_toggles_composer_without_mutating_mode]
+        red_test_evidence: Pending focused failing test before implementation.
+        old_path_removal: Remove the non-interactive Activity Bar path and keep one pane-scoped Composer visibility authority.
   - id: M3-AGENT-ACTIVITY
     title: Trusted Agent Activity Bar and Tool Inspector
     status: verified
@@ -301,7 +1971,180 @@ milestones:
         spec: PRODUCT-BUILD-STAMP-04
         tests: [stale_build_detection_is_pure_inequality]
         evidence: 2026-08-01 LocalLink compares the handshake build stamp with the GUI's own; a dismissible pill offers a user-initiated Restart Server, never an implicit daemon kill
-technical_debt: []
+  - id: M8-SESSION-NAVIGATOR-POLISH
+    title: Session Navigator visual polish
+    status: in_progress
+    outcome: Improve the Session Navigator information density, visual feedback, and discoverability without changing the data model.
+    items:
+      - id: POLISH-001
+        title: Compact row padding and gap for higher information density
+        status: verified
+        source: [src/ui/tab_sidebar.rs]
+        tests: [session_row_visual_contract_is_distinct]
+        evidence: 2026-08-03 row padding tightened to py_1p5 while preserving variable-height split units and stable identity.
+      - id: POLISH-002
+        title: Danger hover style for delete context menu item
+        status: verified
+        source: [src/ui/tab_sidebar.rs]
+        tests: [session_row_visual_contract_is_distinct]
+        evidence: 2026-08-03 permanent delete retains danger text and paints a 14% danger-tint child surface on hover; live/restoring rows remain disabled.
+      - id: POLISH-003
+        title: Visual distinction between selected and hovered row
+        status: verified
+        source: [src/ui/tab_sidebar.rs]
+        tests: [session_row_visual_contract_is_distinct]
+        evidence: 2026-08-03 selected rows use sidebar accent plus border, unselected hover uses muted fill, and keyboard cursor uses the ring without replacing selection identity.
+      - id: POLISH-004
+        title: Search box placeholder text
+        status: verified
+        source: [src/ui/tab_sidebar.rs]
+        tests: [session_row_visual_contract_is_distinct]
+        evidence: 2026-08-03 the localized session.search_placeholder remains the canonical sidebar search hint and is locked by check_session_navigator.
+      - id: POLISH-005
+        title: Smart path truncation for long working directories
+        status: verified
+        source: [src/ui/tab_sidebar.rs]
+        tests: [smart_path_truncation_keeps_informative_suffix]
+        evidence: 2026-08-03 long cwd subtitles retain the final three informative segments with a root-aware ellipsis and never repeat provider identity.
+      - id: POLISH-006
+        title: Empty state placeholder when no sessions exist
+        status: verified
+        source: [src/ui/tab_sidebar.rs]
+        tests: [session_row_visual_contract_is_distinct]
+        evidence: 2026-08-03 the empty projection distinguishes discovering, scan error, zero sessions, and query no-match instead of showing one ambiguous blank state.
+      - id: POLISH-007
+        title: Status indicator dot color semantics for richer agent state
+        status: verified
+        source: [crates/agentty-core/src/agent_runtime/navigator.rs, src/ui/session_navigator.rs, src/ui/tab_sidebar.rs]
+        tests: [execution_badge_precedence_is_restoring_then_waiting_then_running_then_focused_live_then_background_live, historical_rows_never_show_live_execution]
+        evidence: 2026-08-02 typed execution badge precedence now drives restoring, waiting, running, focused, background, and completed-unread colors instead of lifecycle-only dots.
+      - id: POLISH-008
+        title: Rendered-window hierarchy, geometry, contrast, and split-group visual acceptance
+        status: in_progress
+        source: [src/ui/tab_sidebar.rs, src/ui/tab_strip.rs, src/ui/app.rs, src/ui/file_tree.rs, src/ui/right_panel.rs, docs/quality/RENDERED_UI_BASELINE_20260807.yaml]
+        tests: [session_row_visual_contract_is_distinct, session_row_paint_uses_surfaces_sidebar_not_theme_muted]
+        evidence: 2026-08-07 Surfaces.sidebar idle/hover/selected/cursor row fills + matching fades; file-tree fade on Surfaces.popover; right-panel empties catalog-backed. Pixel screenshot still blocked (no screen permission) — interactive capture remains the acceptance gate.
+      - id: POLISH-009
+        title: Icon-based row action affordance and hierarchical empty states
+        status: implemented
+        spec: SESSION-ROW-ACTION-AFFORDANCE-27
+        source: [src/ui/tab_sidebar.rs]
+        tests: [historical_row_hover_uses_icon_affordance_not_text, empty_session_states_render_icon_and_message_hierarchy]
+        evidence: 2026-08-03 the hover prose "恢复" label is replaced by a fixed-slot Play icon affordance with a localized tooltip, restoring rows keep their explicit status, and the four empty states render distinct glyphs above the message; focused tests and quick presubmit passed.
+      - id: POLISH-013
+        title: Tab strip overflow window with active-tab visibility
+        status: implemented
+        spec: UI-TAB-OVERFLOW-05
+        source: [src/ui/tab_strip.rs]
+        tests: [tab_chip_window_keeps_active_tab_visible, tab_chip_window_compresses_before_overflowing]
+        evidence: Started 2026-08-03; chips previously floored at 100px and excess tabs were silently clipped by overflow_hidden with no affordance and no active-tab guarantee.
+      - id: POLISH-011
+        title: Shared kbd chip surface across home, palette, and settings
+        status: implemented
+        spec: UI-KBD-CHIP-03
+        source: [src/ui/kbd.rs, src/ui/home.rs, src/ui/palette.rs, src/ui/settings.rs]
+        tests: [kbd_chip_metrics_are_explicit]
+        evidence: Started 2026-08-03 under the systemic visual upgrade; palette and settings previously hand-rolled divergent keycap chrome and home rendered bare text hints.
+      - id: POLISH-012
+        title: Framed welcome-page shortcut hierarchy
+        status: implemented
+        spec: UI-WELCOME-SURFACE-04
+        source: [src/ui/home.rs, assets/i18n/en-US.yaml, assets/i18n/zh-CN.yaml]
+        tests: [welcome_surface_metrics_are_explicit]
+        evidence: Started 2026-08-03; the launch-visible home page previously rendered an unframed shortcut list with bare-text key hints.
+      - id: POLISH-010
+        title: Environment glyph, shared notice surface, and active-tab hierarchy
+        status: implemented
+        spec: ENV-INDICATOR-GLYPH-13
+        source: [src/ui/tab_strip.rs, src/ui/notice.rs, src/ui/app.rs, src/ui/forwards.rs, src/ui/home.rs]
+        tests: [environment_indicator_distinguishes_local_and_remote_glyphs, notice_surface_maps_severity_to_icon_and_color, tab_chip_hierarchy_elevates_active_tab_with_indicator]
+        evidence: 2026-08-03 the Environment Indicator renders machine-local/machine-remote glyphs from the authority mapping, all five floating notices share one severity-driven notice surface, and the active tab is an elevated bordered surface with a bottom accent indicator; focused tests and quick presubmit passed.
+      - id: POLISH-014
+        title: Title-bar lead hugs the sidebar split
+        status: implemented
+        spec: ENV-INDICATOR-LEAD-14
+        source: [src/ui/app.rs, src/ui/tab_strip.rs, src/ui/code_editor.rs, src/ui/diff_overlay.rs]
+        tests: [title_bar_content_lead_hugs_split_when_sidebar_open]
+        evidence: 2026-08-05 title_bar_content_lead owns the lead; TitleBar shell pad zeroed so macOS 80px no longer stacks (FEEDBACK-20260805-013); tab strip/editor/diff share the helper; focused tests and ui-visual static gate passed.
+      - id: POLISH-015
+        title: Split ellipsis app menu into Settings icon and content-bar Command Palette
+        status: implemented
+        spec: UI-TITLEBAR-CHROME-06
+        source: [src/ui/tab_strip.rs]
+        tests: [titlebar_chrome_places_palette_on_content_bar_and_settings_direct]
+        evidence: 2026-08-05 ellipsis nest removed; content title bar hosts Environment Indicator (lead) + Command Palette icon (trail); Settings is a direct Settings2 tile in window chrome; focused test and ui-visual static gate passed.
+      - id: POLISH-016
+        title: Bundled currentColor agent silhouettes on accent plates
+        status: implemented
+        spec: UI-AGENT-BRAND-ICON-07
+        source: [src/ui/agent_icon.rs, src/ui/assets.rs, crates/agentty-core/src/core/cli_agent.rs, assets/icons/agents]
+        tests: [agent_icon_badge_uses_accent_plate_and_contrasting_glyph, every_agent_icon_resolves, only_the_unbranded_agents_use_the_fallback_glyph]
+        evidence: 2026-08-05 accent+contrasting glyph; Omp light plate + purple π matching omp.sh hero (FEEDBACK-20260805-012/019/021).
+      - id: POLISH-017
+        title: Unify left/right panel edge and split gutters
+        status: implemented
+        spec: UI-PANEL-EDGE-GUTTER-08
+        source: [src/ui/app.rs, src/ui/tab_sidebar.rs, src/ui/tab_strip.rs, src/ui/right_panel.rs]
+        tests: [panel_edge_gutters_share_one_authority, content_column_trailing_respects_panel_split_chrome_inset, session_sidebar_surface_metrics_are_explicit]
+        evidence: 2026-08-05 panel_content_gutter and panel_split_chrome_inset are the only split-adjacent padding authorities; navigator outer gutter matches right-panel content inset; content-bar palette pads when right chrome relocates.
+      - id: POLISH-018
+        title: Shared side-panel search/empty chrome, tree gutters, unbranded avatar radius
+        status: implemented
+        spec: UI-SIDE-PANEL-SEARCH-09
+        source: [src/ui/panel_chrome.rs, src/ui/tab_sidebar.rs, src/ui/right_panel.rs, src/ui/file_tree.rs, src/ui/tab_strip.rs]
+        tests: [side_panel_search_metrics_are_explicit, side_panel_chrome_helpers_are_wired, unbranded_avatar_radius_matches_brand_badge_band]
+        evidence: 2026-08-05 framed search + glyph empties shared left/right; file tree uses panel_content_gutter and trailing fade; terminal tab plates use unbranded_avatar_radius.
+      - id: POLISH-019
+        title: Side-panel auto-hide scrollbar with bottom overflow fade
+        status: verified
+        spec: UI-SIDE-PANEL-SCROLL-11
+        source: [src/ui/scrollbar.rs, src/ui/theme.rs, src/ui/tab_sidebar.rs]
+        tests: [side_panel_scrollbar_forces_scrolling_show_mode, overflow_fade_geometry_is_explicit]
+        evidence: 2026-08-05 theme and with_vertical_scrollbar force Scrolling; navigator shows bottom fade when more content is below; focused tests and quick presubmit passed
+  - id: M9-LOCAL-RUNTIME
+    title: Reliable resource-leased local runtime
+    status: verified
+    outcome: Keep durable panes in a headless runtime while eliminating pane-only split-brain readiness, GUI-disguised daemon spawning, and undiagnosable detached failures before introducing idle resource leases.
+    items:
+      - id: LOCAL-RUNTIME-001
+        title: Dual-endpoint readiness and recovery
+        status: verified
+        spec: LOCAL-RUNTIME-READINESS-01
+        tests: [pane_endpoint_without_control_endpoint_is_degraded, server_lifecycle_uses_canonical_dual_endpoint_readiness]
+        evidence: 2026-08-03 pane-only runtime is degraded, GUI and CLI lifecycle entrypoints share daemon::spawn readiness, isolated CLI E2E made both endpoints ready and removed both on stop, and full presubmit passed.
+      - id: LOCAL-RUNTIME-002
+        title: Dedicated packaged local server executable
+        status: verified
+        spec: LOCAL-RUNTIME-EXECUTABLE-02
+        tests: [daemon_executable_is_the_headless_sibling]
+        evidence: 2026-08-03 canonical spawn selects agentty-server, desktop bundle scripts require the native sibling, workspace default builds include agentty-server, and full presubmit passed.
+      - id: LOCAL-RUNTIME-003
+        title: Default bounded detached diagnostics
+        status: verified
+        spec: LOCAL-RUNTIME-DIAGNOSTICS-03
+        tests: [server_logging_defaults_to_warnings]
+        evidence: 2026-08-03 server role defaults to warn/error logging, early startup exit names executable and log path, CLI log guidance matches the default, and full presubmit passed.
+      - id: LOCAL-RUNTIME-004
+        title: Lazy resource lease and Ask Keep Stop quit policy
+        status: verified
+        spec: LOCAL-RUNTIME-RESOURCE-LEASE-04
+        tests: [gui_bootstrap_never_starts_the_local_runtime, passive_local_link_never_starts_the_local_runtime, zero_resource_runtime_exits_after_grace, live_pane_cancels_idle_shutdown, quit_policy_distinguishes_keep_and_stop]
+        evidence: 2026-08-03 GUI bootstrap and passive LocalLink no longer start the server; the default window immediately creates its first durable terminal pane, which is the lazy-start authority. Isolated live GUI smoke stayed healthy without warnings, forced GUI termination preserved the pane/runtime by design, explicit Stop removed control.sock, daemon.sock, and daemon.pid, deterministic zero-resource/Ask-Keep-Stop tests passed, and full presubmit passed.
+      - id: LOCAL-RUNTIME-005
+        title: Single-flight lifecycle and fatal control-listener startup
+        status: verified
+        spec: LOCAL-RUNTIME-START-SINGLEFLIGHT-05
+        tests: [concurrent_lifecycle_callers_share_one_startup_gate, concurrent_server_start_callers_converge_on_one_runtime, control_listener_failure_is_fatal_before_pane_service]
+        red_test_evidence: 2026-08-03 focused core tests first failed with missing with_startup_gate and run_daemon_with. A 20-caller isolated live stress then reproduced 20/20 startup failures caused by competing children, pid/control ownership races, and winner teardown; the concurrent_server_start_callers_converge_on_one_runtime E2E locks this regression.
+        evidence: 2026-08-03 lifecycle mutation now holds one config-scoped OS file lock across GUI and CLI processes plus an in-process mutex; the server fails before pane service when control startup fails and removes endpoints it owned on listener-thread creation failure. Focused core tests and concurrent-start CLI E2E passed; an isolated 20-caller live stress improved from 20/20 failures to 0/20 and reported one dual-endpoint-ready runtime.
+technical_debt:
+  - id: DEBT-BUNDLE-VERSION-STAMP
+    title: Desktop bundle version metadata cannot distinguish builds
+    owner: packaging
+    status: planned
+    removal_condition: Version policy explicitly allows embedding build metadata (e.g. CFBundleVersion = 0.0.1+<date>.<githash>) or a real version bump.
+    verification: Two consecutive local builds produce distinguishable CFBundleVersion values in dist/Agentty.app/Contents/Info.plist.
+    evidence: 2026-08-03 the stale-target install trap was only detectable via binary content markers, because every bundle reports 0.0.1 (bump_mode: explicit_policy_change_only).
 version_policy:
   current: 0.0.1
   enforcement: pre-push_and_ci

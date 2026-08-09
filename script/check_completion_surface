@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# INPUT-COMPLETION-EDITOR-SURFACE-06: completion attaches to the focused
+# editable surface (composer or terminal), with one session path and no
+# dual-write / auto-submit on accept.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+rg -q 'INPUT-COMPLETION-EDITOR-SURFACE-06' docs/specs/INPUT_EXPERIENCE_SPEC.yaml
+rg -q 'INPUT-COMPLETION-SURFACE-083' docs/quality/traceability.yaml
+rg -q 'CompletionFocusOwner' src/ui/completion_surface.rs
+rg -q 'composer_completion_accepts_into_draft_not_submit' src/ui/completion_surface.rs
+rg -q 'completion_focus_owner_is_composer_or_terminal_not_both' src/ui/completion_surface.rs
+rg -q 'apply_replacement_mutates_only_target_range' src/ui/completion_surface.rs
+rg -q 'composer_complete_tab' src/ui/composer.rs src/ui/app.rs src/ui/completion_surface.rs
+rg -q 'CompleteFocusedSurface' src/core/actions.rs src/ui/keymap.rs src/ui/app.rs
+
+# One UI session type for the shared surface — no parallel Complet*Session
+# owned only by a second module that bypasses completion_surface.
+if rg -n 'struct Complet[a-zA-Z]*Session' src/ui --glob '!completion_surface.rs' --glob '!**/completion_surface.rs'; then
+  echo '[completion-surface] UI must not invent a second Complet*Session beside completion_surface' >&2
+  exit 1
+fi
+
+# Composer must own a Tab path into the shared surface.
+rg -q 'composer_complete_tab|CompleteFocusedSurface' src/ui/composer.rs src/ui/app.rs
+
+echo 'completion surface checks passed'

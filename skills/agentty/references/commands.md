@@ -230,7 +230,7 @@ managed from the GUI's connection manager.
 | Command | Effect |
 |---|---|
 | `server status` | same as `agentty status` |
-| `server logs` | tail the server log; prints the path, and says so when logging was never enabled (`AGENTTY_LOG=info` before the server starts) |
+| `server logs` | tail the server log; warning/error logging is enabled by default, while `AGENTTY_LOG=info` enables verbose diagnostics |
 | `server start` | bring up a server on this machine |
 | `server stop` | stop it — **every pane on the machine dies** |
 | `server restart` | stop, then start — same consequence |

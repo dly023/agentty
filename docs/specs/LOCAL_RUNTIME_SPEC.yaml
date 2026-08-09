@@ -1,0 +1,38 @@
+version: 1
+title: Local durable runtime lifecycle and reliability
+status: verified
+scope:
+  - local durable pane daemon startup and readiness
+  - GUI-to-daemon process boundary
+  - local pane and Host control endpoints
+  - operator diagnostics for detached failures
+contracts:
+  - id: LOCAL-RUNTIME-READINESS-01
+    rule: A local runtime is ready only when the pane endpoint speaks the current protocol and the Host control endpoint is reachable. A pane-only process is degraded, not healthy; every GUI and CLI lifecycle entrypoint must delegate readiness, recovery, start, stop, and restart to daemon::spawn instead of maintaining a pane-only health check or a second detached-process launcher. ensure_running must replace a degraded process instead of allowing LocalLink to retry forever against a daemon that can never serve discovery, tree, or Host RPC requests. Graceful shutdown removes both endpoint records so a stopped service is never represented by a stale control.sock.
+  - id: LOCAL-RUNTIME-EXECUTABLE-02
+    rule: The GUI launches the sibling headless agentty-server executable for local durable runtime work. Desktop packages must ship that native sibling beside agentty-app. agentty-app --daemon is a migration-only compatibility entrypoint and is not the canonical spawn target.
+  - id: LOCAL-RUNTIME-DIAGNOSTICS-03
+    rule: Detached server failures are diagnosable without opt-in environment variables. The server writes warning-and-error records to the bounded Agentty log by default, and startup reports an early child exit with the selected executable and log path instead of collapsing it into a generic socket timeout.
+  - id: LOCAL-RUNTIME-RESOURCE-LEASE-04
+    rule: The local runtime is resource-leased rather than GUI-leased. GUI startup and the passive LocalLink observer must never start or restart agentty-server; the first local or routed durable-pane materialization is the canonical lazy-start trigger. A running server stays alive while it owns live panes or an operation/tree mutation is in flight, and exits through graceful endpoint cleanup after a bounded zero-resource grace period. A passive control connection is not durable work and must be released when the server owns no panes. Quitting with live panes presents one explicit Ask decision with Keep and Stop outcomes; Keep closes Agentty while preserving headless pane ownership, and Stop terminates the local runtime only after confirmation. No-resource quit closes without manufacturing a daemon.
+    implementation_status: verified
+  - id: LOCAL-RUNTIME-START-SINGLEFLIGHT-05
+    rule: Local runtime lifecycle mutation is host-wide single-flight. Concurrent pane materialization, retry, CLI lifecycle, and explicit restart callers across GUI and CLI processes must serialize the complete inspect, reap, stop, spawn, and dual-endpoint readiness sequence through one config-scoped OS file lock, with an in-process mutex preventing redundant local contenders. They cannot launch competing agentty-server processes or tear down a server another caller just made ready. The server must establish the Host control listener before entering pane service; control-listener failure is fatal and must return with owned endpoint cleanup instead of continuing as a pane-only degraded process.
+    implementation_status: verified
+  - id: LOCAL-RUNTIME-PANE-COLOR-ENV-06
+    rule: Every durable pane spawn publishes a color-capable terminal environment — TERM=xterm-256color, COLORTERM=truecolor, and CLICOLOR=1 — so host tools emit ANSI colors on a PTY instead of monochrome output. TERM and COLORTERM remain capability keys that config env cannot downgrade; CLICOLOR is a default that user config env may override. Inherited process-level color suppressors (NO_COLOR, FORCE_COLOR) are stripped on every pane spawn so a GUI launched from a NO_COLOR=1 developer shell (Cursor/CI) cannot bleach Claude Code, ls, or other ANSI tools. Foreground agent detection and provider discovery never depend on these variables.
+    forbidden:
+      - pane_spawn_without_color_capability_env
+      - allowing_config_env_to_downgrade_TERM_or_COLORTERM_to_dumb
+      - inheriting_NO_COLOR_or_FORCE_COLOR_into_durable_panes
+forbidden_paths:
+  - treating a protocol-speaking pane endpoint as healthy while the Host control endpoint is absent
+  - implementing agentty server start or restart with a CLI-local pane probe, polling loop, or Command::new daemon launcher
+  - spawning the GUI executable as the canonical local daemon
+  - silently discarding detached server startup errors
+  - implementing resource leasing by removing durable pane ownership from the headless runtime
+  - starting or restarting agentty-server from GUI bootstrap or a passive LocalLink reconnect loop
+  - treating the absence of an idle local daemon as an error condition
+  - keeping a zero-pane daemon alive solely because an idle GUI control connection remains open
+  - running ensure, stop, or restart lifecycle mutations without the canonical host-wide startup gate
+  - continuing into pane service after the Host control listener failed to start

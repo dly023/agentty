@@ -281,6 +281,8 @@ impl PaneRecord {
 pub struct AgentFacts {
     pub agent: CLIAgent,
     #[serde(default)]
+    pub container_id: Option<String>,
+    #[serde(default)]
     pub session_id: Option<String>,
     #[serde(default)]
     pub launch_argv: Option<Vec<String>>,

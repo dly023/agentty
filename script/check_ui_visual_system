@@ -1,0 +1,265 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+# UI visual system contracts: environment glyph, row action affordance,
+# empty-state hierarchy, shared notice surface, active-tab hierarchy.
+rg -q 'ENV-INDICATOR-GLYPH-13' docs/specs/ENVIRONMENT_MODEL_SPEC.yaml
+rg -q 'ENV-INDICATOR-LEAD-14' docs/specs/ENVIRONMENT_MODEL_SPEC.yaml
+rg -q 'SESSION-ROW-ACTION-AFFORDANCE-27' docs/specs/SESSION_NAVIGATOR_SPEC.yaml
+rg -q 'SESSION-EMPTY-STATE-SURFACE-28' docs/specs/SESSION_NAVIGATOR_SPEC.yaml
+rg -q 'UI-NOTICE-SURFACE-01' docs/specs/UI_VISUAL_SYSTEM_SPEC.yaml
+rg -q 'UI-TAB-HIERARCHY-02' docs/specs/UI_VISUAL_SYSTEM_SPEC.yaml
+rg -q 'UI-DEFAULT-THEME-PRESET-11' docs/specs/UI_VISUAL_SYSTEM_SPEC.yaml
+rg -Fq 'default_theme_preset_is_monochrome_light' docs/specs/UI_VISUAL_SYSTEM_SPEC.yaml
+rg -q 'default_theme_preset_is_colorful_dracula' crates/agentty-core/src/core/config.rs
+rg -Fq 'theme_preset: "dracula".to_string()' crates/agentty-core/src/core/config.rs
+
+# Environment indicator glyph derives from one pure authority mapping.
+rg -q 'fn environment_indicator_icon' src/ui/tab_strip.rs
+rg -Fq '"icons/machine-local.svg"' src/ui/tab_strip.rs
+rg -Fq '"icons/machine-remote.svg"' src/ui/tab_strip.rs
+rg -q 'environment_indicator_distinguishes_local_and_remote_glyphs' src/ui/tab_strip.rs
+
+# Title-bar lead hugs the sidebar split through one pure mapping.
+rg -q 'fn title_bar_content_lead' src/ui/app.rs
+rg -q 'fn title_bar_shell_leading_pad' src/ui/app.rs
+rg -q 'fn panel_split_chrome_inset' src/ui/app.rs
+rg -q 'title_bar_content_lead_hugs_split_when_sidebar_open' src/ui/app.rs
+rg -q 'title_bar_shell_does_not_stack_traffic_light_pad' src/ui/app.rs
+rg -q 'title_bar_content_lead' src/ui/tab_strip.rs
+rg -q 'title_bar_content_lead' src/ui/code_editor.rs
+rg -q 'title_bar_content_lead' src/ui/diff_overlay.rs
+rg -q 'title_bar_shell_leading_pad' src/ui/app.rs
+if rg -n 'TITLE_BAR_LEAD' src/ui/tab_strip.rs; then
+  echo '[ui-visual] tab strip must consume title_bar_content_lead, not apply TITLE_BAR_LEAD directly' >&2
+  exit 1
+fi
+if rg -n 'TITLE_BAR_SPLIT_HUG' src/ui; then
+  echo '[ui-visual] TITLE_BAR_SPLIT_HUG is forbidden; use panel_split_chrome_inset' >&2
+  exit 1
+fi
+# Content-column TitleBar must zero the shell pad (override gpui-component's 80px).
+if ! rg -n 'let title_bar = TitleBar::new\(\)' -A 8 src/ui/app.rs | rg -q 'title_bar_shell_leading_pad'; then
+  echo '[ui-visual] TitleBar must set pl(title_bar_shell_leading_pad()) so 80px does not stack' >&2
+  exit 1
+fi
+
+# Shared panel-edge gutters (left navigator / content column / right panel).
+rg -q 'UI-PANEL-EDGE-GUTTER-08' docs/specs/UI_VISUAL_SYSTEM_SPEC.yaml
+rg -q 'fn panel_content_gutter' src/ui/app.rs
+rg -q 'panel_edge_gutters_share_one_authority' src/ui/app.rs
+rg -q 'panel_content_gutter' src/ui/tab_sidebar.rs
+rg -q 'panel_split_chrome_inset' src/ui/tab_strip.rs
+rg -q 'panel_split_chrome_inset' src/ui/right_panel.rs
+rg -q 'panel_content_gutter' src/ui/right_panel.rs
+rg -q 'needs_trailing_split_pad' src/ui/tab_strip.rs
+rg -q 'content_column_trailing_respects_panel_split_chrome_inset' src/ui/tab_strip.rs
+
+# Row hover affordance is a typed mapping, not inline prose text.
+rg -q 'fn session_row_hover_affordance' src/ui/tab_sidebar.rs
+rg -q 'SessionRowHoverAffordance' src/ui/tab_sidebar.rs
+rg -q 'historical_row_hover_uses_icon_affordance_not_text' src/ui/tab_sidebar.rs
+if rg -n 'group_hover\("agent-session-row"[^)]*\)[\s\S]{0,200}session\.resume' src/ui/tab_sidebar.rs | rg -q 'child'; then
+  if ! rg -Fq '.tooltip(' src/ui/tab_sidebar.rs >/dev/null; then
+    echo '[ui-visual] resume action must be an icon affordance with a tooltip, not hover prose' >&2
+    exit 1
+  fi
+fi
+
+# Empty states use a typed kind with a distinct glyph per state.
+rg -q 'fn session_empty_state_kind' src/ui/tab_sidebar.rs
+rg -q 'SessionEmptyStateKind' src/ui/tab_sidebar.rs
+rg -q 'empty_session_states_render_icon_and_message_hierarchy' src/ui/tab_sidebar.rs
+
+# Shared floating notice surface with typed severity.
+rg -q 'enum NoticeSeverity' src/ui/notice.rs
+rg -q 'fn notice_severity_icon' src/ui/notice.rs
+rg -q 'fn notice_surface' src/ui/notice.rs
+rg -q 'notice_surface_maps_severity_to_icon_and_color' src/ui/notice.rs
+rg -q 'notice_surface' src/ui/app.rs src/ui/forwards.rs src/ui/home.rs
+
+# Active tab hierarchy derives from one pure mapping.
+rg -q 'fn tab_chip_hierarchy' src/ui/tab_strip.rs
+rg -q 'TabChipHierarchy' src/ui/tab_strip.rs
+rg -q 'tab_chip_hierarchy_elevates_active_tab_with_indicator' src/ui/tab_strip.rs
+
+# Shared kbd chip surface consumed by every shortcut hint call site.
+rg -q 'UI-KBD-CHIP-03' docs/specs/UI_VISUAL_SYSTEM_SPEC.yaml
+rg -q 'fn kbd_chip_metrics' src/ui/kbd.rs
+rg -q 'fn kbd_chip' src/ui/kbd.rs
+rg -q 'kbd_chip_metrics_are_explicit' src/ui/kbd.rs
+rg -q 'kbd_chip' src/ui/home.rs src/ui/palette.rs src/ui/settings.rs
+
+# Welcome page hierarchy with framed shortcut surface.
+rg -q 'UI-WELCOME-SURFACE-04' docs/specs/UI_VISUAL_SYSTEM_SPEC.yaml
+rg -q 'fn welcome_surface_metrics' src/ui/home.rs
+rg -q 'welcome_surface_metrics_are_explicit' src/ui/home.rs
+rg -q 'home\.tagline' src/ui/home.rs assets/i18n/en-US.yaml assets/i18n/zh-CN.yaml
+if rg -n 'Kbd::format' src/ui/home.rs; then
+  echo '[ui-visual] welcome page key hints must render as kbd chips, not bare formatted text' >&2
+  exit 1
+fi
+
+# Tab strip overflow window: compression floor, active-tab visibility, affordances.
+rg -q 'UI-TAB-OVERFLOW-05' docs/specs/UI_VISUAL_SYSTEM_SPEC.yaml
+rg -q 'fn tab_chip_window' src/ui/tab_strip.rs
+rg -q 'TabChipWindow' src/ui/tab_strip.rs
+rg -q 'OVERFLOW_CHIP_W' src/ui/tab_strip.rs
+rg -q 'tab_chip_window_keeps_active_tab_visible' src/ui/tab_strip.rs
+rg -q 'tab_chip_window_compresses_before_overflowing' src/ui/tab_strip.rs
+if rg -n 'min_w\(px\(100\.\)\)' src/ui/tab_strip.rs; then
+  echo '[ui-visual] chip minimum width must come from tab_chip_window, not a hardcoded literal' >&2
+  exit 1
+fi
+
+# Title-bar chrome: palette on content bar, Settings direct — no ellipsis nest.
+rg -q 'UI-TITLEBAR-CHROME-06' docs/specs/UI_VISUAL_SYSTEM_SPEC.yaml
+rg -q 'left_rail_open_without_new_tab_affordance' docs/specs/UI_VISUAL_SYSTEM_SPEC.yaml
+rg -q 'fn command_palette_tile' src/ui/tab_strip.rs
+rg -q 'fn settings_tile' src/ui/tab_strip.rs
+rg -q 'titlebar_chrome_places_palette_on_content_bar_and_settings_direct' src/ui/tab_strip.rs
+rg -q 'left_rail_keeps_new_tab_affordance' src/ui/tab_strip.rs
+rg -Fq 'titlebar-command-palette' src/ui/tab_strip.rs
+rg -Fq 'titlebar-settings' src/ui/tab_strip.rs
+rg -Fq 'titlebar-add-rail' src/ui/tab_strip.rs
+rg -Fq 'menu.close_tabs_right' src/ui/tab_strip.rs assets/i18n/en-US.yaml assets/i18n/zh-CN.yaml
+rg -Fq 'menu.close_tabs_below' src/ui/tab_strip.rs assets/i18n/en-US.yaml assets/i18n/zh-CN.yaml
+# Production body only — exclude #[cfg(test)] assertion strings.
+prod_tab_strip=$(awk 'BEGIN{p=1} /^#\[cfg\(test\)\]/{p=0} p' src/ui/tab_strip.rs)
+if printf '%s\n' "$prod_tab_strip" | rg -n 'titlebar-app-menu|IconName::Ellipsis'; then
+  echo '[ui-visual] ellipsis app menu is forbidden; Settings must be a direct icon tile' >&2
+  exit 1
+fi
+if printf '%s\n' "$prod_tab_strip" | rg -n 'Command Palette|TogglePalette' | rg -q 'dropdown_menu|\.menu\('; then
+  echo '[ui-visual] Command Palette must be a content-bar icon, not nested under a menu' >&2
+  exit 1
+fi
+if printf '%s\n' "$prod_tab_strip" | rg -n '"Close Tabs Below"|"Close Tabs to the Right"'; then
+  echo '[ui-visual] tab close-direction menus must use i18n keys' >&2
+  exit 1
+fi
+if ! printf '%s\n' "$prod_tab_strip" | rg -q 'titlebar-add-rail'; then
+  echo '[ui-visual] left-rail open must keep New Tab Plus (titlebar-add-rail)' >&2
+  exit 1
+fi
+
+# Bundled currentColor agent silhouettes on a shared accent + contrasting glyph badge.
+rg -q 'UI-AGENT-BRAND-ICON-07' docs/specs/UI_VISUAL_SYSTEM_SPEC.yaml
+rg -q 'fn agent_icon_badge' src/ui/agent_icon.rs
+rg -q 'agent_icon_badge_uses_accent_plate_and_contrasting_glyph' src/ui/agent_icon.rs
+rg -q 'fn glyph_rgb' crates/agentty-core/src/core/cli_agent.rs
+rg -Fq 'glyph_rgb()' src/ui/tab_sidebar.rs src/ui/tab_strip.rs
+rg -Fq 'optically_underfilled_brand_silhouette_vs_siblings' docs/specs/UI_VISUAL_SYSTEM_SPEC.yaml
+rg -Fq 'per_agent_glyph_size_override_at_callsite' docs/specs/UI_VISUAL_SYSTEM_SPEC.yaml
+rg -Fq 'white_glyph_on_light_accent_plate' docs/specs/UI_VISUAL_SYSTEM_SPEC.yaml
+rg -q 'codex_svg_is_optically_scaled_for_badge_fill' src/ui/agent_icon.rs
+rg -Fq 'viewBox="2 2 20 20"' assets/icons/agents/codex.svg
+rg -Fq 'icons/agents/claude.svg' crates/agentty-core/src/core/cli_agent.rs
+rg -Fq 'icons/bot.svg' crates/agentty-core/src/core/cli_agent.rs
+for mark in claude.svg codex.svg copilot.svg opencode.svg pi.svg droid.svg \
+  gemini.svg amp.svg cursor.svg goose.svg grok.svg omp.svg; do
+  test -f "assets/icons/agents/${mark}" || {
+    echo "[ui-visual] missing bundled agent mark assets/icons/agents/${mark}" >&2
+    exit 1
+  }
+done
+if ls assets/icons/agents/*.png >/dev/null 2>&1; then
+  echo '[ui-visual] Orca/kooky PNG brand marks are forbidden under assets/icons/agents' >&2
+  exit 1
+fi
+prod_agent_icon=$(awk 'BEGIN{p=1} /^#\[cfg\(test\)\]/{p=0} p' src/ui/agent_icon.rs)
+if printf '%s\n' "$prod_agent_icon" | rg -q 'agent_icon_preserves_colors|img\('; then
+  echo '[ui-visual] agent badge must be accent+contrasting SVG, not color-preserving/raster paths' >&2
+  exit 1
+fi
+if printf '%s\n' "$prod_agent_icon" | rg -q 'text_color\(gpui::white\(\)\)'; then
+  echo '[ui-visual] agent badge must not hard-code white glyphs (light plates need brand/dark glyphs)' >&2
+  exit 1
+fi
+if ! printf '%s\n' "$prod_agent_icon" | rg -q 'text_color\(rgb\(glyph\)\)'; then
+  echo '[ui-visual] agent badge must tint via rgb(glyph)' >&2
+  exit 1
+fi
+
+# Shared side-panel search + empty chrome.
+rg -q 'UI-SIDE-PANEL-SEARCH-09' docs/specs/UI_VISUAL_SYSTEM_SPEC.yaml
+rg -q 'UI-SIDE-PANEL-EMPTY-10' docs/specs/UI_VISUAL_SYSTEM_SPEC.yaml
+rg -q 'fn side_panel_search_surface' src/ui/panel_chrome.rs
+rg -q 'fn side_panel_empty_surface' src/ui/panel_chrome.rs
+rg -q 'fn unbranded_avatar_radius' src/ui/panel_chrome.rs
+rg -q 'side_panel_search_metrics_are_explicit' src/ui/panel_chrome.rs
+rg -q 'side_panel_chrome_helpers_are_wired' src/ui/panel_chrome.rs
+rg -q 'side_panel_search_surface' src/ui/tab_sidebar.rs
+rg -q 'side_panel_search_surface' src/ui/right_panel.rs
+rg -q 'side_panel_empty_surface' src/ui/right_panel.rs
+rg -q 'side_panel_empty_surface' src/ui/tab_sidebar.rs
+rg -q 'unbranded_avatar_radius' src/ui/tab_strip.rs
+rg -q 'panel_content_gutter' src/ui/file_tree.rs
+rg -q 'fn tree_row_text_fade' src/ui/file_tree.rs
+prod_file_tree=$(awk 'BEGIN{p=1} /^#\[cfg\(test\)\]/{p=0} p' src/ui/file_tree.rs)
+if ! printf '%s\n' "$prod_file_tree" | rg -n 'fn tree_row_text_fade' -A 15 | rg -q 'presets::Surfaces|Surfaces>\(\)\.popover'; then
+  echo '[ui-visual] tree_row_text_fade must match Surfaces.popover row fills' >&2
+  exit 1
+fi
+if ! printf '%s\n' "$prod_file_tree" | rg -n 'fn tree_row_text_fade' -A 12 | rg -q '\.popover'; then
+  echo '[ui-visual] tree_row_text_fade must use Surfaces.popover' >&2
+  exit 1
+fi
+if printf '%s\n' "$prod_file_tree" | rg -n 'fn tree_row_text_fade' -A 25 | rg -q 'theme\(\)\.muted[^_]'; then
+  echo '[ui-visual] tree_row_text_fade must not use theme().muted as fade solid' >&2
+  exit 1
+fi
+# Right-panel empty copy must be catalog-backed (I18N + UI-SIDE-PANEL-EMPTY-10).
+prod_right_panel=$(awk 'BEGIN{p=1} /^#\[cfg\(test\)\]/{p=0} p' src/ui/right_panel.rs)
+for key in \
+  panel.empty.no_active_session \
+  panel.empty.no_commands \
+  panel.empty.no_working_directory \
+  panel.empty.loading \
+  panel.empty.not_a_git_repo \
+  panel.empty.no_uncommitted_changes
+do
+  if ! printf '%s\n' "$prod_right_panel" | rg -Fq "$key"; then
+    echo "[ui-visual] right_panel empty states must use i18n key $key" >&2
+    exit 1
+  fi
+done
+if printf '%s\n' "$prod_right_panel" | rg -q '"(No active session\.|Loading…|Not a git repository\.|No uncommitted changes\.|No working directory\.|No commands recorded)'; then
+  echo '[ui-visual] right_panel must not hard-code English empty-state literals' >&2
+  exit 1
+fi
+if printf '%s\n' "$prod_file_tree" | rg -n '\.text_ellipsis\(\)' | rg -q 'tree|label|entry\.name'; then
+  echo '[ui-visual] file-tree labels must use trailing fade, not text_ellipsis' >&2
+  exit 1
+fi
+if printf '%s\n' "$prod_file_tree" | rg -q '\.px_1\(\)'; then
+  echo '[ui-visual] file-tree column must use panel_content_gutter, not px_1' >&2
+  exit 1
+fi
+
+rg -q 'UI-SIDE-PANEL-SCROLL-11' docs/specs/UI_VISUAL_SYSTEM_SPEC.yaml
+rg -q 'SIDE_PANEL_SCROLLBAR_SHOW' src/ui/scrollbar.rs
+rg -q 'ScrollbarShow::Scrolling' src/ui/scrollbar.rs src/ui/theme.rs
+rg -q 'with_vertical_scrollbar_overflow' src/ui/scrollbar.rs src/ui/tab_sidebar.rs
+rg -q 'list_has_overflow_below' src/ui/scrollbar.rs src/ui/tab_sidebar.rs
+rg -q 'side_panel_scrollbar_forces_scrolling_show_mode' src/ui/scrollbar.rs
+rg -q 'overflow_fade_geometry_is_explicit' src/ui/scrollbar.rs
+if rg -n 'ScrollbarShow::Always' src/ui/theme.rs src/ui/scrollbar.rs; then
+  echo '[ui-visual] side-panel/theme scrollbars must not use Always' >&2
+  exit 1
+fi
+if ! rg -n 'Scrollbar::vertical' -A 3 src/ui/scrollbar.rs | rg -q 'scrollbar_show\(SIDE_PANEL_SCROLLBAR_SHOW\)'; then
+  echo '[ui-visual] with_vertical_scrollbar must force SIDE_PANEL_SCROLLBAR_SHOW' >&2
+  exit 1
+fi
+
+# The Agent Activity Bar is the canonical compact handle for Composer visibility.
+rg -q 'INPUT-COMPOSER-ACTIVITY-BAR-07' docs/specs/INPUT_EXPERIENCE_SPEC.yaml
+rg -q 'fn toggle_composer_from_activity_bar' src/ui/composer.rs
+rg -q 'activity_bar_toggles_composer_without_mutating_mode' src/ui/composer.rs
+rg -q 'composer.toggle.expand' src/ui/activity_bar.rs assets/i18n/en-US.yaml assets/i18n/zh-CN.yaml
+rg -q 'composer.toggle.collapse' src/ui/activity_bar.rs assets/i18n/en-US.yaml assets/i18n/zh-CN.yaml
+rg -q 'toggle_composer_from_activity_bar' src/ui/activity_bar.rs
+
+echo "ui visual system checks passed"

@@ -16,6 +16,9 @@ impl AgenttyApp {
         cx: &mut Context<Self>,
     ) {
         let m = &ev.modifiers;
+        if self.tab_switch.is_holding() && !m.control {
+            self.finish_tab_switch(true, _window, cx);
+        }
         self.set_link_modifier(m.secondary(), cx);
 
         let extra_platform = if cfg!(target_os = "macos") {

@@ -9,6 +9,7 @@ Agentty 的开发采用规范驱动质量门。文档不是实现后的说明，
 - `specs/SESSION_NAVIGATOR_SPEC.yaml`：Agent 会话发现、列表与 Resume 契约。
 - `specs/I18N_SPEC.yaml`：中文/英文原生本地化契约。
 - `quality/traceability.yaml`：spec → source → check → test → runtime evidence 追踪矩阵。
+- `quality/development-tracker.yaml`：开发里程碑、技术债务与用户反馈 intake 的持久化正本；反馈先进入 `feedback`，开工前再提升为 spec/matrix。
 - `quality/CHECKLIST.md`：实现和评审清单。
 
 ## 修改流程

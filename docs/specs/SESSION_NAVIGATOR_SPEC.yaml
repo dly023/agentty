@@ -1,5 +1,5 @@
 version: 1
-updated: 2026-07-31
+updated: 2026-08-07
 domain: agent_session_navigator
 contracts:
   - id: SESSION-ENVIRONMENT-AUTHORITY-01
@@ -10,4 +10,197 @@ contracts:
     rule: Resume uses a typed program and argv vector with an optional cwd, never an interpolated shell command.
   - id: SESSION-LIVE-HISTORY-MERGE-04
     rule: A live pane and native history record for the same provider session form one logical row.
-status: verified
+  - id: SESSION-PROVIDER-ICON-05
+    rule: Every Session Navigator row renders the canonical icon and accent color of its detected CLI Agent provider; generic terminal or bot glyphs are forbidden when the row already owns a CLIAgent identity.
+  - id: SESSION-OMP-DISCOVERY-06
+    rule: Session discovery includes Omp from ~/.omp/agent/sessions/<project>/*.jsonl, ignores headerless diagnostic-only and nested tool-log files, and rejects malformed session headers or filename/header identity mismatches without publishing a partial provider result.
+  - id: SESSION-GROK-DISCOVERY-31
+    rule: Session discovery includes Grok Build from ~/.grok/sessions/<urlencode(cwd)>/<session-id>/summary.json. Each project bucket is scanned one level deep for session directories that contain summary.json; sibling caches such as session_search.sqlite, prompt_history.jsonl, and lock files are ignored and must not exhaust the physical-source budget for valid summaries. The summary's info.id must match the session directory name; mismatches fail that source closed without publishing a partial Grok result. Title preference is generated_title, then session_summary; cwd and timestamps come from the summary. Resume remains the already-shipped grok --resume <id> path. Permanent delete of a discovered Grok row removes the whole session directory through the selected Host, not only summary.json.
+    forbidden:
+      - advertising_grok_history_without_summary_scanner
+      - counting_grok_sqlite_or_prompt_history_as_session_sources
+      - publishing_grok_row_when_directory_id_mismatches_summary
+      - deleting_only_grok_summary_json_while_leaving_session_dir
+  - id: SESSION-GEMINI-DISCOVERY-32
+    rule: Session discovery includes Gemini CLI from ~/.gemini/tmp/<project-slug>/chats/session-*.jsonl. Each project slug directory is scanned one level into chats/ for session-*.jsonl files; ~/.gemini/antigravity-cli/** and other non-tmp Gemini trees are out of scope for this scanner. The first JSONL object must carry sessionId; cwd is read from the sibling .project_root file under the slug directory when present. Title preference is the first non-empty user message whose text is not a Gemini <session_context> bootstrap blob; timestamps come from startTime/lastUpdated (including $set.lastUpdated). Resume remains the already-shipped gemini --resume <sessionId> path. Permanent delete removes the session JSONL file through the selected Host.
+    forbidden:
+      - advertising_gemini_history_without_tmp_chats_scanner
+      - scanning_antigravity_cli_as_gemini_cli_history
+      - using_session_context_bootstrap_text_as_gemini_title
+      - inventing_gemini_cwd_from_gui_home_when_project_root_missing
+  - id: SESSION-DISCOVERY-TIMEOUT-VISIBLE-33
+    rule: When DiscoverAgentSessions (or the local equivalent scan) ends in a transport or operation timeout, the Session Navigator leaves Discovering and surfaces a localized timed-out scan error the user can refresh from. A timeout must not leave an indefinite Discovering spinner with an empty error.
+    forbidden:
+      - indefinite_discovering_spinner_after_scan_timeout
+  - id: SESSION-ROW-ACTIONS-07
+    rule: Every historical session row exposes safe copy actions for session id, typed resume command, cwd, and source path plus a read-only details dialog; absent metadata disables its action instead of inventing a value.
+  - id: SESSION-ROW-INFORMATION-HIERARCHY-08
+    rule: The canonical provider icon is the row's visible CLI Agent identity, so the subtitle must not repeat the provider slug or display name; it is reserved for session-specific context and renders the cwd when available. Provider identity remains searchable and available in session details.
+  - id: SESSION-PERMANENT-DELETE-TRANSACTION-09
+    rule: Permanent session deletion uses a typed plan that captures the source path, environment authority, and logical session key before any mutation; it removes the backing provider file through the selected Host, updates the Navigator in memory atomically, and provides a confirmed rollback path. Delete must require explicit user confirmation. Soft Close for live/restoring rows only closes the carrier tab/pane and keeps provider history — that path must not call apply_session_delete_transaction. Live/restoring rows additionally expose Close and Delete — one confirmation closes the carrier then permanently deletes provider history through a typed plan captured before the carrier closes (plan_close_and_delete). When the live row has no provider backing source yet (Durable identity or missing source_path), Close and Delete still closes the carrier, tombstones the row, and clears Environment user state without inventing a provider file path or reporting a false delete failure. Historical/virtual rows keep the dangerous permanent Delete entry. Tombstone entries prevent the same provider identity from reappearing as a new row within the same generation.
+    forbidden:
+      - provider_file_delete_via_soft_close_path
+      - silent_no_op_delete_menu_on_live_rows
+      - close_and_delete_without_capturing_plan_before_carrier_close
+      - close_and_delete_error_toast_when_no_provider_source
+  - id: SESSION-ALIAS-BUSINESS-MODEL-10
+    rule: Session aliases are Environment-scoped user state keyed by stable SessionIdentity. Setting an alias persists to the session config and survives restart. Aliases are normalized (trimmed, non-empty) before storage. Duplicate aliases within the same environment are rejected at commit time. Deleting a session clears its alias state. The inline edit UI is discoverable via double-click on the row title and via a row context-menu action that opens the same begin_session_alias_edit path; edit state is cancelled on Escape without mutating the model. begin_session_alias_edit seeds the editor with the current display title and selects that entire value so one delete/backspace clears it for replacement.
+    forbidden:
+      - alias_edit_only_via_undiscoverable_double_click
+      - alias_edit_caret_at_end_without_selecting_existing_title
+  - id: SESSION-TITLE-PRECEDENCE-11
+    rule: Session display name resolves through one pure mapping — session_display_title — shared by the Navigator sidebar row, hover detail title, and global session search document title. Ideal experience — when the Agent (provider) authors a meaningful title, that title wins; otherwise the first real User message names the session; only then use the localized unnamed-session fallback. Precedence is explicit Environment alias, then the row's resolved provider title (provider-authored title, else first non-empty User message), then the localized unnamed-session fallback. Catch-all / default-name phrases such as "Agent session", "Agent 会话", "Untitled", "New session", and product placeholders such as "agentty" are treated as absent title candidates so a later or concurrent first User message wins for display and search filtering. Provider identity, agent display name, session id, RowId, viewport index, and tab/pane coordinates are never display-name inputs. Tab labels, terminal OSC/window titles, and cwd basenames used as pane chrome are never LiveSession or refresh title inputs. Live carrier projection may publish only a once-set first-user-message title candidate derived from the first successfully delivered AgentPrompt (via first_user_title_candidate) when the agent has not yet authored a better title — never tab names, OSC titles, or product placeholders. Blank, whitespace-only, and placeholder alias/title candidates are treated as absent. Navigator refresh that supplies a missing, blank, or placeholder title preserves the last non-empty meaningful resolved title for that RowId (placeholder values already stored are cleared when a refresh still has no better candidate). User-state alias projection is never rewritten by layout, focus, hover, filter, or carrier replacement. UI re-renders with unchanged alias and title inputs must produce the identical display string. Parsers keep provider titles and User-message candidates in separate fields; a meaningful later provider title still wins over first User message, but a catch-all provider title does not. Codex discovery must accept User turns from both event_msg.user_message and response_item message role=user payloads; injected instruction / environment_context user-role blobs are not User-message title candidates.
+    forbidden:
+      - session_id_as_display_title
+      - provider_or_agent_name_as_display_title
+      - per_callsite_display_title_rederivation
+      - blank_refresh_wiping_last_good_title
+      - ui_churn_changing_display_title_without_alias_or_title_change
+      - tab_name_or_terminal_osc_title_as_session_display_title
+      - product_placeholder_title_overwriting_settled_session_title
+      - live_resume_projection_publishing_agentty_as_session_title
+      - catch_all_default_name_beating_first_user_message
+      - overwriting_live_first_user_title_on_later_prompts
+      - codex_ignoring_response_item_user_messages
+      - injected_agents_md_or_environment_context_as_session_title
+  - id: AGENT-EXECUTION-STATE-SYSTEM-12
+    rule: Session Navigator execution presentation derives from the canonical AgentSessionState owned by the live terminal. Badge precedence is restoring, waiting for user, running, focused live, background live, completed unread, then none for idle or historical rows. State snapshots carry activity_seq and stale snapshots must not replace newer state. Historical rows never display live execution, and waiting messages remain visible and actionable.
+  - id: SESSION-HOVER-DETAILS-13
+    rule: Every current Navigator row exposes a delayed hover detail card keyed only by stable NavigatorRowId, never by viewport index or live carrier. The canonical gpui-component HoverCard owns delayed open/close and keeps the card open while the pointer is over either trigger or content. Open delay stays in a snappy band (≤200ms) and close delay stays short enough for pointer migration without feeling stuck (≤150ms); both come from the SESSION_HOVER_CARD_* constants, never ad-hoc literals at call sites. Detail resolution fails closed when the RowId is no longer in the current committed projection. The card shows title, lifecycle or execution status, cwd, provider identity, session id, and updated metadata without changing row information hierarchy, and exposes activate/resume plus details actions. The existing context-menu details action remains the keyboard-accessible equivalent. When updated_at_unix_ms is present, both the hover card and the details dialog render it through one pure local-datetime formatter as YYYY-MM-DD HH:MM — never as a raw unix-millis integer string. Placement is a trailing sidecar past the Navigator split — for the left sidebar the card sits immediately right of the sidebar divider with a small gap derived from one pure lead mapping — and must not cover the search control or the row list as an opaque overlay. While a row context menu is open, hover detail is suppressed so the menu owns pointer and paint priority; hover may resume only after the menu dismisses. Opening a row context menu must not force an extra AgenttyApp notify on the build frame — ContextMenu's deferred window.refresh is the sole refresh for that paint.
+    forbidden:
+      - hover_card_overlaying_navigator_rows_or_search
+      - hover_card_competing_with_open_row_context_menu
+      - viewport_index_or_carrier_as_hover_identity
+      - hand_rolled_hover_delay_outside_canonical_HoverCard
+      - hover_open_delay_above_200ms
+      - context_menu_open_double_refresh_via_extra_notify
+      - raw_unix_millis_as_updated_display
+  - id: SESSION-KEYBOARD-CURSOR-14
+    rule: Session Navigator keyboard navigation owns a transient UI-only cursor keyed by stable NavigatorRowId and never mutates canonical SessionNavigator selection until activation. The cursor normalizes only against the current query-filtered committed rows, preserves the same identity across carrier replacement and reorder, and clears when its row disappears. Up and Down move through visible rows, Enter activates the cursor through activate_navigator_row, and Escape clears query plus cursor before returning focus to the active terminal when the query is already empty. Filter indices are navigation geometry only and are never persisted or used as action identity.
+  - id: SESSION-LIVE-CONTAINER-BINDING-15
+    rule: Every pane container owns a persisted LiveContainerBinding from creation, containing a stable opaque container id and optional agent, provider session id, and launch argv. Session restore and Navigator resume seed the binding before the pending or ready pane enters the visible projection. Pending placeholders, ready TerminalView, app-session persistence, and local or remote materialization carry the same binding; runtime AgentSessionState may enrich the binding but never creates logical identity from a physical pane number. LiveCarrier uses the container id as identity and keeps tab or pane coordinates as optional routing only. When a provider session id arrives after a live-only row, Navigator rebinds the same RowId to provider identity and merges history without replacing user state. Foreground CLI Agent detection stamps live_binding.agent immediately without waiting for session_id or launch_argv, and DaemonMsg::Agent wakes the terminal so Navigator can project a Live row on the next rebuild; agent process exit must never clear live_binding.agent or drop the Live row while the carrier pane remains. Closing an agent-bound carrier (binding.agent or runtime agent_session present) requests AgentCarrierClosed passive history refresh — never gate that refresh on runtime session alone. Foreground agent detect never starts provider discovery.
+    forbidden:
+      - clearing_live_binding_agent_on_process_exit
+      - waiting_for_session_id_before_stamping_live_binding_agent
+      - agent_carrier_close_refresh_gated_only_on_runtime_session
+      - provider_discovery_scan_on_foreground_agent_detect
+  - id: SESSION-PIN-BUSINESS-MODEL-16
+    rule: Session pins are Environment-scoped selected-Host user state stored in the same SessionUserStateStore transaction and file as aliases, keyed by stable SessionIdentity. Pin and unpin write a candidate store first and update visible Navigator projection only after the Host save succeeds; failure leaves prior UI and persisted state unchanged and remote authority never falls back to local. Pin survives restart and live-only to provider-history identity rebind. Navigator owns projection and pinned-first stable ordering only; it has no mutation authority. Deleting a session clears alias and pin in the same provider-source transaction. Every pinned row must render an explicit visible pin glyph (not order alone) so pinned state is observable without opening the context menu.
+    forbidden:
+      - pinned_state_only_via_sort_order_without_row_marker
+  - id: SESSION-STABLE-REORDER-17
+    rule: Session reorder is a typed Environment-scoped operation over stable NavigatorRowId values. Live rows sharing one tab carrier form one indivisible reorder unit and preserve their internal relative order. The operation must be an exact permutation of the current committed rows, preserve selection and row identity, and reject stale, duplicate, missing, or split-breaking input without mutation. Display order persists in the selected Host SessionUserStateStore keyed by SessionIdentity; the UI commits the candidate store before projecting the new order, so save failure leaves visible and persisted order unchanged and never falls back to local authority. Pinned units form the first partition. Position write ownership is FirstObserved and Reorder only (plus projecting persisted user orders) — delete, lifecycle, focus, metadata refresh, and source refresh must not rewrite survivor positions. A newly created or newly discovered unit that has never been observed (true FirstObserved for that RowId) is inserted at the head of its pin partition; RowId reappearance after a transient drop must reuse the first-seen insertion/display position and must not be treated as a new unit. Permanent delete (commit_delete) and any follow-on refresh preserve the relative order of all surviving previously observed units; delete removes only the deleted RowId's position entries and never renumbers survivors. Carrier replacement, focus, metadata refresh, and source refresh do not rewrite an existing order. The Navigator sidebar reuses the canonical reorder primitive, and filtered search results are not draggable because viewport/filter indices are not canonical ordering identity.
+    forbidden:
+      - delete_or_refresh_rewriting_survivor_relative_order
+      - reinsert_of_known_row_id_as_new_head_unit
+      - renumbering_survivors_on_commit_delete
+  - id: SESSION-REFRESH-INTENT-18
+    rule: Session refresh intent is typed, semantic, and Environment-authoritative. Initial target readiness, first successful connect that publishes Host+roots, remote link-up/reconnect, pump transition into Attached, provider source mutation, and closing an Agent carrier request the same Environment-scoped passive scan; explicit user refresh supersedes an older generation. Generic terminal output, focus, resize, layout, and metadata-only projection events never scan provider history. A refresh may become in-flight only after EnvironmentSessionContext resolves the selected Host and store roots; discovery runs through that facade so UI call sites never branch on local vs remote. When HelloOk omits store_roots but publishes a non-empty peer home, RemoteHost derives target-owned default roots from that home (never GUI HOME) so connect success still unlocks discovery against remotes that speak DiscoverAgentSessions without the later Hello field or agent-helper feature. A disconnected remote attempt must release its generation so the link-up passive refresh starts a new scan, and no unavailable remote path may read local roots. Connect success must refresh every open Environment window on that host and must not leave open windows depending only on a raced sidebar paint. When a sidebar paint attempted discovery before Host+roots were ready and recorded session_scan_error, the next paint after EnvironmentSessionContext can resolve must automatically request RemoteLinkUp — discovery must not stay permanently empty after a transient precondition failure.
+    forbidden:
+      - leaving_refresh_inflight_after_precondition_failure
+      - coalescing_the_first_link_up_refresh_behind_an_abandoned_generation
+      - falling_back_to_local_home_for_remote_discovery
+      - ui_is_local_branch_for_session_discovery
+      - finish_connect_without_environment_session_refresh
+      - scan_error_without_retry_after_host_roots_become_ready
+      - requiring_agent_helper_feature_alone_for_session_discovery
+      - leaving_remote_discovery_blocked_when_peer_home_is_known
+  - id: SESSION-ROW-ACTIVATION-30
+    rule: Activating a Navigator row always selects it by stable NavigatorRowId before focus or resume side effects, so sidebar selection chrome updates for live and historical rows. Live rows with a resolvable carrier tab focus that tab; a missing carrier keeps the selection and surfaces a visible notice instead of a silent no-op.
+    forbidden:
+      - activate_without_navigator_select
+      - silent_live_activate_when_carrier_tab_missing
+  - id: SESSION-PROVIDER-REGISTRY-19
+    rule: Persisted Agent session discovery is defined by one static typed provider descriptor registry. Each registered descriptor binds a stable provider identity, canonical CLIAgent identity, target store source set, scanner/parser kind, canonical source validator, and typed resume capability. DiscoveryRequest::standard derives its providers from this registry rather than a handwritten slug list, and scan dispatch is typed rather than string-matched. A CLI Agent without a verified persisted store format has no descriptor and must not be presented as discoverable history.
+    forbidden:
+      - handwritten_standard_provider_slug_list
+      - runtime_mutable_provider_registry
+      - descriptor_without_canonical_source_validation
+      - advertising_unimplemented_persisted_discovery
+  - id: SESSION-STORE-ROOT-CONTEXT-20
+    rule: Every scan, read, delete, resume-source validation, and provider source allowlist consumes one immutable AgentStoreOperationContext resolved by the target execution process. The snapshot includes target-owned HOME and explicit provider configuration roots such as CODEX_HOME and CLAUDE_CONFIG_DIR, resolving relative values against target HOME exactly once. A remote helper publishes its snapshot during the control handshake; the client forwards that snapshot unchanged and the helper never substitutes its later process environment or the GUI's HOME.
+    forbidden:
+      - gui_guessing_remote_provider_roots
+      - helper_re_resolving_request_roots_from_process_environment
+      - scan_and_mutation_using_different_root_snapshots
+      - remote_store_fallback_to_local_environment
+  - id: SESSION-VIEWPORT-PROJECTION-21
+    rule: Session Navigator owns one immutable viewport projection over the current committed canonical rows. Projection units are keyed by stable NavigatorRowId collections and preserve canonical order; live rows sharing a split tab remain one indivisible variable-height unit in unfiltered and filtered views. GPUI builds only requested visible/overdraw units through ListState, while selection, keyboard activation, hover resolution, reorder persistence, and global search continue to resolve stable RowId values. Query changes or canonical unit changes splice the list state by stable unit identity instead of turning viewport indices into identity or resetting canonical order.
+    forbidden:
+      - eager_build_of_all_committed_rows
+      - viewport_index_as_row_identity
+      - viewport_index_as_persisted_order
+      - splitting_tab_siblings_for_filter_or_virtualization
+      - query_projection_mutating_canonical_order
+  - id: SESSION-GLOBAL-SEARCH-22
+    rule: The global command palette searches immutable documents published from each open Environment window's last committed SessionNavigator rows. Document identity is the pair EnvironmentId plus NavigatorRowId; searchable metadata may include title, alias, provider, cwd, session id, lifecycle, and human Environment label, but never pane coordinates or viewport indices. Opening and filtering the palette consumes only the registry snapshot and never initiates discovery. Confirming a result focuses the owning window and resolves activation by stable RowId. Window close, dead-window sweep, and workspace rebind remove the old partition before it can be returned.
+    forbidden:
+      - provider_discovery_from_palette_search
+      - viewport_index_in_global_session_identity
+      - pane_coordinate_in_global_session_identity
+      - stale_partition_after_window_close_or_rebind
+      - activating_a_cross_window_result_in_the_current_window
+  - id: SESSION-NAVIGATOR-VISUAL-23
+    rule: The Session Navigator uses compact variable-height rows with distinct selected, hovered, and keyboard-cursor states; a search placeholder and scan-aware empty state; informative suffix truncation for long working directories; and a destructive visual treatment for permanent delete. These presentation rules consume canonical Navigator rows and never create a second identity, ordering, filtering, or activation model.
+    forbidden:
+      - visual_state_as_session_identity
+      - destructive_action_styled_as_neutral
+      - provider_name_repeated_in_visible_subtitle
+      - empty_state_hiding_scan_failure
+  - id: SESSION-SCHEMA-BOUNDED-DISCOVERY-24
+    rule: Each provider scanner spends its physical-source budget only on nodes relevant to that provider's persisted schema. A large sibling cache or unrelated subtree under a provider root cannot exhaust discovery for valid session transcripts; schema traversal remains bounded, symlink-safe, and fail-closed when the relevant candidate tree itself exceeds the declared budget.
+    forbidden:
+      - counting_unrelated_provider_cache_nodes_against_session_budget
+      - unbounded_schema_traversal
+      - following_symlinks_during_provider_discovery
+      - publishing_a_silent_subset_after_relevant_budget_exhaustion
+  - id: SESSION-SIDEBAR-SURFACE-HIERARCHY-25
+    rule: The Session Navigator sidebar renders one explicit navigation hierarchy: a chrome action row (refresh/collapse) that leaves the macOS traffic-light zone clear, a framed search control with stable height, and one shared horizontal gutter for search, empty states, single-session rows, and split-session groups. Sidebar identity comes from search, rows, and empty states — never from a redundant section title under the window close controls. Row content remains compact, but selection paint, keyboard focus, and hover feedback do not touch the window edge or depend on incidental child padding.
+    forbidden:
+      - bare_search_input_without_control_surface
+      - row_background_touching_sidebar_edge
+      - per_row_padding_as_the_only_sidebar_gutter
+      - section_title_under_window_traffic_lights
+      - redundant_navigator_section_title
+  - id: SESSION-SIDEBAR-ROW-DENSITY-29
+    rule: Session Navigator row geometry comes from one pure metrics mapping. The shared outer gutter equals the shared panel_content_gutter (CONTENT_INSET / UI-PANEL-EDGE-GUTTER-08) so left-navigator and right-panel content keep one distance to their panel edges and splits. The row's internal horizontal padding is a distinct inner layer; their sum — the content inset to the icon — stays in a 12–16px band. Rows keep a readable minimum height, a rounded-rectangle provider icon box (not a circle), icon-to-text gap, and title-to-subtitle gap. Selected, hovered, and keyboard-cursor states reuse that same horizontal inset and always reserve the same border width, so activating a row never shifts the icon or title sideways. Idle / hover / selected / keyboard-cursor row fills and matching trailing text-fade solids come from the Surfaces.sidebar ladder (base, hover, selected, cursor) — the same contrast-tested family as the file tree — never theme().muted as a row or fade fill. Title and subtitle overflow with a trailing fade gradient matched to the row surface — not an ellipsis — so text can use the full column width. Ad-hoc row padding or icon-size literals outside the metrics helper are forbidden.
+    metrics:
+      - outer_gutter_equals_panel_content_gutter
+      - content_inset_between_12_and_16
+      - outer_gutter_and_row_pad_x_as_distinct_layers
+      - row_min_height_at_least_44
+      - rounded_rect_icon_box_and_glyph
+      - icon_text_gap
+      - title_subtitle_gap
+      - trailing_text_fade_width
+      - stable_border_reservation
+      - surfaces_sidebar_state_ladder_for_row_fills
+    forbidden:
+      - selection_induced_horizontal_content_shift
+      - outer_gutter_divergent_from_panel_content_gutter
+      - stacked_gutter_and_row_padding_past_16px_content_inset
+      - circular_provider_icon_badge
+      - ellipsis_truncation_instead_of_trailing_fade
+      - permanent_flex_dead_space_stealing_title_width
+      - row_geometry_literals_outside_metrics_helper
+      - row_hover_or_selected_fill_from_theme_muted
+  - id: SESSION-SPLIT-GROUP-PRESENTATION-26
+    rule: When one canonical Navigator projection unit contains multiple split siblings, the sidebar renders those rows inside one shared visual container with a persistent group cue and one outer boundary. Each sibling keeps its stable NavigatorRowId, title, provider icon, status, activation target, and selected state; the container never invents a group identity or permits siblings to appear as unrelated top-level rows.
+    forbidden:
+      - split_siblings_rendered_as_unrelated_top_level_rows
+      - visual_group_id_as_session_identity
+      - group_container_replacing_sibling_activation
+      - query_or_reorder_splitting_the_visual_group
+  - id: SESSION-ROW-ACTION-AFFORDANCE-27
+    rule: Session Navigator row actions use compact icon affordances overlaid on the row's trailing edge. A historical inactive row reveals a resume icon button on hover; a restoring row keeps an explicit restoring status label. The affordance must not reserve a permanent flex column that steals title width when hidden, must never shift row layout, never render as inline prose text, and keep the localized action name in the tooltip.
+    forbidden:
+      - inline_text_action_label_on_row_hover
+      - hover_affordance_changing_row_geometry
+      - permanent_flex_slot_stealing_title_width_when_hidden
+      - removing_the_explicit_restoring_status
+  - id: SESSION-EMPTY-STATE-SURFACE-28
+    rule: The Session Navigator empty projection renders a hierarchical placeholder surface: one muted state glyph above the localized message. Discovering, scan error, zero sessions, and query no-match each map to a distinct glyph through one pure mapping, so the four states are distinguishable without reading the text.
+    forbidden:
+      - bare_text_only_empty_state
+      - one_ambiguous_glyph_for_all_empty_states
+status: in_progress

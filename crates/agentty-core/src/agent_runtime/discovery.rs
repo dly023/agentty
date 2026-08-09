@@ -32,6 +32,10 @@ pub struct AgentSessionRecord {
     pub updated_at_unix_ms: Option<u64>,
     #[serde(default)]
     pub launch_argv: Vec<String>,
+    #[serde(default)]
+    pub source_path: Option<String>,
+    #[serde(default)]
+    pub created_at_unix_ms: Option<u64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -153,6 +157,8 @@ mod tests {
             cwd: Some("/repo".into()),
             updated_at_unix_ms: Some(1),
             launch_argv: vec![],
+            source_path: None,
+            created_at_unix_ms: None,
         }
     }
 

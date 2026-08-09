@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+rg -q 'NOTIFY-CLICK-REVEAL-01' docs/specs/NOTIFICATION_SPEC.yaml
+rg -q 'sanitize_notification_text' src/terminal/remote.rs
+rg -q 'PaneIdentity' src/terminal/view.rs src/ui/tray/mod.rs
+rg -q 'RevealPane' src/ui/tray/mod.rs
+rg -q 'try_clickable_notification' src/terminal/remote.rs
+rg -q 'notification_reveal_targets_environment_and_pane_not_entity_id' src/ui/tray/mod.rs
+echo 'desktop notification checks passed'

@@ -214,21 +214,11 @@ fn main() {
 
     let config = crate::core::config::Config::load();
 
-    // After the PATH enrichment above, which is what makes the candidate scan
-    // see the user's real PATH rather than the stub a Finder launch inherits —
-    // and before the daemon below, which forks every pane and so must already
-    // carry the CLI's directory in its environment.
+    // After PATH enrichment, which makes the candidate scan see the user's
+    // real PATH rather than the stub a Finder launch inherits. The local
+    // runtime is deliberately not started here: the first durable pane is its
+    // resource lease and starts the headless sibling lazily.
     crate::core::cli_install::install(config.install_cli_on_path);
-
-    let restore_session = config.restore_session;
-    let daemon_result = if restore_session {
-        crate::daemon::spawn::ensure_running()
-    } else {
-        crate::daemon::spawn::restart()
-    };
-    if let Err(e) = daemon_result {
-        log::error!("failed to ensure daemon is running: {e}");
-    }
 
     gpui_platform::application()
         .with_assets(Assets)
@@ -262,6 +252,18 @@ fn main() {
 #[cfg(all(test, unix))]
 mod tests {
     use super::merge_paths;
+
+    #[test]
+    fn gui_bootstrap_never_starts_the_local_runtime() {
+        let main_source = include_str!("main.rs");
+        let bootstrap = main_source
+            .split("crate::core::cli_install::install(config.install_cli_on_path);")
+            .nth(1)
+            .and_then(|tail| tail.split("gpui_platform::application()").next())
+            .expect("GUI bootstrap section");
+        assert!(!bootstrap.contains("ensure_running"));
+        assert!(!bootstrap.contains("restart()"));
+    }
 
     #[test]
     fn merge_paths_prefers_primary_dedupes_and_drops_empties() {

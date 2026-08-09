@@ -4,6 +4,7 @@ use std::rc::Rc;
 
 pub(crate) type ReorderState = Rc<RefCell<Option<Reorder>>>;
 
+#[derive(Clone)]
 pub(crate) struct Preview {
     pub(crate) order: Vec<usize>,
     pub(crate) from: usize,
@@ -45,19 +46,21 @@ pub(crate) fn clear_pending(state: &ReorderState) {
     }
 }
 
-pub(crate) fn take_pending(state: &ReorderState) -> Option<Vec<usize>> {
-    state.borrow_mut().take()?.pending.into_inner()
+pub(crate) fn take_pending(state: &ReorderState) -> Option<(Surface, Vec<usize>)> {
+    let reorder = state.borrow_mut().take()?;
+    Some((reorder.surface, reorder.pending.into_inner()?))
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub(crate) enum Surface {
     Strip,
+    Navigator,
 }
 
 pub(crate) struct Reorder {
     pub(crate) surface: Surface,
     pub(crate) from: usize,
-    rects: Vec<Bounds<Pixels>>,
+    rects: Vec<Option<Bounds<Pixels>>>,
     axis: Axis,
     gap: Pixels,
     grab: Point<Pixels>,
@@ -71,6 +74,24 @@ impl Reorder {
         surface: Surface,
         from: usize,
         rects: Vec<Bounds<Pixels>>,
+        axis: Axis,
+        gap: Pixels,
+        grab: Point<Pixels>,
+    ) -> Self {
+        Self::new_projected(
+            surface,
+            from,
+            rects.into_iter().map(Some).collect(),
+            axis,
+            gap,
+            grab,
+        )
+    }
+
+    pub(crate) fn new_projected(
+        surface: Surface,
+        from: usize,
+        rects: Vec<Option<Bounds<Pixels>>>,
         axis: Axis,
         gap: Pixels,
         grab: Point<Pixels>,
@@ -89,7 +110,10 @@ impl Reorder {
     }
 
     pub(crate) fn covers(&self, surface: &Surface, len: usize) -> bool {
-        self.surface == *surface && self.rects.len() == len && self.from < len
+        self.surface == *surface
+            && self.rects.len() == len
+            && self.from < len
+            && self.rects[self.from].is_some()
     }
 
     fn along(&self, p: Point<Pixels>) -> Pixels {
@@ -106,24 +130,38 @@ impl Reorder {
         }
     }
 
+    fn source_rect(&self) -> &Bounds<Pixels> {
+        self.rects[self.from]
+            .as_ref()
+            .expect("the dragged item must be measured")
+    }
+
     fn shift(&self) -> Pixels {
-        self.extent(&self.rects[self.from]) + self.gap
+        self.extent(self.source_rect()) + self.gap
     }
 
     pub(crate) fn target(&self, pointer: Point<Pixels>) -> usize {
         let leading = self.free_origin(pointer);
-        let trailing = leading + self.extent(&self.rects[self.from]);
+        let trailing = leading + self.extent(self.source_rect());
+        let first_measured = self
+            .rects
+            .iter()
+            .position(Option::is_some)
+            .unwrap_or(self.from);
         self.rects
             .iter()
             .enumerate()
             .filter(|(i, _)| *i != self.from)
-            .filter(|(i, r)| {
-                let centre = self.along(r.origin) + self.extent(r) / 2.;
-                if *i < self.from {
-                    leading >= centre
-                } else {
-                    trailing > centre
+            .filter(|(i, rect)| match rect {
+                Some(rect) => {
+                    let centre = self.along(rect.origin) + self.extent(rect) / 2.;
+                    if *i < self.from {
+                        leading >= centre
+                    } else {
+                        trailing > centre
+                    }
                 }
+                None => *i < first_measured && *i < self.from,
             })
             .count()
     }
@@ -133,15 +171,26 @@ impl Reorder {
     }
 
     fn held_origin(&self, pointer: Point<Pixels>) -> Pixels {
-        let first = self.along(self.rects[0].origin);
-        let last = self.rects.last().expect("non-empty");
+        let first = self
+            .rects
+            .iter()
+            .flatten()
+            .next()
+            .expect("at least the dragged item is measured");
+        let last = self
+            .rects
+            .iter()
+            .flatten()
+            .next_back()
+            .expect("at least the dragged item is measured");
+        let start = self.along(first.origin);
         let end = self.along(last.origin) + self.extent(last);
         self.free_origin(pointer)
-            .clamp(first, end - self.extent(&self.rects[self.from]))
+            .clamp(start, end - self.extent(self.source_rect()))
     }
 
     pub(crate) fn held_offset(&self, pointer: Point<Pixels>, target: usize) -> Pixels {
-        let home = self.along(self.rects[self.from].origin);
+        let home = self.along(self.source_rect().origin);
         self.held_origin(pointer) - (home + self.displacement(self.from, target))
     }
 
@@ -170,7 +219,12 @@ impl Reorder {
             };
             let span: Pixels = crossed
                 .filter(|&i| i != self.from && i < self.rects.len())
-                .map(|i| self.extent(&self.rects[i]) + self.gap)
+                .map(|i| {
+                    self.rects[i]
+                        .as_ref()
+                        .map(|rect| self.extent(rect) + self.gap)
+                        .unwrap_or_else(|| self.shift())
+                })
                 .fold(px(0.), |a, b| a + b);
             if target > self.from { span } else { -span }
         } else if self.from < slot && slot <= target {
@@ -292,7 +346,7 @@ mod tests {
         *state.borrow_mut() = Some(column(3, 30., 2., 0));
         clear_pending(&state);
         set_pending(&state, &mine, vec![1, 0, 2]);
-        assert_eq!(take_pending(&state), Some(vec![1, 0, 2]));
+        assert_eq!(take_pending(&state), Some((Surface::Strip, vec![1, 0, 2])));
     }
 
     #[test]

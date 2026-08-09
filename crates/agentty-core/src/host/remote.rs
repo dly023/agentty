@@ -109,6 +109,21 @@ impl RemoteHost {
         PathBuf::from(&self.client.hello().home)
     }
 
+    /// Target-owned Agent store roots from HelloOk, or defaults derived from
+    /// the peer's published home when an older helper omitted the store_roots
+    /// field. Never uses the GUI process HOME.
+    pub fn store_roots(&self) -> Option<crate::agent_runtime::AgentStoreRoots> {
+        if let Some(roots) = self.client.hello().store_roots.clone() {
+            return Some(roots);
+        }
+        let home = self.home();
+        if home.as_os_str().is_empty() {
+            None
+        } else {
+            Some(crate::agent_runtime::AgentStoreRoots::for_home(home))
+        }
+    }
+
     pub fn client(&self) -> &Arc<ControlClient> {
         &self.client
     }
@@ -637,6 +652,7 @@ mod tests {
             build: "test".into(),
             separator,
             home: "/home/me".into(),
+            store_roots: None,
             features: vec![
                 crate::daemon::control::feature::CONTROL.into(),
                 crate::daemon::control::feature::HOST_RPC.into(),
@@ -654,6 +670,24 @@ mod tests {
         assert!(
             !crate::agent_runtime::adapter::RemoteAgentClient::helper_available(host.as_ref()),
             "an unadvertised capability is explicitly unavailable"
+        );
+    }
+
+    #[test]
+    fn store_roots_derive_from_hello_home_when_omitted() {
+        // Pre-store_roots helpers still publish home; discovery must not stay
+        // permanently unavailable solely because HelloOk.store_roots is absent.
+        let (host, _seen) = host_with_peer('/', |_| None);
+        let roots = host.store_roots().expect("home-derived roots");
+        assert_eq!(roots.home, PathBuf::from("/home/me"));
+        assert_eq!(roots.codex_home, PathBuf::from("/home/me/.codex"));
+        assert!(
+            crate::agent_runtime::adapter::RemoteAgentClient::discovery_available(host.as_ref()),
+            "discovery proceeds from home-derived roots without agent-helper"
+        );
+        assert!(
+            !crate::agent_runtime::adapter::RemoteAgentClient::helper_available(host.as_ref()),
+            "activity/completion still require agent-helper"
         );
     }
 

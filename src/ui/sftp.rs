@@ -909,13 +909,25 @@ impl AgenttyApp {
                     .tooltip(crate::core::i18n::current(cx, "common.more"))
                     .dropdown_menu_with_anchor(gpui::Anchor::TopRight, {
                         let app = cx.entity().downgrade();
-                        move |menu, _window, _cx| {
+                        move |menu, _window, cx| {
                             let mut menu = menu.min_w(px(190.));
                             for (label, action) in [
-                                ("New folder", SftpMenuAction::NewFolder),
-                                ("New file", SftpMenuAction::NewFile),
-                                ("Upload…", SftpMenuAction::Upload),
-                                ("Go to shell directory", SftpMenuAction::GotoShellCwd),
+                                (
+                                    crate::core::i18n::current(cx, "menu.new_folder"),
+                                    SftpMenuAction::NewFolder,
+                                ),
+                                (
+                                    crate::core::i18n::current(cx, "menu.new_file"),
+                                    SftpMenuAction::NewFile,
+                                ),
+                                (
+                                    crate::core::i18n::current(cx, "sftp.upload"),
+                                    SftpMenuAction::Upload,
+                                ),
+                                (
+                                    crate::core::i18n::current(cx, "sftp.goto_shell"),
+                                    SftpMenuAction::GotoShellCwd,
+                                ),
                             ] {
                                 menu = menu.item(PopupMenuItem::new(label).on_click({
                                     let app = app.clone();
@@ -928,9 +940,9 @@ impl AgenttyApp {
                             }
                             menu.separator().item(
                                 PopupMenuItem::new(if history {
-                                    "Hide transfer history"
+                                    crate::core::i18n::current(cx, "sftp.hide_transfer_history")
                                 } else {
-                                    "Transfer history"
+                                    crate::core::i18n::current(cx, "sftp.transfer_history")
                                 })
                                 .on_click({
                                     let app = app.clone();
@@ -1131,9 +1143,9 @@ impl AgenttyApp {
 
         if entries.is_empty() && !show_go_up {
             let text = if self.sftp_panel.loading {
-                "Loading…"
+                crate::core::i18n::current(cx, "sftp.loading")
             } else {
-                "Empty directory."
+                crate::core::i18n::current(cx, "sftp.empty")
             };
             return container.child(note(text.into(), muted));
         }

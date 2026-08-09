@@ -1,0 +1,62 @@
+version: 1
+updated: 2026-08-03
+scope: Agentty native editor parity across local and managed-SSH Host authorities
+authority_rule: All file metadata, reads, writes, watches, and mutations use the selected Environment Host. UI buffers are local presentation state; a remote failure never falls back to the local filesystem.
+capabilities:
+  - capability: open
+    local: present
+    managed_ssh: present
+    source: [src/ui/code_editor.rs:341, crates/agentty-core/src/host/local.rs, crates/agentty-core/src/host/remote.rs:177]
+    tests: [editor_local_remote_capability_matrix_is_complete, path_arithmetic_follows_the_peer_not_the_client]
+    failure_semantics: stat/read failure presents an error and creates no misleading editor buffer.
+  - capability: edit
+    local: present
+    managed_ssh: present
+    source: [src/ui/code_editor.rs:425, src/ui/code_editor.rs:504]
+    tests: [a_landed_save_only_cleans_a_buffer_that_did_not_move]
+    failure_semantics: input remains an in-memory dirty buffer until a Host write lands; host connectivity never changes buffer identity.
+  - capability: save
+    local: present
+    managed_ssh: present
+    source: [src/ui/code_editor.rs:598, crates/agentty-core/src/host/remote.rs:232]
+    tests: [a_landed_save_only_cleans_a_buffer_that_did_not_move, host_conformance_write_file]
+    failure_semantics: writes are serialized; a failed or stale save does not clear dirty state, and edits made during a save are requeued.
+  - capability: external_change_watch
+    local: present
+    managed_ssh: present
+    source: [src/ui/code_editor.rs:239, crates/agentty-core/src/host/local.rs, crates/agentty-core/src/host/remote.rs:329]
+    tests: [watch_events_reach_the_subscription, editor_watch_owner_detects_replaced_host_instance]
+    failure_semantics: watcher setup/update failure is non-destructive and logged; buffers remain editable and the next Host bind retries canonical watch setup.
+  - capability: conflict
+    local: present
+    managed_ssh: present
+    source: [src/ui/code_editor.rs:189, src/ui/code_editor.rs:1093]
+    tests: [external_changes_are_told_apart_from_our_own_saves]
+    failure_semantics: clean buffers reload; dirty buffers enter explicit conflict state with reload or keep-mine actions; own saves are ignored.
+  - capability: binary
+    local: present
+    managed_ssh: present
+    source: [src/ui/code_editor.rs:178, src/ui/code_editor.rs:401]
+    tests: [binary_sniff_flags_nul_bytes_only]
+    failure_semantics: NUL-bearing content is rejected before an editable text buffer is created.
+  - capability: large_file
+    local: present
+    managed_ssh: present
+    source: [src/ui/code_editor.rs:20, src/ui/code_editor.rs:378]
+    tests: [editor_local_remote_capability_matrix_is_complete]
+    failure_semantics: files larger than 4 MiB are rejected from the native text editor before a bounded Host read.
+  - capability: reconnect
+    local: non_applicable
+    managed_ssh: present
+    source: [src/ui/code_editor.rs:258, src/ui/remote_workspace.rs:1235]
+    tests: [editor_watch_owner_detects_replaced_host_instance]
+    failure_semantics: dirty buffers survive disconnect; save fails closed while no Host is available; link-up replaces stale watch ownership and retries against the new RemoteHost instance.
+  - capability: failure_rollback
+    local: present
+    managed_ssh: present
+    source: [src/ui/code_editor.rs:623, src/ui/file_tree.rs:539]
+    tests: [a_rejected_write_drops_the_row_it_guessed, a_landed_save_only_cleans_a_buffer_that_did_not_move]
+    failure_semantics: failed editor writes retain dirty content; failed optimistic tree mutations invalidate the guessed listing so authoritative Host state is re-read.
+conclusion:
+  status: verified
+  decision: Keep Agentty's native Host-backed editor. Do not transplant Ashide's editor stack; retain focused follow-up work only when a matrix row regresses.

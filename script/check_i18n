@@ -1,39 +1,140 @@
 #!/usr/bin/env bash
 # i18n quality gate:
-#  1. zh-CN / en-US catalogs exist and have identical keys.
-#  2. Locale infrastructure is wired (system preference + embedded catalogs).
-#  3. Every statically referenced catalog key in src/ exists in the catalog.
-#  4. No new hardcoded user-facing strings outside the allowlist.
+#  1. Every assets/i18n/*.yaml catalog shares an identical key set.
+#  2. No empty values and no duplicate keys inside a catalog.
+#  3. Locale infrastructure is wired (system preference + embedded catalogs).
+#  4. Every statically referenced catalog key in src/ exists in the catalog.
+#  5. No new hardcoded user-facing strings outside the allowlist.
+#  6. Segmented-control English labels used with current_opt have opt.<slug> keys.
 set -euo pipefail
+export LC_ALL=C
 cd "$(dirname "$0")/.."
-for f in assets/i18n/en-US.yaml assets/i18n/zh-CN.yaml; do [[ -f "$f" ]] || exit 1; done
-cut -d: -f1 assets/i18n/en-US.yaml | sed 's/ *$//' | sort -u > /tmp/agentty-i18n-en.$$
-cut -d: -f1 assets/i18n/zh-CN.yaml | sed 's/ *$//' | sort -u > /tmp/agentty-i18n-zh.$$
-trap 'rm -f /tmp/agentty-i18n-en.$$ /tmp/agentty-i18n-zh.$$ /tmp/agentty-i18n-used.$$ /tmp/agentty-i18n-hard.$$ /tmp/agentty-i18n-hard-filt.$$' EXIT
-diff -u /tmp/agentty-i18n-en.$$ /tmp/agentty-i18n-zh.$$
+
+TMPDIR_I18N=$(mktemp -d)
+trap 'rm -rf "$TMPDIR_I18N"' EXIT
+
+# Portable catalog list (macOS /bin/bash 3.2 has no mapfile).
+CATALOG_LIST="$TMPDIR_I18N/catalogs.list"
+find assets/i18n -maxdepth 1 -type f -name '*.yaml' | sort > "$CATALOG_LIST"
+CATALOG_COUNT=$(wc -l < "$CATALOG_LIST" | tr -d ' ')
+if [[ "$CATALOG_COUNT" -lt 2 ]]; then
+  echo "expected at least two locale catalogs under assets/i18n/" >&2
+  exit 1
+fi
+
+# shellcheck disable=SC2046
+python3 - "$TMPDIR_I18N" $(cat "$CATALOG_LIST") <<'PY'
+import pathlib, sys
+
+out_dir = pathlib.Path(sys.argv[1])
+paths = [pathlib.Path(p) for p in sys.argv[2:]]
+key_sets = []
+errors = []
+
+for path in paths:
+    keys = []
+    seen = {}
+    for lineno, raw in enumerate(path.read_text().splitlines(), 1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if ":" not in line:
+            errors.append(f"{path}:{lineno}: missing ':' separator")
+            continue
+        key, value = line.split(":", 1)
+        key = key.strip()
+        value = value.strip()
+        if value.startswith('"') and value.endswith('"') and len(value) >= 2:
+            value = value[1:-1]
+        if not key:
+            errors.append(f"{path}:{lineno}: empty key")
+            continue
+        if key in seen:
+            errors.append(f"{path}:{lineno}: duplicate key '{key}' (first at line {seen[key]})")
+            continue
+        seen[key] = lineno
+        if not value.strip():
+            errors.append(f"{path}:{lineno}: empty value for '{key}'")
+            continue
+        keys.append(key)
+    key_path = out_dir / f"{path.stem}.keys"
+    key_path.write_text("\n".join(sorted(keys)) + ("\n" if keys else ""))
+    key_sets.append((path, set(keys)))
+
+if errors:
+    print("catalog integrity failures:", file=sys.stderr)
+    for err in errors:
+        print(err, file=sys.stderr)
+    sys.exit(1)
+
+base_path, base_keys = key_sets[0]
+for path, keys in key_sets[1:]:
+    only_base = sorted(base_keys - keys)
+    only_other = sorted(keys - base_keys)
+    if only_base or only_other:
+        print(f"catalog key set divergence: {base_path} vs {path}", file=sys.stderr)
+        for key in only_base:
+            print(f"  only in {base_path.name}: {key}", file=sys.stderr)
+        for key in only_other:
+            print(f"  only in {path.name}: {key}", file=sys.stderr)
+        sys.exit(1)
+
+print(f"catalogs ok: {', '.join(p.name for p, _ in key_sets)} ({len(base_keys)} keys)")
+PY
+
+REF_KEYS="$TMPDIR_I18N/en-US.keys"
+if [[ ! -f "$REF_KEYS" ]]; then
+  REF_KEYS="$TMPDIR_I18N/$(basename "$(head -n1 "$CATALOG_LIST")" .yaml).keys"
+fi
+
 rg -q 'LocalePreference.*System|System,' crates/agentty-core/src/core/config.rs
 rg -q 'include_str!.*zh-CN.yaml' src/core/i18n.rs
 rg -q 'include_str!.*en-US.yaml' src/core/i18n.rs
+rg -q 'validate_i18n_catalogs' build.rs
 
-# 3. referenced keys must exist
-rg -o 'i18n::(?:current|current_format|tr|trf|current_opt)\( *[a-z_]*, *"([a-z0-9_.]+)"' -r '$1' src/ --no-filename | sort -u > /tmp/agentty-i18n-used.$$
-missing=$(comm -23 /tmp/agentty-i18n-used.$$ /tmp/agentty-i18n-en.$$)
+rg -o 'i18n::(?:current|current_format|tr|trf|current_opt)\( *[a-z_]*, *"([a-z0-9_.]+)"' -r '$1' src/ --no-filename | sort -u > "$TMPDIR_I18N/used.keys"
+missing=$(comm -23 "$TMPDIR_I18N/used.keys" "$REF_KEYS")
 if [[ -n "$missing" ]]; then
   echo "catalog keys referenced but missing:" >&2
   echo "$missing" >&2
   exit 1
 fi
 
-# 4. hardcoded user-facing strings lint
-rg -o '\.(tooltip|child|label|title|placeholder|description)\("([^"]{2,80})"' -r '$2' src/ --no-filename | sort -u > /tmp/agentty-i18n-hard.$$
+rg -o '\.(tooltip|child|label|title|placeholder|description)\("([^"]{2,80})"' -r '$2' src/ --no-filename | sort -u > "$TMPDIR_I18N/hard.keys"
 if [[ -f docs/quality/i18n-hardcoded-allowlist.txt ]]; then
-  comm -23 /tmp/agentty-i18n-hard.$$ <(sort -u docs/quality/i18n-hardcoded-allowlist.txt) > /tmp/agentty-i18n-hard-filt.$$
+  comm -23 "$TMPDIR_I18N/hard.keys" <(sort -u docs/quality/i18n-hardcoded-allowlist.txt) > "$TMPDIR_I18N/hard.filt"
 else
-  cp /tmp/agentty-i18n-hard.$$ /tmp/agentty-i18n-hard-filt.$$
+  cp "$TMPDIR_I18N/hard.keys" "$TMPDIR_I18N/hard.filt"
 fi
-if [[ -s /tmp/agentty-i18n-hard-filt.$$ ]]; then
+if [[ -s "$TMPDIR_I18N/hard.filt" ]]; then
   echo "hardcoded user-facing strings outside docs/quality/i18n-hardcoded-allowlist.txt:" >&2
-  cat /tmp/agentty-i18n-hard-filt.$$ >&2
+  cat "$TMPDIR_I18N/hard.filt" >&2
   exit 1
 fi
+
+OPT_OUT="$TMPDIR_I18N/opt.keys"
+python3 - "$OPT_OUT" <<'PY'
+import re, pathlib, sys
+out = pathlib.Path(sys.argv[1])
+text = pathlib.Path("src/ui/settings.rs").read_text()
+labels = set()
+for m in re.finditer(r'self\.segmented\(\s*"[^"]+"\s*,\s*&\[([^\]]+)\]', text, re.S):
+    for lab in re.findall(r'"([^"]+)"', m.group(1)):
+        labels.add(lab)
+needed = set()
+for lab in labels:
+    slug = re.sub(r'[^a-z0-9]+', '_', lab.lower()).strip('_')
+    slug = '_'.join(p for p in slug.split('_') if p)
+    if not slug or slug.isdigit() or any(c.isdigit() for c in slug) or slug.startswith("ctrl_"):
+        continue
+    needed.add(f"opt.{slug}")
+out.write_text("\n".join(sorted(needed)) + "\n")
+PY
+missing_opt=$(comm -23 "$OPT_OUT" "$REF_KEYS")
+if [[ -n "$missing_opt" ]]; then
+  echo "segmented-control opt.* keys missing from catalog:" >&2
+  echo "$missing_opt" >&2
+  exit 1
+fi
+
 echo 'i18n checks passed'

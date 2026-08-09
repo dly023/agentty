@@ -1,0 +1,64 @@
+version: 1
+captured: 2026-08-07
+plan_ref: Session Order Stability / Slice 3
+feedback: FEEDBACK-20260803-003
+polish: POLISH-008
+binary:
+  path: target/debug/agentty-app
+  built: 2026-08-07
+  note: Fresh cargo build --bin agentty-app --locked after SESSION-STABLE-REORDER survivor-order fix.
+screenshot:
+  status: blocked_in_agent_environment
+  reason: macOS screencapture and System Events accessibility denied; Quartz Python bindings unavailable. Pixel window capture must be completed on a local interactive launch.
+  expected_path: docs/quality/baselines/agentty-window-20260807.png
+ashide_reference:
+  review: docs/quality/ASHIDE_AGENTTY_UI_GAP_REVIEW.yaml
+  principle: Reuse interaction invariants and information hierarchy; do not port Ashide editor/BYOK shell.
+inventory:
+  - dimension: session_navigator_surface
+    status: contract_implemented
+    specs: [SESSION-SIDEBAR-SURFACE-HIERARCHY-25, SESSION-SIDEBAR-ROW-DENSITY-29]
+    evidence: session_sidebar_surface_metrics geometry tests; chrome without redundant section title
+    whole_window_acceptance: pending_screenshot
+  - dimension: split_group_presentation
+    status: contract_implemented
+    specs: [SESSION-SPLIT-GROUP-PRESENTATION-26]
+    evidence: filtered_projection_keeps_split_siblings_as_one_unit; reorder unit indivisibility
+    whole_window_acceptance: pending_screenshot
+  - dimension: tab_hierarchy_and_overflow
+    status: contract_implemented
+    specs: [UI-TAB-HIERARCHY-02, UI-TAB-OVERFLOW-05]
+    evidence: active-tab elevated surface tests; tab_chip_window_keeps_active_tab_visible
+    whole_window_acceptance: pending_screenshot
+  - dimension: notice_kbd_welcome
+    status: contract_implemented
+    specs: [UI-NOTICE-SURFACE-01, UI-KBD-CHIP-03, UI-WELCOME-SURFACE-04]
+    evidence: shared notice/kbd/welcome helpers and focused tests
+    whole_window_acceptance: pending_screenshot
+  - dimension: titlebar_chrome
+    status: contract_implemented
+    specs: [UI-TITLEBAR-CHROME-06]
+    evidence: Plus beside Environment Indicator when left rail open; no ellipsis nesting palette+settings
+    whole_window_acceptance: pending_screenshot
+  - dimension: density_and_contrast
+    status: code_contract_advanced
+    specs: [SESSION-SIDEBAR-ROW-DENSITY-29]
+    evidence: Surfaces.sidebar row fill ladder + text-fade solids; static forbid of theme muted fills; focused distinctness tests
+    gap: Whole-window rendered before/after still pending interactive screenshot (POLISH-008).
+    whole_window_acceptance: pending_screenshot
+  - dimension: terminal_editor_balance
+    status: deliberately_not_ported
+    evidence: docs/quality/NATIVE_EDITOR_CAPABILITY_AUDIT.yaml; terminal-first product boundary
+promoted_gaps:
+  - id: GAP-RENDERED-WINDOW-ACCEPTANCE
+    summary: POLISH-008 remains the sole planned milestone item — capture interactive screenshot at representative sizes (empty navigator, live+history mix, split tab, search filter, notice visible) and attach before closing FEEDBACK-20260803-003.
+    action: User or follow-up agent with screen permission saves docs/quality/baselines/agentty-window-20260807.png and updates POLISH-008 evidence.
+    new_spec: false
+  - id: GAP-SURVIVOR-ORDER-ON-DELETE
+    summary: Closed in Slice 1 under SESSION-STABLE-REORDER-17 (FEEDBACK-20260807-007).
+    action: none
+conclusion:
+  baseline_notes_ready: true
+  code_level_contrast_contract: landed_20260807
+  pixel_baseline_ready: false
+  next: Interactive screenshot + visual sign-off remains the gate for POLISH-008 / FEEDBACK-20260803-003; Surfaces.sidebar ladder and right-panel empty i18n are now code-locked.

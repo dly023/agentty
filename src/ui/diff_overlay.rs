@@ -231,14 +231,18 @@ impl AgenttyApp {
         let overlay = self.tabs.get(self.active)?.diff_overlay.as_ref()?;
 
         let content = match &overlay.load {
-            DiffLoad::Loading => self.diff_message("Reading diff…", cx),
-            DiffLoad::NotARepo => self.diff_message("Not a git repository", cx),
+            DiffLoad::Loading => {
+                self.diff_message(crate::core::i18n::current(cx, "diff.reading"), cx)
+            }
+            DiffLoad::NotARepo => {
+                self.diff_message(crate::core::i18n::current(cx, "diff.not_git"), cx)
+            }
             DiffLoad::Ready(snap) if empty_snapshot(snap) && snap.read_failed => self.diff_message(
                 "Couldn't read the working-tree diff — retrying on the next refresh.",
                 cx,
             ),
             DiffLoad::Ready(snap) if empty_snapshot(snap) => {
-                self.diff_message("Working tree clean", cx)
+                self.diff_message(crate::core::i18n::current(cx, "diff.clean"), cx)
             }
             DiffLoad::Ready(snap) => {
                 self.diff_file_list(snap, &overlay.expanded, focused_file(snap, overlay), cx)
@@ -285,11 +289,7 @@ impl AgenttyApp {
             }
             _ => (String::new(), 0, 0, 0, 0),
         };
-        let lead = if self.left_panel_open(cx) {
-            crate::ui::app::CONTENT_INSET
-        } else {
-            crate::ui::app::TITLE_BAR_LEAD
-        };
+        let lead = crate::ui::app::title_bar_content_lead(self.left_panel_open(cx));
         let row = crate::ui::app::title_bar_drag(
             h_flex().id("diff-overlay-header"),
             "diff-overlay-header",

@@ -3,6 +3,7 @@ use std::io::Write;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use crate::daemon::pane::DaemonPane;
 use crate::daemon::protocol::{ClientMsg, DaemonMsg, DaemonVersion, RemoteKind};
@@ -12,13 +13,22 @@ use crate::daemon::transport::{self, Stream};
 struct Registry {
     panes: Mutex<HashMap<u64, Arc<DaemonPane>>>,
     next_id: AtomicU64,
+    lease: crate::daemon::lease::RuntimeLease,
 }
 
 impl Registry {
     fn new() -> Self {
+        Self::with_lease(crate::daemon::lease::RuntimeLease::new(
+            Instant::now(),
+            idle_shutdown_grace(),
+        ))
+    }
+
+    fn with_lease(lease: crate::daemon::lease::RuntimeLease) -> Self {
         Self {
             panes: Mutex::new(HashMap::new()),
             next_id: AtomicU64::new(1),
+            lease,
         }
     }
 
@@ -48,7 +58,12 @@ impl Registry {
     }
 
     fn insert(&self, pane: Arc<DaemonPane>) {
-        self.panes.lock().unwrap().insert(pane.id, pane);
+        let count = {
+            let mut panes = self.panes.lock().unwrap();
+            panes.insert(pane.id, pane);
+            panes.len() as u64
+        };
+        self.lease.set_live_panes(count, Instant::now());
     }
 
     fn get(&self, id: u64) -> Option<Arc<DaemonPane>> {
@@ -56,7 +71,13 @@ impl Registry {
     }
 
     fn remove(&self, id: u64) -> Option<Arc<DaemonPane>> {
-        self.panes.lock().unwrap().remove(&id)
+        let (removed, count) = {
+            let mut panes = self.panes.lock().unwrap();
+            let removed = panes.remove(&id);
+            (removed, panes.len() as u64)
+        };
+        self.lease.set_live_panes(count, Instant::now());
+        removed
     }
 
     fn drain_and_kill(&self) {
@@ -67,6 +88,7 @@ impl Registry {
         for pane in panes {
             pane.kill();
         }
+        self.lease.set_live_panes(0, Instant::now());
     }
 
     fn list(&self) -> Vec<crate::daemon::protocol::PaneInfo> {
@@ -77,6 +99,19 @@ impl Registry {
             .map(|p| p.info())
             .collect()
     }
+}
+
+const IDLE_SHUTDOWN_GRACE: Duration = Duration::from_secs(15);
+const IDLE_SHUTDOWN_POLL: Duration = Duration::from_millis(250);
+const IDLE_SHUTDOWN_GRACE_ENV: &str = "AGENTTY_IDLE_SHUTDOWN_GRACE_MS";
+
+fn idle_shutdown_grace() -> Duration {
+    std::env::var(IDLE_SHUTDOWN_GRACE_ENV)
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .map(Duration::from_millis)
+        .filter(|duration| !duration.is_zero())
+        .unwrap_or(IDLE_SHUTDOWN_GRACE)
 }
 
 impl crate::host::server::PaneDirectory for Registry {
@@ -145,23 +180,67 @@ fn ssh_connection_for(
 
 pub fn run_daemon() -> anyhow::Result<()> {
     let registry = Arc::new(Registry::new());
+    run_daemon_with(
+        registry,
+        |services| {
+            crate::host::server::spawn_control_listener_with(
+                crate::host::local::LocalHost::shared(),
+                services,
+            )
+        },
+        run_with,
+    )
+}
 
+fn run_daemon_with(
+    registry: Arc<Registry>,
+    start_control: impl FnOnce(crate::host::server::Services) -> std::io::Result<std::path::PathBuf>,
+    serve_panes: impl FnOnce(Arc<Registry>) -> anyhow::Result<()>,
+) -> anyhow::Result<()> {
     #[cfg(any(unix, windows))]
     {
         let mut services = control_services();
         services.panes = Some(registry.clone());
-        match crate::host::server::spawn_control_listener_with(
-            crate::host::local::LocalHost::shared(),
-            services,
-        ) {
-            Ok(path) => eprintln!("agentty-server: control socket at {}", path.display()),
-            Err(e) => eprintln!("agentty-server: control listener unavailable: {e}"),
-        }
+        services.runtime_lease = Some(registry.lease.clone());
+        let path = start_control(services)
+            .map_err(|error| anyhow::anyhow!("Host control listener unavailable: {error}"))?;
+        log::info!("Host control socket at {}", path.display());
+        eprintln!("agentty-server: control socket at {}", path.display());
     }
     #[cfg(not(any(unix, windows)))]
     log::info!("no control listener on this platform; serving panes only");
 
-    run_with(registry)
+    spawn_idle_shutdown(registry.clone());
+
+    let result = serve_panes(registry);
+    if let Err(error) = &result {
+        log::error!("local runtime exited with error: {error}");
+    }
+    result
+}
+
+fn spawn_idle_shutdown(registry: Arc<Registry>) {
+    let lease = registry.lease.clone();
+    let spawned = std::thread::Builder::new()
+        .name("agentty-daemon-idle-shutdown".into())
+        .spawn(move || loop {
+            std::thread::sleep(IDLE_SHUTDOWN_POLL);
+            if lease.should_shutdown(Instant::now()) {
+                let snapshot = lease.snapshot();
+                log::info!(
+                    "local runtime idle for {:?}; shutting down with {} pane(s) and {} operation(s)",
+                    lease.grace(),
+                    snapshot.live_panes,
+                    snapshot.operations
+                );
+                registry.drain_and_kill();
+                on_shutdown();
+                std::process::exit(0);
+            }
+        });
+    if let Err(error) = spawned {
+        log::warn!("could not start idle-shutdown monitor: {error}");
+    }
 }
 
 pub fn control_services() -> crate::host::server::Services {
@@ -271,12 +350,13 @@ fn on_shutdown() {
         store.flush();
     }
     transport::remove_stale_endpoint();
-    #[cfg(windows)]
+    #[cfg(any(unix, windows))]
     crate::host::server::remove_control_endpoint();
     crate::daemon::pidfile::remove();
 }
 
 fn handle_conn(stream: Stream, registry: Arc<Registry>) -> anyhow::Result<()> {
+    let _operation = registry.lease.begin_operation(Instant::now());
     let mut read_stream = stream;
 
     transport::authenticate(&mut read_stream)?;
@@ -820,6 +900,29 @@ fn spawn_writer(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    #[test]
+    fn control_listener_failure_is_fatal_before_pane_service() {
+        let pane_service_started = Arc::new(AtomicBool::new(false));
+        let observed = pane_service_started.clone();
+        let result = run_daemon_with(
+            Arc::new(Registry::new()),
+            |_| {
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::AddrInUse,
+                    "occupied",
+                ))
+            },
+            move |_| {
+                observed.store(true, Ordering::SeqCst);
+                Ok(())
+            },
+        );
+
+        assert!(result.is_err());
+        assert!(!pane_service_started.load(Ordering::SeqCst));
+    }
 
     #[test]
     fn alloc_id_is_monotonic_from_one() {

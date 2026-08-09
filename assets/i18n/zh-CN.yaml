@@ -1,13 +1,8 @@
+activity.bar.latest_tool: 最近工具：{name}
 activity.done: Agent 本轮已完成
 activity.heuristic: 推断状态
 activity.idle: 暂无 Agent 活动
 activity.inferred: 根据终端状态推断
-activity.rich: 结构化 Agent 事件
-activity.structured: 结构化事件
-activity.title: Agent 活动
-activity.waiting: Agent 正在等待输入
-activity.working: Agent 正在工作
-activity.bar.latest_tool: 最近工具：{name}
 activity.kind.attention: 需要处理
 activity.kind.finished: 已结束
 activity.kind.notification: 通知
@@ -15,10 +10,16 @@ activity.kind.prompt_submit: 提交提示词
 activity.kind.session_start: 会话开始
 activity.kind.tool_complete: 工具完成
 activity.kind.tool_with_name: 工具：{name}
+activity.rich: 结构化 Agent 事件
+activity.structured: 结构化事件
+activity.title: Agent 活动
+activity.waiting: Agent 正在等待输入
+activity.working: Agent 正在工作
 app.name: Agentty
 common.abort: 中止
 common.cancel: 取消
 common.close: 关闭
+common.close_and_delete: 关闭并删除
 common.connect: 连接
 common.copy_path: 复制路径
 common.default: 默认
@@ -38,19 +39,41 @@ common.reload: 重新加载
 common.remove: 移除
 common.reset: 重置
 common.restart_server: 重启服务
-daemon.stale_build: 后台服务是不同的构建（{daemon})，当前应用为 {app}。重启服务器以启用新构建。
-daemon.stale_build.dismiss: 忽略
+common.replace_server: 替换服务
 common.retry: 重试
 common.save: 保存
 common.search_files: 搜索文件…
 common.trust: 信任
 common.uninstall: 卸载
 composer.disconnected: 远程环境已断开，草稿已保留。
+composer.dock_hint: Enter 发送 · Shift+Enter 换行 · 终端仍可直接输入
 composer.environment_mismatch: Composer 目标属于其他环境，草稿已保留。
+composer.mode.always: 始终显示
+composer.mode.auto: 智能
+composer.mode.off: 关闭
+composer.mode_switched: Composer 模式 — {mode}
 composer.placeholder: 输入提示词…  Shift+Enter 换行
+composer.toggle.collapse: 收起 Composer
+composer.toggle.expand: 展开 Composer
 composer.target_missing: Composer 目标已不存在，草稿已保留。
+daemon.keep_shells: 保留 Shell
+daemon.mismatch_detail_unknown: 托管你 shell 的服务来自较旧版本的应用。可以继续使用且 shell 会保留，但新功能在重启前可能异常。重启会启动干净服务：标签以新 shell 重新打开，其中正在运行的进程会被终止。
+daemon.mismatch_detail_version: 托管你 shell 的服务来自另一个构建（v{build}，协议 {protocol} — 本应用使用 {ours}）。可以继续使用且 shell 会保留，但线格式已变的功能在重启前可能异常。重启会启动干净服务：标签以新 shell 重新打开，其中正在运行的进程会被终止。
+daemon.mismatch_title: 重启服务？
+daemon.quit_stop_confirm: 退出并停止
+daemon.quit_stop_detail: 将退出 agentty 并停止后台服务 — shell 中仍在运行的进程会被终止。标签和布局会保留，下次启动以新 shell 重新打开。（普通退出会保留 shell 运行。）
+daemon.quit_stop_title: 退出并停止服务？
+daemon.restart: 重启
+daemon.restart_detail: 这将停止本机所有运行中的 shell — 其中仍在运行的进程会被终止。标签和布局会保留，并以新 shell 重新打开。
+daemon.restart_remote_only: agentty 只能重启通过 SSH 到达的机器上的服务。{label} 由本机提供 — 请改为停止其工作区。
+daemon.restart_title: 重启服务？
+daemon.stale_build: 后台服务是不同的构建（{daemon})，当前应用为 {app}。重启服务器以启用新构建。
+daemon.stale_build.dismiss: 忽略
 diff.binary: 二进制
+diff.clean: 工作树干净
 diff.close_esc: 关闭 Diff（Esc）
+diff.not_git: 不是 git 仓库
+diff.reading: 正在读取 diff…
 diff.refreshing: 刷新中…
 diff.untracked: 未跟踪文件（{total}）
 editor.back_to_terminal: 返回终端（Esc）
@@ -61,6 +84,7 @@ editor.file_changed: 文件已在磁盘上被修改
 editor.keep_mine: 保留我的版本
 editor.line_col: 行 {line}，列 {col}
 editor.looks_binary: “{path}” 看起来是二进制文件
+editor.no_file: 未打开文件
 editor.open_from_file_tree: 从文件树中打开一个文件
 editor.unsaved_changes: “{name}” 有未保存的更改
 environment.auth_error: 认证失败——{error}
@@ -75,6 +99,8 @@ environment.tooltip: 执行环境——{state}
 file_tree.delete_confirm: 删除 “{name}”？
 file_tree.delete_dir_detail: 该文件夹及其全部内容都将被删除。
 file_tree.delete_file_detail: 该文件将被删除。
+file_tree.hide_dotfiles: 隐藏点文件
+file_tree.show_dotfiles: 显示点文件
 home.reopen_tab: 重新打开 “{name}”
 home.shortcut.new_tab: 新建标签
 home.shortcut.palette: 命令面板
@@ -83,27 +109,67 @@ home.shortcut.settings: 设置…
 home.shortcut.split_down: 向下分屏
 home.shortcut.split_right: 向右分屏
 home.shortcut.switch_workspace: 切换工作区
+home.tagline: 终端优先的 Agent 工作台
+local_runtime.quit_detail: 仍有 {count} 个本地 shell 正在运行。保留会让它们继续由后台服务托管；停止会先终止它们再退出 Agentty。
+local_runtime.quit_keep: 保留运行
+local_runtime.quit_stop: 停止并退出
+local_runtime.quit_title: 退出 Agentty？
 loopback.forward_failed: 无法转发 :{port}——{error}
 menu.attach_agent: 关联到 Agent
+menu.bar.app: agentty
+menu.bar.edit: 编辑
+menu.bar.file: 文件
+menu.bar.help: 帮助
+menu.bar.view: 显示
+menu.bar.window: 窗口
 menu.cd_here: 在此 cd
 menu.chmod: chmod…
+menu.clear: 清除
+menu.clear_scrollback: 清除回滚缓冲
+menu.close_and_delete_session: 关闭并删除…
 menu.close_other_tabs: 关闭其他标签
+menu.close_session: 关闭会话…
 menu.close_tab: 关闭标签
+menu.close_tabs_below: 关闭下方标签
+menu.close_tabs_right: 关闭右侧标签
+menu.code_panel: 代码面板
+menu.command_palette: 命令面板…
 menu.connect: 连接
+menu.copy: 复制
 menu.copy_address: 复制地址
 menu.copy_cwd: 复制工作目录
 menu.copy_path: 复制路径
+menu.copy_resume_command: 复制恢复命令
 menu.copy_session_id: 复制会话 ID
+menu.cut: 剪切
+menu.decrease_font: 减小字号
+menu.delete_session: 删除会话…
 menu.delete_workspace: 删除工作区…
 menu.disconnect: 断开连接
+menu.documentation: agentty 文档
 menu.duplicate: 创建副本
+menu.enter_fullscreen: 进入全屏
 menu.expand_groups: 展开全部分组
+menu.find: 查找…
+menu.find_next: 查找下一个
+menu.find_previous: 查找上一个
+menu.focus_next_pane: 聚焦下一窗格
+menu.focus_prev_pane: 聚焦上一窗格
 menu.follow_symlink: 跟随符号链接
 menu.forget_password: 忘记密码
+menu.fork_session: 分叉会话
+menu.hide_app: 隐藏 agentty
+menu.hide_others: 隐藏其他
 menu.import_ssh_config: 从 ~/.ssh/config 导入
+menu.increase_font: 增大字号
 menu.insert_path: 在终端中插入路径
+menu.join_discord: 加入 Discord
+menu.keyboard_shortcuts: 键盘快捷键
+menu.left_sidebar: 左侧边栏
 menu.manage_ssh_envs: 管理 SSH 环境…
 menu.mark_unread: 标记为未读
+menu.maximize_pane: 最大化窗格
+menu.minimize: 最小化
 menu.new_file: 新建文件
 menu.new_folder: 新建文件夹
 menu.new_tab: 新建标签
@@ -111,28 +177,61 @@ menu.new_workspace: 新建工作区
 menu.new_worktree_tab: 新建 Worktree 标签
 menu.open: 打开
 menu.open_in_new_window: 在新窗口中打开
+menu.paste: 粘贴
+menu.pin_session: 置顶会话
+menu.redo: 重做
 menu.rename: 重命名…
 menu.rename_plain: 重命名
 menu.rename_tab: 重命名标签
+menu.rename_workspace: 重命名工作区…
+menu.reopen_closed_tab: 重新打开已关闭标签
+menu.report_issue: 报告问题…
+menu.reset_font: 重置字号
 menu.restart_server: 重启服务…
+menu.right_panel: 右侧面板
+menu.select_all: 全选
+menu.services: 服务
+menu.session_details: 会话详情…
+menu.set_session_alias: 设置别名…
+menu.show_all: 全部显示
 menu.split_down: 向下分屏
+menu.split_left: 向左分屏
 menu.split_right: 向右分屏
+menu.split_up: 向上分屏
 menu.stop_workspace: 停止工作区…
+menu.tab_bar_position: 标签栏位置
 menu.this_mac: 这台 Mac
-mismatch.detail: {host} 正在从 {running} 提供 agentty 会话，其协议版本与此客户端（{wanted}）不兼容。agentty 已在那里安装了匹配的服务端，但当前运行的才是你的会话所在。\n{answer_restart}：在那里启动 {wanted}，并结束它托管的所有会话。\n{answer_cancel}：保持 {host} 原样，此窗口将不会连接。
+menu.undo: 撤销
+menu.unpin_session: 取消置顶
+menu.untitled: 未命名
+menu.zoom: 缩放
+mismatch.detail: {host} 正在从 {running} 提供 agentty 会话，其协议版本与此客户端（{wanted}）不兼容。agentty 已准备好向那里发布包内匹配服务端，但当前运行的仍是你的会话所在。\n{answer_replace}：先发布并启动 {wanted}，再结束旧服务托管的所有会话。\n{answer_cancel}：保持 {host} 原样，此窗口将不会连接。
 mismatch.running_from: {version}（来自 {exe}）
 mismatch.unknown: 未知构建
 mismatch.unknown_from: 未知构建（来自 {exe}）
 navigator.scan_cancelled: 会话扫描已取消
 navigator.scan_completed: 会话扫描完成
 navigator.scan_incomplete: 会话扫描不完整:{failed}
+navigator.scan_timed_out: 会话发现超时。可刷新重试；若远程 helper 版本过旧，请点「替换服务」。
+daemon.remote_mismatch: 远程服务器 {host} 当前为 {running}；本应用需要 {wanted}。请替换为包内匹配版本。
+daemon.remote_mismatch.unknown_running: 未知版本
+daemon.remote_mismatch.dismiss: 忽略
 navigator.source_limit: 会话来源 {source} 超出数量限制（{limit}）
 navigator.source_missing: 未找到会话来源:{source}
 notify.agent_finished: 已完成，耗时 {secs} 秒
+notify.agent_meta_missing: Agent 会话元数据未能生成
+notify.clean_tree: "{cwd} 中没有未提交更改（或不是 git 仓库）。"
 notify.command_finished: 命令已完成，耗时 {secs} 秒
 notify.command_finished_labeled: {label}——已完成，耗时 {secs} 秒
 notify.delete_failed: 删除失败
+notify.fork_connecting: 无法分叉：窗格仍在连接中
+notify.no_agent: 此窗格未运行编程 Agent
+notify.no_coding_agent: 未找到运行中的编程 Agent — 请先在窗格中启动一个（claude、codex、…）。
+notify.no_cwd: 此标签尚无工作目录
+notify.no_directory: 此窗格没有已知目录。
 notify.no_fork_command: agentty 没有 {name} 的 fork 命令
+notify.nothing_selected: 未选中内容 — 请先选择一些终端输出。
+notify.reopen_failed: 无法重新打开标签：终端未启动
 notify.save_failed: 保存失败
 notify.session_id_not_token: {name} 的会话 ID 不是纯文本标识
 notify.split_failed: 无法分屏:{error}
@@ -140,8 +239,10 @@ notify.ssh_failed: SSH 连接失败:{error}
 notify.ssh_reconnect_failed: SSH 重连失败:{error}
 notify.terminal_open_failed: 无法打开终端:{error}
 notify.turn_finished: 本轮已完成
+notify.waiting_input: 等待你的输入
+opt.2fa: 两步验证
 opt.after_current: 当前之后
-opt.agent: Agent
+opt.agent: 代理
 opt.always: 总是
 opt.at_end: 末尾
 opt.audible: 声音
@@ -151,6 +252,7 @@ opt.block: 块状
 opt.custom: 自定义
 opt.default: 默认
 opt.fullscreen: 全屏
+opt.gssapi: GSSAPI
 opt.home: 主目录
 opt.inherit: 继承
 opt.key: 密钥
@@ -161,19 +263,11 @@ opt.normal: 正常
 opt.off: 关闭
 opt.on: 开启
 opt.password: 密码
+opt.tmux: tmux
 opt.top: 顶部
 opt.underline: 下划线
 opt.visual: 闪烁
 opt.when_unfocused: 失焦时
-panel.activity.count: {count} 次工具调用
-panel.activity.empty: 暂无 agent 活动
-panel.activity.empty.hint: 在此面板运行已安装 agentty 钩子的 coding agent。
-panel.activity.title: 活动
-panel.tab.activity: 活动
-panel.tab.changes: 变更
-panel.tab.files: 文件
-panel.tab.info: 信息
-panel.tab.outline: 大纲
 palette.cmd.about: 关于 agentty
 palette.cmd.agent_send_diff: Agent：发送 Git Diff 供审查
 palette.cmd.agent_send_diff.sub: git diff → 正在运行的 coding agent
@@ -187,7 +281,7 @@ palette.cmd.close_pane: 关闭面板 / 标签
 palette.cmd.close_tabs_right: 关闭右侧标签
 palette.cmd.code_panel: 显示代码面板
 palette.cmd.composer: 自由编辑框
-palette.cmd.composer.sub: 为当前面板编写多行输入
+palette.cmd.composer.sub: 循环 智能 / 始终 / 关闭 · 底部提示框
 palette.cmd.copy: 复制
 palette.cmd.copy_cwd: 复制工作目录
 palette.cmd.copy_session_id: 复制会话 ID
@@ -267,7 +361,35 @@ palette.group.terminal: 终端
 palette.group.view: 视图
 palette.group.workspaces: 工作区
 palette.no_matching_commands: 没有匹配的命令
+palette.ssh_connect: 连接到…
 palette.ssh_hint: 输入 user@host 可改为通过 SSH 连接。
+palette.ssh_placeholder: 搜索或输入 user@host…
+palette.ssh_save: 另存为配置…
+palette.ssh_tab: SSH：{title}
+palette.switch_tab: 切换到标签：{label}
+panel.activity.count: {count} 次工具调用
+panel.activity.empty: 暂无 agent 活动
+panel.activity.empty.hint: 在此面板运行已安装 agentty 钩子的 coding agent。
+panel.activity.title: 活动
+panel.empty.loading: 加载中…
+panel.empty.no_active_session: 暂无活动会话。
+panel.empty.no_active_session.hint: 打开一个标签页后，可在此查看其 shell、目录与进程。
+panel.empty.no_commands: 此面板尚无记录的命令。
+panel.empty.no_commands.hint: 运行一条命令后，shell 集成会标记每条命令，便于回跳。
+panel.empty.no_uncommitted_changes: 没有未提交的变更。
+panel.empty.no_uncommitted_changes.hint: 工作区是干净的。
+panel.empty.no_working_directory: 没有工作目录。
+panel.empty.no_working_directory.hint: 此面板尚未上报工作目录。
+panel.empty.not_a_git_repo: 不是 git 仓库。
+panel.empty.not_a_git_repo.hint: 进入一个仓库后，此标签会列出未提交的变更。
+panel.hide_detail: 隐藏详情面板
+panel.show_detail: 显示详情面板
+panel.tab.activity: 活动
+panel.tab.changes: 变更
+panel.tab.files: 文件
+panel.tab.info: 信息
+panel.tab.outline: 大纲
+pending.tree_commit_failed: 远程终端无法加入工作区：{reason}
 pending.unreachable: 无法连接到 {machine}
 rw.action_retry: 立即重试
 rw.action_retry_short: 重试
@@ -282,16 +404,33 @@ rw.not_connected: 未连接到 {machine}
 rw.preempted: 此工作区已在 {by} 上打开
 rw.reconnecting: 正在重新连接 {machine}…
 rw.reconnecting_attempt: 正在重新连接 {machine}…（第 {attempt} 次尝试）
-rw.replace_confirm_body: {label} 上运行的 agentty-server 使用的协议版本与此客户端不兼容。agentty 会将那里的服务重启到兼容版本，若 {label} 尚未安装则会先安装。\n{label} 上的所有会话都会结束，包括此窗口未连接的会话。
+rw.replace_confirm_body: {label} 上运行的 agentty-server 使用的协议版本与此客户端不兼容。agentty 会先发布包内匹配服务端，再停止不兼容的服务并启动替代版本。\n{label} 上的所有会话都会结束，包括此窗口未连接的会话。
 rw.restart_confirm_body: 这会停止 {label} 上的所有 shell——仍在运行的内容都会被终止，包括此窗口未显示的 shell。工作区和布局会保留，并以全新的 shell 恢复。
+rw.replace_confirm_title: 替换 “{label}” 上的 agentty 服务？
 rw.restart_confirm_title: 重启 “{label}” 上的 agentty 服务？
 search.find_placeholder: 查找
 search.match_case: 区分大小写
 search.use_regex: 使用正则表达式
+session.close_and_delete_confirm_body: "这将关闭实时 Agent 标签，并永久删除磁盘上的会话记录。\n\nAgent：{agent}\n标题：{title}\n\n此操作无法撤销。"
+session.close_and_delete_confirm_title: 关闭并永久删除此会话？
+session.close_confirm_body: "这将关闭 Agentty 中的实时 Agent 标签。磁盘上的提供商历史会保留。\n\nAgent：{agent}\n标题：{title}"
+session.close_confirm_title: 关闭此运行中的会话？
 session.default_name: Agent 会话
+session.delete_confirm_body: "这将永久删除会话记录和全部关联历史。\n\nAgent：{agent}\n标题：{title}\n\n此操作不可撤销。"
+session.delete_confirm_title: 删除此会话？
+session.details_action: 详情
+session.details_body: "Agent：{agent}\n会话 ID：{session_id}\n工作目录：{cwd}\n更新时间：{updated}\n记录文件：{source}\n恢复命令：{command}"
+session.details_history: 历史
+session.details_live: 运行中
+session.details_provider: 提供商
+session.details_session_id: 会话 ID
+session.details_title: 会话详情
+session.details_updated: 更新时间
+session.details_working_directory: 工作目录
 session.discovering: 正在发现 Agent 会话…
 session.empty: 当前环境中没有发现 Codex 或 Claude 会话。
 session.live: 运行中
+session.live_carrier_missing: 该运行中会话的标签已不存在。
 session.no_match: 没有匹配的 Agent 会话。
 session.refresh: 刷新 Agent 会话
 session.restoring: 正在恢复…
@@ -302,7 +441,7 @@ settings.about_tagline: 一个终端工作台:shell、工作区、SSH 与 coding
 settings.add_rule: + 添加规则
 settings.agent_forwarding: Agent 转发
 settings.agent_forwarding.desc: 将本地 ssh-agent 转发到该连接。
-settings.agents_intro: Agent
+settings.agents_intro: 智能体
 settings.agents_intro.desc: Hook 集成让运行这些 agent 的面板在标签栏中显示实时会话状态（工作中 / 等待输入 / 完成）。仅在 agentty 内生效。
 settings.aliases_many: 已关联 {n} 个别名。
 settings.aliases_none: 还没有关联任何别名。
@@ -321,7 +460,7 @@ settings.command_line: 命令行
 settings.confirm_close_last: 关闭最后一个窗口前确认
 settings.confirm_close_last.desc: 先询问，因为该操作同时会退出 agentty。关闭后直接退出——无论哪种方式，你的 shell 都会在后台继续运行。
 settings.conn_auth: 认证方式
-settings.conn_auth.desc: 认证方法。Auto 会依次尝试所有适用的方法。
+settings.conn_auth.desc: 认证方法。自动会依次尝试所有适用的方法。
 settings.conn_host: 主机
 settings.conn_host.desc: 主机名或 IP 地址。
 settings.conn_name: 名称
@@ -386,6 +525,12 @@ settings.hide_mouse: 输入时隐藏鼠标
 settings.hide_mouse.desc: 打字时隐藏指针，下次移动时恢复。
 settings.history_search: 历史搜索
 settings.history_search.desc: 在提示符下按 ⌃R 打开 agentty 的模糊历史菜单。关闭后 ⌃R 交给 shell——它自己的 reverse-i-search，或你绑定的工具（fzf、percol）。
+settings.hooks.install: 安装
+settings.hooks.installed: 已安装
+settings.hooks.not_installed: 未安装
+settings.hooks.outdated: 需更新
+settings.hooks.reinstall: 重新安装
+settings.hooks.update: 更新
 settings.image_opacity: 图片不透明度
 settings.image_opacity.desc: 背景图片在背景色上的显示强度。
 settings.import_aliases: 导入别名
@@ -401,12 +546,13 @@ settings.keybindings_intro.desc: 点击一个快捷键，然后按下新按键�
 settings.line_height: 行高
 settings.line_height.desc: 行间距，以字体大小的倍数表示。
 settings.nav.about: 关于
-settings.nav.agents: Agent
+settings.nav.agents: 智能体
 settings.nav.appearance: 外观
 settings.nav.input: 输入
 settings.nav.keybindings: 快捷键
 settings.nav.terminal: 终端
 settings.nav.window_tabs: 窗口与标签
+settings.new_host: 新建主机
 settings.new_tab_position: 新标签位置
 settings.new_tab_position.desc: 新打开标签的插入位置。
 settings.no_saved_hosts: 还没有保存的主机。
@@ -418,6 +564,8 @@ settings.notify_threshold.desc: 命令运行多久才算“长时间”。
 settings.opacity: 不透明度
 settings.opacity.desc: 窗口背景的不透明度，对所有主题生效。低于 100% 时会透出桌面。
 settings.open_default_app_placeholder: 用默认应用打开
+settings.open_files_with: 打开文件使用
+settings.open_files_with.desc: agentty 如何从文件树和链接打开本地与远程文件。
 settings.open_themes_folder: 打开主题文件夹
 settings.option_meta: Option (⌥) 作为 Meta
 settings.option_meta.desc: ⌥+按键 发送 shell 期望的转义序列（⌥B = 回退一个词），而不是输入特殊字符（∫）。
@@ -442,24 +590,30 @@ settings.restore_layout: 恢复上次布局
 settings.restore_layout.desc: 启动时恢复上次窗口的标签、分屏和目录。关闭后则打开一个全新的终端。
 settings.scroll_speed: 滚动速度
 settings.scroll_speed.desc: 应用于鼠标滚轮滚动的倍率。
+settings.smooth_scroll: 平滑滚动
+settings.smooth_scroll.desc: 平滑过渡鼠标滚轮刻度；触控板手势不受影响。
 settings.scrollback: 回滚行数
 settings.scrollback.desc: 每个面板保留的历史行数，对新面板生效。
+settings.search_fonts: 搜索字体…
 settings.search_settings: 搜索设置…
 settings.search_themes: 搜索主题…
 settings.security: 安全
 settings.security.desc: 主机可以在自己的“高级”设置中覆盖这两项。
 settings.server: 服务
-settings.shell_integration: Shell 集成
+settings.shell_integration: 终端集成
 settings.shell_integration.desc: 让远端 shell 上报提示符、退出码和目录。
-settings.shell_section: Shell
+settings.shell_section: 终端程序
 settings.shell_section.desc: 每个新终端启动的程序。程序留空则使用平台默认值（{platform_default}）。
 settings.skip_banner: 跳过横幅
 settings.skip_banner.desc: 抑制服务器登录横幅。
 settings.smart_selection: 智能选择
 settings.smart_selection.desc: 双击选中光标下的整个 URL、文件路径、邮箱或括号对。
+settings.ssh_defaults: 默认值
+settings.ssh_defaults.desc: 每个主机都会继承
 settings.ssh_group_local: agentty 内
 settings.start_in: 启动目录
 settings.start_in.desc: 新 shell 的启动位置：agentty 的启动目录、用户主目录或固定路径。
+settings.start_in.hint: 适用于没有可从上一窗格继承内容的 shell。
 settings.startup_window: 启动窗口
 settings.startup_window.desc: agentty 启动时的窗口状态。
 settings.sync_system: 跟随系统
@@ -499,6 +653,11 @@ settings.warn_before_closing: 关闭前警告
 settings.warn_before_closing.desc: 关闭带有活动 SSH 会话的标签或面板前请求确认。
 settings.x11_forwarding: X11 转发
 settings.x11_forwarding.desc: 请求 X11 转发（macOS 需要 XQuartz）。
+sftp.empty: 空目录。
+sftp.image_paste_upload_failed: "无法将剪贴板图片上传到 {host}：{error}"
+sftp.goto_shell: 转到 shell 目录
+sftp.hide_transfer_history: 隐藏传输历史
+sftp.loading: 加载中…
 sftp.new_file_name: 新建文件名称
 sftp.new_file_title: 新建文件
 sftp.new_folder_name: 新建文件夹名称
@@ -507,6 +666,8 @@ sftp.no_transfers: 暂无传输任务。
 sftp.permissions: 权限 · {readable}
 sftp.rename_title: 重命名
 sftp.search_placeholder: 搜索
+sftp.transfer_history: 传输历史
+sftp.upload: 上传…
 sidebar.hide: 隐藏侧边栏
 sidebar.show: 显示侧边栏
 ssh.close_confirm_body: 连接仍然活跃，关闭后将被终止。
@@ -533,9 +694,25 @@ switcher.new_window_hint: 点击打开新窗口
 switcher.no_match: 没有匹配的工作区或机器。
 switcher.other_machines: 其他机器
 switcher.search_placeholder: 搜索工作区和机器
-tab.shell_default: Shell {index}
+tab.shell_default: 终端 {index}
 terminal.integration_blocked: agentty shell 集成在此面板被拦截——“{wrapper}”截获了 shell 上报，行内补全和 Ctrl+R 菜单不可用。shell 自带的历史搜索仍可使用。
 terminal.integration_missing: agentty shell 集成尚未在此面板生效，行内补全和 Ctrl+R 菜单不可用。PTY 包装器（figterm 类）或不受支持的 shell 配置可能导致此问题。
+tray.notifications: 通知
+tray.quit_stop: 退出并停止服务…
+tray.show: 显示 agentty
+tray.status.done: 已完成
+tray.status.waiting: 等待输入
+tray.status.working: 工作中
+tray.tooltip.done: 已完成
+tray.tooltip.waiting: 等待中
+tray.tooltip.working: 工作中
 worktree.failed: 创建 worktree 失败:{error}
+worktree.needs_name: 工作树需要名称
 worktree.new_tab: 新建 Worktree 标签
 worktree.removal_failed: 移除 worktree 失败:{error}
+worktree.remove_clean: 已关闭标签的工作树 {path} 是干净的。
+worktree.remove_clean_btn: 移除工作树
+worktree.remove_dirty: 已关闭标签的工作树 {path} 有未提交更改。
+worktree.remove_discard: 丢弃更改并移除
+worktree.remove_title: 移除工作树「{branch}」？
+worktree.removed: 已移除工作树「{branch}」

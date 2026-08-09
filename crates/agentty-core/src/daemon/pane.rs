@@ -285,9 +285,23 @@ fn config_dir_env() -> Option<String> {
 }
 
 const CAPABILITY_ENV: [&str; 2] = ["TERM", "COLORTERM"];
+/// Inherited from developer hosts (Cursor/CI). Ashide strips these so PTY
+/// sessions stay color-capable even when the GUI process was launched with
+/// NO_COLOR=1.
+const COLOR_SUPPRESSOR_ENV: [&str; 2] = ["NO_COLOR", "FORCE_COLOR"];
 
 fn names_capability_env(key: &str) -> bool {
     CAPABILITY_ENV.iter().any(|cap| {
+        if cfg!(windows) {
+            key.eq_ignore_ascii_case(cap)
+        } else {
+            key == *cap
+        }
+    })
+}
+
+fn names_color_suppressor(key: &str) -> bool {
+    COLOR_SUPPRESSOR_ENV.iter().any(|cap| {
         if cfg!(windows) {
             key.eq_ignore_ascii_case(cap)
         } else {
@@ -305,6 +319,9 @@ fn pane_environment(
     let mut env = vec![
         ("TERM".to_string(), "xterm-256color".to_string()),
         ("COLORTERM".to_string(), "truecolor".to_string()),
+        // macOS BSD ls stays monochrome unless CLICOLOR is set; publish it as a
+        // default (configured env may override). GNU ls ignores it.
+        ("CLICOLOR".to_string(), "1".to_string()),
         (
             crate::core::agent_hooks::AGENTTY_ENV_MARKER.to_string(),
             version.to_string(),
@@ -322,7 +339,7 @@ fn pane_environment(
     env.extend(
         extra_env
             .iter()
-            .filter(|(k, _)| !names_capability_env(k))
+            .filter(|(k, _)| !names_capability_env(k) && !names_color_suppressor(k))
             .map(|(k, v)| (k.clone(), v.clone())),
     );
     env
@@ -336,6 +353,11 @@ fn apply_common_command_setup(
 ) {
     if let Some(dir) = initial_cwd {
         cmd.cwd(dir);
+    }
+    // portable-pty starts from the daemon process env; strip color kill-switches
+    // before publishing capability defaults (LOCAL-RUNTIME-PANE-COLOR-ENV-06).
+    for key in COLOR_SUPPRESSOR_ENV {
+        cmd.env_remove(key);
     }
     let extra_env = crate::core::config::extra_env();
     for (k, v) in pane_environment(&extra_env, pane, workspace) {
@@ -461,6 +483,17 @@ fn notify(st: &mut PaneState, msg: DaemonMsg) {
     st.observers.retain(|obs| {
         obs.gate.queued_bytes() < OBSERVER_BUDGET && obs.tx.send(msg.clone()).is_ok()
     });
+}
+
+/// Seal the replay segment and publish the new geometry under the same state
+/// lock used by output fan-out, preserving its exact stream position.
+fn resize_state(st: &mut PaneState, size: WinSize) {
+    st.ring.resize(size);
+    if let Some(sub) = &st.subscriber {
+        let _ = sub.send(DaemonMsg::Size(size));
+    }
+    st.observers
+        .retain(|obs| obs.tx.send(DaemonMsg::Size(size)).is_ok());
 }
 
 /// One gated message to the controller and to every observer.
@@ -1080,7 +1113,14 @@ impl DaemonPane {
                                     if cwd.is_some() {
                                         p.cwd = cwd;
                                     }
-                                    p.agent = agent;
+                                    let container_id = p
+                                        .agent
+                                        .as_ref()
+                                        .and_then(|facts| facts.container_id.clone());
+                                    p.agent = agent.map(|mut facts| {
+                                        facts.container_id = container_id;
+                                        facts
+                                    });
                                     if alive {
                                         p.live = true;
                                     }
@@ -1163,12 +1203,7 @@ impl DaemonPane {
     }
 
     pub fn resize(&self, size: WinSize) {
-        {
-            let mut st = self.state.lock().unwrap();
-            st.ring.resize(size);
-            st.observers
-                .retain(|obs| obs.tx.send(DaemonMsg::Size(size)).is_ok());
-        }
+        resize_state(&mut self.state.lock().unwrap(), size);
         match &self.backend {
             PaneBackend::Pty(p) => {
                 if let Ok(master) = p.master.lock() {
@@ -1546,6 +1581,7 @@ fn observed_facts(st: &PaneState) -> (Option<String>, Option<crate::core::machin
     let cwd = st.cwd.as_ref().map(|p| p.to_string_lossy().into_owned());
     let agent = st.agent.map(|agent| crate::core::machine::AgentFacts {
         agent,
+        container_id: None,
         session_id: st.agent_session.as_ref().and_then(|s| s.session_id.clone()),
         launch_argv: st
             .agent_session
@@ -1571,7 +1607,10 @@ fn agent_facts_changed(
     match (before, after) {
         (None, None) => false,
         (Some(a), Some(b)) => {
-            a.agent != b.agent || a.session_id != b.session_id || a.launch_argv != b.launch_argv
+            a.agent != b.agent
+                || a.container_id != b.container_id
+                || a.session_id != b.session_id
+                || a.launch_argv != b.launch_argv
         }
         _ => true,
     }
@@ -2922,6 +2961,7 @@ mod tests {
                     ssh_spec: None,
                     agent: Some(AgentFacts {
                         agent: CLIAgent::Claude,
+                        container_id: None,
                         session_id: Some("sess-1".to_string()),
                         launch_argv: Some(vec!["claude".to_string()]),
                         status: None,
@@ -3370,6 +3410,29 @@ mod tests {
             "an observer that keeps draining must stay subscribed"
         );
         assert_eq!(got, sends * chunk.len(), "and must miss no bytes");
+    }
+
+    #[test]
+    fn resize_echoes_size_to_the_controller_between_old_and_new_output() {
+        let mut st = test_state(true);
+        let (controller_tx, controller_rx) = mpsc::channel();
+        attach_subscriber(&mut st, controller_tx);
+        drain(&controller_rx);
+
+        let pane_gate = OutputGate::new();
+        fan_out_output(&mut st, b"old-width bytes", Vec::new(), &pane_gate);
+        resize_state(&mut st, ws(120, 30));
+        fan_out_output(&mut st, b"new-width bytes", Vec::new(), &pane_gate);
+
+        assert!(
+            matches!(controller_rx.try_recv().unwrap(), DaemonMsg::Output(b) if b == b"old-width bytes")
+        );
+        assert!(
+            matches!(controller_rx.try_recv().unwrap(), DaemonMsg::Size(size) if (size.cols, size.rows) == (120, 30))
+        );
+        assert!(
+            matches!(controller_rx.try_recv().unwrap(), DaemonMsg::Output(b) if b == b"new-width bytes")
+        );
     }
 
     #[test]
@@ -3837,6 +3900,42 @@ mod tests {
             applied.get("COLORTERM").map(String::as_str),
             Some("truecolor")
         );
+        assert_eq!(
+            applied.get("CLICOLOR").map(String::as_str),
+            Some("1"),
+            "CLICOLOR must be published so macOS ls and similar tools emit ANSI"
+        );
+    }
+
+    #[test]
+    fn pane_environment_strips_inherited_color_suppressors() {
+        assert!(
+            COLOR_SUPPRESSOR_ENV.contains(&"NO_COLOR"),
+            "Ashide parity: durable panes must not inherit process-level NO_COLOR"
+        );
+        assert!(
+            COLOR_SUPPRESSOR_ENV.contains(&"FORCE_COLOR"),
+            "FORCE_COLOR=0 from Cursor/CI must not bleach ANSI tools in panes"
+        );
+        let configured = [("NO_COLOR", "1"), ("FORCE_COLOR", "0"), ("EDITOR", "hx")]
+            .iter()
+            .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
+            .collect();
+        let applied: std::collections::HashMap<_, _> =
+            pane_environment(&configured, 1, None).into_iter().collect();
+        assert!(
+            !applied.contains_key("NO_COLOR"),
+            "config must not reintroduce NO_COLOR into pane env"
+        );
+        assert!(
+            !applied.contains_key("FORCE_COLOR"),
+            "config must not reintroduce FORCE_COLOR into pane env"
+        );
+        assert_eq!(applied.get("EDITOR").map(String::as_str), Some("hx"));
+        assert_eq!(
+            applied.get("COLORTERM").map(String::as_str),
+            Some("truecolor")
+        );
     }
 
     #[cfg(windows)]
@@ -3862,6 +3961,7 @@ mod tests {
         };
         assert_eq!(get("TERM"), Some("xterm-256color"));
         assert_eq!(get("COLORTERM"), Some("truecolor"));
+        assert_eq!(get("CLICOLOR"), Some("1"));
         assert_eq!(get("term_program"), Some("x"));
     }
 

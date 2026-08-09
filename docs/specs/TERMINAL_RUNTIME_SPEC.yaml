@@ -1,0 +1,13 @@
+version: 1
+updated: 2026-08-09
+domain: terminal_runtime
+contracts:
+  - id: TERMINAL-CONPTY-STREAM-RESIZE-01
+    rule: On Windows, every terminal grid uses ConPTY resize semantics on the primary screen. A current local daemon advertises resize-echo and emits a Size frame to the controlling subscriber and observers while holding the same pane-state lock that orders output, before applying the PTY resize. A client that has authoritative local resize-echo support defers grid reflow until that in-stream Size frame; older daemons and routes without authoritative feature knowledge retain eager reflow. Every received Size frame applies at its stream position, including live observer/controller traffic and replay segments.
+    forbidden:
+      - resizing_the_local_grid_ahead_of_old_width_output_when_resize_echo_is_authoritative
+      - applying_live_size_only_when_a_snapshot_follows
+      - assuming_remote_resize_echo_from_local_daemon_features
+      - enabling_conpty_semantics_only_for_selected_windows_shells
+      - dropping_legacy_eager_resize_fallback
+status: verified

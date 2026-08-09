@@ -1,6 +1,6 @@
 use gpui::{
-    Context, IntoElement, ParentElement as _, Styled as _, Window, div,
-    prelude::FluentBuilder as _, px,
+    Context, InteractiveElement as _, IntoElement, ParentElement as _,
+    StatefulInteractiveElement as _, Styled as _, Window, div, prelude::FluentBuilder as _, px,
 };
 use gpui_component::{ActiveTheme as _, Icon, IconName, h_flex, v_flex};
 
@@ -120,10 +120,22 @@ impl AgenttyApp {
         cx: &mut Context<Self>,
     ) -> Option<impl IntoElement> {
         let terminal = self.focused_leaf(window, cx)?;
-        let state = terminal.read(cx).agent_session();
-        if state.is_none() && terminal.read(cx).agent().is_none() {
-            return None;
-        }
+        let (state, target) = {
+            let terminal_view = terminal.read(cx);
+            let state = terminal_view.agent_session();
+            if state.is_none() && terminal_view.agent().is_none() {
+                return None;
+            }
+            let target = crate::ui::composer::PaneIdentity {
+                environment: crate::core::session::WorkspaceStore::environment_id(
+                    cx,
+                    self.workspace,
+                ),
+                pane_id: terminal_view.pane_id(),
+            };
+            (state, target)
+        };
+        let composer_expanded = self.composer_expanded_for(&target);
         let view = presentation(state.as_ref());
         let trust_key = if view.structured {
             "activity.rich"
@@ -132,8 +144,17 @@ impl AgenttyApp {
         };
         let title = crate::core::i18n::current(cx, view.title_key);
         let trust = crate::core::i18n::current(cx, trust_key);
+        let toggle_label = crate::core::i18n::current(
+            cx,
+            if composer_expanded {
+                "composer.toggle.collapse"
+            } else {
+                "composer.toggle.expand"
+            },
+        );
         Some(
             h_flex()
+                .id("agent-activity-composer-toggle")
                 .flex_shrink_0()
                 .min_h(px(34.))
                 .px_3()
@@ -141,6 +162,14 @@ impl AgenttyApp {
                 .border_t_1()
                 .border_color(cx.theme().border)
                 .bg(cx.theme().sidebar)
+                .cursor_pointer()
+                .hover(|style| style.bg(cx.theme().list_hover))
+                .tooltip(move |window, cx| {
+                    gpui_component::tooltip::Tooltip::new(toggle_label).build(window, cx)
+                })
+                .on_click(cx.listener(|this, _, window, cx| {
+                    this.toggle_composer_from_activity_bar(window, cx);
+                }))
                 .child(div().size(px(7.)).rounded_full().bg(gpui::rgb(view.color)))
                 .child(Icon::new(IconName::Bot).size(px(14.)))
                 .child(
@@ -177,6 +206,15 @@ impl AgenttyApp {
                             cx.theme().muted_foreground
                         })
                         .child(trust),
+                )
+                .child(
+                    Icon::new(if composer_expanded {
+                        IconName::ChevronDown
+                    } else {
+                        IconName::ChevronUp
+                    })
+                    .size(px(12.))
+                    .text_color(cx.theme().muted_foreground),
                 ),
         )
     }

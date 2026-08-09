@@ -85,6 +85,11 @@ impl LocalLink {
             link.client = None;
             link.server_build = None;
         }
+        if passive_connect_action(crate::daemon::spawn::is_reachable()).is_none() {
+            link.backoff.reset();
+            link.next_attempt = None;
+            return;
+        }
         match link.next_attempt {
             None if link.backoff.attempt() == 0 => {}
             None => {
@@ -101,7 +106,7 @@ impl LocalLink {
         cx.spawn(async move |cx| {
             let connected = cx
                 .background_executor()
-                .spawn(async move { connect_blocking() })
+                .spawn(async move { connect_existing_blocking() })
                 .await;
             cx.update(|cx| {
                 let link = cx.default_global::<LocalLink>();
@@ -129,10 +134,13 @@ impl LocalLink {
     }
 }
 
-fn connect_blocking() -> std::io::Result<Arc<ControlClient>> {
+fn passive_connect_action(runtime_reachable: bool) -> Option<&'static str> {
+    runtime_reachable.then_some("connect")
+}
+
+fn connect_existing_blocking() -> std::io::Result<Arc<ControlClient>> {
     use agentty_core::daemon::control::ControlHello;
 
-    crate::daemon::spawn::ensure_running().map_err(std::io::Error::other)?;
     let hello = ControlHello::host_rpc(uuid::Uuid::new_v4().to_string(), "this computer");
     let sink: agentty_core::daemon::control::EventSink = Box::new(local_event_sink);
     #[cfg(unix)]
@@ -149,4 +157,13 @@ fn connect_blocking() -> std::io::Result<Arc<ControlClient>> {
 
 fn local_event_sink(event: agentty_core::daemon::control::ControlEvent) {
     agentty_core::daemon::control::observe_event(agentty_core::host::HostId::LOCAL, event);
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn passive_local_link_never_starts_the_local_runtime() {
+        assert_eq!(super::passive_connect_action(false), None);
+        assert_eq!(super::passive_connect_action(true), Some("connect"));
+    }
 }

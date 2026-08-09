@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+rg -q 'TAB-SWITCHER-MRU-HOLD-01' docs/specs/TAB_SWITCHER_SPEC.yaml
+rg -q 'TabSwitchHold' src/ui/app.rs src/ui/switcher.rs
+rg -q 'tab_switch_release' src/ui/app.rs src/ui/switcher.rs
+rg -q 'tab_switch_hold_uses_a_fixed_mru_snapshot' src/ui/app.rs src/ui/switcher.rs
+rg -q 'tab_switch_single_tab_is_a_noop' src/ui/app.rs src/ui/switcher.rs
+echo 'tab switcher checks passed'

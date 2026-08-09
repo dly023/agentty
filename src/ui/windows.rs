@@ -21,9 +21,70 @@ struct WindowEntry {
     app: WeakEntity<AgenttyApp>,
 }
 
+#[derive(Clone)]
+struct SessionSearchPartition {
+    workspace: WorkspaceId,
+    environment: EnvironmentId,
+    documents: Vec<crate::ui::session_navigator::SessionSearchDocument>,
+}
+
+#[derive(Default)]
+struct SessionSearchIndex {
+    partitions: Vec<SessionSearchPartition>,
+}
+
+impl SessionSearchIndex {
+    fn publish(
+        &mut self,
+        workspace: WorkspaceId,
+        environment: EnvironmentId,
+        documents: Vec<crate::ui::session_navigator::SessionSearchDocument>,
+    ) {
+        let documents = documents
+            .into_iter()
+            .filter(|document| {
+                document.workspace == workspace && document.id.environment() == &environment
+            })
+            .collect();
+        let partition = SessionSearchPartition {
+            workspace,
+            environment,
+            documents,
+        };
+        if let Some(existing) = self
+            .partitions
+            .iter_mut()
+            .find(|partition| partition.workspace == workspace)
+        {
+            *existing = partition;
+        } else {
+            self.partitions.push(partition);
+        }
+    }
+
+    fn remove(&mut self, workspace: WorkspaceId) {
+        self.partitions
+            .retain(|partition| partition.workspace != workspace);
+    }
+
+    fn documents(&self) -> Vec<crate::ui::session_navigator::SessionSearchDocument> {
+        self.partitions
+            .iter()
+            .flat_map(|partition| {
+                partition
+                    .documents
+                    .iter()
+                    .filter(|document| document.id.environment() == &partition.environment)
+                    .cloned()
+            })
+            .collect()
+    }
+}
+
 #[derive(Default)]
 pub struct WindowRegistry {
     windows: Vec<WindowEntry>,
+    session_search: SessionSearchIndex,
 }
 
 impl Global for WindowRegistry {}
@@ -116,19 +177,36 @@ impl WindowRegistry {
     }
 
     pub fn unregister(cx: &mut App, workspace: WorkspaceId) {
+        let registry = cx.global_mut::<Self>();
+        registry.windows.retain(|w| w.workspace != workspace);
+        registry.session_search.remove(workspace);
+    }
+
+    pub fn publish_session_documents(
+        cx: &mut App,
+        workspace: WorkspaceId,
+        environment: EnvironmentId,
+        documents: Vec<crate::ui::session_navigator::SessionSearchDocument>,
+    ) {
+        if !cx.has_global::<Self>() {
+            return;
+        }
         cx.global_mut::<Self>()
-            .windows
-            .retain(|w| w.workspace != workspace);
+            .session_search
+            .publish(workspace, environment, documents);
+    }
+
+    pub fn session_documents(cx: &App) -> Vec<crate::ui::session_navigator::SessionSearchDocument> {
+        cx.try_global::<Self>()
+            .map(|registry| registry.session_search.documents())
+            .unwrap_or_default()
     }
 
     pub fn rebind(cx: &mut App, from: WorkspaceId, to: WorkspaceId) {
         let environment = WorkspaceStore::environment_id(cx, to);
-        if let Some(entry) = cx
-            .global_mut::<Self>()
-            .windows
-            .iter_mut()
-            .find(|w| w.workspace == from)
-        {
+        let registry = cx.global_mut::<Self>();
+        registry.session_search.remove(from);
+        if let Some(entry) = registry.windows.iter_mut().find(|w| w.workspace == from) {
             entry.workspace = to;
             entry.environment = environment;
         }
@@ -145,9 +223,11 @@ impl WindowRegistry {
         if dead.is_empty() {
             return;
         }
-        cx.global_mut::<Self>()
-            .windows
-            .retain(|w| !dead.contains(&w.workspace));
+        let registry = cx.global_mut::<Self>();
+        registry.windows.retain(|w| !dead.contains(&w.workspace));
+        for workspace in dead {
+            registry.session_search.remove(workspace);
+        }
     }
 }
 
@@ -856,5 +936,79 @@ mod environment_tests {
                 "the persisted remote binding survives the disconnect"
             );
         });
+    }
+}
+
+#[cfg(test)]
+mod session_search_registry_tests {
+    use super::SessionSearchIndex;
+    use crate::core::session::WorkspaceId;
+    use crate::ui::palette::session_commands_from_documents;
+    use crate::ui::session_navigator::{SessionSearchDocument, SessionSearchDocumentId};
+    use agentty_core::agent_runtime::{AgentSessionKey, AgentSessionRecord, SessionNavigator};
+    use agentty_core::core::environment::EnvironmentId;
+
+    fn document(workspace: WorkspaceId, environment: EnvironmentId) -> SessionSearchDocument {
+        let mut navigator = SessionNavigator::default();
+        navigator.refresh(
+            &[AgentSessionRecord {
+                key: AgentSessionKey {
+                    provider: "codex".into(),
+                    session_id: "session-1".into(),
+                },
+                agent: crate::core::cli_agent::CLIAgent::Codex,
+                title: Some("Fix remote discovery".into()),
+                cwd: Some("/repo".into()),
+                updated_at_unix_ms: None,
+                launch_argv: Vec::new(),
+                source_path: None,
+                created_at_unix_ms: None,
+            }],
+            &[],
+        );
+        let row = &navigator.rows()[0];
+        SessionSearchDocument {
+            id: SessionSearchDocumentId::new(environment, row.row_id.clone()),
+            workspace,
+            title: row.title.clone().unwrap(),
+            subtitle: "Codex · local".into(),
+            search_text: "codex /repo session-1".into(),
+        }
+    }
+
+    #[test]
+    fn palette_search_uses_committed_rows_without_discovery() {
+        let workspace = WorkspaceId::new();
+        let environment = EnvironmentId::local();
+        let mut index = SessionSearchIndex::default();
+        index.publish(
+            workspace,
+            environment.clone(),
+            vec![document(workspace, environment)],
+        );
+
+        let commands = session_commands_from_documents(index.documents());
+        assert_eq!(commands.len(), 1);
+        assert!(commands[0].title.contains("Fix remote discovery"));
+    }
+
+    #[test]
+    fn closing_window_removes_its_session_search_partition() {
+        let first = WorkspaceId::new();
+        let second = WorkspaceId::new();
+        let mut index = SessionSearchIndex::default();
+        index.publish(
+            first,
+            EnvironmentId::local(),
+            vec![document(first, EnvironmentId::local())],
+        );
+        let remote: EnvironmentId = "ssh:build".parse().unwrap();
+        index.publish(second, remote.clone(), vec![document(second, remote)]);
+
+        index.remove(first);
+
+        let documents = index.documents();
+        assert_eq!(documents.len(), 1);
+        assert_eq!(documents[0].workspace, second);
     }
 }

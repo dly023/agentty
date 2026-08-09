@@ -6,7 +6,52 @@ tracker=docs/quality/development-tracker.yaml
 [[ -f "$tracker" ]] || { echo "[tracker] missing $tracker" >&2; exit 1; }
 [[ -f DEVELOPMENT.md ]] || { echo "[tracker] missing root DEVELOPMENT.md" >&2; exit 1; }
 
-for milestone in M0-ARCHITECTURE-RESET M1-SESSION-NAVIGATOR M2-COMPOSER M3-AGENT-ACTIVITY M4-COMPLETION M5-I18N M6-SSH; do
+rg -q '^feedback_policy:\s*$' "$tracker" || {
+  echo "[tracker] missing feedback_policy" >&2
+  exit 1
+}
+rg -q '^feedback:\s*$' "$tracker" || {
+  echo "[tracker] missing feedback intake" >&2
+  exit 1
+}
+
+duplicate_feedback_ids="$({
+  sed -n '/^feedback:/,/^milestones:/p' "$tracker" \
+    | sed -n 's/^  - id: \(FEEDBACK-[0-9][0-9]*-[0-9][0-9]*\)$/\1/p'
+} | sort | uniq -d)"
+if [[ -n "$duplicate_feedback_ids" ]]; then
+  printf '%s\n' "$duplicate_feedback_ids" >&2
+  echo "[tracker] duplicate feedback ids" >&2
+  exit 1
+fi
+
+if ! awk '
+  function flush() {
+    if (id != "" && (!summary || !status || !area || !decision || !next_action)) {
+      print "[tracker] incomplete feedback item " id > "/dev/stderr"
+      failed = 1
+    }
+  }
+  /^feedback:$/ { in_feedback = 1; next }
+  /^milestones:$/ { flush(); in_feedback = 0 }
+  !in_feedback { next }
+  /^  - id: FEEDBACK-/ {
+    flush()
+    id = $3
+    summary = status = area = decision = next_action = 0
+    next
+  }
+  /^    summary:/ { summary = 1 }
+  /^    status: (captured|triaged|promoted|implemented|verified|declined|superseded)$/ { status = 1 }
+  /^    area:/ { area = 1 }
+  /^    decision:/ { decision = 1 }
+  /^    next_action:/ { next_action = 1 }
+  END { if (in_feedback) flush(); exit failed }
+' "$tracker"; then
+  exit 1
+fi
+
+for milestone in M0-ARCHITECTURE-RESET M0.6-SYSTEMATIC-GAP-AUDIT M1-SESSION-NAVIGATOR M2-COMPOSER M3-AGENT-ACTIVITY M4-COMPLETION M5-I18N M6-SSH; do
   rg -q "id: $milestone$" "$tracker" || { echo "[tracker] missing milestone $milestone" >&2; exit 1; }
 done
 

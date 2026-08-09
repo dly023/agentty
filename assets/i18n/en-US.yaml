@@ -1,13 +1,8 @@
+activity.bar.latest_tool: Latest tool: {name}
 activity.done: Agent turn finished
 activity.heuristic: Heuristic
 activity.idle: No Agent activity
 activity.inferred: Inferred from terminal state
-activity.rich: Structured Agent event
-activity.structured: Structured
-activity.title: Agent Activity
-activity.waiting: Agent needs input
-activity.working: Agent is working
-activity.bar.latest_tool: Latest tool: {name}
 activity.kind.attention: Needs attention
 activity.kind.finished: Finished
 activity.kind.notification: Notification
@@ -15,10 +10,16 @@ activity.kind.prompt_submit: Prompt submitted
 activity.kind.session_start: Session started
 activity.kind.tool_complete: Tool completed
 activity.kind.tool_with_name: Tool: {name}
+activity.rich: Structured Agent event
+activity.structured: Structured
+activity.title: Agent Activity
+activity.waiting: Agent needs input
+activity.working: Agent is working
 app.name: Agentty
 common.abort: Abort
 common.cancel: Cancel
 common.close: Close
+common.close_and_delete: Close and Delete
 common.connect: Connect
 common.copy_path: Copy Path
 common.default: default
@@ -38,19 +39,41 @@ common.reload: Reload
 common.remove: Remove
 common.reset: Reset
 common.restart_server: Restart Server
-daemon.stale_build: The background server is a different build ({daemon}); this app is {app}. Restart it to pick up the new build.
-daemon.stale_build.dismiss: Dismiss
+common.replace_server: Replace Server
 common.retry: Try Again
 common.save: Save
 common.search_files: Search files…
 common.trust: Trust
 common.uninstall: Uninstall
 composer.disconnected: Remote environment is disconnected; draft preserved.
+composer.dock_hint: Enter sends · Shift+Enter newline · terminal still accepts input
 composer.environment_mismatch: Composer target belongs to another environment; draft preserved.
+composer.mode.always: Always
+composer.mode.auto: Auto
+composer.mode.off: Off
+composer.mode_switched: Composer mode — {mode}
 composer.placeholder: Write a prompt…  Shift+Enter for newline
+composer.toggle.collapse: Collapse Composer
+composer.toggle.expand: Expand Composer
 composer.target_missing: Composer target no longer exists; draft preserved.
+daemon.keep_shells: Keep Shells
+daemon.mismatch_detail_unknown: "The server holding your shells is from an older version of the app. You can keep using it and your shells stay, but newer features may misbehave until it's restarted. Restarting starts a clean server: tabs reopen with fresh shells and anything running in them is terminated."
+daemon.mismatch_detail_version: "The server holding your shells is from another build (v{build}, protocol {protocol} — this app speaks {ours}). You can keep using it and your shells stay, but features whose wire format changed may misbehave until it's restarted. Restarting starts a clean server: tabs reopen with fresh shells and anything running in them is terminated."
+daemon.mismatch_title: Restart Server?
+daemon.quit_stop_confirm: Quit and Stop
+daemon.quit_stop_detail: This quits agentty and stops the background server — anything still running in your shells is terminated. Your tabs and layout are kept and reopen with fresh shells next launch. (Plain Quit keeps shells running.)
+daemon.quit_stop_title: Quit and Stop Server?
+daemon.restart: Restart
+daemon.restart_detail: This stops every running shell on this computer — anything still running in them will be terminated. Your tabs and layout are kept and reopened with fresh shells.
+daemon.restart_remote_only: agentty can only restart the server on machines it reaches over SSH. {label} is served from this computer — stop its workspace instead.
+daemon.restart_title: Restart Server?
+daemon.stale_build: The background server is a different build ({daemon}); this app is {app}. Restart it to pick up the new build.
+daemon.stale_build.dismiss: Dismiss
 diff.binary: binary
+diff.clean: Working tree clean
 diff.close_esc: Close Diff (Esc)
+diff.not_git: Not a git repository
+diff.reading: Reading diff…
 diff.refreshing: refreshing…
 diff.untracked: Untracked files ({total})
 editor.back_to_terminal: Back to Terminal (Esc)
@@ -61,6 +84,7 @@ editor.file_changed: File changed on disk
 editor.keep_mine: Keep mine
 editor.line_col: Ln {line}, Col {col}
 editor.looks_binary: "{path}" looks like a binary file
+editor.no_file: No file open
 editor.open_from_file_tree: Open a file from the file tree
 editor.unsaved_changes: "{name}" has unsaved changes
 environment.auth_error: Authentication error — {error}
@@ -75,6 +99,8 @@ environment.tooltip: Execution environment — {state}
 file_tree.delete_confirm: Delete "{name}"?
 file_tree.delete_dir_detail: The folder and everything inside it will be deleted.
 file_tree.delete_file_detail: The file will be deleted.
+file_tree.hide_dotfiles: Hide Dotfiles
+file_tree.show_dotfiles: Show Dotfiles
 home.reopen_tab: Reopen “{name}”
 home.shortcut.new_tab: New Tab
 home.shortcut.palette: Command Palette
@@ -83,27 +109,67 @@ home.shortcut.settings: Settings…
 home.shortcut.split_down: Split Down
 home.shortcut.split_right: Split Right
 home.shortcut.switch_workspace: Switch Workspace
+home.tagline: A terminal-first agent workspace
+local_runtime.quit_detail: "{count} local shell(s) are still running. Keep leaves them in the headless runtime; Stop terminates them before Agentty quits."
+local_runtime.quit_keep: Keep Running
+local_runtime.quit_stop: Stop and Quit
+local_runtime.quit_title: Quit Agentty?
 loopback.forward_failed: Couldn't forward :{port} — {error}
 menu.attach_agent: Attach to Agent
+menu.bar.app: agentty
+menu.bar.edit: Edit
+menu.bar.file: File
+menu.bar.help: Help
+menu.bar.view: View
+menu.bar.window: Window
 menu.cd_here: cd Here
 menu.chmod: chmod…
+menu.clear: Clear
+menu.clear_scrollback: Clear Scrollback
+menu.close_and_delete_session: Close and Delete…
 menu.close_other_tabs: Close Other Tabs
+menu.close_session: Close Session…
 menu.close_tab: Close Tab
+menu.close_tabs_below: Close Tabs Below
+menu.close_tabs_right: Close Tabs to the Right
+menu.code_panel: Code Panel
+menu.command_palette: Command Palette…
 menu.connect: Connect
+menu.copy: Copy
 menu.copy_address: Copy address
 menu.copy_cwd: Copy Working Directory
 menu.copy_path: Copy Path
+menu.copy_resume_command: Copy Resume Command
 menu.copy_session_id: Copy Session ID
+menu.cut: Cut
+menu.decrease_font: Decrease Font Size
+menu.delete_session: Delete Session…
 menu.delete_workspace: Delete Workspace…
 menu.disconnect: Disconnect
+menu.documentation: agentty Documentation
 menu.duplicate: Duplicate
+menu.enter_fullscreen: Enter Full Screen
 menu.expand_groups: Expand all groups
+menu.find: Find…
+menu.find_next: Find Next
+menu.find_previous: Find Previous
+menu.focus_next_pane: Focus Next Pane
+menu.focus_prev_pane: Focus Previous Pane
 menu.follow_symlink: Follow symlink
 menu.forget_password: Forget password
+menu.fork_session: Fork Session
+menu.hide_app: Hide agentty
+menu.hide_others: Hide Others
 menu.import_ssh_config: Import from ~/.ssh/config
+menu.increase_font: Increase Font Size
 menu.insert_path: Insert Path in Terminal
+menu.join_discord: Join the Discord
+menu.keyboard_shortcuts: Keyboard Shortcuts
+menu.left_sidebar: Left Sidebar
 menu.manage_ssh_envs: Manage SSH Environments…
 menu.mark_unread: Mark as Unread
+menu.maximize_pane: Maximize Pane
+menu.minimize: Minimize
 menu.new_file: New File
 menu.new_folder: New Folder
 menu.new_tab: New Tab
@@ -111,28 +177,61 @@ menu.new_workspace: New Workspace
 menu.new_worktree_tab: New Worktree Tab
 menu.open: Open
 menu.open_in_new_window: Open in New Window
+menu.paste: Paste
+menu.pin_session: Pin Session
+menu.redo: Redo
 menu.rename: Rename…
 menu.rename_plain: Rename
 menu.rename_tab: Rename Tab
+menu.rename_workspace: Rename Workspace…
+menu.reopen_closed_tab: Reopen Closed Tab
+menu.report_issue: Report an Issue…
+menu.reset_font: Reset Font Size
 menu.restart_server: Restart Server…
+menu.right_panel: Right Panel
+menu.select_all: Select All
+menu.services: Services
+menu.session_details: Session Details…
+menu.set_session_alias: Set Alias…
+menu.show_all: Show All
 menu.split_down: Split Down
+menu.split_left: Split Left
 menu.split_right: Split Right
+menu.split_up: Split Up
 menu.stop_workspace: Stop Workspace…
+menu.tab_bar_position: Tab Bar Position
 menu.this_mac: This Mac
-mismatch.detail: {host} is serving agentty sessions from {running}, which speaks a protocol this client ({wanted}) cannot. agentty has installed a matching server there, but the one already running is the one your sessions are on.\n{answer_restart} starts {wanted} there and ends every session it is hosting.\n{answer_cancel} leaves {host} exactly as it is. This window will not connect.
+menu.undo: Undo
+menu.unpin_session: Unpin Session
+menu.untitled: Untitled
+menu.zoom: Zoom
+mismatch.detail: {host} is serving agentty sessions from {running}, which speaks a protocol this client ({wanted}) cannot. agentty has a matching bundled server ready to publish there, but the one already running is the one your sessions are on.\n{answer_replace} publishes and starts {wanted} there, then ends every session the old server is hosting.\n{answer_cancel} leaves {host} exactly as it is. This window will not connect.
 mismatch.running_from: {version} (from {exe})
 mismatch.unknown: an unknown build
 mismatch.unknown_from: an unknown build (from {exe})
 navigator.scan_cancelled: Session scan was cancelled
 navigator.scan_completed: Session scan completed
 navigator.scan_incomplete: Session scan was incomplete: {failed}
+navigator.scan_timed_out: Session discovery timed out. Refresh to retry, or Replace Server if the remote helper is out of date.
+daemon.remote_mismatch: Remote server on {host} is {running}; this app wants {wanted}. Replace it with the matching bundled build.
+daemon.remote_mismatch.unknown_running: an unknown build
+daemon.remote_mismatch.dismiss: Dismiss
 navigator.source_limit: Session source limit exceeded for {source} ({limit})
 navigator.source_missing: Session source not found: {source}
 notify.agent_finished: Finished after {secs}s
+notify.agent_meta_missing: Agent session metadata did not materialize
+notify.clean_tree: No uncommitted changes in {cwd} (or not a git repository).
 notify.command_finished: Command finished after {secs}s
 notify.command_finished_labeled: {label} — finished after {secs}s
 notify.delete_failed: Delete failed
+notify.fork_connecting: "Could not fork: the pane is still connecting"
+notify.no_agent: This pane isn't running a coding agent
+notify.no_coding_agent: No running coding agent found — start one (claude, codex, …) in a pane first.
+notify.no_cwd: This tab has no working directory yet
+notify.no_directory: This pane has no known directory.
 notify.no_fork_command: agentty has no fork command for {name}
+notify.nothing_selected: Nothing selected — select some terminal output first.
+notify.reopen_failed: "Could not reopen the tab: no terminal started"
 notify.save_failed: Save failed
 notify.session_id_not_token: {name}'s session id isn't a plain token
 notify.split_failed: Could not split the pane: {error}
@@ -140,6 +239,8 @@ notify.ssh_failed: SSH connection failed: {error}
 notify.ssh_reconnect_failed: SSH reconnect failed: {error}
 notify.terminal_open_failed: Could not open a terminal: {error}
 notify.turn_finished: Turn finished
+notify.waiting_input: Waiting for your input
+opt.2fa: 2FA
 opt.after_current: After current
 opt.agent: Agent
 opt.always: Always
@@ -151,6 +252,7 @@ opt.block: Block
 opt.custom: Custom
 opt.default: Default
 opt.fullscreen: Fullscreen
+opt.gssapi: GSSAPI
 opt.home: Home
 opt.inherit: Inherit
 opt.key: Key
@@ -161,19 +263,11 @@ opt.normal: Normal
 opt.off: Off
 opt.on: On
 opt.password: Password
+opt.tmux: tmux
 opt.top: Top
 opt.underline: Underline
 opt.visual: Visual
 opt.when_unfocused: When Unfocused
-panel.activity.count: {count} tool calls
-panel.activity.empty: No agent activity yet
-panel.activity.empty.hint: Run a coding agent with agentty hooks in this pane.
-panel.activity.title: Activity
-panel.tab.activity: Activity
-panel.tab.changes: Changes
-panel.tab.files: Files
-panel.tab.info: Info
-panel.tab.outline: Outline
 palette.cmd.about: About agentty
 palette.cmd.agent_send_diff: Agent: Send Git Diff for Review
 palette.cmd.agent_send_diff.sub: git diff → running coding agent
@@ -187,7 +281,7 @@ palette.cmd.close_pane: Close Pane / Tab
 palette.cmd.close_tabs_right: Close Tabs to the Right
 palette.cmd.code_panel: Show Code Panel
 palette.cmd.composer: Composer
-palette.cmd.composer.sub: multiline prompt editor
+palette.cmd.composer.sub: cycle auto / always / off · docked prompt box
 palette.cmd.copy: Copy
 palette.cmd.copy_cwd: Copy Working Directory
 palette.cmd.copy_session_id: Copy Session ID
@@ -267,7 +361,35 @@ palette.group.terminal: Terminal
 palette.group.view: View
 palette.group.workspaces: Workspaces
 palette.no_matching_commands: No matching commands
+palette.ssh_connect: Connect to…
 palette.ssh_hint: Type user@host to connect over SSH instead.
+palette.ssh_placeholder: Search or type user@host…
+palette.ssh_save: Save as profile…
+palette.ssh_tab: "SSH: {title}"
+palette.switch_tab: "Switch to Tab: {label}"
+panel.activity.count: {count} tool calls
+panel.activity.empty: No agent activity yet
+panel.activity.empty.hint: Run a coding agent with agentty hooks in this pane.
+panel.activity.title: Activity
+panel.empty.loading: Loading…
+panel.empty.no_active_session: No active session.
+panel.empty.no_active_session.hint: Open a tab to see its shell, directory, and processes here.
+panel.empty.no_commands: No commands recorded for this pane.
+panel.empty.no_commands.hint: Run a command — shell integration marks each one so you can jump back to it.
+panel.empty.no_uncommitted_changes: No uncommitted changes.
+panel.empty.no_uncommitted_changes.hint: The working tree is clean.
+panel.empty.no_working_directory: No working directory.
+panel.empty.no_working_directory.hint: This pane has not reported one yet.
+panel.empty.not_a_git_repo: Not a git repository.
+panel.empty.not_a_git_repo.hint: cd into one and this tab lists its uncommitted changes.
+panel.hide_detail: Hide Detail Panel
+panel.show_detail: Show Detail Panel
+panel.tab.activity: Activity
+panel.tab.changes: Changes
+panel.tab.files: Files
+panel.tab.info: Info
+panel.tab.outline: Outline
+pending.tree_commit_failed: "The remote terminal couldn't enter its workspace: {reason}"
 pending.unreachable: Couldn't reach {machine}
 rw.action_retry: Retry Now
 rw.action_retry_short: Retry
@@ -282,16 +404,33 @@ rw.not_connected: Not connected to {machine}
 rw.preempted: This workspace was opened on {by}
 rw.reconnecting: Reconnecting to {machine}…
 rw.reconnecting_attempt: Reconnecting to {machine}… (attempt {attempt})
-rw.replace_confirm_body: The agentty-server running on {label} speaks a protocol this client cannot. agentty will restart the service there onto one that does, installing it first if {label} does not already have it.\nEvery session running on {label} ends, including any this window is not connected to.
+rw.replace_confirm_body: The agentty-server running on {label} speaks a protocol this client cannot. agentty will publish the matching bundled server there before stopping the incompatible service and starting the replacement.\nEvery session running on {label} ends, including any this window is not connected to.
 rw.restart_confirm_body: This stops every shell on {label} — anything still running in them will be terminated, including shells this window is not showing. Workspaces and layouts are kept and come back with fresh shells.
+rw.replace_confirm_title: Replace agentty's server on “{label}”?
 rw.restart_confirm_title: Restart agentty's server on “{label}”?
 search.find_placeholder: Find
 search.match_case: Match case
 search.use_regex: Use regular expression
+session.close_and_delete_confirm_body: "This closes the live Agent tab and permanently removes the session transcript from disk.\n\nAgent: {agent}\nTitle: {title}\n\nThis action cannot be undone."
+session.close_and_delete_confirm_title: Close and permanently delete this session?
+session.close_confirm_body: "This closes the live Agent tab in Agentty. Provider history on disk is kept.\n\nAgent: {agent}\nTitle: {title}"
+session.close_confirm_title: Close this running session?
 session.default_name: Agent session
+session.delete_confirm_body: "This will permanently remove the session transcript and all associated history.\n\nAgent: {agent}\nTitle: {title}\n\nThis action cannot be undone."
+session.delete_confirm_title: Delete this session?
+session.details_action: Details
+session.details_body: "Agent: {agent}\nSession ID: {session_id}\nWorking directory: {cwd}\nUpdated: {updated}\nTranscript: {source}\nResume command: {command}"
+session.details_history: History
+session.details_live: Live
+session.details_provider: Provider
+session.details_session_id: Session ID
+session.details_title: Session Details
+session.details_updated: Updated
+session.details_working_directory: Working directory
 session.discovering: Discovering Agent sessions…
 session.empty: No Codex or Claude sessions found in this environment.
 session.live: Live
+session.live_carrier_missing: That running session's tab is no longer open.
 session.no_match: No matching Agent sessions.
 session.refresh: Refresh Agent sessions
 session.restoring: Restoring…
@@ -386,6 +525,12 @@ settings.hide_mouse: Hide mouse while typing
 settings.hide_mouse.desc: Hide the pointer as you type; it returns on the next move.
 settings.history_search: History search
 settings.history_search.desc: ⌃R at the prompt opens agentty's fuzzy history menu. When off, ⌃R goes to the shell instead — its own reverse-i-search, or whatever you've bound there (fzf, percol).
+settings.hooks.install: Install
+settings.hooks.installed: Installed
+settings.hooks.not_installed: Not installed
+settings.hooks.outdated: Outdated
+settings.hooks.reinstall: Reinstall
+settings.hooks.update: Update
 settings.image_opacity: Image opacity
 settings.image_opacity.desc: How strongly the image shows over the background color.
 settings.import_aliases: Import aliases
@@ -407,6 +552,7 @@ settings.nav.input: Input
 settings.nav.keybindings: Keybindings
 settings.nav.terminal: Terminal
 settings.nav.window_tabs: Window & Tabs
+settings.new_host: New host
 settings.new_tab_position: New tab position
 settings.new_tab_position.desc: Where a freshly opened tab is inserted.
 settings.no_saved_hosts: No saved hosts yet.
@@ -418,6 +564,8 @@ settings.notify_threshold.desc: How long a command must run to qualify as "long"
 settings.opacity: Opacity
 settings.opacity.desc: How opaque the window background is, for every theme. Below 100% the desktop shows through.
 settings.open_default_app_placeholder: open in default app
+settings.open_files_with: Open files with
+settings.open_files_with.desc: How agentty opens local and remote files from the file tree and links.
 settings.open_themes_folder: Open themes folder
 settings.option_meta: Option (⌥) acts as Meta
 settings.option_meta.desc: ⌥+key sends the escape chord shells expect (⌥B = back one word) instead of typing a special character (∫).
@@ -442,8 +590,11 @@ settings.restore_layout: Restore last layout
 settings.restore_layout.desc: Reopen the last window's tabs, splits, and directories on launch. Off starts with a single fresh terminal.
 settings.scroll_speed: Scroll speed
 settings.scroll_speed.desc: Multiplier applied to mouse-wheel scrolling.
+settings.smooth_scroll: Smooth scrolling
+settings.smooth_scroll.desc: Ease wheel notches into place. Trackpad gestures are unaffected.
 settings.scrollback: Scrollback
 settings.scrollback.desc: Lines of history kept per pane. Applies to new panes.
+settings.search_fonts: Search fonts…
 settings.search_settings: Search settings…
 settings.search_themes: Search themes…
 settings.security: Security
@@ -457,9 +608,12 @@ settings.skip_banner: Skip banner
 settings.skip_banner.desc: Suppress the server login banner.
 settings.smart_selection: Smart selection
 settings.smart_selection.desc: Double-click selects the whole URL, file path, email, or bracket pair under the cursor.
+settings.ssh_defaults: Defaults
+settings.ssh_defaults.desc: Inherited by every host
 settings.ssh_group_local: In agentty
 settings.start_in: Start in
 settings.start_in.desc: What a fresh shell starts in: agentty's launch directory, your home folder, or a fixed path.
+settings.start_in.hint: Applies to shells with nothing to inherit from a previous pane.
 settings.startup_window: Startup window
 settings.startup_window.desc: Window state when agentty launches.
 settings.sync_system: Sync with system
@@ -499,6 +653,11 @@ settings.warn_before_closing: Warn before closing
 settings.warn_before_closing.desc: Ask for confirmation before closing a tab or pane with a live SSH session.
 settings.x11_forwarding: X11 forwarding
 settings.x11_forwarding.desc: Request X11 forwarding (needs XQuartz on macOS).
+sftp.empty: Empty directory.
+sftp.image_paste_upload_failed: "Could not upload the clipboard image to {host}: {error}"
+sftp.goto_shell: Go to shell directory
+sftp.hide_transfer_history: Hide transfer history
+sftp.loading: Loading…
 sftp.new_file_name: New file name
 sftp.new_file_title: New file
 sftp.new_folder_name: New folder name
@@ -507,6 +666,8 @@ sftp.no_transfers: No transfers yet.
 sftp.permissions: Permissions · {readable}
 sftp.rename_title: Rename
 sftp.search_placeholder: Search
+sftp.transfer_history: Transfer history
+sftp.upload: Upload…
 sidebar.hide: Hide Sidebar
 sidebar.show: Show Sidebar
 ssh.close_confirm_body: The connection is live. Closing will end it.
@@ -536,6 +697,22 @@ switcher.search_placeholder: Search workspaces and machines
 tab.shell_default: Shell {index}
 terminal.integration_blocked: agentty shell integration is blocked in this pane — “{wrapper}” is intercepting shell reports, so inline completion and the Ctrl+R menu are unavailable. The shell's own history search still works.
 terminal.integration_missing: agentty shell integration hasn't engaged in this pane, so inline completion and the Ctrl+R menu are unavailable. A PTY wrapper (figterm-style) or an unsupported shell setup can cause this.
+tray.notifications: Notifications
+tray.quit_stop: Quit and Stop Server…
+tray.show: Show agentty
+tray.status.done: done
+tray.status.waiting: needs input
+tray.status.working: working
+tray.tooltip.done: done
+tray.tooltip.waiting: waiting
+tray.tooltip.working: working
 worktree.failed: New worktree failed: {error}
+worktree.needs_name: The worktree needs a name
 worktree.new_tab: New Worktree Tab
 worktree.removal_failed: Worktree removal failed: {error}
+worktree.remove_clean: The closed tab's worktree at {path} is clean.
+worktree.remove_clean_btn: Remove Worktree
+worktree.remove_dirty: The closed tab's worktree at {path} has uncommitted changes.
+worktree.remove_discard: Discard Changes & Remove
+worktree.remove_title: "Remove worktree \"{branch}\"?"
+worktree.removed: "Removed worktree \"{branch}\""

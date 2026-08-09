@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use super::protocol::{MAX_FRAME, read_frame, write_frame};
 
-pub const CONTROL_VERSION: u32 = 6;
+pub const CONTROL_VERSION: u32 = 7;
 
 const DIALECT_MARKER: &str = "speaks control v";
 
@@ -84,7 +84,7 @@ pub enum ControlRequest {
         generation: crate::agent_runtime::ScanGeneration,
         authority: crate::agent_runtime::AuthorityKind,
         roots: crate::agent_runtime::AgentStoreRoots,
-        providers: Vec<String>,
+        providers: Vec<crate::agent_runtime::ProviderId>,
         logical_limit: u64,
         physical_source_limit: u64,
     },
@@ -560,6 +560,8 @@ pub struct ControlHelloOk {
     pub build: String,
     pub separator: char,
     pub home: String,
+    #[serde(default)]
+    pub store_roots: Option<crate::agent_runtime::AgentStoreRoots>,
     #[serde(default)]
     pub features: Vec<String>,
     #[serde(default)]
@@ -1280,6 +1282,7 @@ mod tests {
                 build: "test".into(),
                 separator: '/',
                 home: "/home/me".into(),
+                store_roots: None,
                 features: Vec::new(),
                 instance: "test-instance".into(),
             },
@@ -1395,7 +1398,10 @@ mod tests {
                 generation: crate::agent_runtime::ScanGeneration(9),
                 authority: crate::agent_runtime::AuthorityKind::Remote,
                 roots: crate::agent_runtime::AgentStoreRoots::for_home("/home/me".into()),
-                providers: vec!["codex".into(), "claude".into()],
+                providers: vec![
+                    crate::agent_runtime::ProviderId::Codex,
+                    crate::agent_runtime::ProviderId::Claude,
+                ],
                 logical_limit: 40,
                 physical_source_limit: 2_000,
             },
@@ -1646,6 +1652,7 @@ mod tests {
             build: "26.7.5".into(),
             separator: '/',
             home: "/home/me".into(),
+            store_roots: None,
             features: vec![feature::CONTROL.into(), feature::HOST_RPC.into()],
             instance: "test-instance".into(),
         }
@@ -2138,7 +2145,10 @@ mod tests {
                     generation: crate::agent_runtime::ScanGeneration(1),
                     authority: crate::agent_runtime::AuthorityKind::Remote,
                     roots: crate::agent_runtime::AgentStoreRoots::for_home("/home/me".into()),
-                    providers: vec!["codex".into(), "claude".into()],
+                    providers: vec![
+                        crate::agent_runtime::ProviderId::Codex,
+                        crate::agent_runtime::ProviderId::Claude,
+                    ],
                     logical_limit: 40,
                     physical_source_limit: 2_000,
                 },
@@ -2738,6 +2748,26 @@ mod tests {
     }
 
     #[test]
+    fn provider_enum_growth_advances_the_control_dialect() {
+        const PRE_GROK_CONTROL_VERSION: u32 = 6;
+        let request = ControlRequest::DiscoverAgentSessions {
+            operation: crate::agent_runtime::OperationId(1),
+            generation: crate::agent_runtime::ScanGeneration(1),
+            authority: crate::agent_runtime::AuthorityKind::Remote,
+            roots: crate::agent_runtime::AgentStoreRoots::for_home("/home/me".into()),
+            providers: vec![crate::agent_runtime::ProviderId::Grok],
+            logical_limit: 40,
+            physical_source_limit: 2_000,
+        };
+        let encoded = serde_json::to_string(&request).expect("Grok request encodes");
+        assert!(encoded.contains("grok"), "{encoded}");
+        assert!(
+            CONTROL_VERSION > PRE_GROK_CONTROL_VERSION,
+            "an older v{PRE_GROK_CONTROL_VERSION} helper accepts the handshake but cannot decode this request"
+        );
+    }
+
+    #[test]
     fn a_handshake_answered_with_the_wrong_frame_is_invalid_data() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
@@ -2815,5 +2845,34 @@ mod tests {
         let e = client.call(ControlRequest::Ping).unwrap_err();
         assert_eq!(e.kind(), io::ErrorKind::ConnectionReset);
         assert!(!client.is_connected());
+    }
+
+    #[test]
+    fn remote_helper_never_guesses_daemon_process_roots() {
+        let target_roots = crate::agent_runtime::AgentStoreRoots::from_target_environment(
+            std::path::Path::new("/home/remote"),
+            |name| match name {
+                "CODEX_HOME" => Some(std::ffi::OsString::from("/srv/codex")),
+                "CLAUDE_CONFIG_DIR" => Some(std::ffi::OsString::from("relative-claude")),
+                _ => None,
+            },
+        );
+        let hello = ControlHelloOk {
+            control_version: CONTROL_VERSION,
+            protocol_version: crate::daemon::protocol::PROTOCOL_VERSION,
+            build: "test".into(),
+            separator: '/',
+            home: "/home/remote".into(),
+            store_roots: Some(target_roots.clone()),
+            features: Vec::new(),
+            instance: "instance".into(),
+        };
+        let encoded = serde_json::to_vec(&hello).unwrap();
+        let decoded: ControlHelloOk = serde_json::from_slice(&encoded).unwrap();
+        assert_eq!(decoded.store_roots, Some(target_roots.clone()));
+        assert_eq!(
+            target_roots.claude_config_dir,
+            std::path::PathBuf::from("/home/remote/relative-claude")
+        );
     }
 }

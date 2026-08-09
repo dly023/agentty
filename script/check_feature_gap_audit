@@ -1,0 +1,152 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+audit="${AGENTTY_FEATURE_GAP_AUDIT:-docs/quality/ASHIDE_AGENTTY_FEATURE_GAP_AUDIT.yaml}"
+spec=docs/specs/FEATURE_GAP_AUDIT_SPEC.yaml
+tracker=docs/quality/development-tracker.yaml
+matrix=docs/quality/traceability.yaml
+editor_audit=docs/quality/NATIVE_EDITOR_CAPABILITY_AUDIT.yaml
+ui_review=docs/quality/ASHIDE_AGENTTY_UI_GAP_REVIEW.yaml
+
+for path in "$spec" "$tracker" "$matrix" "$audit" "$editor_audit" "$ui_review"; do
+  [[ -f "$path" ]] || { echo "[feature-gap-audit] missing $path" >&2; exit 1; }
+done
+
+for contract in \
+  AUDIT-SYSTEMATIC-FEATURE-GAPS-01 \
+  AUDIT-REFERENCE-HISTORY-02 \
+  AUDIT-EVIDENCE-STATUS-03 \
+  AUDIT-PREIMPLEMENTATION-RED-04 \
+  AUDIT-EIGHT-PRINCIPLES-GATE-05 \
+  AUDIT-NATIVE-EDITOR-CAPABILITY-06 \
+  AUDIT-ASHIDE-UI-REFERENCE-07; do
+  rg -q -- "- id: ${contract}$" "$spec" || {
+    echo "[feature-gap-audit] missing spec contract $contract" >&2
+    exit 1
+  }
+  rg -q "spec: ${contract}$" "$matrix" || {
+    echo "[feature-gap-audit] missing matrix contract $contract" >&2
+    exit 1
+  }
+done
+
+for capability in open edit save external_change_watch conflict binary large_file reconnect failure_rollback; do
+  rg -q -- "- capability: ${capability}$" "$editor_audit" || {
+    echo "[feature-gap-audit] missing native editor capability $capability" >&2
+    exit 1
+  }
+done
+for authority in local managed_ssh; do
+  rg -q "^    ${authority}: (present|partial|missing|non_applicable)$" "$editor_audit" || {
+    echo "[feature-gap-audit] missing native editor authority $authority" >&2
+    exit 1
+  }
+done
+for dimension in session_navigation global_search tab_hierarchy terminal_editor_balance status_presentation density; do
+  rg -q -- "- dimension: ${dimension}$" "$ui_review" || {
+    echo "[feature-gap-audit] missing UI review dimension $dimension" >&2
+    exit 1
+  }
+done
+rg -q 'watch_owner_is_stale' src/ui/code_editor.rs
+rg -q 'editor_rebind_host' src/ui/code_editor.rs src/ui/remote_workspace.rs
+rg -q 'editor_watch_owner_detects_replaced_host_instance' src/ui/code_editor.rs
+
+rg -q 'id: M0\.6-SYSTEMATIC-GAP-AUDIT$' "$tracker" || {
+  echo '[feature-gap-audit] missing audit milestone' >&2
+  exit 1
+}
+
+principles=$(rg -c '^### 以.+为荣，以.+为耻$' AGENTS.md)
+[[ "$principles" -eq 8 ]] || {
+  echo "[feature-gap-audit] expected exactly eight engineering principles, found $principles" >&2
+  exit 1
+}
+rg -q '进入 IMPLEMENTATION 前必须逐条念出并对照本节八项原则' AGENTS.md || {
+  echo '[feature-gap-audit] missing preimplementation eight-principles gate' >&2
+  exit 1
+}
+
+for dimension in \
+  domain_model user_flow interaction_surface persistence_and_recovery \
+  failure_and_rollback local_remote_authority concurrency_and_stale_results \
+  keyboard_and_accessibility regression_history tests_and_runtime_evidence \
+  tracker_status_accuracy; do
+  rg -q -- "- ${dimension}$" "$audit" || {
+    echo "[feature-gap-audit] missing audit dimension $dimension" >&2
+    exit 1
+  }
+done
+
+for source in \
+  SESSION_NAVIGATOR_SPEC.yaml LOCAL_REMOTE_PARITY_SPEC.yaml \
+  local-remote-parity-tracker.yaml init-release-test-matrix.yaml \
+  session_navigator_reducer_tests.rs session_navigator_scan_tests.rs \
+  vertical_tabs_tests.rs; do
+  rg -q "$source" "$audit" || {
+    echo "[feature-gap-audit] missing reference source $source" >&2
+    exit 1
+  }
+done
+
+for gap in \
+  GAP-SESSION-ALIAS-MODEL \
+  GAP-SESSION-LIVE-ALIAS \
+  GAP-SESSION-TITLE-FALLBACK \
+  GAP-AGENT-EXECUTION-STATE \
+  GAP-SESSION-HOVER-DETAILS \
+  GAP-SESSION-PERMANENT-DELETE \
+  GAP-SESSION-SUBTITLE-HIERARCHY \
+  GAP-NATIVE-EDITOR-INVENTORY \
+  GAP-ASHIDE-UI-REVIEW; do
+  rg -q -- "- id: ${gap}$" "$audit" || {
+    echo "[feature-gap-audit] missing known gap $gap" >&2
+    exit 1
+  }
+done
+
+if ! awk '
+  function flush() {
+    if (id == "") return
+    if (!domain || !capability || !status || !reference || !agentty || !decision || !target || !tests || !red) {
+      print "[feature-gap-audit] incomplete capability " id > "/dev/stderr"
+      failed = 1
+    }
+    if ((state == "partial" || state == "missing") && implementation == "verified") {
+      print "[feature-gap-audit] incomplete capability marked verified " id > "/dev/stderr"
+      failed = 1
+    }
+  }
+  /^capabilities:$/ { in_caps = 1; next }
+  !in_caps { next }
+  /^  - id: (CAP|GAP)-/ {
+    flush()
+    id = $3
+    domain = capability = status = reference = agentty = decision = target = tests = red = 0
+    state = implementation = ""
+    next
+  }
+  /^    domain:/ { domain = 1 }
+  /^    capability:/ { capability = 1 }
+  /^    status: (present|partial|missing|non_applicable)$/ { status = 1; state = $2 }
+  /^    reference_evidence:/ { reference = 1 }
+  /^    agentty_evidence:/ { agentty = 1 }
+  /^    decision:/ { decision = 1 }
+  /^    target:/ { target = 1 }
+  /^      preimplementation_tests:/ { tests = 1 }
+  /^      red_test_evidence:/ { red = 1 }
+  /^      implementation_status:/ { implementation = $2 }
+  END { flush(); exit failed }
+' "$audit"; then
+  exit 1
+fi
+
+if rg -n 'status: (partial|missing)' "$audit" >/dev/null; then
+  rg -q 'red_test_evidence: pending_before_implementation' "$audit" || {
+    echo '[feature-gap-audit] partial or missing gaps require explicit pending red-test evidence' >&2
+    exit 1
+  }
+fi
+
+echo 'feature gap audit checks passed'

@@ -1,6 +1,300 @@
 version: 1
-updated: 2026-07-31
+updated: 2026-08-03
 entries:
+  - id: TERMINAL-CONPTY-STREAM-RESIZE-092
+    spec: TERMINAL-CONPTY-STREAM-RESIZE-01
+    source: [docs/specs/TERMINAL_RUNTIME_SPEC.yaml, Cargo.toml, crates/agentty-core/src/daemon/protocol.rs, crates/agentty-core/src/daemon/pane.rs, src/terminal/remote.rs]
+    static_check: script/check_terminal_runtime
+    tests: [resize_echoes_size_to_the_controller_between_old_and_new_output, resize_echo_feature_is_advertised, resize_echo_defers_local_grid_reflow_until_size_frame, live_size_frame_reflows_without_waiting_for_snapshot]
+    verification: cargo test -p agentty-core resize_echo --lib --locked && cargo test --bin agentty-app resize_echo --locked && cargo test --bin agentty-app live_size_frame_reflows_without_waiting_for_snapshot --locked && ./script/check_terminal_runtime && ./script/presubmit full
+    evidence: "Static gate observed red before implementation; four mapped focused tests pass on macOS. Platform config and fork pin are statically checked; aggregate quick and workspace full pass."
+  - id: NOTIFY-CLICK-REVEAL-093
+    spec: NOTIFY-CLICK-REVEAL-01
+    source: [docs/specs/NOTIFICATION_SPEC.yaml, src/terminal/remote.rs, src/terminal/view.rs, src/ui/tray/mod.rs, src/ui/windows.rs]
+    static_check: script/check_desktop_notifications
+    tests: [notification_text_removes_unsafe_controls_and_clamps_unicode, notification_reveal_targets_environment_and_pane_not_entity_id, stale_notification_target_is_a_noop, saturated_click_backend_falls_back_to_plain_notification]
+    verification: cargo test --bin agentty-app notification_ --locked && ./script/check_desktop_notifications && ./script/presubmit quick
+    evidence: "Static/test-reference gates observed red; four focused tests pass. Exact Windows-only block passes a minimal x86_64-pc-windows-msvc check; full cross-check is blocked by missing MSVC C headers in ring. Aggregate quick and workspace full pass."
+  - id: TAB-SWITCHER-MRU-HOLD-094
+    spec: TAB-SWITCHER-MRU-HOLD-01
+    source: [docs/specs/TAB_SWITCHER_SPEC.yaml, src/ui/app.rs, src/ui/switcher.rs, src/ui/keymap.rs]
+    static_check: script/check_tab_switcher
+    tests: [tab_switch_hold_uses_a_fixed_mru_snapshot, tab_switch_release_commits_exactly_once, tab_switch_escape_and_deactivation_restore_the_origin, tab_switch_revalidates_removed_origin_and_candidate, tab_switch_single_tab_is_a_noop]
+    verification: cargo test --bin agentty-app tab_switch_ --locked && ./script/check_tab_switcher && ./script/presubmit quick
+    evidence: "Static/test-reference gates and stale-origin assertion observed red; five focused reducer tests, aggregate quick, and workspace full pass."
+  - id: INPUT-FISH-HISTORY-AUTHORITY-091
+    spec: INPUT-FISH-HISTORY-AUTHORITY-09
+    source: [docs/specs/INPUT_EXPERIENCE_SPEC.yaml, src/terminal/history.rs, src/terminal/view.rs]
+    static_check: script/check_fish_history
+    tests: [fish_writes_commands_unquoted_so_yaml_punctuation_is_just_text, fish_escapes_only_backslash_and_newline, a_multiline_fish_command_is_skipped_not_half_recalled, a_remote_scope_routes_fish_bytes_by_source_name]
+    verification: cargo test --bin agentty-app fish_ --locked && ./script/check_fish_history && ./script/presubmit quick
+    evidence: "2026-08-09: exact tests first failed on missing fish parser and unnamed remote byte blobs; five fish-focused tests plus existing remote zsh/bash loading, static gate, test references, spec matrix, tracker, formatting, presubmit quick, and workspace full passed."
+  - id: INPUT-FRAME-ALIGNED-SMOOTH-SCROLL-090
+    spec: INPUT-FRAME-ALIGNED-SMOOTH-SCROLL-08
+    source: [docs/specs/INPUT_EXPERIENCE_SPEC.yaml, crates/agentty-core/src/core/config.rs, src/terminal/view.rs, src/ui/settings.rs]
+    static_check: script/check_terminal_smooth_scroll
+    tests: [scroll_anim_step_decays_and_lands, scroll_anim_step_accounts_for_dropped_frames_and_snaps_tail, a_stale_frame_after_cancellation_does_not_walk]
+    verification: cargo test --bin agentty-app scroll_anim --locked && ./script/check_terminal_smooth_scroll && ./script/presubmit quick
+    evidence: "2026-08-09: failing static gate preceded implementation; persisted setting, localized UI, phase-aware routing, relative accumulated decay, next-frame scheduling, stale epoch cancellation, and clamp behavior passed focused pure/GPUI tests, i18n, static gate, and presubmit quick."
+  - id: CLI-AGENT-WAIT-089
+    spec: CLI-AGENT-WAIT-01
+    source: [docs/specs/CLI_ORCHESTRATION_SPEC.yaml, crates/agentty-cli/src/cli.rs, crates/agentty-cli/src/commands.rs]
+    static_check: script/check_cli_orchestration
+    tests: [wait_returns_when_agent_state_matches, wait_treats_live_agentless_pane_as_idle, wait_timeout_uses_exit_code_124, wait_refuses_unrequested_pane_exit, wait_changed_refuses_the_state_it_arrived_in, wait_rechecks_liveness_for_a_reporting_agent]
+    verification: cargo test -p agentty-cli wait_ --locked && ./script/check_cli_orchestration && ./script/presubmit quick
+    evidence: "2026-08-09: observed red compile and behavior failures, then six wait focused tests, the complete agentty-cli package, static gate, and presubmit quick passed."
+  - id: REMOTE-IMAGE-PASTE-088
+    spec: REMOTE-IMAGE-PASTE-17
+    source: [docs/specs/REMOTE_HELPER_SPEC.yaml, src/terminal/view.rs, src/ui/sftp.rs]
+    static_check: script/check_remote_helper
+    tests: [remote_image_paste_stages_on_every_platform, wsl_image_path_uses_the_distro_automount_view, remote_paste_selects_only_ssh_authority, remote_clipboard_directory_requires_owner_only_permissions, clipboard_image_transcodes_tiff_to_png]
+    verification: cargo test --bin agentty-app remote_image_paste --locked && cargo test --bin agentty-app wsl_image_path --locked && cargo test --bin agentty-app remote_clipboard_directory --locked && ./script/presubmit quick
+    evidence: "2026-08-09: focused tests first failed because remote staging, WSL path translation, SSH authority selection, and private-directory verification did not exist. SSH upload now uses owner-only SFTP staging and pastes only after verified completion; WSL rewrites shared Windows paths; local macOS keeps SYN; TIFF transcodes to PNG. Focused tests, i18n, static gate, and quick presubmit passed."
+  - id: WSL-COMPLETION-AUTHORITY-087
+    spec: WSL-COMPLETION-AUTHORITY-16
+    source: [docs/specs/REMOTE_HELPER_SPEC.yaml, src/terminal/view.rs, crates/agentty-core/src/agent_runtime/completion.rs]
+    static_check: script/check_remote_helper
+    tests: [a_remote_workspace_pane_reports_its_cwd_as_remote, remote_source_failure_never_reads_local_filesystem, wsl_workspace_completion_uses_remote_authority]
+    verification: cargo test --bin agentty-app wsl_workspace_completion_uses_remote_authority --locked && cargo test -p agentty-core remote_source_failure_never_reads_local_filesystem --lib --locked
+    evidence: "2026-08-09: explicit WSL regression proves the distro Host is Remote authority; existing remote-source negative test proves failure never reads GUI-local filesystem; focused tests and quick presubmit passed."
+  - id: WSL-SERVER-LIFECYCLE-PARITY-086
+    spec: WSL-SERVER-LIFECYCLE-PARITY-15
+    source: [docs/specs/REMOTE_HELPER_SPEC.yaml, crates/agentty-core/src/core/session.rs, crates/agentty-core/src/daemon/router.rs, crates/agentty-core/src/daemon/install/wsl.rs, src/ui/app.rs, src/ui/switcher.rs, src/ui/remote_workspace.rs]
+    static_check: script/check_remote_helper
+    tests: [wsl_is_restartable_without_becoming_an_ssh_target, wsl_restart_is_supported_but_replace_remains_explicitly_unsupported]
+    verification: cargo test -p agentty-core wsl_restart_is_supported_but_replace_remains_explicitly_unsupported --lib --locked && ./script/presubmit quick
+    evidence: "2026-08-09: route and capability focused tests first failed because the WSL lifecycle dispatcher and can_restart_server did not exist; WSL restart is now visible in both UI entrypoints and typed RestartServer invokes restart_wsl_daemon through RouteSetup::blocking while ReplaceServer remains unsupported; fmt, both focused tests, static gate, and presubmit quick passed."
+  - id: LOCAL-RUNTIME-READINESS-049
+    spec: LOCAL-RUNTIME-READINESS-01
+    source: [docs/specs/LOCAL_RUNTIME_SPEC.yaml, crates/agentty-core/src/daemon/spawn.rs, crates/agentty-core/src/host/server.rs, crates/agentty-cli/src/server.rs, crates/agentty-cli/tests/cli_e2e.rs, src/ui/local_link.rs]
+    static_check: script/check_local_runtime
+    tests: [pane_endpoint_without_control_endpoint_is_degraded, graceful_shutdown_removes_control_endpoint, server_lifecycle_uses_canonical_dual_endpoint_readiness]
+    verification: cargo test -p agentty-cli --test cli_e2e --locked
+    evidence: "2026-08-03: pane-only readiness regression, graceful control endpoint cleanup, and isolated CLI lifecycle E2E passed; GUI and CLI now share daemon::spawn as the single dual-endpoint authority; full presubmit passed"
+  - id: LOCAL-RUNTIME-EXECUTABLE-050
+    spec: LOCAL-RUNTIME-EXECUTABLE-02
+    source: [docs/specs/LOCAL_RUNTIME_SPEC.yaml, Cargo.toml, crates/agentty-core/src/daemon/spawn.rs, crates/agentty-cli/src/server.rs, crates/agentty-server/src/main.rs, .github/workflows/ci.yml, .github/workflows/nightly.yml, .github/workflows/release.yml, .github/scripts/bundle-macos.sh, .github/scripts/bundle-linux.sh, .github/scripts/bundle-appimage.sh, .github/scripts/bundle-windows.ps1]
+    static_check: script/check_local_runtime
+    tests: [daemon_executable_is_the_headless_sibling]
+    verification: cargo test -p agentty-core daemon_executable_is_the_headless_sibling --lib --locked
+    evidence: "2026-08-03: native agentty-server sibling selection and packaging checks passed; workspace default builds include the server; full presubmit passed"
+  - id: LOCAL-RUNTIME-DIAGNOSTICS-051
+    spec: LOCAL-RUNTIME-DIAGNOSTICS-03
+    source: [docs/specs/LOCAL_RUNTIME_SPEC.yaml, crates/agentty-core/src/core/logfile.rs, crates/agentty-core/src/daemon/spawn.rs, crates/agentty-server/src/main.rs]
+    static_check: script/check_local_runtime
+    tests: [server_logging_defaults_to_warnings]
+    verification: cargo test -p agentty-core server_logging_defaults_to_warnings --lib --locked
+    evidence: "2026-08-03: server defaults to bounded warning/error logging, startup errors name the executable and log path, CLI guidance was updated, and full presubmit passed"
+  - id: LOCAL-RUNTIME-RESOURCE-LEASE-052
+    spec: LOCAL-RUNTIME-RESOURCE-LEASE-04
+    source: [docs/specs/LOCAL_RUNTIME_SPEC.yaml, src/main.rs, src/ui/local_link.rs, src/ui/app.rs, crates/agentty-core/src/daemon/lease.rs, crates/agentty-core/src/daemon/server.rs, crates/agentty-core/src/host/server.rs]
+    static_check: script/check_local_runtime
+    tests: [gui_bootstrap_never_starts_the_local_runtime, passive_local_link_never_starts_the_local_runtime, zero_resource_runtime_exits_after_grace, live_pane_cancels_idle_shutdown, quit_policy_distinguishes_keep_and_stop, idle_server_exits_after_zero_resource_grace]
+    verification: cargo test -p agentty-core daemon::lease::tests --lib --locked && cargo test --bin agentty-app local_runtime --locked && cargo test -p agentty-cli --test cli_e2e --locked && ./script/presubmit full
+    evidence: "2026-08-03: deterministic lease tests, GUI lazy-start policy tests, isolated idle-server endpoint cleanup E2E, quick presubmit, and full presubmit passed"
+  - id: SESSION-PROVIDER-REGISTRY-053
+    spec: SESSION-PROVIDER-REGISTRY-19
+    source: [docs/specs/SESSION_NAVIGATOR_SPEC.yaml, crates/agentty-core/src/agent_runtime/provider.rs, crates/agentty-core/src/agent_runtime/stores.rs, crates/agentty-core/src/agent_runtime/service.rs]
+    static_check: script/check_session_navigator
+    tests: [standard_discovery_covers_registered_persisted_providers, provider_descriptor_rejects_noncanonical_sources, registry_has_no_descriptor_for_unpersisted_agents]
+    verification: cargo test -p agentty-core agent_runtime::provider::tests --lib --locked && cargo test -p agentty-core agent_runtime::service::tests --lib --locked
+    evidence: "2026-08-03: observed descriptor/typed-provider/scanner/canonical-source red compile failures; registry-driven persisted provider discovery, expanded parser tests, static gate, quick presubmit, and full presubmit passed"
+  - id: SESSION-STORE-ROOT-CONTEXT-054
+    spec: SESSION-STORE-ROOT-CONTEXT-20
+    source: [docs/specs/SESSION_NAVIGATOR_SPEC.yaml, crates/agentty-core/src/agent_runtime/stores.rs, crates/agentty-core/src/daemon/control.rs, crates/agentty-core/src/host/server.rs, crates/agentty-core/src/host/remote.rs, src/ui/remote_connect.rs, src/ui/session_navigator.rs]
+    static_check: script/check_session_navigator
+    tests: [custom_codex_and_claude_roots_apply_to_scan_and_mutation, remote_helper_never_guesses_daemon_process_roots]
+    verification: cargo test -p agentty-core target_environment_roots_are_resolved_once_against_target_home --lib --locked && cargo test -p agentty-core custom_codex_and_claude_roots_apply_to_scan_and_mutation --lib --locked && cargo test -p agentty-core remote_helper_never_guesses_daemon_process_roots --lib --locked && cargo test -p agentty-core remote_discovery_request_uses_target_roots_end_to_end --lib --locked && ./script/presubmit full
+    evidence: "2026-08-03: observed target-root/handshake/mutation red compile failures; target-owned operation snapshot crosses handshake, scan, delete validation, and a real remote-helper RPC boundary; full presubmit passed"
+  - id: SESSION-VIEWPORT-PROJECTION-055
+    spec: SESSION-VIEWPORT-PROJECTION-21
+    source: [docs/specs/SESSION_NAVIGATOR_SPEC.yaml, src/ui/session_navigator.rs, src/ui/tab_sidebar.rs, src/ui/app.rs, src/ui/reorder.rs]
+    static_check: script/check_session_navigator
+    tests: [viewport_indices_never_become_row_identity, offscreen_rows_are_not_built_but_keep_canonical_order, filtered_projection_keeps_split_siblings_as_one_unit]
+    verification: cargo test --bin agentty-app session_viewport_projection --locked && cargo test --bin agentty-app ui::reorder::tests --locked && ./script/presubmit quick
+    evidence: "2026-08-03: observed missing SessionViewportProjection red compile failure and fail-closed static gate; stable unit projection, variable-height lazy list, split-group filtering, RowId keyboard routing, projected reorder bounds, and quick presubmit passed"
+  - id: SESSION-GLOBAL-SEARCH-056
+    spec: SESSION-GLOBAL-SEARCH-22
+    source: [docs/specs/SESSION_NAVIGATOR_SPEC.yaml, src/ui/session_navigator.rs, src/ui/windows.rs, src/ui/palette.rs, src/ui/app.rs]
+    static_check: script/check_session_navigator
+    tests: [palette_search_uses_committed_rows_without_discovery, closing_window_removes_its_session_search_partition, session_search_identity_combines_environment_and_row_id]
+    verification: cargo test --bin agentty-app session_search --locked && ./script/presubmit quick
+    evidence: "2026-08-03: observed missing search document/index/command red compile failures and fail-closed static gate; committed Environment-scoped window partitions, frozen palette snapshot filtering, stable cross-window RowId activation, focused tests, and quick presubmit passed"
+  - id: LOCAL-RUNTIME-START-SINGLEFLIGHT-057
+    spec: LOCAL-RUNTIME-START-SINGLEFLIGHT-05
+    source: [docs/specs/LOCAL_RUNTIME_SPEC.yaml, crates/agentty-core/src/daemon/spawn.rs, crates/agentty-core/src/daemon/server.rs]
+    static_check: script/check_local_runtime
+    tests: [concurrent_lifecycle_callers_share_one_startup_gate, concurrent_server_start_callers_converge_on_one_runtime, control_listener_failure_is_fatal_before_pane_service]
+    verification: cargo test -p agentty-core concurrent_lifecycle_callers_share_one_startup_gate --lib --locked && cargo test -p agentty-core control_listener_failure_is_fatal_before_pane_service --lib --locked && cargo test -p agentty-cli --test cli_e2e --locked && ./script/presubmit full
+    evidence: "2026-08-03: observed missing with_startup_gate and run_daemon_with red compile failures plus fail-closed static gate; isolated 20-caller live stress reproduced 20/20 failures from competing child/pid/endpoint ownership, then passed 20/20 with one dual-endpoint-ready runtime after the config-scoped OS lifecycle lock and fatal control-listener startup path; focused core tests and concurrent-start CLI E2E passed"
+  - id: LOCAL-RUNTIME-PANE-COLOR-ENV-076
+    spec: LOCAL-RUNTIME-PANE-COLOR-ENV-06
+    source: [docs/specs/LOCAL_RUNTIME_SPEC.yaml, crates/agentty-core/src/daemon/pane.rs]
+    static_check: script/check_local_runtime
+    tests: [pane_environment_lets_configured_env_override_identity_but_not_capability, pane_environment_strips_inherited_color_suppressors]
+    verification: cargo test -p agentty-core pane_environment_lets_configured_env_override_identity_but_not_capability --lib --locked && cargo test -p agentty-core pane_environment_strips_inherited_color_suppressors --lib --locked
+    evidence: "2026-08-06: pane env publishes TERM/COLORTERM/CLICOLOR=1 and strips inherited NO_COLOR/FORCE_COLOR so Cursor-launched daemons cannot bleach Claude Code (FEEDBACK-20260806-002/004/005)"
+  - id: NATIVE-EDITOR-CAPABILITY-058
+    spec: AUDIT-NATIVE-EDITOR-CAPABILITY-06
+    source: [docs/quality/NATIVE_EDITOR_CAPABILITY_AUDIT.yaml, src/ui/code_editor.rs, src/ui/file_tree.rs, crates/agentty-core/src/host/local.rs, crates/agentty-core/src/host/remote.rs, src/ui/remote_workspace.rs]
+    static_check: script/check_feature_gap_audit
+    tests: [editor_watch_owner_detects_replaced_host_instance, binary_sniff_flags_nul_bytes_only, external_changes_are_told_apart_from_our_own_saves, a_landed_save_only_cleans_a_buffer_that_did_not_move, a_rejected_write_drops_the_row_it_guessed]
+    verification: cargo test --bin agentty-app editor_watch_owner_detects_replaced_host_instance --locked && cargo test --bin agentty-app ui::code_editor::tests --locked && cargo test --bin agentty-app a_rejected_write_drops_the_row_it_guessed --locked
+    evidence: "2026-08-03: the audit check first failed because the local/managed-SSH capability matrix was absent; the completed matrix proves Host authority and failure semantics for all nine capabilities, and a focused red compile failure preceded RemoteHost replacement detection plus reconnect-time watcher rebind."
+  - id: ASHIDE-UI-REFERENCE-059
+    spec: AUDIT-ASHIDE-UI-REFERENCE-07
+    source: [docs/quality/ASHIDE_AGENTTY_UI_GAP_REVIEW.yaml, /Users/admin/ashide/app/src/workspace/view/vertical_tabs.rs, /Users/admin/ashide/app/src/workspace/view/global_search/view.rs, src/ui/tab_sidebar.rs, src/ui/tab_strip.rs, src/ui/right_panel.rs]
+    static_check: script/check_feature_gap_audit
+    tests: [feature_gap_audit_contract, smart_path_truncation_keeps_informative_suffix, session_row_visual_contract_is_distinct]
+    verification: ./script/tests/feature_gap_audit_contract.sh && cargo test --bin agentty-app session_row_visual_contract_is_distinct --locked
+    evidence: "2026-08-03: the fail-closed audit check rejected the missing review artifact; the source-grounded review now classifies all six required dimensions and narrows the only actionable visual delta to SESSION-NAVIGATOR-VISUAL-23."
+  - id: SESSION-NAVIGATOR-VISUAL-060
+    spec: SESSION-NAVIGATOR-VISUAL-23
+    source: [docs/specs/SESSION_NAVIGATOR_SPEC.yaml, src/ui/tab_sidebar.rs, src/ui/app.rs, assets/i18n/en-US.yaml, assets/i18n/zh-CN.yaml]
+    static_check: script/check_session_navigator
+    tests: [smart_path_truncation_keeps_informative_suffix, session_row_visual_contract_is_distinct, navigator_subtitle_uses_session_context_without_repeating_provider]
+    verification: cargo test --bin agentty-app ui::tab_sidebar::tests --locked && ./script/check_session_navigator
+    evidence: "2026-08-03: observed missing destructive-hover helper red compile failure; rows are now tighter, delete hover uses a danger tint, and existing selected/hover/cursor, placeholder, suffix truncation, scan/error/empty/no-match states are locked by tests and static checks."
+  - id: SESSION-SCHEMA-BOUNDED-DISCOVERY-061
+    spec: SESSION-SCHEMA-BOUNDED-DISCOVERY-24
+    source: [docs/specs/SESSION_NAVIGATOR_SPEC.yaml, crates/agentty-core/src/agent_runtime/service.rs, crates/agentty-core/src/agent_runtime/provider.rs]
+    static_check: script/check_session_navigator
+    tests: [cursor_scanner_ignores_unrelated_project_cache_nodes, discovers_real_sessions_on_this_machine, physical_source_limit_is_explicit_not_enumeration_truncation]
+    verification: cargo test -p agentty-core cursor_scanner_ignores_unrelated_project_cache_nodes --lib --locked && AGENTTY_E2E_HOME=/Users/admin cargo test -p agentty-core discovers_real_sessions_on_this_machine --lib --locked -- --nocapture
+    evidence: "2026-08-03: real-store smoke first failed because 2051 total nodes under ~/.cursor/projects exhausted the 2000-node generic budget even though only 30 nodes belonged to agent-transcripts. The focused red test reproduced unrelated cache starvation at budget 8; Cursor now walks only project entries plus agent-transcripts subtrees, the red test passes, and real standard discovery again commits 40 rows including Omp when present."
+  - id: SESSION-SIDEBAR-SURFACE-HIERARCHY-062
+    spec: SESSION-SIDEBAR-SURFACE-HIERARCHY-25
+    source: [docs/specs/SESSION_NAVIGATOR_SPEC.yaml, src/ui/tab_sidebar.rs]
+    static_check: script/check_session_navigator
+    tests: [session_sidebar_surface_metrics_are_explicit, rendered_sidebar_uses_search_surface_and_split_group_geometry]
+    verification: cargo test --bin agentty-app session_sidebar_surface_metrics_are_explicit --locked && cargo test --bin agentty-app rendered_sidebar_uses_search_surface_and_split_group_geometry --locked && ./script/check_session_navigator
+    evidence: "2026-08-05: redundant navigator section title under macOS traffic lights removed; hierarchy is chrome actions + framed search + shared gutter from session_sidebar_surface_metrics; GPUI geometry test still measures the production surface helper. Row density floors moved to SESSION-SIDEBAR-ROW-DENSITY-29."
+  - id: ENV-INDICATOR-LEAD-072
+    spec: ENV-INDICATOR-LEAD-14
+    source: [docs/specs/ENVIRONMENT_MODEL_SPEC.yaml, src/ui/app.rs, src/ui/tab_strip.rs, src/ui/code_editor.rs, src/ui/diff_overlay.rs]
+    static_check: script/check_ui_visual_system
+    tests: [title_bar_content_lead_hugs_split_when_sidebar_open, title_bar_shell_does_not_stack_traffic_light_pad, panel_edge_gutters_share_one_authority]
+    verification: cargo test --bin agentty-app title_bar_content_lead_hugs_split_when_sidebar_open --locked && cargo test --bin agentty-app title_bar_shell_does_not_stack_traffic_light_pad --locked && cargo test --bin agentty-app panel_edge_gutters_share_one_authority --locked && ./script/check_ui_visual_system
+    evidence: "2026-08-05: title_bar_content_lead owns the lead; TitleBar shell pad zeroed via title_bar_shell_leading_pad so macOS 80px no longer stacks; FEEDBACK-20260805-013"
+  - id: SESSION-SIDEBAR-ROW-DENSITY-073
+    spec: SESSION-SIDEBAR-ROW-DENSITY-29
+    source: [docs/specs/SESSION_NAVIGATOR_SPEC.yaml, src/ui/tab_sidebar.rs, src/ui/app.rs]
+    static_check: script/check_session_navigator
+    tests: [session_sidebar_surface_metrics_are_explicit, session_row_selection_keeps_stable_horizontal_inset, session_resume_affordance_overlays_without_flex_slot, session_row_text_overflow_uses_trailing_fade_not_ellipsis, session_row_visual_contract_is_distinct, session_row_paint_uses_surfaces_sidebar_not_theme_muted]
+    verification: cargo test --bin agentty-app session_sidebar_surface_metrics_are_explicit --locked && cargo test --bin agentty-app session_row_selection_keeps_stable_horizontal_inset --locked && cargo test --bin agentty-app session_resume_affordance_overlays_without_flex_slot --locked && cargo test --bin agentty-app session_row_text_overflow_uses_trailing_fade_not_ellipsis --locked && cargo test --bin agentty-app session_row_visual_contract_is_distinct --locked && cargo test --bin agentty-app session_row_paint_uses_surfaces_sidebar_not_theme_muted --locked && ./script/check_session_navigator
+    evidence: "2026-08-07: row idle/hover/selected/cursor fills and text-fade solids use Surfaces.sidebar ladder (not theme muted); outer_gutter equals panel_content_gutter; FEEDBACK-20260803-003 code-level contrast contract"
+  - id: UI-PANEL-EDGE-GUTTER-076
+    spec: UI-PANEL-EDGE-GUTTER-08
+    source: [docs/specs/UI_VISUAL_SYSTEM_SPEC.yaml, src/ui/app.rs, src/ui/tab_sidebar.rs, src/ui/tab_strip.rs, src/ui/right_panel.rs, src/ui/file_tree.rs]
+    static_check: script/check_ui_visual_system
+    tests: [panel_edge_gutters_share_one_authority, content_column_trailing_respects_panel_split_chrome_inset, session_sidebar_surface_metrics_are_explicit, title_bar_content_lead_hugs_split_when_sidebar_open]
+    verification: cargo test --bin agentty-app panel_edge_gutters_share_one_authority --locked && cargo test --bin agentty-app content_column_trailing_respects_panel_split_chrome_inset --locked && cargo test --bin agentty-app session_sidebar_surface_metrics_are_explicit --locked && ./script/check_ui_visual_system
+    evidence: "2026-08-05: panel_content_gutter/panel_split_chrome_inset shared across navigator, content title bar, right panel, and file tree; trailing palette pads when right chrome moves; FEEDBACK-20260805-010/011"
+  - id: UI-SIDE-PANEL-SEARCH-077
+    spec: UI-SIDE-PANEL-SEARCH-09
+    source: [docs/specs/UI_VISUAL_SYSTEM_SPEC.yaml, src/ui/panel_chrome.rs, src/ui/tab_sidebar.rs, src/ui/right_panel.rs]
+    static_check: script/check_ui_visual_system
+    tests: [side_panel_search_metrics_are_explicit, side_panel_chrome_helpers_are_wired]
+    verification: cargo test --bin agentty-app side_panel_search_metrics_are_explicit --locked && cargo test --bin agentty-app side_panel_chrome_helpers_are_wired --locked && ./script/check_ui_visual_system
+    evidence: "2026-08-05: side_panel_search_surface frames Session Navigator and right-panel filters; FEEDBACK-20260805-011"
+  - id: UI-SIDE-PANEL-EMPTY-078
+    spec: UI-SIDE-PANEL-EMPTY-10
+    source: [docs/specs/UI_VISUAL_SYSTEM_SPEC.yaml, src/ui/panel_chrome.rs, src/ui/tab_sidebar.rs, src/ui/right_panel.rs, assets/i18n/en-US.yaml, assets/i18n/zh-CN.yaml]
+    static_check: script/check_ui_visual_system
+    tests: [side_panel_chrome_helpers_are_wired, empty_session_states_render_icon_and_message_hierarchy]
+    verification: cargo test --bin agentty-app side_panel_chrome_helpers_are_wired --locked && cargo test --bin agentty-app empty_session_states_render_icon_and_message_hierarchy --locked && ./script/check_ui_visual_system && ./script/check_i18n
+    evidence: "2026-08-07: side_panel_empty_surface for navigator + right-panel Info/Outline/Changes/Activity; right-panel empties use panel.empty.* catalog keys (parity en/zh)"
+  - id: UI-SIDE-PANEL-SCROLL-079
+    spec: UI-SIDE-PANEL-SCROLL-11
+    source: [docs/specs/UI_VISUAL_SYSTEM_SPEC.yaml, src/ui/scrollbar.rs, src/ui/theme.rs, src/ui/tab_sidebar.rs]
+    static_check: script/check_ui_visual_system
+    tests: [side_panel_scrollbar_forces_scrolling_show_mode, overflow_fade_geometry_is_explicit]
+    verification: cargo test --bin agentty-app side_panel_scrollbar_forces_scrolling_show_mode --locked && cargo test --bin agentty-app overflow_fade_geometry_is_explicit --locked && ./script/check_ui_visual_system
+    evidence: "2026-08-05: Scrolling auto-hide forced for side panels/theme; navigator bottom overflow fade; FEEDBACK-20260805-018; focused tests and quick presubmit passed"
+  - id: SESSION-SPLIT-GROUP-PRESENTATION-063
+    spec: SESSION-SPLIT-GROUP-PRESENTATION-26
+    source: [docs/specs/SESSION_NAVIGATOR_SPEC.yaml, src/ui/tab_sidebar.rs, src/ui/session_navigator.rs]
+    static_check: script/check_session_navigator
+    tests: [split_session_units_use_one_visual_container, rendered_sidebar_uses_search_surface_and_split_group_geometry]
+    verification: cargo test --bin agentty-app split_session_units_use_one_visual_container --locked && cargo test --bin agentty-app rendered_sidebar_uses_search_surface_and_split_group_geometry --locked && ./script/check_session_navigator
+    evidence: "2026-08-03: the focused test first failed to compile on absent visual-kind authority. Multi-row canonical projection units now use one bordered/tinted surface with an accent rail and selected-group boundary; the GPUI geometry test proves that one production container encloses both sibling rows without introducing a group identity. Whole-window screenshot acceptance remains open."
+  - id: ENV-INDICATOR-GLYPH-064
+    spec: ENV-INDICATOR-GLYPH-13
+    source: [docs/specs/ENVIRONMENT_MODEL_SPEC.yaml, src/ui/tab_strip.rs]
+    static_check: script/check_ui_visual_system
+    tests: [environment_indicator_distinguishes_local_and_remote_glyphs]
+    verification: cargo test --bin agentty-app environment_indicator_distinguishes_local_and_remote_glyphs --locked && ./script/check_ui_visual_system
+    evidence: pending
+  - id: SESSION-ROW-ACTION-AFFORDANCE-065
+    spec: SESSION-ROW-ACTION-AFFORDANCE-27
+    source: [docs/specs/SESSION_NAVIGATOR_SPEC.yaml, src/ui/tab_sidebar.rs, assets/i18n/en-US.yaml, assets/i18n/zh-CN.yaml]
+    static_check: script/check_session_navigator
+    tests: [historical_row_hover_uses_icon_affordance_not_text, session_resume_affordance_overlays_without_flex_slot]
+    verification: cargo test --bin agentty-app historical_row_hover_uses_icon_affordance_not_text --locked && cargo test --bin agentty-app session_resume_affordance_overlays_without_flex_slot --locked && ./script/check_session_navigator
+    evidence: "2026-08-05: resume affordance overlays the trailing edge with absolute positioning so hidden state does not steal title width; restoring status remains explicit; static gate forbids flex_shrink_0 slot in ResumeAction"
+  - id: SESSION-EMPTY-STATE-SURFACE-066
+    spec: SESSION-EMPTY-STATE-SURFACE-28
+    source: [docs/specs/SESSION_NAVIGATOR_SPEC.yaml, src/ui/tab_sidebar.rs]
+    static_check: script/check_ui_visual_system
+    tests: [empty_session_states_render_icon_and_message_hierarchy]
+    verification: cargo test --bin agentty-app empty_session_states_render_icon_and_message_hierarchy --locked && ./script/check_ui_visual_system
+    evidence: pending
+  - id: UI-NOTICE-SURFACE-067
+    spec: UI-NOTICE-SURFACE-01
+    source: [docs/specs/UI_VISUAL_SYSTEM_SPEC.yaml, src/ui/notice.rs, src/ui/app.rs, src/ui/forwards.rs, src/ui/home.rs]
+    static_check: script/check_ui_visual_system
+    tests: [notice_surface_maps_severity_to_icon_and_color]
+    verification: cargo test --bin agentty-app notice_surface_maps_severity_to_icon_and_color --locked && ./script/check_ui_visual_system
+    evidence: pending
+  - id: UI-TAB-HIERARCHY-068
+    spec: UI-TAB-HIERARCHY-02
+    source: [docs/specs/UI_VISUAL_SYSTEM_SPEC.yaml, src/ui/tab_strip.rs]
+    static_check: script/check_ui_visual_system
+    tests: [tab_chip_hierarchy_elevates_active_tab_with_indicator]
+    verification: cargo test --bin agentty-app tab_chip_hierarchy_elevates_active_tab_with_indicator --locked && ./script/check_ui_visual_system
+    evidence: pending
+  - id: UI-KBD-CHIP-069
+    spec: UI-KBD-CHIP-03
+    source: [docs/specs/UI_VISUAL_SYSTEM_SPEC.yaml, src/ui/kbd.rs, src/ui/home.rs, src/ui/palette.rs, src/ui/settings.rs]
+    static_check: script/check_ui_visual_system
+    tests: [kbd_chip_metrics_are_explicit]
+    verification: cargo test --bin agentty-app kbd_chip_metrics_are_explicit --locked && ./script/check_ui_visual_system
+    evidence: "2026-08-03: the static gate first failed on absent src/ui/kbd.rs and the focused test failed to compile on missing kbd_chip_metrics. Home, palette, and settings now share one kbd chip surface with a color-explicit variant for closure-bound call sites; focused tests passed."
+  - id: UI-WELCOME-SURFACE-070
+    spec: UI-WELCOME-SURFACE-04
+    source: [docs/specs/UI_VISUAL_SYSTEM_SPEC.yaml, src/ui/home.rs, assets/i18n/en-US.yaml, assets/i18n/zh-CN.yaml]
+    static_check: script/check_ui_visual_system
+    tests: [welcome_surface_metrics_are_explicit]
+    verification: cargo test --bin agentty-app welcome_surface_metrics_are_explicit --locked && ./script/check_ui_visual_system
+    evidence: "2026-08-03: the focused test first failed to compile on missing welcome_surface_metrics. The home page now renders logo + localized tagline, the shared notice strip, and one framed shortcut section whose rows pair labels with kbd chips; bare Kbd::format text is statically forbidden; focused tests passed."
+  - id: UI-TAB-OVERFLOW-071
+    spec: UI-TAB-OVERFLOW-05
+    source: [docs/specs/UI_VISUAL_SYSTEM_SPEC.yaml, src/ui/tab_strip.rs]
+    static_check: script/check_ui_visual_system
+    tests: [tab_chip_window_keeps_active_tab_visible, tab_chip_window_compresses_before_overflowing]
+    verification: cargo test --bin agentty-app tab_chip_window --locked && ./script/check_ui_visual_system
+    evidence: "2026-08-03: the focused tests first failed to compile on absent tab_chip_window/CHIP_MIN constants. Chips now compress 100px→72px before any tab hides; beyond the floor the strip renders an active-tab-containing window with leading/trailing overflow affordances that page on click; an exhaustive avail×count×active sweep proves the active tab is never hidden; quick presubmit passed."
+  - id: UI-TITLEBAR-CHROME-074
+    spec: UI-TITLEBAR-CHROME-06
+    source: [docs/specs/UI_VISUAL_SYSTEM_SPEC.yaml, src/ui/tab_strip.rs]
+    static_check: script/check_ui_visual_system
+    tests: [titlebar_chrome_places_palette_on_content_bar_and_settings_direct, left_rail_keeps_new_tab_affordance]
+    verification: cargo test --bin agentty-app titlebar_chrome_places_palette_on_content_bar_and_settings_direct --locked && cargo test --bin agentty-app left_rail_keeps_new_tab_affordance --locked && ./script/check_ui_visual_system
+    evidence: "2026-08-05: left-rail open keeps New Tab Plus beside Environment Indicator (FEEDBACK-20260805-026); palette/settings placement retained"
+  - id: UI-AGENT-BRAND-ICON-075
+    spec: UI-AGENT-BRAND-ICON-07
+    source: [docs/specs/UI_VISUAL_SYSTEM_SPEC.yaml, src/ui/agent_icon.rs, src/ui/panel_chrome.rs, src/ui/tab_strip.rs, src/ui/assets.rs, crates/agentty-core/src/core/cli_agent.rs, assets/icons/agents]
+    static_check: script/check_ui_visual_system
+    tests: [agent_icon_badge_uses_accent_plate_and_contrasting_glyph, every_agent_icon_resolves, only_the_unbranded_agents_use_the_fallback_glyph, unbranded_avatar_radius_matches_brand_badge_band, omp_badge_uses_light_site_plate_and_purple_glyph, codex_svg_is_optically_scaled_for_badge_fill]
+    verification: cargo test --bin agentty-app agent_icon_badge_uses_accent_plate_and_contrasting_glyph --locked && cargo test -p agentty-core only_the_unbranded_agents_use_the_fallback_glyph --locked && cargo test -p agentty-core omp_badge_uses_light_site_plate_and_purple_glyph --locked && cargo test --bin agentty-app every_agent_icon_resolves --locked && cargo test --bin agentty-app unbranded_avatar_radius_matches_brand_badge_band --locked && cargo test --bin agentty-app codex_svg_is_optically_scaled_for_badge_fill --locked && ./script/check_ui_visual_system
+    evidence: "2026-08-06: Codex blossom scaled for optical fill under shared badge (FEEDBACK-20260806-001); accent+contrasting glyph retained"
+  - id: UI-DEFAULT-THEME-PRESET-077
+    spec: UI-DEFAULT-THEME-PRESET-11
+    source: [docs/specs/UI_VISUAL_SYSTEM_SPEC.yaml, crates/agentty-core/src/core/config.rs]
+    static_check: script/check_ui_visual_system
+    tests: [default_theme_preset_is_colorful_dracula, config_deserialize_fills_missing_fields_from_defaults]
+    verification: cargo test -p agentty-core default_theme_preset_is_colorful_dracula --lib --locked && ./script/check_ui_visual_system
+    evidence: "2026-08-06: Config::default theme_preset is dracula (FEEDBACK-20260806-002); on-disk config untouched"
   - id: QG-HARNESS-001
     spec: PRODUCT-QUALITY-GATE-03
     source:
@@ -39,6 +333,13 @@ entries:
     static_check: script/check_i18n
     tests: [catalogs_have_identical_keys]
     evidence: "2026-07-31: static catalog parity and focused runtime test passed"
+  - id: I18N-EXHAUSTIVE-079
+    spec: I18N-EXHAUSTIVE-TRANSLATION-06
+    source: [docs/specs/I18N_SPEC.yaml, assets/i18n/en-US.yaml, assets/i18n/zh-CN.yaml, src/core/i18n.rs, build.rs, script/check_i18n, script/tests/i18n_exhaustive_contract.sh]
+    static_check: script/check_i18n
+    tests: [catalogs_have_identical_keys, catalog_entries_are_non_empty, preferred_locale_never_needs_cross_locale_fallback, catalog_integrity_rejects_empty_and_duplicate_keys]
+    verification: ./script/check_i18n && ./script/tests/i18n_exhaustive_contract.sh && cargo test --bin agentty-app i18n::tests --locked
+    evidence: "2026-08-09: exhaustive catalog gate (check_i18n + build.rs compile fail-closed + unit tests) FEEDBACK-20260809-003"
   - id: PRODUCT-BOUNDARY-005
     spec: PRODUCT-AGENT-RUNTIME-01
     source:
@@ -100,24 +401,193 @@ entries:
     static_check: script/check_remote_helper
     tests: [live_and_history_merge_into_one_logical_row, closing_live_carrier_hands_off_to_native_history, opaque_row_identity_survives_carrier_replacement]
     evidence: "2026-07-31: stable SessionIdentity and opaque RowId lifecycle tests passed"
+  - id: SESSION-PROVIDER-ICON-033
+    spec: SESSION-PROVIDER-ICON-05
+    source: [docs/specs/SESSION_NAVIGATOR_SPEC.yaml, crates/agentty-core/src/core/cli_agent.rs, src/ui/assets.rs, src/ui/tab_sidebar.rs]
+    static_check: script/check_session_navigator
+    tests: [every_agent_icon_resolves, navigator_rows_use_their_agent_icon]
+    verification: cargo test -p agentty assets::tests --locked
+    evidence: "2026-08-01: icon asset resolution and Navigator canonical icon tests passed; freshly bundled and installed Agentty launched, but unavailable ScreenCapture and Computer Use attachment prevented a screenshot, so visual inspection is not claimed"
+  - id: SESSION-GROK-DISCOVERY-078
+    spec: SESSION-GROK-DISCOVERY-31
+    source: [docs/specs/SESSION_NAVIGATOR_SPEC.yaml, crates/agentty-core/src/agent_runtime/provider.rs, crates/agentty-core/src/agent_runtime/stores.rs, crates/agentty-core/src/agent_runtime/parse.rs, crates/agentty-core/src/agent_runtime/service.rs, crates/agentty-core/src/agent_runtime/delete.rs]
+    static_check: script/check_session_navigator
+    tests: [grok_discovery_reads_summary_json_and_ignores_sibling_caches, grok_summary_requires_directory_identity_match, grok_resume_uses_native_resume_flag, expanded_provider_parsers_extract_native_identity_title_and_cwd]
+    verification: cargo test -p agentty-core grok_discovery --lib --locked && cargo test -p agentty-core grok_summary_requires_directory_identity_match --lib --locked && cargo test -p agentty-core grok_resume_uses_native_resume_flag --lib --locked && cargo test -p agentty-core expanded_provider_parsers_extract_native_identity_title_and_cwd --lib --locked && ./script/check_session_navigator
+    evidence: "2026-08-06: Grok Build summary.json discovery registered (FEEDBACK-20260806-009); detection-first with session-dir delete"
+  - id: SESSION-OMP-DISCOVERY-034
+    spec: SESSION-OMP-DISCOVERY-06
+    source: [docs/specs/SESSION_NAVIGATOR_SPEC.yaml, crates/agentty-core/src/agent_runtime/stores.rs, crates/agentty-core/src/agent_runtime/parse.rs, crates/agentty-core/src/agent_runtime/service.rs]
+    static_check: script/check_session_navigator
+    tests: [omp_discovery_reads_one_project_level_and_ignores_diagnostic_only_files, omp_session_header_requires_filename_identity_match, omp_resume_uses_the_native_session_flag, missing_optional_provider_does_not_hide_complete_rows]
+    verification: cargo test -p agentty-core agent_runtime --lib --locked
+    evidence: "2026-08-01: focused Omp parser/discovery/resume tests passed; the real-store E2E used DiscoveryRequest::standard, discovered 40 canonical rows under /Users/admin, and asserted Omp presence when the real Omp store exists"
+  - id: SESSION-ROW-ACTIONS-035
+    spec: SESSION-ROW-ACTIONS-07
+    source: [docs/specs/SESSION_NAVIGATOR_SPEC.yaml, crates/agentty-core/src/agent_runtime/discovery.rs, crates/agentty-core/src/agent_runtime/navigator.rs, crates/agentty-core/src/agent_runtime/resume.rs, src/ui/tab_sidebar.rs]
+    static_check: script/check_session_navigator
+    tests: [navigator_rows_use_their_agent_icon, shell_materialization_quotes_each_argument_at_the_terminal_boundary]
+    verification: cargo test -p agentty tab_sidebar --locked
+    evidence: "2026-08-01: typed resume shell rendering, Navigator menu tests, i18n/static gates, fresh macOS bundle/install, and installed-app launch passed; native GPUI exposes no CDP endpoint and OS ScreenCapture/Computer Use failed, so menu clicking is not claimed"
+  - id: SESSION-ROW-INFORMATION-HIERARCHY-036
+    spec: SESSION-ROW-INFORMATION-HIERARCHY-08
+    source: [docs/specs/SESSION_NAVIGATOR_SPEC.yaml, src/ui/tab_sidebar.rs]
+    static_check: script/check_session_navigator
+    tests: [navigator_subtitle_uses_session_context_without_repeating_provider, provider_identity_remains_searchable_when_hidden_from_subtitle]
+    verification: cargo test -p agentty tab_sidebar --locked
+    evidence: "2026-08-02: focused red test observed codex · cwd; implementation renders cwd only while provider slug and display name remain searchable; 3 tab_sidebar tests and static gates passed"
+  - id: SESSION-PERMANENT-DELETE-037
+    spec: SESSION-PERMANENT-DELETE-TRANSACTION-09
+    source: [docs/specs/SESSION_NAVIGATOR_SPEC.yaml, crates/agentty-core/src/agent_runtime/delete.rs, crates/agentty-core/src/agent_runtime/navigator.rs, crates/agentty-core/src/host/mod.rs, src/ui/session_navigator.rs, src/ui/tab_sidebar.rs]
+    static_check: script/check_session_navigator
+    tests: [delete_plan_captures_source_and_identity_before_mutation, commit_delete_removes_row_and_file_atomically, rollback_delete_restores_row_on_file_failure, tombstone_prevents_reappearance_in_same_generation, direct_session_delete_source_removes_only_backing_file, codex_index_delete_source_rewrites_only_matching_entry, malformed_codex_index_fails_without_overwriting_source, live_session_menu_uses_close_not_provider_delete, historical_delete_still_plans_provider_transaction, plan_close_and_delete_captures_live_row, plan_close_and_delete_rejects_historical_rows, live_session_menu_exposes_close_and_delete, plan_close_and_delete_source_allows_missing_provider_file, close_and_delete_handles_missing_provider_source]
+    verification: cargo test -p agentty-core plan_close_and_delete --lib --locked && cargo test -p agentty-core plan_close_and_delete_source --lib --locked && cargo test -p agentty-core plan_delete_rejects_live --lib --locked && cargo test --bin agentty-app live_session_menu --locked && cargo test --bin agentty-app close_and_delete_handles_missing --locked
+    evidence: "2026-08-07: Close and Delete no-source path tombstones without false delete_failed (FEEDBACK-20260807-006)"
+  - id: SESSION-ALIAS-BUSINESS-MODEL-038
+    spec: SESSION-ALIAS-BUSINESS-MODEL-10
+    source: [docs/specs/SESSION_NAVIGATOR_SPEC.yaml, crates/agentty-core/src/agent_runtime/user_state.rs, crates/agentty-core/src/agent_runtime/delete.rs, crates/agentty-core/src/agent_runtime/navigator.rs, src/ui/session_navigator.rs, src/ui/tab_sidebar.rs]
+    static_check: script/check_session_navigator
+    tests: [alias_state_is_partitioned_by_environment_identity, alias_mutation_failure_rolls_back_visible_state, deleted_session_clears_alias_state, session_alias_store_round_trips_through_selected_host, session_alias_store_path_uses_selected_host_home, inline_edit_identity_survives_carrier_replacement, live_only_alias_is_immediately_visible, provider_source_appearance_preserves_explicit_alias, provider_delete_failure_restores_alias_store, session_context_menu_exposes_set_alias, begin_session_alias_edit_selects_existing_display_title]
+    verification: cargo test -p agentty-core session_alias --locked && cargo test -p agentty-core session_delete --locked && cargo test --bin agentty-app session_context_menu_exposes_set_alias --locked && cargo test --bin agentty-app begin_session_alias_edit_selects --locked
+    evidence: "2026-08-07: alias edit SelectAll seeds display title for one-key clear (FEEDBACK-20260807-004)"
+  - id: SESSION-TITLE-PRECEDENCE-039
+    spec: SESSION-TITLE-PRECEDENCE-11
+    source: [docs/specs/SESSION_NAVIGATOR_SPEC.yaml, crates/agentty-core/src/agent_runtime/parse.rs, crates/agentty-core/src/agent_runtime/navigator.rs, crates/agentty-core/src/agent_runtime/service.rs, src/ui/tab_sidebar.rs, src/ui/session_navigator.rs, src/terminal/view.rs, src/ui/composer.rs]
+    static_check: script/check_session_navigator
+    tests: [provider_title_wins_even_when_it_appears_after_first_user_message, first_user_message_names_untitled_session, catch_all_provider_title_yields_to_first_user_message, catch_all_title_alone_resolves_absent, provider_identity_is_never_a_session_alias, session_display_title_prefers_alias_over_title_and_fallback, session_display_title_ignores_blank_candidates, session_display_title_never_uses_session_id, refresh_blank_title_preserves_last_good_title_and_alias_display, display_title_stable_across_identical_ui_inputs, refresh_product_placeholder_title_preserves_settled_session_title, catch_all_title_clears_so_first_user_message_can_name_the_row, live_session_rows_omit_tab_and_terminal_titles, first_user_title_candidate_rejects_placeholders_and_excerpts_prompt, note_first_user_prompt_stamps_once, codex_response_item_user_message_names_session_after_skipping_injections]
+    verification: cargo test -p agentty-core first_user_title_candidate --lib --locked && cargo test -p agentty-core catch_all_provider_title --lib --locked && cargo test -p agentty-core codex_response_item_user_message --lib --locked && cargo test -p agentty-core session_display_title --lib --locked && cargo test --bin agentty-app note_first_user_prompt_stamps_once --locked && ./script/check_session_navigator
+    evidence: "2026-08-09: Codex response_item user turns name untitled sessions; skip AGENTS.md/environment_context injections (FEEDBACK-20260809-002)"
+  - id: AGENT-EXECUTION-STATE-040
+    spec: AGENT-EXECUTION-STATE-SYSTEM-12
+    source: [docs/specs/SESSION_NAVIGATOR_SPEC.yaml, crates/agentty-core/src/core/cli_agent.rs, crates/agentty-core/src/agent_runtime/navigator.rs, src/ui/session_navigator.rs, src/ui/tab_sidebar.rs]
+    static_check: script/check_session_navigator
+    tests: [execution_badge_precedence_is_restoring_then_waiting_then_running_then_focused_live_then_background_live, historical_rows_never_show_live_execution, stale_execution_event_cannot_replace_current_state, waiting_message_remains_actionable]
+    verification: cargo test -p agentty-core execution_badge --locked
+    evidence: "2026-08-02: observed missing execution projection API red compile failures; canonical TerminalView AgentSessionState projection, activity_seq stale rejection, typed badge precedence, historical-row suppression, and waiting-message visibility tests pass"
+  - id: SESSION-HOVER-DETAILS-041
+    spec: SESSION-HOVER-DETAILS-13
+    source: [docs/specs/SESSION_NAVIGATOR_SPEC.yaml, crates/agentty-core/src/agent_runtime/navigator.rs, src/ui/tab_sidebar.rs, src/ui/home.rs]
+    static_check: script/check_session_navigator
+    tests: [hover_target_survives_carrier_replacement, stale_hover_target_closes_fail_closed, pointer_safe_region_keeps_detail_open, session_hover_sidecar_lead_clears_the_sidebar_split, session_hover_yields_to_open_context_menu, session_hover_delays_stay_in_the_snappy_band, format_unix_ms_local_is_readable_not_raw_millis, session_updated_display_uses_local_datetime_formatter]
+    verification: cargo test -p agentty-core hover_target --locked && cargo test --bin agentty-app pointer_safe_region_keeps_detail_open --locked && cargo test --bin agentty-app session_hover_sidecar_lead_clears_the_sidebar_split --locked && cargo test --bin agentty-app session_hover_yields_to_open_context_menu --locked && cargo test --bin agentty-app session_hover_delays_stay_in_the_snappy_band --locked && cargo test --bin agentty-app format_unix_ms_local_is_readable_not_raw_millis --locked && cargo test --bin agentty-app session_updated_display_uses_local_datetime_formatter --locked
+    evidence: "2026-08-06: Updated field forbids raw unix millis; local YYYY-MM-DD HH:MM via format_unix_ms_local (FEEDBACK-20260806-008); prior 2026-08-05 hover delays/sidecar/menu-priority retained"
+  - id: SESSION-KEYBOARD-CURSOR-042
+    spec: SESSION-KEYBOARD-CURSOR-14
+    source: [docs/specs/SESSION_NAVIGATOR_SPEC.yaml, src/ui/app.rs, src/ui/session_navigator.rs, src/ui/tab_sidebar.rs]
+    static_check: script/check_session_navigator
+    tests: [keyboard_cursor_uses_row_identity_not_list_index, enter_activates_filtered_cursor_and_escape_clears_transient_state]
+    verification: cargo test -p agentty session_keyboard_cursor --locked
+    evidence: "2026-08-02: observed unresolved SessionKeyboardCursor red compile failure; stable RowId reorder preservation, filtered activation, Escape cleanup, canonical-selection isolation, focused tests, static gate, and application compile pass"
+  - id: SESSION-LIVE-CONTAINER-BINDING-043
+    spec: SESSION-LIVE-CONTAINER-BINDING-15
+    source: [docs/specs/SESSION_NAVIGATOR_SPEC.yaml, crates/agentty-core/src/core/session.rs, crates/agentty-core/src/agent_runtime/navigator.rs, src/ui/pending_pane.rs, src/terminal/view.rs, src/terminal/remote.rs, src/ui/session_navigator.rs, src/ui/app.rs]
+    static_check: script/check_session_navigator
+    tests: [resume_carrier_is_bound_before_first_projection, restored_live_binding_survives_placeholder_and_restart, provider_identity_rebind_preserves_container_row, foreground_agent_stamps_binding_without_session_id, agent_exit_does_not_clear_live_binding_agent, agent_bound_carrier_close_uses_binding_or_session]
+    verification: cargo test -p agentty-core live_container_binding --locked && cargo test -p agentty-core provider_identity_rebind_preserves_container_row --locked && cargo test -p agentty live_container_binding --locked && cargo test --bin agentty-app foreground_agent_stamps_binding_without_session_id --locked && cargo test --bin agentty-app agent_exit_does_not_clear_live_binding_agent --locked && cargo test --bin agentty-app agent_bound_carrier_close_uses_binding_or_session --locked
+    evidence: "2026-08-06: foreground agent stamps binding without session_id; exit preserves binding; carrier close refresh uses binding.or(session); Agent Wakeup (FEEDBACK-20260806-001)"
+  - id: SESSION-PIN-BUSINESS-MODEL-044
+    spec: SESSION-PIN-BUSINESS-MODEL-16
+    source: [docs/specs/SESSION_NAVIGATOR_SPEC.yaml, crates/agentty-core/src/agent_runtime/user_state.rs, crates/agentty-core/src/agent_runtime/navigator.rs, crates/agentty-core/src/agent_runtime/delete.rs, src/ui/session_navigator.rs, src/ui/tab_sidebar.rs, assets/icons/pin.svg]
+    static_check: script/check_session_navigator
+    tests: [pin_survives_live_history_replacement_and_restart, failed_remote_pin_rolls_back_without_local_fallback, deleted_session_clears_pin_and_alias_state, pinned_rows_render_explicit_pin_marker]
+    verification: "cargo test -p agentty-core session_user_state --locked && cargo test --bin agentty-app pinned_rows_render_explicit_pin_marker --locked"
+    evidence: "2026-08-05: pinned rows render icons/pin.svg glyph (FEEDBACK-20260805-027)"
+  - id: SESSION-STABLE-REORDER-045
+    spec: SESSION-STABLE-REORDER-17
+    source: [docs/specs/SESSION_NAVIGATOR_SPEC.yaml, crates/agentty-core/src/agent_runtime/navigator.rs, crates/agentty-core/src/agent_runtime/user_state.rs, src/ui/reorder.rs, src/ui/session_navigator.rs, src/ui/tab_sidebar.rs, src/ui/app.rs]
+    static_check: script/check_session_navigator
+    tests: [reorder_preserves_active_selection_and_row_identity, split_siblings_move_as_one_reorder_unit, newly_discovered_unit_is_inserted_at_top_without_rewriting_manual_order, failed_reorder_persistence_preserves_visible_order, delete_preserves_survivor_relative_order, refresh_reinsert_preserves_first_observed_insertion_order]
+    verification: cargo test -p agentty-core delete_preserves_survivor --lib --locked && cargo test -p agentty-core refresh_reinsert_preserves --lib --locked && cargo test -p agentty-core newly_discovered_unit --lib --locked && ./script/check_session_navigator
+    evidence: "2026-08-07: delete/refresh must preserve survivor relative order; RowId reinsert reuses first-seen insertion (FEEDBACK-20260807-007)"
+  - id: SESSION-REFRESH-INTENT-048
+    spec: SESSION-REFRESH-INTENT-18
+    source: [docs/specs/SESSION_NAVIGATOR_SPEC.yaml, src/ui/session_navigator.rs, src/ui/remote_workspace.rs, src/ui/environment_session.rs, src/ui/app.rs, src/ui/tab_sidebar.rs]
+    static_check: script/check_session_navigator
+    tests: [unavailable_remote_refresh_does_not_poison_link_up_refresh, generic_terminal_events_do_not_scan_provider_history, source_mutation_and_agent_close_trigger_passive_refresh, connect_and_link_up_share_passive_refresh_intent, environment_session_context_resolve_is_the_discovery_authority, session_scan_retries_after_host_roots_become_ready]
+    verification: cargo test --bin agentty-app unavailable_remote_refresh --locked && cargo test --bin agentty-app connect_and_link_up_share --locked && cargo test --bin agentty-app environment_session_context --locked && cargo test --bin agentty-app session_scan_retries_after_host_roots_become_ready --locked
+    evidence: "2026-08-05: EnvironmentSessionContext + finish_connect/Attached refresh; scan_error retries RemoteLinkUp after Host+roots resolve (FEEDBACK-20260805-023); Hello home derives store roots when omitted (FEEDBACK-20260805-028)"
+  - id: ENV-SESSION-OPS-FACADE-075
+    spec: ENV-SESSION-OPS-FACADE-15
+    source: [docs/specs/ENVIRONMENT_MODEL_SPEC.yaml, src/ui/environment_session.rs, src/ui/session_navigator.rs]
+    static_check: script/check_session_navigator
+    tests: [environment_session_context_resolve_is_the_discovery_authority]
+    verification: cargo test --bin agentty-app environment_session_context --locked
+    evidence: "2026-08-05: EnvironmentSessionContext is discovery authority; UI session_navigator has no is_local discovery branch"
+  - id: SESSION-ROW-ACTIVATION-076
+    spec: SESSION-ROW-ACTIVATION-30
+    source: [docs/specs/SESSION_NAVIGATOR_SPEC.yaml, src/ui/session_navigator.rs, src/ui/tab_sidebar.rs]
+    static_check: script/check_session_navigator
+    tests: [activate_selects_row_before_carrier_focus, live_session_menu_uses_close_not_provider_delete, historical_delete_still_plans_provider_transaction]
+    verification: cargo test -p agentty-core activate_selects_row --locked && cargo test --bin agentty-app live_session_menu --locked && cargo test -p agentty-core historical_delete_still_plans --locked
+    evidence: "2026-08-05: select-on-activate, live Close, historical delete plan; focused tests and quick presubmit passed"
   - id: I18N-COVERAGE-014
     spec: I18N-FULL-COVERAGE-04
-    source: [docs/specs/I18N_SPEC.yaml, assets/i18n/en-US.yaml, assets/i18n/zh-CN.yaml, src/core/i18n.rs, src/ui/settings.rs, src/ui/app.rs, src/ui/tab_strip.rs, src/ui/remote_workspace.rs, src/ui/palette.rs]
+    source: [docs/specs/I18N_SPEC.yaml, assets/i18n/en-US.yaml, assets/i18n/zh-CN.yaml, src/core/i18n.rs, src/ui/theme.rs, src/ui/tray/mod.rs, src/ui/settings.rs, src/ui/app.rs, src/ui/tab_strip.rs, src/terminal/view.rs, src/ui/remote_workspace.rs, src/ui/palette.rs, script/check_i18n]
     static_check: script/check_i18n
-    tests: [catalogs_have_identical_keys, format_replaces_named_placeholders, option_labels_translate_and_fall_back, escaped_newlines_render_as_real_newlines, chinese_queries_find_settings]
-    evidence: "2026-08-01: 519-key catalog covers settings/menus/dialogs/prompts/notifications and the full command palette; settings search now matches Chinese keywords via SearchEntry.keywords_zh; used-key-existence gate and hardcoded-literal allowlist gate added to script/check_i18n"
+    tests: [catalogs_have_identical_keys, format_replaces_named_placeholders, option_labels_translate_and_fall_back, escaped_newlines_render_as_real_newlines, chinese_queries_find_settings, menu_spec_shape]
+    verification: ./script/check_i18n && cargo test -p agentty-app --bin agentty-app catalogs_have_identical_keys option_labels_translate menu_spec_shape --locked
+    evidence: "2026-08-06: OS/tray/terminal context menus and major prompts/notifications wired through catalog; zh leftovers (Provider/Shell) and missing opt.2fa/gssapi/tmux filled; check_i18n also validates MenuItem::action and opt.* segmented labels"
   - id: I18N-SYSTEM-012
     spec: I18N-SYSTEM-DEFAULT-01
     source: [docs/specs/I18N_SPEC.yaml, src/core/i18n.rs, crates/agentty-core/src/core/config.rs]
     static_check: script/check_i18n
     tests: [locale_override_is_deterministic]
     evidence: "2026-07-31: system locale default and explicit zh-CN/en-US overrides implemented"
+  - id: I18N-SYSTEM-C-LOCALE-078
+    spec: I18N-SYSTEM-C-LOCALE-05
+    source: [docs/specs/I18N_SPEC.yaml, src/core/i18n.rs]
+    static_check: script/check_i18n
+    tests: [neutral_posix_lang_is_not_a_language_preference]
+    verification: cargo test --bin agentty-app --locked neutral_posix_lang_is_not_a_language_preference
+    evidence: "2026-08-06: C/POSIX/C.UTF-8 LANG no longer forces en-US over AppleLanguages zh (FEEDBACK-20260806-004)"
   - id: I18N-KEYS-013
     spec: I18N-STABLE-KEYS-02
     source: [docs/specs/I18N_SPEC.yaml, src/core/i18n.rs, src/ui/tab_sidebar.rs, src/ui/composer.rs]
     static_check: script/check_i18n
     tests: [catalogs_have_identical_keys]
     evidence: "2026-07-31: Agent-first product strings use stable keys while raw errors and identifiers remain unchanged"
+  - id: INPUT-COMPOSER-SMART-079
+    spec: INPUT-COMPOSER-SMART-PREFERENCE-05
+    source: [docs/specs/INPUT_EXPERIENCE_SPEC.yaml, crates/agentty-core/src/core/config.rs, src/ui/composer.rs, src/ui/app.rs, src/ui/keymap.rs, assets/i18n/en-US.yaml, assets/i18n/zh-CN.yaml]
+    static_check: script/check_i18n
+    tests: [composer_mode_cycles_and_auto_hides_plain_shells, drafts_are_isolated_per_pane, new_terminal_prefs_default_and_parse_leniently]
+    verification: cargo test -p agentty-core new_terminal_prefs_default_and_parse_leniently --lib --locked && cargo test --bin agentty-app composer_mode_cycles_and_auto_hides_plain_shells --locked && ./script/presubmit quick
+    evidence: "2026-08-07: composer_mode auto/always/off persisted; Auto docks for CLI agent panes; ToggleComposer cycles and saves (FEEDBACK-20260807-002)"
+  - id: INPUT-COMPOSER-ACTIVITY-BAR-085
+    spec: INPUT-COMPOSER-ACTIVITY-BAR-07
+    source: [docs/specs/INPUT_EXPERIENCE_SPEC.yaml, src/ui/composer.rs, src/ui/activity_bar.rs, src/ui/app.rs, assets/i18n/en-US.yaml, assets/i18n/zh-CN.yaml]
+    static_check: script/check_ui_visual_system
+    tests: [activity_bar_toggles_composer_without_mutating_mode]
+    verification: cargo test --bin agentty-app activity_bar_toggles_composer_without_mutating_mode --locked && ./script/check_ui_visual_system && ./script/presubmit quick
+    evidence: "Pending implementation and interactive installed-app verification (FEEDBACK-20260809-004)"
+  - id: SESSION-GEMINI-DISCOVERY-080
+    spec: SESSION-GEMINI-DISCOVERY-32
+    source: [docs/specs/SESSION_NAVIGATOR_SPEC.yaml, crates/agentty-core/src/agent_runtime/provider.rs, crates/agentty-core/src/agent_runtime/stores.rs, crates/agentty-core/src/agent_runtime/service.rs, crates/agentty-core/src/agent_runtime/parse.rs, crates/agentty-core/src/core/cli_agent.rs]
+    static_check: script/check_session_navigator
+    tests: [gemini_discovery_reads_tmp_chats_and_skips_session_context_titles, gemini_discovery_ignores_antigravity_cli_tree, gemini_resume_uses_native_resume_flag, expanded_provider_parsers_extract_native_identity_title_and_cwd]
+    verification: cargo test -p agentty-core gemini_discovery_ --lib --locked && cargo test -p agentty-core gemini_resume_uses_native_resume_flag --lib --locked && ./script/presubmit quick
+    evidence: "2026-08-07: Gemini CLI ~/.gemini/tmp/<slug>/chats/session-*.jsonl discovery with .project_root cwd (FEEDBACK-20260807-001)"
+  - id: SESSION-DISCOVERY-TIMEOUT-081
+    spec: SESSION-DISCOVERY-TIMEOUT-VISIBLE-33
+    source: [docs/specs/SESSION_NAVIGATOR_SPEC.yaml, src/ui/session_navigator.rs, assets/i18n/en-US.yaml, assets/i18n/zh-CN.yaml]
+    static_check: script/check_session_navigator
+    tests: [discovery_timeout_maps_to_localized_scan_error]
+    verification: cargo test --bin agentty-app discovery_timeout_maps_to_localized_scan_error --locked && ./script/presubmit quick
+    evidence: "2026-08-07: DiscoverAgentSessions timeout leaves Discovering and shows navigator.scan_timed_out (FEEDBACK-20260806-010)"
+  - id: HELPER-VERSION-MISMATCH-NOTICE-082
+    spec: HELPER-VERSION-MISMATCH-NOTICE-13
+    source: [docs/specs/REMOTE_HELPER_SPEC.yaml, src/ui/remote_connect.rs, src/ui/remote_workspace.rs, src/ui/app.rs, crates/agentty-core/src/daemon/install/mod.rs]
+    static_check: script/check_remote_helper
+    tests: [remote_mismatch_remains_after_modal_cancel, every_remote_mismatch_action_routes_to_replace_server]
+    verification: cargo test --bin agentty-app remote_mismatch_remains_after_modal_cancel --locked && cargo test --bin agentty-app every_remote_mismatch_action_routes_to_replace_server --locked && ./script/presubmit quick
+    evidence: "2026-08-09 every_remote_mismatch_action_routes_to_replace_server and remote_mismatch_remains_after_modal_cancel passed; modal, notice, and switcher use canonical ReplaceServer; failed replacement retains the pending affordance (FEEDBACK-20260809-005)"
+  - id: REMOTE-HELPER-DIALECT-SKEW-084
+    spec: REMOTE-HELPER-DIALECT-SKEW-14
+    source: [docs/specs/REMOTE_HELPER_SPEC.yaml, crates/agentty-core/src/daemon/control.rs, crates/agentty-core/src/daemon/install/mod.rs, src/ui/switcher.rs, src/ui/remote_connect.rs, src/ui/remote_workspace.rs, src/ui/app.rs, assets/i18n/en-US.yaml, assets/i18n/zh-CN.yaml]
+    static_check: script/check_remote_helper
+    tests: [provider_enum_growth_advances_the_control_dialect, known_dialect_skew_offers_only_replace_server, remote_mismatch_remains_after_modal_cancel, every_remote_mismatch_action_routes_to_replace_server, replacing_prefers_a_matching_bundled_helper]
+    verification: cargo test -p agentty-core provider_enum_growth_advances_the_control_dialect --lib --locked && cargo test --bin agentty-app known_dialect_skew_offers_only_replace_server --locked && cargo test --bin agentty-app every_remote_mismatch_action_routes_to_replace_server --locked && cargo test -p agentty-core replacing_prefers_a_matching_bundled_helper --lib --locked && ./script/presubmit full
+    evidence: "2026-08-09 control v7 fail-closed handshake, replace-only UI, bundled-first installer, and live dnyx226 c6p5-to-c7p5 replacement verified; post-replacement live control link and presubmit full passed; packaged x86 helper sha256 7e930ee6ef69bab97bbc095c3c96726f391f7d7919f634f0a600e2fd9600a8c1 (FEEDBACK-20260809-001, FEEDBACK-20260809-005)"
   - id: INPUT-COMPOSER-PLAN-014
     spec: INPUT-COMPOSER-OPTIONAL-01
     source: [docs/design/AGENTTY_DEVELOPMENT_PLAN.md, src/ui/composer.rs, src/ui/palette.rs]
@@ -142,6 +612,13 @@ entries:
     static_check: script/check_remote_helper
     tests: [stale_generation_is_ignored, failed_dynamic_source_preserves_deterministic_candidates, a_remote_pane_completes_commands_but_never_local_paths, a_remote_pane_never_runs_a_generator]
     evidence: "2026-07-31: shared deterministic-first completion model and 34 focused GUI completion tests passed"
+  - id: INPUT-COMPLETION-SURFACE-083
+    spec: INPUT-COMPLETION-EDITOR-SURFACE-06
+    source: [docs/specs/INPUT_EXPERIENCE_SPEC.yaml, src/ui/completion_surface.rs, src/ui/composer.rs, src/ui/app.rs, src/terminal/view.rs, src/ui/keymap.rs]
+    static_check: script/check_completion_surface
+    tests: [composer_completion_accepts_into_draft_not_submit, completion_focus_owner_is_composer_or_terminal_not_both, apply_replacement_mutates_only_target_range]
+    verification: cargo test --bin agentty-app composer_completion_accepts_into_draft_not_submit --locked && cargo test --bin agentty-app completion_focus_owner_is_composer_or_terminal_not_both --locked && ./script/presubmit quick
+    evidence: "2026-08-07: focused-editor CompletionSurface; composer Tab accepts into draft without submit (FEEDBACK-20260807-003)"
   - id: ENV-WINDOW-BOUNDARY-018
     spec: ENV-WINDOW-BOUNDARY-01
     source:
@@ -187,6 +664,18 @@ entries:
     tests:
       - environment_indicator_labels_local_and_remote_authority
     evidence: "2026-08-01: indicator moved from the window chrome to the leading edge of the content-column tab strip as a compact dot + name selector; state detail lives in the tooltip; focused tests and static boundary gate pass"
+  - id: ENV-PROFILE-LABEL-047
+    spec: ENV-PROFILE-DISPLAY-LABEL-12
+    source:
+      - docs/specs/ENVIRONMENT_MODEL_SPEC.yaml
+      - src/ui/remote_connect.rs
+      - src/ui/tab_strip.rs
+    static_check: script/check_environment_boundary
+    tests:
+      - profile_environment_uses_profile_name_without_changing_environment_identity
+      - missing_profile_uses_stable_non_uuid_label
+    verification: cargo test -p agentty profile_environment_uses_profile_name_without_changing_environment_identity --locked && cargo test -p agentty missing_profile_uses_stable_non_uuid_label --locked
+    evidence: "2026-08-03: saved profile names render without changing Environment identity; missing profiles use a stable non-UUID fallback; focused tests and full presubmit passed"
   - id: ENV-NAVIGATOR-022
     spec: ENV-NAVIGATOR-SEPARATION-05
     source:
@@ -256,16 +745,16 @@ entries:
     evidence: "2026-08-01: environment dedup claim test exists and passes; static boundary gate green"
   - id: HELPER-CAPABILITY-023
     spec: HELPER-CAPABILITY-NEGOTIATION-01
-    source: [docs/specs/REMOTE_HELPER_SPEC.yaml, crates/agentty-core/src/daemon/control.rs, crates/agentty-core/src/host/server.rs]
+    source: [docs/specs/REMOTE_HELPER_SPEC.yaml, crates/agentty-core/src/daemon/control.rs, crates/agentty-core/src/host/server.rs, crates/agentty-core/src/host/remote.rs, crates/agentty-core/src/agent_runtime/adapter.rs]
     static_check: script/check_remote_helper
-    tests: [client_messages_round_trip, server_messages_round_trip, the_handshake_describes_this_server]
-    verification: cargo test -p agentty-core --lib --locked
-    evidence: "2026-07-31: control v5 and agent-helper capability covered by 811 passing agentty-core tests"
+    tests: [client_messages_round_trip, server_messages_round_trip, the_handshake_describes_this_server, unavailable_capability_is_explicit, store_roots_derive_from_hello_home_when_omitted]
+    verification: cargo test -p agentty-core store_roots_derive_from_hello_home_when_omitted unavailable_capability_is_explicit --lib --locked
+    evidence: "2026-08-05: discovery_available accepts home-derived roots without agent-helper; activity/completion remain feature-gated (FEEDBACK-20260805-028)"
   - id: HELPER-SHARED-CORE-024
     spec: HELPER-SHARED-CORE-02
     source: [docs/specs/REMOTE_HELPER_SPEC.yaml, crates/agentty-core/src/agent_runtime/service.rs, crates/agentty-core/src/agent_runtime/adapter.rs]
     static_check: script/check_remote_helper
-    tests: [registry_rejects_duplicate_provider_ids, codex_and_claude_discovery_uses_one_shared_host_core, huge_transcripts_are_scanned_via_bounded_head_read, only_the_most_recent_candidates_are_parsed]
+    tests: [every_provider_id_has_one_descriptor, codex_and_claude_discovery_uses_one_shared_host_core, huge_transcripts_are_scanned_via_bounded_head_read, only_the_most_recent_candidates_are_parsed]
     evidence: "2026-08-01: Codex and Claude discovery uses one Host-based core for local and remote adapters; head-read fallback plus recent-candidate cut bound the per-scan I/O"
   - id: HELPER-DISCOVERY-025
     spec: HELPER-DISCOVERY-ATOMIC-03
@@ -303,12 +792,58 @@ entries:
     static_check: script/check_remote_helper
     tests: [helper_hello_reports_protocol_and_capabilities, server_messages_round_trip]
     evidence: "2026-08-01: wire-level round trip asserts protocol, all five capabilities, build, instance, hash, and install outcome without a second daemon"
+  - id: HELPER-BUNDLED-INSTALL-032
+    spec: HELPER-BUNDLED-INSTALL-10
+    source: [docs/specs/REMOTE_HELPER_SPEC.yaml, crates/agentty-core/src/daemon/install/mod.rs, crates/agentty-core/src/daemon/install/wsl.rs, .github/workflows/ci.yml, .github/workflows/release.yml, .github/workflows/nightly.yml, .github/scripts/bundle-macos.sh, .github/scripts/bundle-windows.ps1, .github/scripts/bundle-linux.sh, .github/scripts/bundle-appimage.sh]
+    static_check: script/check_remote_helper
+    tests: [an_implicit_bundle_that_lacks_the_asset_falls_back_to_the_release, an_explicit_bundle_that_lacks_the_asset_does_not_fall_back_to_the_network, a_bundled_first_install_does_not_prompt_for_download_approval, the_search_order_is_specific_first_and_deduplicated]
+    verification: cargo test -p agentty-core daemon::install --lib --locked
+    evidence: "2026-08-01: both musl helpers were built, bundled, installed byte-identically in /Applications/Agentty.app, and exercised through live_open_remote_link_full_chain against 172.16.70.226; macOS DMG verification, deep strict ad-hoc codesign, and installed GUI/daemon launch passed"
+  - id: AUDIT-SYSTEMATIC-FEATURE-GAPS-037
+    spec: AUDIT-SYSTEMATIC-FEATURE-GAPS-01
+    source: [docs/specs/FEATURE_GAP_AUDIT_SPEC.yaml, docs/quality/ASHIDE_AGENTTY_FEATURE_GAP_AUDIT.yaml, docs/quality/development-tracker.yaml, docs/quality/ASHIDE_FALLBACK_ASSET_MATRIX.yaml]
+    static_check: script/check_feature_gap_audit
+    tests: [feature_gap_audit_contract]
+    verification: ./script/check_feature_gap_audit
+    evidence: "2026-08-02: source-grounded audit covers tracked Agentty domains and Ashide Navigator assets across all eleven required dimensions; feature_gap_audit_contract passed"
+  - id: AUDIT-REFERENCE-HISTORY-038
+    spec: AUDIT-REFERENCE-HISTORY-02
+    source: [docs/specs/FEATURE_GAP_AUDIT_SPEC.yaml, docs/quality/ASHIDE_AGENTTY_FEATURE_GAP_AUDIT.yaml]
+    static_check: script/check_feature_gap_audit
+    tests: [feature_gap_audit_contract]
+    evidence: "2026-08-02: six rejected historical models and their negative tests are recorded, including Ashide fix commit 15f1f1d"
+  - id: AUDIT-EVIDENCE-STATUS-039
+    spec: AUDIT-EVIDENCE-STATUS-03
+    source: [docs/specs/FEATURE_GAP_AUDIT_SPEC.yaml, docs/quality/ASHIDE_AGENTTY_FEATURE_GAP_AUDIT.yaml, docs/quality/development-tracker.yaml]
+    static_check: script/check_feature_gap_audit
+    tests: [feature_gap_audit_contract]
+    evidence: "2026-08-02: Session Navigator aggregate spec remains in_progress; narrow verified contracts no longer conceal independent alias, pin, reorder, hover, keyboard, state, and delete gaps"
+  - id: AUDIT-PREIMPLEMENTATION-RED-040
+    spec: AUDIT-PREIMPLEMENTATION-RED-04
+    source: [docs/specs/FEATURE_GAP_AUDIT_SPEC.yaml, docs/quality/ASHIDE_AGENTTY_FEATURE_GAP_AUDIT.yaml, docs/quality/development-tracker.yaml]
+    static_check: script/check_feature_gap_audit
+    tests: [feature_gap_audit_contract]
+    evidence: "2026-08-02: every partial or missing capability declares target artifacts, preimplementation tests, and pending red-test evidence; implementation remains frozen until promotion"
+  - id: AUDIT-EIGHT-PRINCIPLES-GATE-041
+    spec: AUDIT-EIGHT-PRINCIPLES-GATE-05
+    source: [AGENTS.md, docs/specs/FEATURE_GAP_AUDIT_SPEC.yaml, script/check_feature_gap_audit]
+    static_check: script/check_feature_gap_audit
+    tests: [feature_gap_audit_contract]
+    verification: ./script/check_feature_gap_audit
+    evidence: "2026-08-02: AGENTS.md contains exactly eight principles and the mandatory preimplementation recital; static and mutation-fixture checks passed"
+  - id: PACKAGE-CLEANUP-036
+    spec: PACKAGE-CLEAN-BEFORE-BUILD-11
+    source: [AGENTS.md, docs/specs/REMOTE_HELPER_SPEC.yaml, .github/scripts/bundle-macos.sh, .github/scripts/bundle-windows.ps1, .github/scripts/bundle-linux.sh, .github/scripts/bundle-appimage.sh, script/check_package_cleanup]
+    static_check: script/check_package_cleanup
+    tests: []
+    verification: ./script/check_package_cleanup
+    evidence: "2026-08-01: macOS DMG, Linux tarball/AppImage, and Windows zip/setup remove their own stale stage and package outputs before reading package inputs; scoped cleanup static gate and quick presubmit passed"
   - id: HELPER-PARITY-031
     spec: HELPER-LOCAL-REMOTE-PARITY-09
     source: [docs/specs/REMOTE_HELPER_SPEC.yaml, docs/quality/ASHIDE_FALLBACK_ASSET_MATRIX.yaml, crates/agentty-core/src/agent_runtime/adapter.rs]
     static_check: script/check_remote_helper
-    tests: [codex_and_claude_discovery_uses_one_shared_host_core, remote_authority_never_falls_back_to_local_rows]
-    evidence: "2026-07-31: local direct adapter and capability-gated remote RPC share the same discovery core"
+    tests: [codex_and_claude_discovery_uses_one_shared_host_core, remote_authority_never_falls_back_to_local_rows, store_roots_derive_from_hello_home_when_omitted]
+    evidence: "2026-08-05: local direct adapter and remote discovery_available (feature or home-derived roots) share the same discovery core; activity remains agent-helper gated"
   - id: IDENTITY-CANONICAL-027
     spec: IDENTITY-CANONICAL-01
     source: [docs/specs/PRODUCT_IDENTITY_SPEC.yaml, .github/scripts/bundle-macos.sh, AGENTS.md]
@@ -340,3 +875,10 @@ entries:
     static_check: script/check_agentty_identity
     tests: []
     evidence: "2026-07-31: executable and protocol rename boundaries inventoried for atomic follow-up"
+  - id: REMOTE-FIRST-PANE-MATERIALIZATION-046
+    spec: REMOTE-FIRST-PANE-MATERIALIZATION-12
+    source: [docs/specs/REMOTE_HELPER_SPEC.yaml, src/ui/tree_sync.rs, src/ui/app.rs, src/ui/pending_pane.rs]
+    static_check: script/check_remote_helper
+    tests: [link_up_hydration_preserves_pending_local_tree_commit, failed_remote_tree_commit_cleans_orphan_and_surfaces_retryable_error]
+    verification: cargo test -p agentty link_up_hydration_preserves_pending_local_tree_commit --lib --locked
+    evidence: "2026-08-03: the 2026-08-02 orphaned first-pane reproduction is closed; link-up hydration preserves the pending local tree commit, refused tree mutation removes the unreferenced remote pane and exposes a retryable error, the focused tests pass, and full presubmit passed."

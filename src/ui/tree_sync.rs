@@ -162,6 +162,7 @@ fn desired_node(pane: &Pane, remote_window: bool, cx: &App) -> Option<DesiredNod
                 let session = view.agent_session();
                 AgentFacts {
                     agent,
+                    container_id: Some(view.live_binding().container_id.clone()),
                     session_id: session.as_ref().and_then(|s| s.session_id.clone()),
                     launch_argv: session.as_ref().and_then(|s| s.launch_argv.clone()),
                     status: None,
@@ -182,10 +183,11 @@ fn desired_node(pane: &Pane, remote_window: bool, cx: &App) -> Option<DesiredNod
         Pane::Leaf(PaneSlot::Connecting(pending)) => {
             let spawn = &pending.read(cx).spawn;
             let pane = spawn.restore_pane?;
-            let agent = spawn.agent.map(|agent| AgentFacts {
+            let agent = spawn.live_binding.agent.map(|agent| AgentFacts {
                 agent,
-                session_id: spawn.agent_session_id.clone(),
-                launch_argv: spawn.agent_launch_argv.clone(),
+                container_id: Some(spawn.live_binding.container_id.clone()),
+                session_id: spawn.live_binding.session_id.clone(),
+                launch_argv: Some(spawn.live_binding.launch_argv.clone()),
                 status: None,
             });
             Some(DesiredNode::Leaf {
@@ -1016,28 +1018,106 @@ fn pump(cx: &mut App, client_ws: WorkspaceId) {
         let result = cx
             .background_executor()
             .spawn(async move {
+                let mut committed = Vec::new();
                 for op in batch {
                     if let Err(e) = client.call(op.clone()) {
-                        return Err((op, e));
+                        return (committed, Err((op, e)));
                     }
+                    committed.push(op);
                 }
-                Ok(())
+                (committed, Ok(()))
             })
             .await;
         cx.update(|cx| {
             if let Some(state) = cx.default_global::<TreeSync>().windows.get_mut(&client_ws) {
                 state.inflight = false;
             }
+            let (committed, result) = result;
+            settle_remote_materializations(cx, client_ws, &committed);
             match result {
                 Ok(()) => pump(cx, client_ws),
                 Err((op, e)) => {
                     log::warn!("tree operation {op:?} failed: {e}; re-pulling the tree");
+                    fail_remote_materialization(cx, client_ws, &op, e.to_string());
                     desync(cx, client_ws, "an operation was refused");
                 }
             }
         });
     })
     .detach();
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct RemoteMaterializationFailure {
+    pane: u64,
+    kill_orphan: bool,
+    retryable: bool,
+}
+
+fn materialized_pane(op: &ControlRequest) -> Option<u64> {
+    match op {
+        ControlRequest::TabCreate { pane, .. } => Some(pane.pane),
+        ControlRequest::PaneSplit { new, .. } | ControlRequest::PaneReplace { new, .. } => {
+            Some(new.pane)
+        }
+        _ => None,
+    }
+}
+
+fn remote_materialization_failure(op: &ControlRequest) -> Option<RemoteMaterializationFailure> {
+    materialized_pane(op).map(|pane| RemoteMaterializationFailure {
+        pane,
+        kill_orphan: true,
+        retryable: true,
+    })
+}
+
+fn settle_remote_materializations(
+    cx: &mut App,
+    client_ws: WorkspaceId,
+    committed: &[ControlRequest],
+) {
+    let panes: Vec<u64> = committed.iter().filter_map(materialized_pane).collect();
+    if panes.is_empty() {
+        return;
+    }
+    let Some(app) =
+        crate::ui::windows::WindowRegistry::app_for(cx, client_ws).and_then(|app| app.upgrade())
+    else {
+        return;
+    };
+    app.update(cx, |app, _cx| {
+        for pane in panes {
+            app.finish_remote_tree_materialization(pane);
+        }
+    });
+}
+
+fn fail_remote_materialization(
+    cx: &mut App,
+    client_ws: WorkspaceId,
+    op: &ControlRequest,
+    reason: String,
+) {
+    let Some(failure) = remote_materialization_failure(op) else {
+        return;
+    };
+    let handled = crate::ui::windows::WindowRegistry::app_for(cx, client_ws)
+        .and_then(|app| app.upgrade())
+        .is_some_and(|app| {
+            app.update(cx, |app, cx| {
+                failure.retryable && app.fail_remote_tree_materialization(failure.pane, reason, cx)
+            })
+        });
+    if !handled && failure.kill_orphan {
+        let route = crate::ui::remote_workspace::pane_route_for(cx, client_ws);
+        let pane = failure.pane;
+        cx.background_executor()
+            .spawn(async move {
+                crate::terminal::RemoteTerminal::kill_pane_on(&route, pane);
+            })
+            .detach();
+    }
 }
 
 fn desync(cx: &mut App, client_ws: WorkspaceId, why: &str) {
@@ -1093,9 +1173,16 @@ fn session_pane_from_node(node: &PaneNode, panes: &[PaneRecord]) -> SessionPane 
                 cwd,
                 pane_id: live.then_some(*pane),
                 ssh_spec,
-                agent: agent.as_ref().map(|a| a.agent),
-                agent_session_id: agent.as_ref().and_then(|a| a.session_id.clone()),
-                agent_launch_argv: agent.as_ref().and_then(|a| a.launch_argv.clone()),
+                live_binding: agent.map_or_else(Default::default, |agent| {
+                    agentty_core::core::session::LiveContainerBinding::restored(
+                        agent
+                            .container_id
+                            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+                        Some(agent.agent),
+                        agent.session_id,
+                        agent.launch_argv.unwrap_or_default(),
+                    )
+                }),
             }
         }
         PaneNode::Split { axis, ratio, a, b } => SessionPane::Split {
@@ -1123,25 +1210,30 @@ enum Adopt {
     Replace,
 }
 
+fn begin_hydration(state: &mut WsState, adopt: Adopt) -> u64 {
+    let dirty = matches!(state.sync, SyncPhase::Unprimed { dirty: true, .. });
+    state.sync = SyncPhase::Unprimed {
+        dirty,
+        priming: true,
+    };
+    state.queue.clear();
+    state.epoch += 1;
+    // This attempt takes over the debt; it re-records it if it fails too.
+    state.rehydrate = None;
+    let _ = adopt;
+    state.epoch
+}
+
 fn hydrate(cx: &mut App, client_ws: WorkspaceId, adopt: Adopt) {
     let host = WorkspaceStore::host_of(cx, client_ws);
     let machine_ws = tree_workspace_id(cx, client_ws);
-    let epoch = {
-        let state = cx
-            .default_global::<TreeSync>()
+    let epoch = begin_hydration(
+        cx.default_global::<TreeSync>()
             .windows
             .entry(client_ws)
-            .or_default();
-        state.sync = SyncPhase::Unprimed {
-            dirty: false,
-            priming: true,
-        };
-        state.queue.clear();
-        state.epoch += 1;
-        // This attempt takes over the debt; it re-records it if it fails too.
-        state.rehydrate = None;
-        state.epoch
-    };
+            .or_default(),
+        adopt,
+    );
     cx.spawn(async move |cx| {
         let deadline = std::time::Instant::now() + HYDRATE_LINK_DEADLINE;
         let client = loop {
@@ -1777,6 +1869,42 @@ mod tests {
                     .is_none()
             );
         });
+    }
+
+    #[test]
+    fn link_up_hydration_preserves_pending_local_tree_commit() {
+        let mut state = WsState::default();
+        state.sync = SyncPhase::Unprimed {
+            dirty: true,
+            priming: false,
+        };
+
+        begin_hydration(&mut state, Adopt::IfEmpty);
+
+        assert!(matches!(
+            state.sync,
+            SyncPhase::Unprimed {
+                dirty: true,
+                priming: true,
+            }
+        ));
+        assert!(state.rehydrate.is_none());
+    }
+
+    #[test]
+    fn failed_remote_tree_commit_cleans_orphan_and_surfaces_retryable_error() {
+        let pane = 41;
+        let failure = remote_materialization_failure(&ControlRequest::TabCreate {
+            workspace: WorkspaceId::new(),
+            at: Some(0),
+            pane: PaneSeed::bare(pane),
+            tab: Some(TabId::new()),
+        })
+        .expect("a refused pane-adopting operation must have an explicit cleanup plan");
+
+        assert_eq!(failure.pane, pane);
+        assert!(failure.kill_orphan);
+        assert!(failure.retryable);
     }
 
     #[gpui::test]
@@ -2489,6 +2617,7 @@ mod tests {
                 live: false,
                 agent: Some(AgentFacts {
                     agent: CLIAgent::Claude,
+                    container_id: Some("container-2".into()),
                     session_id: Some("sid".into()),
                     launch_argv: Some(vec!["claude".into()]),
                     status: None,
@@ -2522,8 +2651,7 @@ mod tests {
             SessionPane::Leaf {
                 pane_id,
                 cwd,
-                agent,
-                agent_session_id,
+                live_binding,
                 ..
             } => {
                 assert_eq!(
@@ -2531,8 +2659,9 @@ mod tests {
                     "a dead pane's leaf takes the fresh-spawn path — that is the revival"
                 );
                 assert_eq!(cwd.as_deref(), Some(std::path::Path::new("/work/api")));
-                assert_eq!(*agent, Some(CLIAgent::Claude));
-                assert_eq!(agent_session_id.as_deref(), Some("sid"));
+                assert_eq!(live_binding.agent, Some(CLIAgent::Claude));
+                assert_eq!(live_binding.session_id.as_deref(), Some("sid"));
+                assert_eq!(live_binding.container_id, "container-2");
             }
             _ => panic!("leaf"),
         }

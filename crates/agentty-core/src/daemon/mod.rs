@@ -1,6 +1,7 @@
 pub mod control;
 pub mod duplex;
 pub mod install;
+pub mod lease;
 pub mod pane;
 pub mod pidfile;
 pub mod procinfo;

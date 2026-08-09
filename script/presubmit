@@ -7,10 +7,21 @@ mode=${1:-quick}
 ./script/check_agentty_identity
 ./script/check_spec_matrix
 ./script/check_development_tracker
+./script/check_feature_gap_audit
 ./script/check_test_references
 ./script/check_environment_boundary
 ./script/check_remote_helper
+./script/check_local_runtime
+./script/check_package_cleanup
 ./script/check_session_navigator
+./script/check_completion_surface
+./script/check_cli_orchestration
+./script/check_terminal_smooth_scroll
+./script/check_fish_history
+./script/check_terminal_runtime
+./script/check_desktop_notifications
+./script/check_tab_switcher
+./script/check_ui_visual_system
 ./script/check_i18n
 bash .github/scripts/check-host-boundary.sh
 cargo fmt --check

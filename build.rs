@@ -1,4 +1,9 @@
+use std::collections::{HashMap, HashSet};
+use std::fs;
+use std::path::{Path, PathBuf};
+
 fn main() {
+    validate_i18n_catalogs("assets/i18n");
     #[cfg(windows)]
     {
         println!("cargo:rerun-if-changed=assets/favicon.ico");
@@ -8,4 +13,100 @@ fn main() {
             println!("cargo:warning=failed to embed Windows icon: {e}");
         }
     }
+}
+
+/// Compile-time fail-closed for I18N-EXHAUSTIVE-TRANSLATION-06: every shipped
+/// locale catalog must share one key set and every value must be non-empty.
+fn validate_i18n_catalogs(dir: &str) {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join(dir);
+    println!("cargo:rerun-if-changed={dir}");
+
+    let mut paths: Vec<PathBuf> = fs::read_dir(&root)
+        .unwrap_or_else(|e| panic!("{dir}: {e}"))
+        .filter_map(|entry| {
+            let entry = entry.ok()?;
+            let path = entry.path();
+            path.extension()
+                .is_some_and(|ext| ext == "yaml")
+                .then_some(path)
+        })
+        .collect();
+    paths.sort();
+
+    if paths.len() < 2 {
+        panic!("{dir}: expected at least two locale catalogs (*.yaml)");
+    }
+
+    let mut key_sets: Vec<(PathBuf, HashSet<String>)> = Vec::new();
+    for path in &paths {
+        println!("cargo:rerun-if-changed={}", path.display());
+        let keys = parse_catalog_keys(path);
+        key_sets.push((path.clone(), keys));
+    }
+
+    let (base_path, base_keys) = &key_sets[0];
+    for (path, keys) in &key_sets[1..] {
+        let only_base: Vec<_> = base_keys.difference(keys).cloned().collect();
+        let only_other: Vec<_> = keys.difference(base_keys).cloned().collect();
+        if !only_base.is_empty() || !only_other.is_empty() {
+            let mut msg = format!(
+                "i18n catalog key set divergence: {} vs {}",
+                base_path.display(),
+                path.display()
+            );
+            for key in only_base {
+                msg.push_str(&format!("\n  only in {}: {key}", base_path.display()));
+            }
+            for key in only_other {
+                msg.push_str(&format!("\n  only in {}: {key}", path.display()));
+            }
+            panic!("{msg}");
+        }
+    }
+
+    eprintln!(
+        "i18n catalogs ok: {} ({} keys)",
+        key_sets
+            .iter()
+            .map(|(p, _)| p.file_name().unwrap().to_string_lossy())
+            .collect::<Vec<_>>()
+            .join(", "),
+        base_keys.len()
+    );
+}
+
+fn parse_catalog_keys(path: &Path) -> HashSet<String> {
+    let text = fs::read_to_string(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+    let mut seen = HashMap::<String, usize>::new();
+    let mut keys = HashSet::new();
+
+    for (lineno, raw) in text.lines().enumerate() {
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let Some((key, value)) = line.split_once(':') else {
+            panic!("{}:{}: missing ':' separator", path.display(), lineno + 1);
+        };
+        let key = key.trim().to_string();
+        let mut value = value.trim();
+        if value.starts_with('"') && value.ends_with('"') && value.len() >= 2 {
+            value = &value[1..value.len() - 1];
+        }
+        if key.is_empty() {
+            panic!("{}:{}: empty key", path.display(), lineno + 1);
+        }
+        if let Some(first) = seen.insert(key.clone(), lineno + 1) {
+            panic!(
+                "{}:{}: duplicate key '{key}' (first at line {first})",
+                path.display(),
+                lineno + 1
+            );
+        }
+        if value.trim().is_empty() {
+            panic!("{}:{}: empty value for '{key}'", path.display(), lineno + 1);
+        }
+        keys.insert(key);
+    }
+    keys
 }

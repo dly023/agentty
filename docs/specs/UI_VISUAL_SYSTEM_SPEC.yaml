@@ -1,0 +1,89 @@
+version: 1
+updated: 2026-08-05
+domain: ui_visual_system
+contracts:
+  - id: UI-NOTICE-SURFACE-01
+    rule: Every floating status notice in the window uses one shared notice surface. Severity is a typed value with one pure mapping to its border tone and leading glyph — info uses the neutral border, warning uses the warning tone, and danger uses the danger tone. Notices keep a consistent container (popover fill, rounded corners, shadow, compact text) and place their primary action inside the same surface; no call site hand-rolls a divergent floating bar.
+    severity:
+      - info_neutral_border
+      - warning_tone_and_glyph
+      - danger_tone_and_glyph
+    forbidden:
+      - floating_notice_without_severity_glyph
+      - per_callsite_divergent_notice_chrome
+      - notice_action_outside_the_surface
+  - id: UI-TAB-HIERARCHY-02
+    rule: The tab strip expresses selection through explicit hierarchy, not a background tint alone. The active tab is an elevated surface with a border and a bottom accent indicator; inactive tabs stay flat with hover feedback only. The hierarchy derives from one pure mapping so drag, overflow, and density variants cannot silently drop the active cue.
+    forbidden:
+      - active_tab_marked_by_background_tint_alone
+      - accent_indicator_on_inactive_tabs
+      - hierarchy_computed_per_callsite
+  - id: UI-KBD-CHIP-03
+    rule: Every keyboard shortcut hint renders through one shared kbd chip surface — a boxed token with muted fill, border, radius, and centered text whose geometry comes from one pure metrics mapping. The home page, command palette, and settings keybinding editor all consume the same helper; no call site hand-rolls divergent keycap chrome.
+    forbidden:
+      - per_callsite_hand_rolled_keycap_chrome
+      - chord_geometry_defined_outside_the_shared_metrics
+  - id: UI-WELCOME-SURFACE-04
+    rule: The home welcome page presents one explicit hierarchy: the logo block, an optional localized tagline, the status notice, and one framed shortcut section whose rows pair a localized action label with kbd chips. Key hints never render as bare text, and the section geometry comes from one pure metrics mapping.
+    forbidden:
+      - bare_text_key_hints_on_the_welcome_page
+      - unframed_shortcut_list_touching_window_chrome
+  - id: UI-TAB-OVERFLOW-05
+    rule: When tabs exceed strip capacity, chips compress from the natural minimum to an explicit floor, and beyond the floor the strip renders a window of chips that always contains the active tab. Hidden tabs are represented by leading and trailing overflow affordances showing the hidden count, and activating an overflow affordance pages the window toward the hidden tabs. Tabs are never silently clipped without an affordance, and all capacity math comes from one pure mapping.
+    forbidden:
+      - silent_tab_clipping_without_overflow_affordance
+      - active_tab_outside_the_rendered_chip_window
+      - chip_floor_defined_per_callsite
+  - id: UI-TITLEBAR-CHROME-06
+    rule: The content-column title bar (middle column) anchors the Environment Indicator on the leading edge and a Command Palette icon affordance on the trailing edge — one left, one right. When the left Session Navigator rail is open (TabBarPosition::Left, chips hidden), a New Tab Plus affordance still sits beside the Environment Indicator via the same attach_new_tab_menu path used on the horizontal chip strip — left-rail layout must not hide New Tab. The overflow ellipsis app menu is removed; Settings is a direct icon tile in window chrome (right-panel title bar when that panel owns the trailing chrome, otherwise beside the right-panel toggle). Command Palette and Settings must not be nested together under a "…" dropdown.
+    placement:
+      - environment_indicator_leading_content_title_bar
+      - new_tab_plus_beside_environment_indicator_when_left_rail_open
+      - command_palette_trailing_content_title_bar
+      - settings_direct_icon_in_window_chrome
+    forbidden:
+      - ellipsis_app_menu_nesting_palette_and_settings
+      - command_palette_only_inside_nested_menu
+      - settings_only_inside_nested_menu
+      - left_rail_open_without_new_tab_affordance
+  - id: UI-AGENT-BRAND-ICON-07
+    rule: Branded CLIAgents use the bundled currentColor SVG silhouettes under assets/icons/agents. Every mark renders through one shared badge helper as a contrasting glyph on the agent's accent rounded plate so the silhouette stays visible at sidebar and tab density — white on dark accents by default; light-accent agents (Omp's omp.sh hero plate) use a dark or brand-purple glyph instead of white-on-light. Agents without a bundled mark use icons/bot.svg. Unbranded terminal tab avatars use the same rounded-rectangle plate radius band (unbranded_avatar_radius), never a circle. Orca/kooky raster or brand-filled marks that require color preservation are forbidden after they failed visibility at small sizes. Brand silhouettes must reach comparable optical fill inside the shared badge — lace or ring marks (Codex blossom) are cropped or scaled so they do not read significantly smaller than dense siblings; per-agent glyph_size overrides at call sites are forbidden.
+    forbidden:
+      - ad_hoc_per_callsite_brand_badge_geometry
+      - orca_or_kooky_raster_brand_marks
+      - color_preserving_neutral_plate_that_hides_the_glyph
+      - white_glyph_on_light_accent_plate
+      - circular_unbranded_tab_avatar_plate
+      - optically_underfilled_brand_silhouette_vs_siblings
+      - per_agent_glyph_size_override_at_callsite
+  - id: UI-DEFAULT-THEME-PRESET-11
+    rule: Config::default() selects the colorful dark Dracula preset (theme_preset and legacy theme field both "dracula") so a fresh development or first-run terminal is not a monochrome light black-on-white surface. theme_preset_light remains "light" and theme_preset_dark remains "dark" for system-follow slots; users may still pick any builtin. Existing on-disk config.json is never rewritten by this default.
+    forbidden:
+      - default_theme_preset_is_monochrome_light
+  - id: UI-PANEL-EDGE-GUTTER-08
+    rule: Vertical panel splits and side-panel window edges share one content gutter and one chrome-tile inset. The Session Navigator outer gutter, the right-panel body/search horizontal padding, file-tree column padding, outline/changes lists, and every other side-panel content lead all consume the same panel_content_gutter authority (CONTENT_INSET). Chrome tiles that sit against a split — left-sidebar trailing actions, content-column title-bar controls next to an open sidebar, right-panel leading tabs, and the content-column trailing Command Palette — consume the same panel_split_chrome_inset authority (tile_trailing_inset). Call sites must not invent divergent split-adjacent padding literals.
+    authorities:
+      - panel_content_gutter_equals_CONTENT_INSET
+      - panel_split_chrome_inset_equals_tile_trailing_inset
+    forbidden:
+      - left_and_right_panel_divergent_content_gutters
+      - content_column_trailing_flush_against_open_right_split
+      - ad_hoc_split_hug_literal_beside_tile_trailing_inset
+      - file_tree_or_panel_list_px_divergent_from_panel_content_gutter
+  - id: UI-SIDE-PANEL-SEARCH-09
+    rule: Session Navigator search and right-panel filter inputs share one framed search surface — bordered, muted fill, rounded corners, fixed height — from side_panel_search_surface / side_panel_search_metrics. Neither side may render a bare icon+input without that control surface.
+    forbidden:
+      - bare_side_panel_search_input_without_framed_surface
+      - left_and_right_search_chrome_divergent
+  - id: UI-SIDE-PANEL-EMPTY-10
+    rule: Side-panel empty states (Session Navigator and right-panel Info/Outline/Changes/Activity) render through one glyph-above-message surface (side_panel_empty_surface) with a leading IconName, primary message, and optional hint. Bare text-only empties are forbidden.
+    forbidden:
+      - bare_text_only_side_panel_empty_state
+      - empty_state_without_leading_glyph
+  - id: UI-SIDE-PANEL-SCROLL-11
+    rule: Side-panel vertical lists (Session Navigator, file tree, and other with_vertical_scrollbar consumers) never keep a permanent Always scrollbar. The shared scroll helper forces ScrollbarShow::Scrolling so the thumb appears while scrolling/interacting and fades when idle. When the list can scroll further down, a bottom overflow fade mask hints that more content exists; the fade clears when there is no overflow below. Theme chrome must not fall back to Always just because the OS prefers permanent scrollbars.
+    forbidden:
+      - always_visible_side_panel_scrollbar
+      - theme_always_scrollbar_overriding_side_panel_auto_hide
+      - overflow_without_bottom_fade_hint_when_more_below
+status: in_progress

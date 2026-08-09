@@ -2,6 +2,14 @@
 /dist
 .DS_Store
 
+# Locally built / downloaded musl helpers for packaging. CI uploads these as
+# workflow artifacts; never commit platform binaries into the source tree.
+/bundled-server/
+
+# Local pixel baselines (optional screenshots); notes YAML may still be committed.
+/docs/quality/baselines/*.png
+/docs/quality/baselines/*.jpg
+
 # Local dev-tool state — kept out of the repo but retained on disk.
 /CLAUDE.md
 /AGENTS.md

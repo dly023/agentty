@@ -82,6 +82,9 @@ pub enum Command {
     #[command(about = "Every agent on this machine: running, waiting for a reply, idle")]
     Agents,
 
+    #[command(about = "Block until a pane's agent reaches a requested state or the pane exits")]
+    Wait(WaitArgs),
+
     #[command(about = "Stream server events, one per line (NDJSON with --json)")]
     Events,
 
@@ -186,6 +189,63 @@ pub struct SendArgs {
 
     #[arg(long, help = "Press Enter after the text")]
     pub enter: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum WaitState {
+    Idle,
+    Working,
+    Waiting,
+    Done,
+    Exit,
+}
+
+impl WaitState {
+    pub fn name(self) -> &'static str {
+        match self {
+            WaitState::Idle => "idle",
+            WaitState::Working => "working",
+            WaitState::Waiting => "waiting",
+            WaitState::Done => "done",
+            WaitState::Exit => "exit",
+        }
+    }
+}
+
+#[derive(Debug, Args)]
+pub struct WaitArgs {
+    #[arg(
+        value_name = "%PANE",
+        help = "Pane to watch; defaults to $AGENTTY_PANE inside an agentty shell"
+    )]
+    pub target: Option<String>,
+
+    #[arg(
+        long,
+        value_name = "STATE,…",
+        value_delimiter = ',',
+        default_values = ["waiting", "done", "exit"],
+        help = "States that end the wait"
+    )]
+    pub until: Vec<WaitState>,
+
+    #[arg(long, value_name = "SECS", help = "Timeout with exit code 124")]
+    pub timeout: Option<u64>,
+
+    #[arg(
+        long,
+        help = "Ignore the initial state and wake only after the pane changes state or activity"
+    )]
+    pub changed: bool,
+
+    #[arg(
+        long,
+        value_name = "MS",
+        default_value_t = 500,
+        value_parser = clap::value_parser!(u64).range(50..=3_600_000),
+        help = "Polling interval"
+    )]
+    pub interval: u64,
 }
 
 #[derive(Debug, Args)]

@@ -218,6 +218,10 @@ fn settle_save(ok: bool, wrote_seq: u64, current_seq: u64, pending: bool) -> Sav
     }
 }
 
+fn watch_owner_is_stale(current: Option<&SharedHost>, next: &SharedHost) -> bool {
+    !current.is_some_and(|current| Arc::ptr_eq(current, next))
+}
+
 impl AgenttyApp {
     pub(crate) fn tab_code(&self) -> Option<&TabCode> {
         self.tabs.get(self.active)?.code.as_deref()
@@ -261,12 +265,7 @@ impl AgenttyApp {
             return;
         };
 
-        if !self
-            .editor
-            .watch_host
-            .as_ref()
-            .is_some_and(|opened_with| Arc::ptr_eq(opened_with, &host))
-        {
+        if watch_owner_is_stale(self.editor.watch_host.as_ref(), &host) {
             self.editor.watch = None;
             self.editor.watch_host = None;
             self.editor.watch_busy = false;
@@ -336,6 +335,10 @@ impl AgenttyApp {
                 }
             },
         );
+    }
+
+    pub(crate) fn editor_rebind_host(&mut self, cx: &mut Context<Self>) {
+        self.editor_watch_apply(cx);
     }
 
     pub(crate) fn open_file_in_editor(
@@ -950,11 +953,7 @@ impl AgenttyApp {
         let active = self.tab_code().and_then(|c| c.active_file());
         let name = active.map(|f| f.label());
         let dirty = active.is_some_and(|f| f.dirty);
-        let lead = if self.left_panel_open(cx) {
-            crate::ui::app::CONTENT_INSET
-        } else {
-            crate::ui::app::TITLE_BAR_LEAD
-        };
+        let lead = crate::ui::app::title_bar_content_lead(self.left_panel_open(cx));
         crate::ui::app::title_bar_drag(h_flex().id("editor-header"), "editor-header", window, cx)
             .flex_none()
             .h(px(crate::ui::app::TITLE_BAR_HEIGHT))
@@ -973,7 +972,9 @@ impl AgenttyApp {
                     .when(name.is_none(), |d| {
                         d.text_color(cx.theme().muted_foreground)
                     })
-                    .child(name.unwrap_or_else(|| SharedString::from("No file open"))),
+                    .child(name.unwrap_or_else(|| {
+                        SharedString::from(crate::core::i18n::current(cx, "editor.no_file"))
+                    })),
             )
             .when(dirty, |d| {
                 d.child(
@@ -1262,5 +1263,15 @@ mod tests {
                 requeue: false
             }
         );
+    }
+
+    #[test]
+    fn editor_watch_owner_detects_replaced_host_instance() {
+        let first = agentty_core::host::local::LocalHost::new();
+        let replacement = agentty_core::host::local::LocalHost::new();
+
+        assert!(!watch_owner_is_stale(Some(&first), &first));
+        assert!(watch_owner_is_stale(Some(&first), &replacement));
+        assert!(watch_owner_is_stale(None, &replacement));
     }
 }

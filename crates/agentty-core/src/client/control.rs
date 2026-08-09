@@ -156,6 +156,7 @@ mod tests {
             build: "unit".into(),
             separator: '/',
             home: "/home/unit".into(),
+            store_roots: None,
             features: vec![feature::CONTROL.into()],
             instance: "unit-instance".into(),
         }

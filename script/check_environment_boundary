@@ -20,6 +20,21 @@ rg -q 'open_or_focus_environment' src/ui/windows.rs || {
 rg -q 'environment_indicator' src/ui/tab_strip.rs || {
   echo '[environment] persistent top-right indicator is missing' >&2; exit 1;
 }
+rg -q 'ENV-PROFILE-DISPLAY-LABEL-12' docs/specs/ENVIRONMENT_MODEL_SPEC.yaml || {
+  echo '[environment] saved profile display-label contract is missing' >&2; exit 1;
+}
+rg -q 'ENV-SESSION-OPS-FACADE-15' docs/specs/ENVIRONMENT_MODEL_SPEC.yaml || {
+  echo '[environment] Environment session ops facade contract is missing' >&2; exit 1;
+}
+rg -q 'EnvironmentSessionContext' src/ui/environment_session.rs src/ui/session_navigator.rs || {
+  echo '[environment] EnvironmentSessionContext facade is missing' >&2; exit 1;
+}
+rg -U -q 'label_for\(\s*&remote\.target,\s*cx\s*\)' src/ui/tab_strip.rs || {
+  echo '[environment] indicator must resolve saved profile labels from the current registry' >&2; exit 1;
+}
+rg -q 'profile_environment_uses_profile_name_without_changing_environment_identity' src/ui/tab_strip.rs || {
+  echo '[environment] profile display-label regression coverage is missing' >&2; exit 1;
+}
 
 rg -q 'environment-windows.json' crates/agentty-core/src/core/session.rs || {
   echo '[environment] Environment window persistence is missing' >&2; exit 1;

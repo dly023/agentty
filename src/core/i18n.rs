@@ -3,9 +3,10 @@ use std::sync::OnceLock;
 
 pub use agentty_core::core::config::LocalePreference;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum Locale {
     ZhCn,
+    #[default]
     EnUs,
 }
 
@@ -33,13 +34,9 @@ fn system_locale() -> Locale {
             .filter(|v| !v.is_empty())
             .or_else(|| std::env::var("LC_MESSAGES").ok().filter(|v| !v.is_empty()))
             .or_else(|| std::env::var("LANG").ok())
-            .unwrap_or_default()
-            .to_ascii_lowercase();
-        if env.starts_with("zh") {
-            return Locale::ZhCn;
-        }
-        if !env.is_empty() {
-            return Locale::EnUs;
+            .unwrap_or_default();
+        if let Some(locale) = language_from_env(&env) {
+            return locale;
         }
         if macos_prefers_chinese() {
             Locale::ZhCn
@@ -47,6 +44,27 @@ fn system_locale() -> Locale {
             Locale::EnUs
         }
     })
+}
+
+/// Map a libc locale name to a UI language. Neutral POSIX/C locales are not
+/// language preferences (I18N-SYSTEM-C-LOCALE-05).
+fn language_from_env(env: &str) -> Option<Locale> {
+    let env = env.trim().to_ascii_lowercase();
+    if env.is_empty() || is_neutral_posix_locale(&env) {
+        return None;
+    }
+    if env.starts_with("zh") {
+        Some(Locale::ZhCn)
+    } else {
+        Some(Locale::EnUs)
+    }
+}
+
+fn is_neutral_posix_locale(env: &str) -> bool {
+    matches!(env, "c" | "posix")
+        || env.starts_with("c.")
+        || env.starts_with("c_")
+        || env.starts_with("posix.")
 }
 
 #[cfg(target_os = "macos")]
@@ -68,7 +86,49 @@ fn macos_prefers_chinese() -> bool {
     false
 }
 
+/// Validate a line-oriented catalog blob before it can ship.
+/// Empty values and duplicate keys are hard failures (I18N-EXHAUSTIVE-TRANSLATION-06).
+pub fn catalog_integrity_errors(input: &str) -> Vec<String> {
+    let mut errors = Vec::new();
+    let mut seen = HashMap::new();
+    for (lineno, raw) in input.lines().enumerate() {
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let Some((key, value)) = line.split_once(':') else {
+            errors.push(format!("line {}: missing ':' separator", lineno + 1));
+            continue;
+        };
+        let key = key.trim();
+        let mut value = value.trim();
+        if let Some(inner) = value.strip_prefix('"').and_then(|v| v.strip_suffix('"')) {
+            value = inner;
+        }
+        if key.is_empty() {
+            errors.push(format!("line {}: empty key", lineno + 1));
+            continue;
+        }
+        if let Some(first) = seen.insert(key.to_string(), lineno + 1) {
+            errors.push(format!(
+                "line {}: duplicate key '{key}' (first at line {first})",
+                lineno + 1
+            ));
+            continue;
+        }
+        if value.trim().is_empty() {
+            errors.push(format!("line {}: empty value for '{key}'", lineno + 1));
+        }
+    }
+    errors
+}
+
 fn parse_catalog(input: &'static str) -> HashMap<&'static str, &'static str> {
+    let integrity = catalog_integrity_errors(input);
+    debug_assert!(
+        integrity.is_empty(),
+        "catalog integrity failed: {integrity:?}"
+    );
     input
         .lines()
         .filter_map(|line| {
@@ -77,10 +137,22 @@ fn parse_catalog(input: &'static str) -> HashMap<&'static str, &'static str> {
                 return None;
             }
             let (key, value) = line.split_once(':')?;
-            let value = value.trim();
+            let mut value = value.trim();
+            // YAML double-quotes protect colons / leading braces; strip them here.
+            if let Some(inner) = value.strip_prefix('"').and_then(|v| v.strip_suffix('"')) {
+                value = inner;
+            }
+            if value.trim().is_empty() {
+                return None;
+            }
             // Catalog files are line-based; multi-line messages escape newlines.
-            let value: &'static str = if value.contains("\\n") {
-                Box::leak(value.replace("\\n", "\n").into_boxed_str())
+            let value: &'static str = if value.contains("\\n") || value.contains("\\\"") {
+                Box::leak(
+                    value
+                        .replace("\\n", "\n")
+                        .replace("\\\"", "\"")
+                        .into_boxed_str(),
+                )
             } else {
                 value
             };
@@ -103,11 +175,17 @@ fn catalog(locale: Locale) -> &'static HashMap<&'static str, &'static str> {
 }
 
 pub fn tr(locale: Locale, key: &'static str) -> &'static str {
-    catalog(locale)
-        .get(key)
-        .copied()
-        .or_else(|| catalog(Locale::EnUs).get(key).copied())
-        .unwrap_or(key)
+    if let Some(value) = catalog(locale).get(key).copied() {
+        return value;
+    }
+    // Cross-locale fallback is a last resort for unknown keys. Shipped catalogs
+    // must already be exhaustive (I18N-EXHAUSTIVE-TRANSLATION-06); this path is
+    // for typos / future keys, not intentional blank translations.
+    debug_assert!(
+        locale == Locale::EnUs || catalog(Locale::EnUs).get(key).is_none(),
+        "preferred locale {locale:?} missing catalog key '{key}' that exists in en-US"
+    );
+    catalog(Locale::EnUs).get(key).copied().unwrap_or(key)
 }
 
 pub fn current(cx: &gpui::App, key: &'static str) -> &'static str {
@@ -180,6 +258,47 @@ mod tests {
     }
 
     #[test]
+    fn catalog_entries_are_non_empty() {
+        for locale in [Locale::ZhCn, Locale::EnUs] {
+            for (key, value) in catalog(locale) {
+                assert!(
+                    !value.trim().is_empty(),
+                    "{locale:?} key '{key}' must not be blank"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn preferred_locale_never_needs_cross_locale_fallback() {
+        let en = catalog(Locale::EnUs);
+        let zh = catalog(Locale::ZhCn);
+        for key in en.keys() {
+            assert!(
+                zh.contains_key(key),
+                "zh-CN must define '{key}' without borrowing en-US at lookup time"
+            );
+        }
+        for key in zh.keys() {
+            assert!(
+                en.contains_key(key),
+                "en-US must define '{key}' so locales stay exhaustive peers"
+            );
+        }
+    }
+
+    #[test]
+    fn catalog_integrity_rejects_empty_and_duplicate_keys() {
+        let empty = catalog_integrity_errors("ok.key: value\nbad.key:\n");
+        assert!(empty.iter().any(|e| e.contains("empty value")), "{empty:?}");
+        let dup = catalog_integrity_errors("same.key: one\nsame.key: two\n");
+        assert!(dup.iter().any(|e| e.contains("duplicate key")), "{dup:?}");
+        assert!(catalog_integrity_errors("good.key: hi\n").is_empty());
+        assert!(catalog_integrity_errors(include_str!("../../assets/i18n/en-US.yaml")).is_empty());
+        assert!(catalog_integrity_errors(include_str!("../../assets/i18n/zh-CN.yaml")).is_empty());
+    }
+
+    #[test]
     fn format_replaces_named_placeholders() {
         let rendered = trf(Locale::EnUs, "home.reopen_tab", &[("name", "alpha")]);
         assert_eq!(rendered, "Reopen “alpha”");
@@ -204,6 +323,7 @@ mod tests {
     fn option_labels_translate_and_fall_back() {
         assert_eq!(tr_opt(Locale::ZhCn, "Off"), "关闭");
         assert_eq!(tr_opt(Locale::EnUs, "Off"), "Off");
+        assert_eq!(tr_opt(Locale::ZhCn, "2FA"), "两步验证");
         // Non-verbal values pass through untouched.
         assert_eq!(tr_opt(Locale::ZhCn, "8080"), "8080");
         assert_eq!(tr_opt(Locale::ZhCn, "tmux"), "tmux");
@@ -220,5 +340,16 @@ mod tests {
             tr(LocalePreference::EnUs.resolve(), "session.resume"),
             "Resume"
         );
+    }
+
+    #[test]
+    fn neutral_posix_lang_is_not_a_language_preference() {
+        assert_eq!(language_from_env(""), None);
+        assert_eq!(language_from_env("C"), None);
+        assert_eq!(language_from_env("POSIX"), None);
+        assert_eq!(language_from_env("C.UTF-8"), None);
+        assert_eq!(language_from_env("c.utf8"), None);
+        assert_eq!(language_from_env("zh_CN.UTF-8"), Some(Locale::ZhCn));
+        assert_eq!(language_from_env("en_US.UTF-8"), Some(Locale::EnUs));
     }
 }

@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+macos=.github/scripts/bundle-macos.sh
+linux=.github/scripts/bundle-linux.sh
+appimage=.github/scripts/bundle-appimage.sh
+windows=.github/scripts/bundle-windows.ps1
+
+for path in AGENTS.md "$macos" "$linux" "$appimage" "$windows"; do
+  [[ -f "$path" ]] || { echo "[package-cleanup] missing $path" >&2; exit 1; }
+done
+
+rg -q '^## 打包产物清理纪律$' AGENTS.md
+rg -q 'rm -rf "\$APP" "dist/dmg-stage" "dist/notarize.zip" "dist/agentty-\$\{VERSION\}-macos-\$\{ARCH\}\.dmg"' "$macos"
+rg -q 'rm -rf "\$STAGE" "dist/\$\{NAME\}\.tar\.gz"' "$linux"
+rg -q 'rm -rf "\$APPDIR" "dist/\$\{NAME\}\.AppImage"' "$appimage"
+rg -q 'Remove-Item -Recurse -Force \$Stage' "$windows"
+rg -q 'Remove-Item -Force "dist/\$Name\.zip", "dist/\$Name-setup\.exe"' "$windows"
+
+for path in "$macos" "$linux" "$appimage"; do
+  if rg -n 'rm -rf[[:space:]]+"?dist/"?([[:space:]]|$)|rm -rf[[:space:]]+"?dist/\*' "$path"; then
+    echo "[package-cleanup] $path must not delete sibling platform artifacts" >&2
+    exit 1
+  fi
+done
+if rg -n 'Remove-Item[^\n]*(dist/\*|dist/$)' "$windows"; then
+  echo '[package-cleanup] Windows packaging must not delete sibling artifacts' >&2
+  exit 1
+fi
+
+echo 'package cleanup contract passed'

@@ -7,6 +7,7 @@ use gpui_component::{Theme, ThemeMode};
 
 use crate::core::actions::*;
 use crate::core::config::Config;
+use crate::core::i18n;
 use crate::terminal::view::{
     ClearScrollback, CopyText, CutText, FindInTerminal, FindNext, FindPrevious, PasteText,
     RedoEdit, SelectAll, UndoEdit,
@@ -19,86 +20,87 @@ pub(crate) fn traffic_light_position() -> Point<Pixels> {
 }
 
 pub(crate) fn set_menus(cx: &mut App) {
+    let t = |key| i18n::current(cx, key);
     cx.set_menus([
-        Menu::new("agentty").items([
-            MenuItem::action("About agentty", About),
-            MenuItem::action("Check for Updates…", CheckForUpdates),
+        Menu::new(t("menu.bar.app")).items([
+            MenuItem::action(t("palette.cmd.about"), About),
+            MenuItem::action(t("palette.cmd.check_updates"), CheckForUpdates),
             MenuItem::separator(),
-            MenuItem::action("Settings…", OpenSettings),
+            MenuItem::action(t("palette.cmd.settings"), OpenSettings),
             MenuItem::separator(),
-            MenuItem::os_submenu("Services", SystemMenuType::Services),
+            MenuItem::os_submenu(t("menu.services"), SystemMenuType::Services),
             MenuItem::separator(),
-            MenuItem::action("Hide agentty", HideApp),
-            MenuItem::action("Hide Others", HideOthers),
-            MenuItem::action("Show All", ShowAll),
+            MenuItem::action(t("menu.hide_app"), HideApp),
+            MenuItem::action(t("menu.hide_others"), HideOthers),
+            MenuItem::action(t("menu.show_all"), ShowAll),
             MenuItem::separator(),
-            MenuItem::action("Quit agentty", Quit),
+            MenuItem::action(t("palette.cmd.quit"), Quit),
         ]),
-        Menu::new("File").items([
-            MenuItem::action("New Tab", NewTab),
-            MenuItem::action("New Workspace", NewWorkspace),
-            MenuItem::action("New Worktree Tab", NewWorktreeTab),
+        Menu::new(t("menu.bar.file")).items([
+            MenuItem::action(t("menu.new_tab"), NewTab),
+            MenuItem::action(t("menu.new_workspace"), NewWorkspace),
+            MenuItem::action(t("menu.new_worktree_tab"), NewWorktreeTab),
             MenuItem::separator(),
-            MenuItem::action("Split Right", SplitRight),
-            MenuItem::action("Split Down", SplitDown),
+            MenuItem::action(t("menu.split_right"), SplitRight),
+            MenuItem::action(t("menu.split_down"), SplitDown),
             MenuItem::separator(),
-            MenuItem::action("Rename Tab…", RenameTab),
-            MenuItem::action("Copy Working Directory", CopyWorkingDirectory),
-            MenuItem::action("Copy Session ID", CopyAgentSessionId),
-            MenuItem::action("Fork Session", ForkAgentSession),
+            MenuItem::action(t("palette.cmd.rename_tab"), RenameTab),
+            MenuItem::action(t("menu.copy_cwd"), CopyWorkingDirectory),
+            MenuItem::action(t("menu.copy_session_id"), CopyAgentSessionId),
+            MenuItem::action(t("menu.fork_session"), ForkAgentSession),
             MenuItem::separator(),
-            MenuItem::action("Close Pane / Tab", CloseActiveTab),
-            MenuItem::action("Close Other Tabs", CloseOtherTabs),
-            MenuItem::action("Close Tabs to the Right", CloseTabsToTheRight),
-            MenuItem::action("Reopen Closed Tab", ReopenClosedTab),
+            MenuItem::action(t("palette.cmd.close_pane"), CloseActiveTab),
+            MenuItem::action(t("menu.close_other_tabs"), CloseOtherTabs),
+            MenuItem::action(t("menu.close_tabs_right"), CloseTabsToTheRight),
+            MenuItem::action(t("menu.reopen_closed_tab"), ReopenClosedTab),
             MenuItem::separator(),
-            MenuItem::action("Rename Workspace…", RenameWorkspace),
-            MenuItem::action("Stop Workspace…", StopWorkspace),
+            MenuItem::action(t("menu.rename_workspace"), RenameWorkspace),
+            MenuItem::action(t("menu.stop_workspace"), StopWorkspace),
             MenuItem::separator(),
-            MenuItem::action("Delete Workspace…", DeleteWorkspace),
+            MenuItem::action(t("menu.delete_workspace"), DeleteWorkspace),
         ]),
-        Menu::new("Edit").items([
-            MenuItem::os_action("Undo", UndoEdit, OsAction::Undo),
-            MenuItem::os_action("Redo", RedoEdit, OsAction::Redo),
+        Menu::new(t("menu.bar.edit")).items([
+            MenuItem::os_action(t("menu.undo"), UndoEdit, OsAction::Undo),
+            MenuItem::os_action(t("menu.redo"), RedoEdit, OsAction::Redo),
             MenuItem::separator(),
-            MenuItem::os_action("Cut", CutText, OsAction::Cut),
-            MenuItem::os_action("Copy", CopyText, OsAction::Copy),
-            MenuItem::os_action("Paste", PasteText, OsAction::Paste),
-            MenuItem::os_action("Select All", SelectAll, OsAction::SelectAll),
+            MenuItem::os_action(t("menu.cut"), CutText, OsAction::Cut),
+            MenuItem::os_action(t("menu.copy"), CopyText, OsAction::Copy),
+            MenuItem::os_action(t("menu.paste"), PasteText, OsAction::Paste),
+            MenuItem::os_action(t("menu.select_all"), SelectAll, OsAction::SelectAll),
             MenuItem::separator(),
-            MenuItem::action("Find…", FindInTerminal),
-            MenuItem::action("Find Next", FindNext),
-            MenuItem::action("Find Previous", FindPrevious),
+            MenuItem::action(t("menu.find"), FindInTerminal),
+            MenuItem::action(t("menu.find_next"), FindNext),
+            MenuItem::action(t("menu.find_previous"), FindPrevious),
         ]),
-        Menu::new("View").items([
-            MenuItem::action("Command Palette…", TogglePalette),
+        Menu::new(t("menu.bar.view")).items([
+            MenuItem::action(t("menu.command_palette"), TogglePalette),
             MenuItem::separator(),
-            MenuItem::action("Increase Font Size", IncreaseFontSize),
-            MenuItem::action("Decrease Font Size", DecreaseFontSize),
-            MenuItem::action("Reset Font Size", ResetFontSize),
+            MenuItem::action(t("menu.increase_font"), IncreaseFontSize),
+            MenuItem::action(t("menu.decrease_font"), DecreaseFontSize),
+            MenuItem::action(t("menu.reset_font"), ResetFontSize),
             MenuItem::separator(),
-            MenuItem::action("Left Sidebar", ToggleLeftPanel),
-            MenuItem::action("Right Panel", ToggleRightPanel),
-            MenuItem::action("Code Panel", ToggleCodePanel),
-            MenuItem::action("Tab Bar Position", ToggleTabSidebar),
+            MenuItem::action(t("menu.left_sidebar"), ToggleLeftPanel),
+            MenuItem::action(t("menu.right_panel"), ToggleRightPanel),
+            MenuItem::action(t("menu.code_panel"), ToggleCodePanel),
+            MenuItem::action(t("menu.tab_bar_position"), ToggleTabSidebar),
             MenuItem::separator(),
-            MenuItem::action("Focus Next Pane", FocusNextPane),
-            MenuItem::action("Focus Previous Pane", FocusPrevPane),
-            MenuItem::action("Zoom Pane", ToggleMaximizePane),
+            MenuItem::action(t("menu.focus_next_pane"), FocusNextPane),
+            MenuItem::action(t("menu.focus_prev_pane"), FocusPrevPane),
+            MenuItem::action(t("palette.cmd.zoom_pane"), ToggleMaximizePane),
             MenuItem::separator(),
-            MenuItem::action("Clear Scrollback", ClearScrollback),
+            MenuItem::action(t("menu.clear_scrollback"), ClearScrollback),
             MenuItem::separator(),
-            MenuItem::action("Enter Full Screen", ToggleFullscreen),
+            MenuItem::action(t("menu.enter_fullscreen"), ToggleFullscreen),
         ]),
-        Menu::new("Window").items(window_menu_items(cx)),
-        Menu::new("Help").items([
-            MenuItem::action("agentty Documentation", OpenDocumentation),
-            MenuItem::action("Keyboard Shortcuts", ShowKeyboardShortcuts),
+        Menu::new(t("menu.bar.window")).items(window_menu_items(cx)),
+        Menu::new(t("menu.bar.help")).items([
+            MenuItem::action(t("menu.documentation"), OpenDocumentation),
+            MenuItem::action(t("menu.keyboard_shortcuts"), ShowKeyboardShortcuts),
             MenuItem::separator(),
-            MenuItem::action("Join the Discord", OpenDiscord),
-            MenuItem::action("Report an Issue…", ReportIssue),
+            MenuItem::action(t("menu.join_discord"), OpenDiscord),
+            MenuItem::action(t("menu.report_issue"), ReportIssue),
             MenuItem::separator(),
-            MenuItem::action("Restart Server…", RestartDaemon),
+            MenuItem::action(t("menu.restart_server"), RestartDaemon),
         ]),
     ]);
 }
@@ -114,8 +116,8 @@ fn window_menu_items(cx: &App) -> Vec<MenuItem> {
     let slot_action = crate::ui::tab_strip::select_workspace_action;
 
     let mut items = vec![
-        MenuItem::action("Minimize", MinimizeWindow),
-        MenuItem::action("Zoom", ZoomWindow),
+        MenuItem::action(i18n::current(cx, "menu.minimize"), MinimizeWindow),
+        MenuItem::action(i18n::current(cx, "menu.zoom"), ZoomWindow),
         MenuItem::separator(),
     ];
     let workspace_start = items.len();
@@ -132,7 +134,7 @@ fn window_menu_items(cx: &App) -> Vec<MenuItem> {
             }
         }
         let name = crate::ui::machine_mirror::display_name(cx, workspace)
-            .unwrap_or_else(|| "Untitled".to_string());
+            .unwrap_or_else(|| i18n::current(cx, "menu.untitled").to_string());
         let label = if *open {
             name
         } else {
@@ -151,7 +153,10 @@ fn window_menu_items(cx: &App) -> Vec<MenuItem> {
         });
     }
     if items.len() == workspace_start {
-        items.push(MenuItem::action("New Workspace", NewWorkspace));
+        items.push(MenuItem::action(
+            i18n::current(cx, "menu.new_workspace"),
+            NewWorkspace,
+        ));
     }
     items
 }
@@ -251,7 +256,6 @@ pub(crate) fn apply_theme(mut window: Option<&mut Window>, cx: &mut App) {
     let surfaces = theme.surfaces();
     let sem = theme.semantics();
     let active = theme.active_palette();
-    let auto_hide_scrollbars = cx.should_auto_hide_scrollbars();
 
     if let Some(window) = window.as_deref_mut() {
         let bg_appearance = if blur {
@@ -407,11 +411,9 @@ pub(crate) fn apply_theme(mut window: Option<&mut Window>, cx: &mut App) {
     t.tokens.scrollbar_thumb = scrollbar_thumb.into();
     t.tokens.scrollbar_thumb_hover = scrollbar_thumb_hover.into();
 
-    t.scrollbar_show = if auto_hide_scrollbars {
-        ScrollbarShow::Scrolling
-    } else {
-        ScrollbarShow::Always
-    };
+    // Side panels force Scrolling via SIDE_PANEL_SCROLLBAR_SHOW; theme chrome
+    // must not fall back to Always (UI-SIDE-PANEL-SCROLL-11).
+    t.scrollbar_show = ScrollbarShow::Scrolling;
 
     t.radius = px(8.);
 

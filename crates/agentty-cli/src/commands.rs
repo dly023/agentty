@@ -9,7 +9,7 @@ use crate::address::{self, Context, WorkspaceAddress};
 use crate::backend::{Backend, RunSpec};
 use crate::cli::{
     CaptureArgs, Cli, Command, MachineCmd, PaneCmd, RunArgs, SendArgs, ServerCmd, SplitArgs,
-    TabCmd, WsCmd,
+    TabCmd, WaitArgs, WaitState, WsCmd,
 };
 use crate::output;
 use crate::resolve;
@@ -87,6 +87,7 @@ pub fn execute(cli: Cli, ctx: &Context, backend: &mut dyn Backend) -> Result<Out
         }
         Some(Command::Events) => events(json_mode, backend),
         Some(Command::Agents) => agents(backend),
+        Some(Command::Wait(args)) => wait(args, ctx, backend),
         Some(Command::Status) | Some(Command::Server(ServerCmd::Status)) => status(backend),
         Some(Command::Machine(MachineCmd::Ls)) => machine_ls(backend),
         Some(Command::Machine(MachineCmd::Connect { .. }))
@@ -625,6 +626,115 @@ fn event_line(event: &ControlEvent) -> String {
         ControlEvent::LayoutResync => "layout resync".to_string(),
         other => format!("{other:?}"),
     }
+}
+
+fn wait(args: WaitArgs, ctx: &Context, backend: &mut dyn Backend) -> Result<Outcome> {
+    use std::time::{Duration, Instant};
+
+    const LIVENESS_EVERY: u32 = 4;
+    type Cursor = Option<(agentty_core::core::cli_agent::AgentStatus, u64)>;
+
+    let pane = address::pane_or_context(args.target.as_deref(), ctx)?;
+    let deadline = args
+        .timeout
+        .and_then(|seconds| Instant::now().checked_add(Duration::from_secs(seconds)));
+    let interval = Duration::from_millis(args.interval);
+    let mut baseline: Option<Cursor> = None;
+    let mut polls = 0_u32;
+
+    loop {
+        let states = match backend.control(ControlRequest::AgentStates)? {
+            ReplyOk::AgentStates(states) => states,
+            other => bail!("the server answered AgentStates with {other:?}"),
+        };
+        let entry = states.into_iter().find(|entry| entry.pane_id == pane);
+        let mut current = match &entry {
+            Some(entry) => match entry.state.status {
+                agentty_core::core::cli_agent::AgentStatus::Idle => WaitState::Idle,
+                agentty_core::core::cli_agent::AgentStatus::Working => WaitState::Working,
+                agentty_core::core::cli_agent::AgentStatus::Waiting => WaitState::Waiting,
+                agentty_core::core::cli_agent::AgentStatus::Done => WaitState::Done,
+            },
+            None => match fetch_machine(backend)?
+                .panes
+                .iter()
+                .find(|record| record.id == pane)
+            {
+                Some(record) if record.live => WaitState::Idle,
+                _ => WaitState::Exit,
+            },
+        };
+        let cursor = entry
+            .as_ref()
+            .map(|entry| (entry.state.status, entry.state.activity));
+        let initial = *baseline.get_or_insert(cursor);
+        let changed = cursor != initial;
+        let mut matched = args.until.contains(&current) && (!args.changed || changed);
+        polls += 1;
+
+        if !matched
+            && entry.is_some()
+            && polls.is_multiple_of(LIVENESS_EVERY)
+            && !pane_is_live(backend, pane)?
+        {
+            current = WaitState::Exit;
+            matched = args.until.contains(&current);
+        }
+
+        if matched || current == WaitState::Exit {
+            let session = entry.as_ref().map(|entry| &entry.state);
+            let status = current.name();
+            let response = json!({
+                "pane": pane,
+                "status": status,
+                "matched": matched,
+                "stale": !changed,
+                "activity": session.map(|state| state.activity),
+                "message": session.and_then(|state| state.message.clone()),
+                "session_id": session.and_then(|state| state.session_id.clone()),
+            });
+            if !matched {
+                return Ok(Outcome::Exit(
+                    1,
+                    Report {
+                        human: format!("pane %{pane} exited before reaching the awaited state"),
+                        json: response,
+                    },
+                ));
+            }
+            let mut human = format!("pane %{pane}: {status}");
+            if let Some(message) = session.and_then(|state| state.message.as_deref()) {
+                human.push_str(&format!(" — {message}"));
+            }
+            return report(human, response);
+        }
+
+        if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+            return Ok(Outcome::Exit(
+                124,
+                Report {
+                    human: format!("pane %{pane}: still {} — timed out", current.name()),
+                    json: json!({
+                        "pane": pane,
+                        "status": current.name(),
+                        "timed_out": true,
+                    }),
+                },
+            ));
+        }
+
+        let nap = deadline
+            .map(|deadline| interval.min(deadline.saturating_duration_since(Instant::now())))
+            .unwrap_or(interval);
+        std::thread::sleep(nap);
+    }
+}
+
+fn pane_is_live(backend: &mut dyn Backend, pane: u64) -> Result<bool> {
+    Ok(fetch_machine(backend)?
+        .panes
+        .iter()
+        .any(|record| record.id == pane && record.live))
 }
 
 fn agents(backend: &mut dyn Backend) -> Result<Outcome> {
@@ -1601,6 +1711,173 @@ mod tests {
             "machine 0 is always listed: {rendered}"
         );
         assert!(rendered.contains("me@build-box:22"), "{rendered}");
+    }
+
+    fn agent_state(
+        pane_id: u64,
+        status: agentty_core::core::cli_agent::AgentStatus,
+    ) -> agentty_core::daemon::control::PaneAgentState {
+        agent_state_at(pane_id, status, 0)
+    }
+
+    fn agent_state_at(
+        pane_id: u64,
+        status: agentty_core::core::cli_agent::AgentStatus,
+        activity: u64,
+    ) -> agentty_core::daemon::control::PaneAgentState {
+        agentty_core::daemon::control::PaneAgentState {
+            pane_id,
+            agent: None,
+            state: agentty_core::core::cli_agent::AgentSessionState {
+                status,
+                message: Some("needs permission".into()),
+                session_id: Some("sess-9".into()),
+                activity,
+                ..Default::default()
+            },
+        }
+    }
+
+    #[test]
+    fn wait_returns_when_agent_state_matches() {
+        use agentty_core::core::cli_agent::AgentStatus;
+        let mut backend = mock();
+        backend
+            .replies
+            .push_back(ReplyOk::AgentStates(vec![agent_state(
+                3,
+                AgentStatus::Waiting,
+            )]));
+        let json = json_of(run_cli(
+            &["agentty", "wait", "%3"],
+            &Context::default(),
+            &mut backend,
+        ));
+        assert_eq!(json["status"], "waiting");
+        assert_eq!(json["matched"], true);
+        assert_eq!(json["message"], "needs permission");
+        assert_eq!(json["session_id"], "sess-9");
+    }
+
+    #[test]
+    fn wait_treats_live_agentless_pane_as_idle() {
+        let mut backend = mock();
+        backend.replies.push_back(ReplyOk::AgentStates(vec![]));
+        let json = json_of(run_cli(
+            &["agentty", "wait", "%3", "--until", "idle"],
+            &Context::default(),
+            &mut backend,
+        ));
+        assert_eq!(json["status"], "idle");
+        assert_eq!(
+            backend.control_calls,
+            vec![ControlRequest::AgentStates, ControlRequest::MachineGet]
+        );
+    }
+
+    #[test]
+    fn wait_timeout_uses_exit_code_124() {
+        use agentty_core::core::cli_agent::AgentStatus;
+        let mut backend = mock();
+        backend
+            .replies
+            .push_back(ReplyOk::AgentStates(vec![agent_state(
+                3,
+                AgentStatus::Working,
+            )]));
+        match execute(
+            cli(&["agentty", "wait", "%3", "--until", "done", "--timeout", "0"]),
+            &Context::default(),
+            &mut backend,
+        )
+        .unwrap()
+        {
+            Outcome::Exit(124, report) => assert_eq!(report.json["timed_out"], true),
+            other => panic!("expected timeout exit, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn wait_refuses_unrequested_pane_exit() {
+        let mut backend = mock();
+        backend.replies.push_back(ReplyOk::AgentStates(vec![]));
+        let outcome = execute(
+            cli(&["agentty", "wait", "%99", "--until", "done"]),
+            &Context::default(),
+            &mut backend,
+        )
+        .expect("pane exit is a structured outcome");
+        match outcome {
+            Outcome::Exit(1, report) => {
+                assert_eq!(report.json["status"], "exit");
+                assert_eq!(report.json["matched"], false);
+            }
+            other => panic!("expected structured pane-exit failure, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn wait_changed_refuses_the_state_it_arrived_in() {
+        use agentty_core::core::cli_agent::AgentStatus;
+        let mut backend = mock();
+        backend
+            .replies
+            .push_back(ReplyOk::AgentStates(vec![agent_state_at(
+                3,
+                AgentStatus::Waiting,
+                0,
+            )]));
+        backend
+            .replies
+            .push_back(ReplyOk::AgentStates(vec![agent_state_at(
+                3,
+                AgentStatus::Waiting,
+                1,
+            )]));
+        let json = json_of(run_cli(
+            &[
+                "agentty",
+                "wait",
+                "%3",
+                "--until",
+                "waiting",
+                "--changed",
+                "--interval",
+                "50",
+            ],
+            &Context::default(),
+            &mut backend,
+        ));
+        assert_eq!(json["stale"], false);
+        assert_eq!(json["activity"], 1);
+    }
+
+    #[test]
+    fn wait_rechecks_liveness_for_a_reporting_agent() {
+        use agentty_core::core::cli_agent::AgentStatus;
+        let mut backend = mock();
+        backend
+            .machine
+            .panes
+            .iter_mut()
+            .find(|p| p.id == 3)
+            .unwrap()
+            .live = false;
+        for _ in 0..4 {
+            backend
+                .replies
+                .push_back(ReplyOk::AgentStates(vec![agent_state(
+                    3,
+                    AgentStatus::Working,
+                )]));
+        }
+        let json = json_of(run_cli(
+            &["agentty", "wait", "%3", "--interval", "50"],
+            &Context::default(),
+            &mut backend,
+        ));
+        assert_eq!(json["status"], "exit");
+        assert!(backend.control_calls.contains(&ControlRequest::MachineGet));
     }
 
     fn doctor_backend() -> MockBackend {

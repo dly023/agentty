@@ -8,6 +8,7 @@ pub const MAX_FRAME: usize = 64 * 1024 * 1024;
 pub const PROTOCOL_VERSION: u32 = 5;
 
 pub const FEATURE_PANE_OWNER: &str = "pane-owner";
+pub const FEATURE_RESIZE_ECHO: &str = "resize-echo";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DaemonVersion {
@@ -41,7 +42,10 @@ impl DaemonVersion {
         DaemonVersion {
             protocol: PROTOCOL_VERSION,
             build: build_stamp(),
-            features: vec![FEATURE_PANE_OWNER.to_string()],
+            features: vec![
+                FEATURE_PANE_OWNER.to_string(),
+                FEATURE_RESIZE_ECHO.to_string(),
+            ],
             instance: process_instance().to_string(),
         }
     }
@@ -2163,6 +2167,14 @@ mod tests {
         assert!(
             !v.has_feature(crate::daemon::control::feature::CONTROL),
             "the session daemon must not advertise a dialect it cannot serve"
+        );
+    }
+
+    #[test]
+    fn resize_echo_feature_is_advertised() {
+        assert!(
+            DaemonVersion::current().has_feature(FEATURE_RESIZE_ECHO),
+            "current daemons must advertise stream-ordered resize echoes"
         );
     }
 }

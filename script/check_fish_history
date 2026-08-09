@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+rg -q 'INPUT-FISH-HISTORY-AUTHORITY-09' docs/specs/INPUT_EXPERIENCE_SPEC.yaml
+rg -q '\.local/share/fish/fish_history' src/terminal/history.rs
+rg -q 'parse_fish_history_into' src/terminal/history.rs
+rg -q 'Vec<\(String, Vec<u8>\)>' src/terminal/history.rs
+rg -q 'a_remote_scope_routes_fish_bytes_by_source_name' src/terminal/history.rs
+if rg -n 'serde_yaml|yaml_rust' src/terminal/history.rs; then
+  echo '[fish-history] fish history must use fish escaping semantics, not YAML' >&2
+  exit 1
+fi
+echo 'fish history checks passed'

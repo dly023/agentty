@@ -771,4 +771,104 @@ mod tests {
             manager.evict_connection(conn.key());
         });
     }
+
+    #[test]
+    #[ignore = "requires a live SSH server and a local identity file"]
+    fn live_publickey_connects_with_identity_file() {
+        let host = std::env::var("AGENTTY_LIVE_SSH_HOST").expect("AGENTTY_LIVE_SSH_HOST");
+        let user = std::env::var("AGENTTY_LIVE_SSH_USER").expect("AGENTTY_LIVE_SSH_USER");
+        let port = std::env::var("AGENTTY_LIVE_SSH_PORT")
+            .ok()
+            .and_then(|p| p.parse::<u16>().ok())
+            .unwrap_or(22);
+        let identity = std::env::var("AGENTTY_LIVE_SSH_IDENTITY").ok();
+
+        let mut spec = base_spec();
+        spec.host = host;
+        spec.user = user;
+        spec.port = port;
+        spec.auth_mode = SshAuthMode::Auto;
+        spec.identity_files = identity.into_iter().collect();
+        spec.connect_timeout_s = Some(10);
+        spec.verify_host_keys = false;
+
+        let manager = SshManager::global();
+        let broker = PromptBroker::new(Box::new(|_| true));
+        manager.runtime.block_on(async {
+            let (conn, reused) = manager
+                .open_connection(&spec, &broker)
+                .await
+                .expect("native publickey connection");
+            assert!(!reused);
+            conn.open_session_channel()
+                .await
+                .expect("open session channel");
+            conn.mark_dead();
+            manager.evict_connection(conn.key());
+        });
+    }
+
+    #[test]
+    #[ignore = "requires a live SSH server; exercises the full remote-link chain"]
+    fn live_open_remote_link_full_chain() {
+        let host = std::env::var("AGENTTY_LIVE_SSH_HOST").expect("AGENTTY_LIVE_SSH_HOST");
+        let user = std::env::var("AGENTTY_LIVE_SSH_USER").expect("AGENTTY_LIVE_SSH_USER");
+        let identity = std::env::var("AGENTTY_LIVE_SSH_IDENTITY").ok();
+
+        let mut spec = base_spec();
+        spec.host = host;
+        spec.user = user;
+        spec.identity_files = identity.into_iter().collect();
+        spec.connect_timeout_s = Some(10);
+        spec.verify_host_keys = false;
+
+        let manager = SshManager::global();
+        let setup = crate::daemon::router::RouteSetup::unattended(
+            crate::daemon::router::RouteChannel::Control,
+        );
+        manager.runtime.block_on(async {
+            match manager.open_remote_link(&spec, &setup, None).await {
+                Ok((_link, _conn)) => eprintln!("LIVE remote link: OK"),
+                Err(e) => {
+                    eprintln!("LIVE remote link: ERROR: {e:#}");
+                    let mut source = std::error::Error::source(&*e);
+                    while let Some(s) = source {
+                        eprintln!("  caused by: {s}");
+                        source = s.source();
+                    }
+                    panic!("remote link failed: {e:#}");
+                }
+            }
+        });
+    }
+
+    #[test]
+    #[ignore = "requires a live SSH server; replaces its running agentty helper"]
+    fn live_replace_remote_helper_full_chain() {
+        let host = std::env::var("AGENTTY_LIVE_SSH_HOST").expect("AGENTTY_LIVE_SSH_HOST");
+        let user = std::env::var("AGENTTY_LIVE_SSH_USER").expect("AGENTTY_LIVE_SSH_USER");
+        let identity = std::env::var("AGENTTY_LIVE_SSH_IDENTITY").ok();
+
+        let mut spec = base_spec();
+        spec.host = host;
+        spec.user = user;
+        spec.identity_files = identity.into_iter().collect();
+        spec.connect_timeout_s = Some(10);
+        spec.verify_host_keys = false;
+
+        let manager = SshManager::global();
+        let setup = crate::daemon::router::RouteSetup::unattended(
+            crate::daemon::router::RouteChannel::Control,
+        );
+        manager.runtime.block_on(async {
+            manager
+                .replace_remote_server(&spec, &setup)
+                .await
+                .expect("replace the remote helper with this client's bundled dialect");
+            manager
+                .open_remote_link(&spec, &setup, None)
+                .await
+                .expect("open a control link through the replacement helper");
+        });
+    }
 }

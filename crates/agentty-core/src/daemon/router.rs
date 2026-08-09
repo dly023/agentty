@@ -718,10 +718,35 @@ async fn restart_server(
                 .restart_remote_server(spec, setup)
                 .await
         }
-        _ => Err(anyhow::anyhow!(
-            "restarting agentty's server is only supported for SSH machines, not {}",
-            header.describe()
-        )),
+        (target, action) => match server_lifecycle_dispatch(target, action) {
+            ServerLifecycleDispatch::WslRestart { distro } => {
+                setup
+                    .blocking(move || crate::daemon::install::wsl::restart_wsl_daemon(&distro))
+                    .await??;
+                Ok(())
+            }
+            ServerLifecycleDispatch::Unsupported => Err(anyhow::anyhow!(
+                "restarting agentty's server is not supported for {}",
+                header.describe()
+            )),
+        },
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum ServerLifecycleDispatch {
+    WslRestart { distro: String },
+    Unsupported,
+}
+
+fn server_lifecycle_dispatch(target: &RouteTarget, action: RouteAction) -> ServerLifecycleDispatch {
+    match (target, action) {
+        (RouteTarget::Wsl { distro }, RouteAction::RestartServer) => {
+            ServerLifecycleDispatch::WslRestart {
+                distro: distro.clone(),
+            }
+        }
+        _ => ServerLifecycleDispatch::Unsupported,
     }
 }
 
@@ -1235,17 +1260,38 @@ mod tests {
 
     #[tokio::test]
     async fn a_restart_is_refused_for_a_machine_that_has_no_remote_daemon() {
-        for header in [
-            RouteHeader::local_stdio("cat", &[]).restart_server(),
-            RouteHeader::wsl("Ubuntu-22.04").restart_server(),
-        ] {
+        for header in [RouteHeader::local_stdio("cat", &[]).restart_server()] {
             let describe = header.describe();
             let setup = RouteSetup::unattended(header.channel);
             let Err(err) = perform(&header, &setup).await else {
                 panic!("a restart must be refused for {describe}");
             };
-            assert!(err.to_string().contains("only supported for SSH"), "{err}");
+            assert!(err.to_string().contains("is not supported"), "{err}");
         }
+    }
+
+    #[test]
+    fn wsl_restart_is_supported_but_replace_remains_explicitly_unsupported() {
+        assert_eq!(
+            server_lifecycle_dispatch(
+                &RouteTarget::Wsl {
+                    distro: "Ubuntu-22.04".into(),
+                },
+                RouteAction::RestartServer,
+            ),
+            ServerLifecycleDispatch::WslRestart {
+                distro: "Ubuntu-22.04".into(),
+            },
+        );
+        assert_eq!(
+            server_lifecycle_dispatch(
+                &RouteTarget::Wsl {
+                    distro: "Ubuntu-22.04".into(),
+                },
+                RouteAction::ReplaceServer,
+            ),
+            ServerLifecycleDispatch::Unsupported,
+        );
     }
 
     #[test]
@@ -1259,7 +1305,7 @@ mod tests {
 
         let mut client = client;
         let err = RouteAck::read(&mut client).expect_err("a `cat` has no daemon to restart");
-        assert!(err.to_string().contains("only supported for SSH"), "{err}");
+        assert!(err.to_string().contains("is not supported"), "{err}");
         assert!(routed.join().unwrap().is_err());
     }
 

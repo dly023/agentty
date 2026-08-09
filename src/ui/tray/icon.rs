@@ -52,6 +52,7 @@ pub(super) fn agent_avatar(
     let mut pixmap = tiny_skia::Pixmap::new(SIZE, SIZE)?;
 
     let accent = agent.accent_rgb();
+    let glyph_rgb = agent.glyph_rgb();
     let mut paint = tiny_skia::Paint {
         anti_alias: true,
         ..Default::default()
@@ -81,7 +82,14 @@ pub(super) fn agent_avatar(
     let glyph_size = (s * 0.60).round() as u32;
     let mut glyph = tiny_skia::Pixmap::new(glyph_size, glyph_size)?;
     resvg::render(&tree, fit_center(&tree, glyph_size), &mut glyph.as_mut());
-    recolor(&mut glyph, (0xFF, 0xFF, 0xFF));
+    recolor(
+        &mut glyph,
+        (
+            (glyph_rgb >> 16) as u8,
+            (glyph_rgb >> 8) as u8,
+            glyph_rgb as u8,
+        ),
+    );
     let offset = ((SIZE - glyph_size) / 2) as i32;
     pixmap.draw_pixmap(
         offset,

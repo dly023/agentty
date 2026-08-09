@@ -1,0 +1,702 @@
+version: 1
+updated: 2026-08-02
+scope:
+  objective: Audit every Agentty milestone, every retained user feedback item, and every Ashide Session Navigator or Agent-state capability required by those tracked outcomes before further implementation.
+  included_domains:
+    - engineering_governance
+    - product_boundary
+    - environment_authority
+    - remote_helper
+    - agent_session_discovery
+    - session_identity_and_lifecycle
+    - session_user_state
+    - session_navigator_interaction
+    - agent_execution_state
+    - composer
+    - completion
+    - localization
+    - ssh
+    - native_editor
+    - product_ui_reference_review
+  excluded_only_by_explicit_product_contract:
+    - embedded_model_byok
+    - hosted_agent_runtime
+    - replacing_cli_agent_authentication
+required_dimensions:
+  - domain_model
+  - user_flow
+  - interaction_surface
+  - persistence_and_recovery
+  - failure_and_rollback
+  - local_remote_authority
+  - concurrency_and_stale_results
+  - keyboard_and_accessibility
+  - regression_history
+  - tests_and_runtime_evidence
+  - tracker_status_accuracy
+reference_sources:
+  - /Users/admin/ashide/docs/SESSION_NAVIGATOR_SPEC.yaml
+  - /Users/admin/ashide/docs/LOCAL_REMOTE_PARITY_SPEC.yaml
+  - /Users/admin/ashide/docs/design/local-remote-parity-tracker.yaml
+  - /Users/admin/ashide/docs/design/init-release-test-matrix.yaml
+  - /Users/admin/ashide/docs/design/global-performance-interaction-optimization.md
+  - /Users/admin/ashide/app/src/workspace/view/session_navigator_reducer_tests.rs
+  - /Users/admin/ashide/app/src/workspace/view/session_navigator_scan_tests.rs
+  - /Users/admin/ashide/app/src/workspace/view/vertical_tabs_tests.rs
+  - /Users/admin/ashide/app/src/app_state_tests.rs
+  - /Users/admin/ashide/app/src/cli_agent_jsonl/tests.rs
+  - /Users/admin/ashide commit 15f1f1d
+status_vocabulary:
+  present: Full tracked observable contract has current source and verification evidence.
+  partial: A useful canonical core exists, but one or more tracked observable dimensions are absent.
+  missing: No production path implements the tracked capability.
+  non_applicable: Explicit Agentty product contract excludes the Ashide capability; rationale and negative guard remain required.
+historical_models_rejected:
+  - id: REJECT-ALIAS-SOURCE-ONLY
+    model: Alias becomes effective only after a provider backing source is discovered.
+    reason: Live sessions have no source-backed alias until provider persistence appears, causing a visible live-to-history discontinuity.
+    required_negative_tests: [live_only_alias_is_immediately_visible, provider_source_appearance_preserves_explicit_alias]
+  - id: REJECT-PROVIDER-AS-SESSION-NAME
+    model: Agent or provider display name is an unnamed session's alias.
+    reason: Provider identity and session identity are different product concepts; the provider label hides the user's first task context.
+    required_negative_tests: [provider_identity_is_never_a_session_alias, first_user_message_names_untitled_session]
+  - id: REJECT-ROW-LOCAL-USER-STATE
+    model: Alias and pin live only on an in-memory NavigatorRow.
+    reason: Refresh, restart, carrier replacement, remote authority changes, and deletion cannot share or roll back one canonical state.
+    required_negative_tests: [alias_survives_restart_and_carrier_replacement, remote_alias_never_uses_local_state]
+  - id: REJECT-STATUS-DOT-AS-STATE-SYSTEM
+    model: A success or warning dot proves the complete Agent execution state system.
+    reason: It omits typed event precedence, waiting-for-user semantics, stale events, completion/unread transitions, and focused/background presentation.
+    required_negative_tests: [historical_rows_never_show_live_execution, stale_execution_event_cannot_replace_current_state]
+  - id: REJECT-CONTEXT-MENU-AS-HOVER-DETAILS
+    model: A right-click static dialog is equivalent to the hover detail sidecar.
+    reason: It omits hover ownership, stable anchoring, safe pointer travel, stale-target cancellation, and immediate status-rich context.
+    required_negative_tests: [hover_target_survives_carrier_replacement, stale_hover_target_closes_fail_closed]
+  - id: REJECT-LOCAL-DELETE-CHANNEL
+    model: Session deletion directly removes a local path outside the Environment Host abstraction.
+    reason: It breaks local/remote authority parity and makes rollback semantics diverge.
+    required_negative_tests: [remote_delete_never_touches_local_source, failed_source_delete_rolls_back_projection]
+capabilities:
+  - id: CAP-GOVERNANCE-SPEC-DRIVEN
+    domain: engineering_governance
+    capability: Standard architecture flow and eight-principles preimplementation gate.
+    status: present
+    reference_evidence:
+      - /Users/admin/ashide/docs/design/global-performance-interaction-optimization.md:74-79
+    agentty_evidence:
+      - AGENTS.md:1-105
+      - DEVELOPMENT.md:25-31
+      - docs/specs/FEATURE_GAP_AUDIT_SPEC.yaml
+    regression_history: [FEEDBACK-20260802-005, FEEDBACK-20260802-006, FEEDBACK-20260802-010]
+    decision: Keep one repository-wide flow and fail closed before implementation.
+    target:
+      spec: AUDIT-EIGHT-PRINCIPLES-GATE-05
+      matrix: AUDIT-EIGHT-PRINCIPLES-GATE-041
+      static_check: script/check_feature_gap_audit
+      preimplementation_tests: [feature_gap_audit_contract]
+      red_test_evidence: observed_missing_audit_2026-08-02
+      implementation_status: verified
+  - id: CAP-PRODUCT-TERMINAL-NATIVE
+    domain: product_boundary
+    capability: Launch and observe real CLI agents without replacing their authentication or chat protocol.
+    status: present
+    reference_evidence:
+      - /Users/admin/ashide/docs/AGENT_SESSIONS.md:1-33
+    agentty_evidence:
+      - docs/specs/PRODUCT_SPEC.yaml:15-23
+      - crates/agentty-core/src/core/cli_agent.rs
+    regression_history: []
+    decision: Preserve the terminal-native product boundary.
+    target:
+      spec: PRODUCT-AGENT-RUNTIME-01
+      matrix: PRODUCT-BOUNDARY-005
+      static_check: script/check_spec_matrix
+      preimplementation_tests: []
+      red_test_evidence: not_applicable_existing_verified_contract
+      implementation_status: verified
+  - id: CAP-ENVIRONMENT-WINDOW-AUTHORITY
+    domain: environment_authority
+    capability: One application window owns one local or managed remote Environment authority.
+    status: present
+    reference_evidence:
+      - /Users/admin/ashide/docs/LOCAL_REMOTE_PARITY_SPEC.yaml
+    agentty_evidence:
+      - docs/specs/ENVIRONMENT_MODEL_SPEC.yaml:5-48
+      - crates/agentty-core/src/core/environment.rs
+      - src/ui/windows.rs
+    regression_history: [M0-ARCHITECTURE-RESET]
+    decision: Retain EnvironmentId as execution authority and fail closed on disconnect.
+    target:
+      spec: ENV-WINDOW-BOUNDARY-01
+      matrix: ENV-BOUNDARY-018
+      static_check: script/check_environment_boundary
+      preimplementation_tests: [window_environment_is_derived_from_its_persisted_authority, remote_disconnect_never_becomes_local]
+      red_test_evidence: recorded_before_existing_implementation
+      implementation_status: verified
+  - id: CAP-HELPER-SHARED-CORE
+    domain: remote_helper
+    capability: Local direct calls and remote helper RPC share discovery, completion, typed resume, and Host authority boundaries.
+    status: present
+    reference_evidence:
+      - /Users/admin/ashide/docs/LOCAL_REMOTE_PARITY_SPEC.yaml
+    agentty_evidence:
+      - docs/specs/REMOTE_HELPER_SPEC.yaml
+      - crates/agentty-core/src/agent_runtime/adapter.rs
+      - crates/agentty-core/src/host/server.rs
+    regression_history: [M0.5-REMOTE-HELPER]
+    decision: Extend the existing control channel only; no second daemon or local fallback.
+    target:
+      spec: HELPER-SHARED-CORE-02
+      matrix: HELPER-SHARED-CORE-023
+      static_check: script/check_remote_helper
+      preimplementation_tests: [codex_and_claude_discovery_uses_one_shared_host_core, remote_authority_never_falls_back_to_local_rows]
+      red_test_evidence: recorded_before_existing_implementation
+      implementation_status: verified
+  - id: CAP-SESSION-DISCOVERY-TRANSACTION
+    domain: agent_session_discovery
+    capability: Complete generation commit with failed, partial, cancelled, stale, missing, and over-limit preservation.
+    status: present
+    reference_evidence:
+      - /Users/admin/ashide/app/src/workspace/view/session_navigator_scan_tests.rs
+      - /Users/admin/ashide/docs/SESSION_NAVIGATOR_SPEC.yaml:500-507
+    agentty_evidence:
+      - crates/agentty-core/src/agent_runtime/discovery.rs
+      - crates/agentty-core/src/agent_runtime/service.rs
+      - src/ui/session_navigator.rs:13-176
+    regression_history: [SESSION-001, HELPER-003]
+    decision: Keep the atomic reducer and generation checks.
+    target:
+      spec: SESSION-DISCOVERY-ATOMIC-02
+      matrix: SESSION-NAVIGATOR-003
+      static_check: script/check_session_navigator
+      preimplementation_tests: [failed_scan_preserves_last_committed_rows, partial_provider_failure_does_not_publish_subset, stale_generation_is_ignored]
+      red_test_evidence: recorded_before_existing_implementation
+      implementation_status: verified
+  - id: GAP-EXPANDED-PROVIDER-DISCOVERY
+    domain: agent_session_discovery
+    capability: Discover every supported persisted provider through one descriptor registry, not only Codex, Claude, and Omp.
+    status: present
+    reference_evidence:
+      - /Users/admin/ashide/docs/SESSION_NAVIGATOR_SPEC.yaml:509-520
+      - /Users/admin/ashide/docs/roadmap.zh-CN.md:8-17
+    agentty_evidence:
+      - crates/agentty-core/src/core/cli_agent.rs:5-47
+      - crates/agentty-core/src/agent_runtime/service.rs:33-60
+    regression_history: [SESSION-006, SESSION-023]
+    decision: One typed descriptor registry now registers only providers with verified persisted formats and drives scanner selection, source roots, resume capability, canonical source validation, and schema-bounded traversal; unrelated Cursor project caches cannot starve Codex, Claude, Omp, or valid Cursor transcripts.
+    target:
+      spec: SESSION-PROVIDER-REGISTRY-19
+      matrix: SESSION-PROVIDER-REGISTRY-053
+      static_check: script/check_session_navigator
+      preimplementation_tests: [standard_discovery_covers_registered_persisted_providers, provider_descriptor_rejects_noncanonical_sources]
+      red_test_evidence: 2026-08-03_observed_missing_descriptor_typed_provider_scanner_and_canonical_source_compile_failures
+      implementation_status: verified_full_presubmit_2026_08_03
+  - id: GAP-STORE-ROOT-OPERATION-CONTEXT
+    domain: agent_session_discovery
+    capability: Resolve target-owned HOME, CODEX_HOME, CLAUDE_CONFIG_DIR, and provider roots once per operation for local and remote stores.
+    status: present
+    reference_evidence:
+      - /Users/admin/ashide/docs/SESSION_NAVIGATOR_SPEC.yaml:621-629
+      - /Users/admin/ashide/docs/design/init-release-test-matrix.yaml:478-495
+    agentty_evidence:
+      - crates/agentty-core/src/agent_runtime/stores.rs:3-35
+      - src/ui/session_navigator.rs:108-126
+    regression_history: []
+    decision: The target process resolves all registered provider roots once against target HOME; remote handshake carries that snapshot and scan plus mutation validation consume the same authority without GUI or helper guessing.
+    target:
+      spec: SESSION-STORE-ROOT-CONTEXT-20
+      matrix: SESSION-STORE-ROOT-CONTEXT-054
+      static_check: script/check_session_navigator
+      preimplementation_tests: [custom_codex_and_claude_roots_apply_to_scan_and_mutation, remote_helper_never_guesses_daemon_process_roots]
+      red_test_evidence: 2026-08-03_observed_missing_target_root_fields_roots_api_handshake_field_and_roots_aware_mutation_compile_failures
+      implementation_status: verified_full_presubmit_2026_08_03
+  - id: GAP-SESSION-SCAN-TRIGGER-LIFECYCLE
+    domain: agent_session_discovery
+    capability: Passive scans occur only after source-changing semantic events while explicit refresh supersedes and generic layout events do not rescan.
+    status: present
+    reference_evidence:
+      - /Users/admin/ashide/docs/design/global-performance-interaction-optimization.md:21-29
+      - /Users/admin/ashide/docs/SESSION_NAVIGATOR_SPEC.yaml:383-393
+    agentty_evidence:
+      - src/ui/session_navigator.rs:91-176
+      - src/ui/remote_workspace.rs:1333-1340
+    regression_history: []
+    decision: Typed refresh intents now distinguish explicit supersede, passive source-changing triggers, initial target readiness, remote link-up, and ignored generic terminal/layout events.
+    target:
+      spec: SESSION-REFRESH-INTENT-18
+      matrix: SESSION-REFRESH-INTENT-048
+      static_check: script/check_session_navigator
+      preimplementation_tests: [generic_terminal_events_do_not_scan_provider_history, source_mutation_and_agent_close_trigger_passive_refresh]
+      red_test_evidence: 2026-08-03_observed_generic_events_sharing_refresh_path_and_missing_typed_source_mutation_agent_close_intents
+      implementation_status: verified_full_presubmit_2026_08_03
+  - id: CAP-SESSION-TYPED-RESUME
+    domain: session_identity_and_lifecycle
+    capability: Resume carries typed program, argv, and cwd to local or pending remote terminal materialization.
+    status: present
+    reference_evidence:
+      - /Users/admin/ashide/docs/SESSION_NAVIGATOR_SPEC.yaml:242-256
+    agentty_evidence:
+      - crates/agentty-core/src/agent_runtime/resume.rs
+      - src/ui/session_navigator.rs:221-307
+      - src/ui/app.rs:2198-2245
+    regression_history: [SESSION-003]
+    decision: Keep the typed invocation boundary and shell quoting only at terminal execution.
+    target:
+      spec: SESSION-RESUME-ARGV-03
+      matrix: SESSION-RESUME-010
+      static_check: script/check_session_navigator
+      preimplementation_tests: [typed_resume_keeps_program_and_arguments_separate, restore_failure_rolls_back_without_duplicate_row]
+      red_test_evidence: recorded_before_existing_implementation
+      implementation_status: verified
+  - id: CAP-SESSION-ROW-IDENTITY
+    domain: session_identity_and_lifecycle
+    capability: Provider history and live carrier share an opaque RowId across carrier replacement.
+    status: present
+    reference_evidence:
+      - /Users/admin/ashide/docs/SESSION_NAVIGATOR_SPEC.yaml:443-459
+      - /Users/admin/ashide/app/src/workspace/view/vertical_tabs_tests.rs:76-153
+    agentty_evidence:
+      - crates/agentty-core/src/agent_runtime/navigator.rs:8-235
+    regression_history: [SESSION-002, SESSION-004]
+    decision: Preserve opaque RowId and tombstone allocation.
+    target:
+      spec: SESSION-LIVE-HISTORY-MERGE-04
+      matrix: SESSION-MERGE-011
+      static_check: script/check_session_navigator
+      preimplementation_tests: [opaque_row_identity_survives_carrier_replacement, coordinate_reuse_after_delete_allocates_new_identity]
+      red_test_evidence: recorded_before_existing_implementation
+      implementation_status: verified
+  - id: GAP-LIVE-CONTAINER-STABLE-BINDING
+    domain: session_identity_and_lifecycle
+    capability: Live pane container owns stable provider/session binding before first visible frame and across restart, placeholder, and transport changes.
+    status: present
+    reference_evidence:
+      - /Users/admin/ashide/docs/SESSION_NAVIGATOR_SPEC.yaml:258-295
+      - /Users/admin/ashide/docs/design/init-release-test-matrix.yaml:306-320
+    agentty_evidence:
+      - crates/agentty-core/src/core/session.rs
+      - crates/agentty-core/src/core/machine.rs
+      - crates/agentty-core/src/agent_runtime/navigator.rs
+      - src/ui/pending_pane.rs
+      - src/terminal/view.rs
+      - src/ui/session_navigator.rs
+      - src/ui/app.rs
+      - src/ui/tree_sync.rs
+    regression_history: [SESSION-003, SESSION-004]
+    decision: A persisted opaque LiveContainerBinding is created before projection and survives SessionPane JSON, machine mirror, placeholder, transport materialization, and ready TerminalView. Runtime observations enrich the binding only. Navigator keys live carrier continuity by container_id and rebinds provider identity onto the same RowId; tab and pane coordinates are routing-only.
+    target:
+      spec: SESSION-LIVE-CONTAINER-BINDING-15
+      matrix: SESSION-LIVE-CONTAINER-BINDING-043
+      static_check: script/check_session_navigator
+      preimplementation_tests: [resume_carrier_is_bound_before_first_projection, restored_live_binding_survives_placeholder_and_restart, provider_identity_rebind_preserves_container_row]
+      red_test_evidence: observed_missing_live_container_binding_2026-08-02
+      implementation_status: verified
+  - id: GAP-SESSION-ALIAS-MODEL
+    domain: session_user_state
+    capability: Canonical Environment-scoped alias model with explicit owner, normalization, persistence, conflict, rename, recovery, and deletion semantics.
+    status: present
+    reference_evidence:
+      - /Users/admin/ashide/docs/SESSION_NAVIGATOR_SPEC.yaml:336-344
+      - /Users/admin/ashide/docs/SESSION_NAVIGATOR_SPEC.yaml:412-421
+    agentty_evidence:
+      - crates/agentty-core/src/agent_runtime/user_state.rs
+      - crates/agentty-core/src/agent_runtime/delete.rs
+      - crates/agentty-core/src/agent_runtime/navigator.rs
+      - src/ui/session_navigator.rs
+      - src/ui/tab_sidebar.rs
+    regression_history: [FEEDBACK-20260802-001, FEEDBACK-20260802-002, FEEDBACK-20260802-006]
+    decision: SessionAliasStore is the single Environment-scoped selected-Host authority; Navigator owns only projection, candidate writes commit visibly only after success, and deletion is rollback-safe with alias cleanup.
+    target:
+      spec: SESSION-ALIAS-BUSINESS-MODEL-10
+      matrix: SESSION-ALIAS-BUSINESS-MODEL-038
+      static_check: script/check_session_navigator
+      preimplementation_tests: [alias_state_is_partitioned_by_environment_identity, alias_mutation_failure_rolls_back_visible_state, deleted_session_clears_alias_state]
+      red_test_evidence: observed_missing_session_alias_store_2026-08-02
+      implementation_status: verified
+  - id: GAP-SESSION-LIVE-ALIAS
+    domain: session_user_state
+    capability: Explicit rename applies immediately to a live container and remains attached when provider backing history appears.
+    status: present
+    reference_evidence:
+      - /Users/admin/ashide commit 15f1f1d
+      - /Users/admin/ashide/docs/SESSION_NAVIGATOR_SPEC.yaml:558-578
+    agentty_evidence:
+      - crates/agentty-core/src/agent_runtime/user_state.rs
+      - crates/agentty-core/src/agent_runtime/navigator.rs
+      - src/ui/session_navigator.rs
+      - src/ui/tab_sidebar.rs
+    regression_history: [FEEDBACK-20260802-002, REJECT-ALIAS-SOURCE-ONLY]
+    decision: Alias projection is keyed by stable SessionIdentity, so live-only rename is immediate and provider-source appearance preserves the same explicit alias without mutating provider identity.
+    target:
+      spec: SESSION-ALIAS-BUSINESS-MODEL-10
+      matrix: SESSION-ALIAS-BUSINESS-MODEL-038
+      static_check: script/check_session_navigator
+      preimplementation_tests: [live_only_alias_is_immediately_visible, provider_source_appearance_preserves_explicit_alias, inline_edit_identity_survives_carrier_replacement]
+      red_test_evidence: observed_missing_session_alias_store_2026-08-02
+      implementation_status: verified
+  - id: GAP-SESSION-PIN-MODEL
+    domain: session_user_state
+    capability: Environment-owned pin mutation, projection, persistence, ordering, rollback, and live/history key continuity.
+    status: present
+    reference_evidence:
+      - /Users/admin/ashide/docs/SESSION_NAVIGATOR_SPEC.yaml:412-421
+      - /Users/admin/ashide/docs/design/init-release-test-matrix.yaml:420-435
+    agentty_evidence:
+      - crates/agentty-core/src/agent_runtime/user_state.rs
+      - crates/agentty-core/src/agent_runtime/navigator.rs
+      - crates/agentty-core/src/agent_runtime/delete.rs
+      - src/ui/session_navigator.rs
+      - src/ui/tab_sidebar.rs
+    regression_history: [SESSION-004]
+    decision: SessionUserStateStore is the single Environment-scoped selected-Host authority for aliases and pins in one backward-compatible file and transaction. Candidate save precedes projection, failure cannot locally fall back, delete clears both states, identity rebind preserves live/history continuity, and Navigator only projects pinned-first stable order.
+    target:
+      spec: SESSION-PIN-BUSINESS-MODEL-16
+      matrix: SESSION-PIN-BUSINESS-MODEL-044
+      static_check: script/check_session_navigator
+      preimplementation_tests: [pin_survives_live_history_replacement_and_restart, failed_remote_pin_rolls_back_without_local_fallback, deleted_session_clears_pin_and_alias_state]
+      red_test_evidence: observed_missing_session_user_state_store_2026-08-02
+      implementation_status: verified
+  - id: GAP-SESSION-TITLE-FALLBACK
+    domain: session_user_state
+    capability: Display-name precedence is explicit user alias, provider-authored title, first non-empty User message, then localized unnamed fallback; provider identity is never a session alias.
+    status: present
+    reference_evidence:
+      - /Users/admin/ashide/app/src/cli_agent_jsonl/parse.rs:48-69
+      - /Users/admin/ashide/app/src/cli_agent_jsonl/tests.rs:366-378
+      - /Users/admin/ashide/app/src/app_state_tests.rs:848-870
+    agentty_evidence:
+      - crates/agentty-core/src/agent_runtime/parse.rs
+      - crates/agentty-core/src/agent_runtime/service.rs
+      - crates/agentty-core/src/agent_runtime/user_state.rs
+      - src/ui/tab_sidebar.rs
+    regression_history: [FEEDBACK-20260802-003, REJECT-PROVIDER-AS-SESSION-NAME]
+    decision: Provider titles and first User messages occupy separate parser candidates; service resolves provider title first while Environment alias remains a higher user-state projection, and provider identity never becomes a title.
+    target:
+      spec: SESSION-TITLE-PRECEDENCE-11
+      matrix: SESSION-TITLE-PRECEDENCE-039
+      static_check: script/check_session_navigator
+      preimplementation_tests: [provider_title_wins_even_when_it_appears_after_first_user_message, first_user_message_names_untitled_session, provider_identity_is_never_a_session_alias]
+      red_test_evidence: observed_missing_resolved_title_2026-08-02
+      implementation_status: verified
+  - id: GAP-SESSION-PERMANENT-DELETE
+    domain: session_user_state
+    capability: Plan, reducer, provider-source mutation, atomic commit, and rollback for permanent deletion through selected Host authority.
+    status: present
+    reference_evidence:
+      - /Users/admin/ashide/app/src/workspace/view/session_navigator.rs:1648-1735
+      - /Users/admin/ashide/app/src/workspace/view/session_navigator.rs:2719-2890
+      - /Users/admin/ashide/app/src/terminal/cli_agent_session_index.rs:185-232
+    agentty_evidence:
+      - crates/agentty-core/src/agent_runtime/delete.rs
+      - crates/agentty-core/src/agent_runtime/navigator.rs
+      - src/ui/session_navigator.rs
+      - src/ui/tab_sidebar.rs
+    regression_history: [FEEDBACK-20260802-004, REJECT-LOCAL-DELETE-CHANNEL]
+    decision: Selected Host applies provider-safe source mutation and Environment alias cleanup as one rollback-safe transaction before the Navigator commits; Codex index rows are rewritten individually.
+    target:
+      spec: SESSION-PERMANENT-DELETE-TRANSACTION-09
+      matrix: SESSION-PERMANENT-DELETE-037
+      static_check: script/check_session_navigator
+      preimplementation_tests: [provider_delete_failure_restores_alias_store, codex_index_delete_source_rewrites_only_matching_entry, malformed_codex_index_fails_without_overwriting_source, tombstone_prevents_reappearance_in_same_generation]
+      red_test_evidence: observed_source_and_identity_failures_2026-08-02
+      implementation_status: verified
+  - id: GAP-SESSION-REORDER
+    domain: session_navigator_interaction
+    capability: Stable row and split-unit reorder with persisted display order and no focus or identity drift.
+    status: present
+    reference_evidence:
+      - /Users/admin/ashide/app/src/workspace/view/session_navigator_reducer_tests.rs:1207-1454
+      - /Users/admin/ashide/docs/SESSION_NAVIGATOR_SPEC.yaml:846-923
+    agentty_evidence:
+      - crates/agentty-core/src/agent_runtime/navigator.rs
+      - crates/agentty-core/src/agent_runtime/user_state.rs
+      - src/ui/reorder.rs
+      - src/ui/session_navigator.rs
+      - src/ui/tab_sidebar.rs:50-130
+    regression_history: []
+    decision: The canonical Navigator now projects stable tab reorder units, renders one production drag wrapper per unit, persists display order atomically, keeps split siblings indivisible, inserts new unordered units at the top of their pin partition, disables reorder under filtering, and preserves visible order on persistence failure.
+    target:
+      spec: SESSION-STABLE-REORDER-17
+      matrix: SESSION-STABLE-REORDER-045
+      static_check: script/check_session_navigator
+      preimplementation_tests: [reorder_preserves_active_selection_and_row_identity, split_siblings_move_as_one_reorder_unit]
+      red_test_evidence: 2026-08-03 focused regressions failed before canonical reorder unit and newest-first insertion implementation
+      implementation_status: verified_full_presubmit_2026_08_03
+  - id: GAP-SESSION-KEYBOARD-NAVIGATION
+    domain: session_navigator_interaction
+    capability: Query-filtered stable keyboard cursor, Up and Down, Enter activation, Escape clear, and typed rename, pin, delete, and refresh actions.
+    status: present
+    reference_evidence:
+      - /Users/admin/ashide/docs/design/global-performance-interaction-optimization.md:46-49
+      - /Users/admin/ashide/docs/SESSION_NAVIGATOR_SPEC.yaml:490-498
+    agentty_evidence:
+      - src/ui/app.rs
+      - src/ui/session_navigator.rs
+      - src/ui/tab_sidebar.rs
+    regression_history: [FEEDBACK-20260802-008]
+    decision: A transient SessionKeyboardCursor owns stable RowId only; it normalizes against query-filtered committed rows, uses list index only for adjacent movement and scrolling, dispatches Enter through activate_navigator_row, clears query and cursor on Escape, and never mutates canonical Navigator selection before activation.
+    target:
+      spec: SESSION-KEYBOARD-CURSOR-14
+      matrix: SESSION-KEYBOARD-CURSOR-042
+      static_check: script/check_session_navigator
+      preimplementation_tests: [keyboard_cursor_uses_row_identity_not_list_index, enter_activates_filtered_cursor_and_escape_clears_transient_state]
+      red_test_evidence: observed_missing_session_keyboard_cursor_2026-08-02
+      implementation_status: verified
+  - id: GAP-SESSION-HOVER-DETAILS
+    domain: session_navigator_interaction
+    capability: Hover detail sidecar anchored by stable RowId with status-rich metadata, safe pointer travel, stale-target cancellation, and action affordances.
+    status: present
+    reference_evidence:
+      - /Users/admin/ashide/app/src/workspace/view/vertical_tabs.rs:399-531
+      - /Users/admin/ashide/app/src/workspace/view/vertical_tabs.rs:5811-6130
+      - /Users/admin/ashide/app/src/workspace/view/vertical_tabs_tests.rs:778-848
+    agentty_evidence:
+      - crates/agentty-core/src/agent_runtime/navigator.rs
+      - src/ui/tab_sidebar.rs
+      - assets/i18n/en-US.yaml
+      - assets/i18n/zh-CN.yaml
+    regression_history: [FEEDBACK-20260802-008, REJECT-CONTEXT-MENU-AS-HOVER-DETAILS]
+    decision: Stable RowId resolves current committed detail after carrier replacement and fails closed after removal; canonical gpui-component HoverCard owns delayed trigger/content pointer safety; rich metadata and activate/resume plus details actions are visible, while the context menu reuses the same details action as keyboard equivalent.
+    target:
+      spec: SESSION-HOVER-DETAILS-13
+      matrix: SESSION-HOVER-DETAILS-041
+      static_check: script/check_session_navigator
+      preimplementation_tests: [hover_target_survives_carrier_replacement, stale_hover_target_closes_fail_closed, pointer_safe_region_keeps_detail_open]
+      red_test_evidence: observed_missing_detail_row_2026-08-02
+      implementation_status: verified
+  - id: GAP-SESSION-SUBTITLE-HIERARCHY
+    domain: session_navigator_interaction
+    capability: Visible subtitle shows session context without repeating canonical provider identity while provider remains searchable and detailed.
+    status: present
+    reference_evidence:
+      - FEEDBACK-20260801-003
+    agentty_evidence:
+      - src/ui/tab_sidebar.rs:43-52
+      - src/ui/tab_sidebar.rs:127-142
+    regression_history: [SESSION-008]
+    decision: Cwd is the visible subtitle; provider slug and display name remain in search and details but are not repeated beside the canonical icon.
+    target:
+      spec: SESSION-ROW-INFORMATION-HIERARCHY-08
+      matrix: SESSION-ROW-INFORMATION-HIERARCHY-036
+      static_check: script/check_session_navigator
+      preimplementation_tests: [navigator_subtitle_uses_session_context_without_repeating_provider, provider_identity_remains_searchable_when_hidden_from_subtitle]
+      red_test_evidence: observed_provider_plus_cwd_2026-08-02
+      implementation_status: verified
+  - id: GAP-SESSION-VIEWPORT-PROJECTION
+    domain: session_navigator_interaction
+    capability: Viewport projection builds only visible rows while stable RowId and canonical ordering remain independent of viewport indices.
+    status: present
+    reference_evidence:
+      - /Users/admin/ashide/docs/design/global-performance-interaction-optimization.md:31-34
+      - /Users/admin/ashide/docs/SESSION_NAVIGATOR_SPEC.yaml:470-478
+    agentty_evidence:
+      - src/ui/tab_sidebar.rs:31-181
+    regression_history: []
+    decision: A stable RowId unit projection now feeds GPUI ListState lazy construction; query filtering preserves complete split-tab units, list splices preserve measured scroll state, and canonical ordering remains outside viewport indices.
+    target:
+      spec: SESSION-VIEWPORT-PROJECTION-21
+      matrix: SESSION-VIEWPORT-PROJECTION-055
+      static_check: script/check_session_navigator
+      preimplementation_tests: [viewport_indices_never_become_row_identity, offscreen_rows_are_not_built_but_keep_canonical_order]
+      red_test_evidence: 2026-08-03_unresolved_SessionViewportProjection_compile_failure_and_fail_closed_static_gate
+      implementation_status: verified_quick_presubmit_2026_08_03
+  - id: GAP-SESSION-GLOBAL-SEARCH
+    domain: session_navigator_interaction
+    capability: Global command-palette session search consumes committed Navigator models without rebuilding identity or rescanning sources per keystroke.
+    status: present
+    reference_evidence:
+      - /Users/admin/ashide/docs/design/global-performance-interaction-optimization.md:36-39
+      - /Users/admin/ashide/docs/SESSION_NAVIGATOR_SPEC.yaml:480-488
+    agentty_evidence:
+      - src/ui/palette.rs
+      - src/ui/session_navigator.rs
+      - src/ui/windows.rs
+      - src/ui/app.rs
+    regression_history: [FEEDBACK-20260801-002]
+    decision: Each window publishes its last committed Environment-scoped Navigator documents to a shared registry; the command palette searches that frozen snapshot without discovery and cross-window activation uses WorkspaceId plus stable NavigatorRowId.
+    target:
+      spec: SESSION-GLOBAL-SEARCH-22
+      matrix: SESSION-GLOBAL-SEARCH-056
+      static_check: script/check_session_navigator
+      preimplementation_tests: [palette_search_uses_committed_rows_without_discovery, closing_window_removes_its_session_search_partition]
+      red_test_evidence: 2026-08-03_missing_SessionSearchDocumentId_SessionSearchDocument_SessionSearchIndex_and_session_commands_from_documents_compile_failures
+      implementation_status: verified_quick_presubmit_2026_08_03
+  - id: GAP-AGENT-EXECUTION-STATE
+    domain: agent_execution_state
+    capability: Complete typed execution state machine and Navigator projection for restoring, running, waiting for user, focused live, background live, completed unread, idle, and historical rows.
+    status: present
+    reference_evidence:
+      - /Users/admin/ashide/docs/SESSION_NAVIGATOR_SPEC.yaml:580-588
+      - /Users/admin/ashide/app/src/workspace/view/vertical_tabs_tests.rs:667-776
+    agentty_evidence:
+      - crates/agentty-core/src/core/cli_agent.rs
+      - crates/agentty-core/src/agent_runtime/navigator.rs
+      - src/terminal/view.rs
+      - src/ui/activity_bar.rs
+      - src/ui/session_navigator.rs
+      - src/ui/tab_sidebar.rs
+    regression_history: [FEEDBACK-20260802-007, REJECT-STATUS-DOT-AS-STATE-SYSTEM]
+    decision: Navigator projects the canonical live TerminalView AgentSessionState with focus and unread carrier state; typed badge precedence is centralized, activity_seq rejects stale replacement, waiting detail remains visible, and historical rows suppress live execution.
+    target:
+      spec: AGENT-EXECUTION-STATE-SYSTEM-12
+      matrix: AGENT-EXECUTION-STATE-040
+      static_check: script/check_session_navigator
+      preimplementation_tests: [execution_badge_precedence_is_restoring_then_waiting_then_running_then_focused_live_then_background_live, historical_rows_never_show_live_execution, stale_execution_event_cannot_replace_current_state, waiting_message_remains_actionable]
+      red_test_evidence: observed_missing_execution_projection_api_2026-08-02
+      implementation_status: verified
+  - id: CAP-AGENT-ACTIVITY-INSPECTOR
+    domain: agent_execution_state
+    capability: Structured activity entries are bounded, ordered, authoritative, and visible in Activity Bar and Right Panel.
+    status: present
+    reference_evidence:
+      - /Users/admin/ashide/docs/AGENT_SESSIONS.md:35-45
+    agentty_evidence:
+      - crates/agentty-core/src/agent_runtime/activity.rs
+      - src/ui/activity_bar.rs
+      - src/ui/right_panel.rs:1003-1094
+    regression_history: [ACTIVITY-001, ACTIVITY-002]
+    decision: Keep this verified capability distinct from the missing Navigator execution-state system.
+    target:
+      spec: INPUT-ACTIVITY-TRUSTED-SOURCE-03
+      matrix: INPUT-ACTIVITY-PLAN-016
+      static_check: script/check_remote_helper
+      preimplementation_tests: [activity_stream_is_ordered_and_bounded, tool_activity_surfaces_only_without_an_actionable_message]
+      red_test_evidence: recorded_before_existing_implementation
+      implementation_status: verified
+  - id: CAP-COMPOSER
+    domain: composer
+    capability: Optional multiline composer with stable pane targeting and native terminal input preserved.
+    status: present
+    reference_evidence:
+      - /Users/admin/ashide/docs/roadmap.zh-CN.md:8-17
+    agentty_evidence:
+      - docs/specs/INPUT_EXPERIENCE_SPEC.yaml:5-10
+      - src/ui/composer.rs
+    regression_history: [COMPOSER-001, COMPOSER-002]
+    decision: Retain as verified; audit found no tracked omission in its current contract.
+    target:
+      spec: INPUT-COMPOSER-OPTIONAL-01
+      matrix: INPUT-COMPOSER-015
+      static_check: script/check_spec_matrix
+      preimplementation_tests: [drafts_are_isolated_per_pane, successful_delivery_clears_only_target_draft]
+      red_test_evidence: recorded_before_existing_implementation
+      implementation_status: verified
+  - id: CAP-COMPLETION
+    domain: completion
+    capability: Deterministic-first completion with authority-safe repository, history, filesystem, and generator sources.
+    status: present
+    reference_evidence:
+      - docs/quality/ASHIDE_FALLBACK_ASSET_MATRIX.yaml:90-126
+    agentty_evidence:
+      - crates/agentty-core/src/agent_runtime/completion.rs
+      - docs/specs/INPUT_EXPERIENCE_SPEC.yaml:14-16
+    regression_history: [COMPLETION-001, COMPLETION-002]
+    decision: Retain current verified status.
+    target:
+      spec: INPUT-COMPLETION-DETERMINISTIC-FIRST-04
+      matrix: INPUT-COMPLETION-017
+      static_check: script/check_remote_helper
+      preimplementation_tests: [failed_dynamic_source_preserves_deterministic_candidates, remote_source_failure_never_reads_local_filesystem]
+      red_test_evidence: recorded_before_existing_implementation
+      implementation_status: verified
+  - id: CAP-I18N
+    domain: localization
+    capability: System, zh-CN, and en-US catalogs with key parity and hardcoded-string gate.
+    status: present
+    reference_evidence:
+      - /Users/admin/ashide/app/i18n
+    agentty_evidence:
+      - docs/specs/I18N_SPEC.yaml
+      - assets/i18n/en-US.yaml
+      - assets/i18n/zh-CN.yaml
+      - script/check_i18n
+    regression_history: [I18N-001, I18N-002, I18N-003]
+    decision: New gap implementations must add catalog keys before implementation and retain parity.
+    target:
+      spec: I18N-FULL-COVERAGE-04
+      matrix: I18N-COVERAGE-014
+      static_check: script/check_i18n
+      preimplementation_tests: [catalogs_have_identical_keys]
+      red_test_evidence: recorded_before_existing_implementation
+      implementation_status: verified
+  - id: CAP-SSH-AUTHORITY
+    domain: ssh
+    capability: Native SSH default-key order, diagnostics, and managed Environment boundary.
+    status: present
+    reference_evidence:
+      - /Users/admin/ashide/docs/REMOTE_SSH.md
+    agentty_evidence:
+      - docs/specs/SSH_SPEC.yaml
+      - crates/agentty-core/src/daemon/ssh/auth.rs
+      - src/ui/remote_workspace.rs
+    regression_history: [SSH-001, SSH-002]
+    decision: Retain verified SSH contracts; session mutations must reuse Host rather than add SSH-specific code.
+    target:
+      spec: SSH-AUTH-DIAGNOSTICS-03
+      matrix: SSH-DIAGNOSTICS-008
+      static_check: script/check_environment_boundary
+      preimplementation_tests: [diagnostic_explains_missing_default_keys_and_empty_agent]
+      red_test_evidence: recorded_before_existing_implementation
+      implementation_status: verified
+  - id: GAP-NATIVE-EDITOR-INVENTORY
+    domain: native_editor
+    capability: Evidence matrix for local and managed-SSH open, edit, save, watch, conflict, binary, large-file, reconnect, and rollback behavior.
+    status: present
+    reference_evidence:
+      - FEEDBACK-20260801-001
+    agentty_evidence:
+      - src/ui/code_editor.rs
+      - src/ui/file_tree.rs
+      - crates/agentty-core/src/host/mod.rs
+    regression_history: [FEEDBACK-20260801-001]
+    decision: The completed local/managed-SSH matrix proves all nine capabilities through the canonical Host boundary; reconnect now detects RemoteHost instance replacement and rebinds external-change watch ownership without discarding buffers or falling back locally.
+    target:
+      spec: AUDIT-NATIVE-EDITOR-CAPABILITY-06
+      matrix: NATIVE-EDITOR-CAPABILITY-058
+      static_check: script/check_feature_gap_audit
+      preimplementation_tests: [editor_watch_owner_detects_replaced_host_instance]
+      red_test_evidence: observed_missing_watch_owner_is_stale_compile_failure
+      implementation_status: verified
+  - id: GAP-ASHIDE-UI-REVIEW
+    domain: product_ui_reference_review
+    capability: Source-grounded Ashide-to-Agentty UI gap review covering session navigation, global search, tab hierarchy, terminal-editor balance, status presentation, and density.
+    status: partial
+    reference_evidence:
+      - FEEDBACK-20260801-002
+      - /Users/admin/Desktop/啊啊啊.png
+      - /Users/admin/ashide/app/src/workspace/view/vertical_tabs.rs
+    agentty_evidence:
+      - src/ui/tab_sidebar.rs
+      - src/ui/tab_strip.rs
+      - src/ui/right_panel.rs
+    regression_history: [FEEDBACK-20260801-002]
+    decision: The checksum-backed Ashide screenshot and source review remain useful reference evidence, and the local Session Navigator behavior contracts remain implemented. However, no current Agentty rendered-window baseline supported the previous whole-UI conclusion, so hierarchy, geometry, contrast, split-group presentation, and terminal/editor balance remain open until runtime visual evidence is captured and reviewed.
+    target:
+      spec: AUDIT-ASHIDE-UI-REFERENCE-07
+      matrix: ASHIDE-UI-REFERENCE-059
+      static_check: script/check_feature_gap_audit
+      preimplementation_tests: [feature_gap_audit_contract, session_row_visual_contract_is_distinct]
+      red_test_evidence: pending_before_implementation
+      implementation_status: in_progress_rendered_baseline_pending
+  - id: CAP-NON-GOAL-BYOK
+    domain: product_boundary
+    capability: Ashide embedded model provider, BYOK, and hosted chat surfaces.
+    status: non_applicable
+    reference_evidence:
+      - /Users/admin/ashide/app/src/ai
+    agentty_evidence:
+      - docs/specs/PRODUCT_SPEC.yaml:11-19
+    regression_history: []
+    decision: Explicit Agentty non-goal; do not port these capabilities as part of tracked Agentty personalities.
+    target:
+      spec: PRODUCT-NO-MODEL-BYOK-02
+      matrix: PRODUCT-NO-BYOK-006
+      static_check: script/check_spec_matrix
+      preimplementation_tests: []
+      red_test_evidence: not_applicable_explicit_product_non_goal
+      implementation_status: non_applicable
+summary:
+  conclusion: Agentty has verified Environment and Host authority, resource-leased local runtime, remote connection/materialization, descriptor-driven and schema-bounded discovery, target-owned roots, semantic refresh, typed resume, stable identity, pin/delete/newest-first split-unit reorder, structured activity, viewport projection, cross-window search, native local/managed-SSH editor behavior, Composer, completion, i18n, and SSH foundations. Whole-window UI quality is explicitly reopened because prior evidence did not include a current rendered Agentty baseline.
+  highest_risk_gaps: [GAP-ASHIDE-UI-REVIEW]
+  implementation_freeze: false
+  unfreeze_condition: satisfied

@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+rg -q 'INPUT-FRAME-ALIGNED-SMOOTH-SCROLL-08' docs/specs/INPUT_EXPERIENCE_SPEC.yaml
+rg -q 'pub smooth_scroll: bool' crates/agentty-core/src/core/config.rs
+rg -q 'window\.on_next_frame' src/terminal/view.rs
+rg -q 'a_stale_frame_after_cancellation_does_not_walk' src/terminal/view.rs
+rg -q 'scroll_anim_step_decays_and_lands' src/terminal/view.rs
+rg -q 'track_scroll_gesture' src/terminal/view.rs
+rg -Fq 'self.cancel_scroll_anim();' src/terminal/view.rs
+rg -q 'settings.smooth_scroll' assets/i18n/en-US.yaml assets/i18n/zh-CN.yaml src/ui/settings.rs
+if rg -n 'timer\(SCROLL_ANIM_FRAME\)' src/terminal/view.rs; then
+  echo '[smooth-scroll] animation stepping must follow presented frames, not a free-running timer' >&2
+  exit 1
+fi
+echo 'terminal smooth scroll checks passed'

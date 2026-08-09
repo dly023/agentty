@@ -64,6 +64,12 @@ pub trait RemoteAgentClient {
     ) -> io::Result<Vec<AgentActivityEvent>>;
     fn complete_remote(&self, request: CompletionRequest) -> io::Result<CompletionOutcome>;
     fn helper_available(&self) -> bool;
+    /// True when DiscoverAgentSessions may be called. Prefer the agent-helper
+    /// feature; fall back to HelloOk store_roots for peers that publish roots
+    /// but omit the later feature flag (pre-flag remotes still speak discovery).
+    fn discovery_available(&self) -> bool {
+        self.helper_available()
+    }
     fn discover_remote(
         &self,
         operation: OperationId,
@@ -107,6 +113,14 @@ impl RemoteAgentClient for RemoteHost {
         self.peer().has_feature(feature::AGENT_HELPER)
     }
 
+    /// Session discovery is available when the peer advertises agent-helper, or
+    /// when target-owned store roots resolve from HelloOk (published roots or
+    /// non-empty peer home). Older remotes speak DiscoverAgentSessions but omit
+    /// the later agent-helper feature flag and/or the store_roots Hello field.
+    fn discovery_available(&self) -> bool {
+        self.helper_available() || self.store_roots().is_some()
+    }
+
     fn discover_remote(
         &self,
         operation: OperationId,
@@ -143,6 +157,10 @@ impl<'a> RemoteAgentRuntime<'a> {
     pub fn is_available(&self) -> bool {
         self.client.helper_available()
     }
+
+    pub fn discovery_available(&self) -> bool {
+        self.client.discovery_available()
+    }
 }
 
 impl AgentRuntimeAdapter for RemoteAgentRuntime<'_> {
@@ -176,10 +194,11 @@ impl AgentRuntimeAdapter for RemoteAgentRuntime<'_> {
         generation: ScanGeneration,
         request: DiscoveryRequest,
     ) -> io::Result<DiscoveryOutcome> {
-        if !self.is_available() {
+        if !self.discovery_available() {
             return Err(io::Error::new(
                 io::ErrorKind::Unsupported,
-                "remote agentty-server does not advertise agent-helper",
+                "remote agentty-server does not advertise session discovery \
+                 (missing agent-helper and Agent store roots); update the remote server",
             ));
         }
         self.client.discover_remote(operation, generation, request)

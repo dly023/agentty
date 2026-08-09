@@ -69,11 +69,34 @@ pub fn available_hosts(cx: &App) -> Vec<HostChoice> {
 }
 
 pub fn label_for(target: &RemoteTarget, cx: &App) -> String {
+    if matches!(target, RemoteTarget::Profile { .. }) {
+        return label_for_config(target, cx.global::<Config>());
+    }
     available_hosts(cx)
         .into_iter()
         .find(|host| host.target == *target)
         .map(|host| host.label)
-        .unwrap_or_else(|| target.to_string())
+        .unwrap_or_else(|| label_for_config(target, cx.global::<Config>()))
+}
+
+pub fn label_for_config(target: &RemoteTarget, config: &Config) -> String {
+    match target {
+        RemoteTarget::Profile { id } => config
+            .ssh_profiles
+            .iter()
+            .find(|profile| profile.id == *id)
+            .map(|profile| {
+                let name = profile.name.trim();
+                if name.is_empty() {
+                    profile.host.clone()
+                } else {
+                    name.to_string()
+                }
+            })
+            .filter(|label| !label.trim().is_empty())
+            .unwrap_or_else(|| format!("SSH profile {}", &id.to_string()[..8])),
+        _ => target.to_string(),
+    }
 }
 
 pub fn filter_hosts(hosts: &[HostChoice], query: &str) -> Vec<HostChoice> {
@@ -252,6 +275,7 @@ pub fn control_route(target: &RemoteTarget, cx: &App) -> Result<RouteHeader, Str
 pub struct Connected {
     pub host: Arc<RemoteHost>,
     pub home: PathBuf,
+    pub store_roots: Option<agentty_core::agent_runtime::AgentStoreRoots>,
     pub rows: Vec<RemoteWorkspaceRow>,
 }
 
@@ -278,8 +302,14 @@ pub fn connect_blocking(
     let rows = list_workspaces(&host)
         .map_err(|e| format!("connected to {label}, but its workspace list failed: {e}"))?;
     let home = host.home();
+    let store_roots = host.store_roots();
     refresh_agent_hooks_once(&host, &home);
-    Ok(Connected { host, home, rows })
+    Ok(Connected {
+        host,
+        home,
+        store_roots,
+        rows,
+    })
 }
 
 static HOOKS_REFRESHED: Mutex<Vec<HostId>> = Mutex::new(Vec::new());
@@ -374,31 +404,53 @@ pub fn rows_from_machine(
 pub struct HostLinks {
     hosts: HashMap<HostId, Arc<RemoteHost>>,
     homes: HashMap<HostId, PathBuf>,
+    store_roots: HashMap<HostId, agentty_core::agent_runtime::AgentStoreRoots>,
 }
 
 impl Global for HostLinks {}
 
 impl HostLinks {
-    pub fn get(cx: &mut App, id: HostId) -> Option<Arc<RemoteHost>> {
-        cx.default_global::<HostLinks>().hosts.get(&id).cloned()
+    pub fn get(cx: &App, id: HostId) -> Option<Arc<RemoteHost>> {
+        cx.try_global::<HostLinks>()
+            .and_then(|table| table.hosts.get(&id).cloned())
     }
 
-    pub fn home(cx: &mut App, id: HostId) -> Option<PathBuf> {
-        cx.default_global::<HostLinks>().homes.get(&id).cloned()
+    pub fn home(cx: &App, id: HostId) -> Option<PathBuf> {
+        cx.try_global::<HostLinks>()
+            .and_then(|table| table.homes.get(&id).cloned())
     }
 
-    pub fn insert(cx: &mut App, host: Arc<RemoteHost>, home: PathBuf) {
+    pub fn store_roots(
+        cx: &App,
+        id: HostId,
+    ) -> Option<agentty_core::agent_runtime::AgentStoreRoots> {
+        cx.try_global::<HostLinks>()
+            .and_then(|table| table.store_roots.get(&id).cloned())
+    }
+
+    pub fn insert(
+        cx: &mut App,
+        host: Arc<RemoteHost>,
+        home: PathBuf,
+        store_roots: Option<agentty_core::agent_runtime::AgentStoreRoots>,
+    ) {
         let id = host.id();
         crate::ui::host_registry::HostRegistry::insert(cx, Arc::clone(&host).into_shared());
         let table = cx.default_global::<HostLinks>();
         table.hosts.insert(id, host);
         table.homes.insert(id, home);
+        if let Some(store_roots) = store_roots {
+            table.store_roots.insert(id, store_roots);
+        } else {
+            table.store_roots.remove(&id);
+        }
     }
 
     pub fn remove(cx: &mut App, id: HostId) {
         let table = cx.default_global::<HostLinks>();
         table.hosts.remove(&id);
         table.homes.remove(&id);
+        table.store_roots.remove(&id);
         crate::ui::host_registry::HostRegistry::remove(cx, id);
     }
 
@@ -621,7 +673,13 @@ pub(crate) fn claim_mailbox() -> std::sync::MutexGuard<'static, ()> {
     MAILBOX_TURN.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-pub const MISMATCH_ANSWERS: [&str; 2] = ["Cancel", "Restart Server"];
+pub fn mismatch_answers(locale: crate::core::i18n::Locale) -> [&'static str; 2] {
+    use crate::core::i18n::tr;
+    [
+        tr(locale, "common.cancel"),
+        tr(locale, "common.replace_server"),
+    ]
+}
 
 pub fn mismatch_detail(m: &MismatchedRemoteDaemon, cx: &gpui::App) -> String {
     mismatch_detail_loc(
@@ -649,7 +707,7 @@ fn mismatch_detail_loc(m: &MismatchedRemoteDaemon, locale: crate::core::i18n::Lo
             ("host", &m.host),
             ("running", &running),
             ("wanted", &m.wanted_version),
-            ("answer_restart", tr(locale, "common.restart_server")),
+            ("answer_replace", tr(locale, "common.replace_server")),
             ("answer_cancel", tr(locale, "common.cancel")),
         ],
     )
@@ -663,7 +721,7 @@ pub fn mismatch_title(m: &MismatchedRemoteDaemon, cx: &gpui::App) -> String {
 }
 
 fn mismatch_title_loc(m: &MismatchedRemoteDaemon, locale: crate::core::i18n::Locale) -> String {
-    crate::core::i18n::trf(locale, "rw.restart_confirm_title", &[("label", &m.host)])
+    crate::core::i18n::trf(locale, "rw.replace_confirm_title", &[("label", &m.host)])
 }
 
 pub fn mismatch_target(m: &MismatchedRemoteDaemon) -> Option<RemoteTarget> {
@@ -921,7 +979,7 @@ mod tests {
             },
             crate::core::i18n::Locale::EnUs,
         );
-        for answer in MISMATCH_ANSWERS {
+        for answer in mismatch_answers(crate::core::i18n::Locale::EnUs) {
             assert!(detail.contains(answer), "{answer} is unexplained: {detail}");
         }
     }

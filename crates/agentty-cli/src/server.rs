@@ -1,20 +1,11 @@
-use std::path::PathBuf;
-use std::process::{Command, Stdio};
-use std::time::{Duration, Instant};
-
-use agentty_core::client::PaneClient;
 use agentty_core::core::config;
-use agentty_core::daemon::spawn;
+use agentty_core::daemon::{pidfile, spawn};
 use anyhow::{Result, bail};
 use serde_json::json;
 
 use crate::commands::{Outcome, Report};
 
-const START_TIMEOUT: Duration = Duration::from_secs(10);
-const POLL_INTERVAL: Duration = Duration::from_millis(50);
 const LOG_TAIL_LINES: usize = 40;
-
-pub const SERVER_EXE_ENV: &str = "AGENTTY_SERVER_EXE";
 
 fn report(human: impl Into<String>, json: serde_json::Value) -> Result<Outcome> {
     Ok(Outcome::Report(Report {
@@ -23,90 +14,70 @@ fn report(human: impl Into<String>, json: serde_json::Value) -> Result<Outcome> 
     }))
 }
 
-fn running() -> bool {
-    PaneClient::local().version().is_ok()
-}
-
-/// Every verb, lifecycle ones included, acts on the server named by
-/// `$AGENTTY_CONFIG_DIR`: `spawn::stop` dials `transport::connect`, which derives
-/// its endpoint from the config dir, and `start` passes that same dir to the
-/// server it launches. There is nothing left to guard against here — the
-/// endpoint these verbs reach and the one `agentty status` reports on are one and
-/// the same by construction.
 pub fn start() -> Result<Outcome> {
-    if running() {
+    if spawn::is_ready() {
         return report(
             "the server is already running",
-            json!({ "started": false, "running": true }),
+            json!({ "started": false, "running": true, "pid": pidfile::read() }),
         );
     }
-    let exe = server_exe()?;
-    let mut cmd = Command::new(&exe);
-    cmd.arg("--daemon");
-    if let Some(dir) = config::config_dir_path() {
-        cmd.arg("--config-dir").arg(dir);
+
+    let executable = spawn::daemon_executable()?;
+    spawn::ensure_running()?;
+    if !spawn::is_ready() {
+        bail!(
+            "the local runtime is reachable but not ready after start; inspect agentty server logs"
+        );
     }
-    cmd.stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    detach(&mut cmd);
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| anyhow::anyhow!("could not start {}: {e}", exe.display()))?;
-    let pid = child.id();
-    let deadline = Instant::now() + START_TIMEOUT;
-    while !running() {
-        if Instant::now() >= deadline {
-            let fate = match child.try_wait() {
-                Ok(None) => {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    "it was still running and has been killed"
-                }
-                Ok(Some(status)) => {
-                    if status.success() {
-                        "it had already exited cleanly"
-                    } else {
-                        "it had already exited with an error"
-                    }
-                }
-                Err(_) => "its state could not be checked, so it was left alone",
-            };
-            bail!(
-                "{} (pid {pid}) did not open its endpoints within {START_TIMEOUT:?} — {fate}",
-                exe.display()
-            );
-        }
-        std::thread::sleep(POLL_INTERVAL);
-    }
+    let pid = pidfile::read();
     report(
-        format!("started {} (pid {pid})", exe.display()),
-        json!({ "started": true, "pid": pid, "exe": exe.display().to_string() }),
+        match pid {
+            Some(pid) => format!("started {} (pid {pid})", executable.display()),
+            None => format!("started {}", executable.display()),
+        },
+        json!({
+            "started": true,
+            "pid": pid,
+            "exe": executable.display().to_string(),
+        }),
     )
 }
 
 pub fn stop() -> Result<Outcome> {
-    if !running() {
+    let was_reachable = spawn::is_reachable();
+    spawn::stop();
+    if spawn::is_reachable() {
+        bail!("the server did not shut down on request");
+    }
+    if !was_reachable {
         return report(
             "the server is not running",
             json!({ "stopped": false, "running": false }),
         );
     }
-    spawn::stop();
-    if running() {
-        bail!("the server did not shut down on request");
-    }
     report("stopped", json!({ "stopped": true }))
 }
 
 pub fn restart() -> Result<Outcome> {
-    if running() {
-        spawn::stop();
-        if running() {
-            bail!("the server did not shut down on request");
-        }
+    let executable = spawn::daemon_executable()?;
+    spawn::restart()?;
+    if !spawn::is_ready() {
+        bail!(
+            "the local runtime is reachable but not ready after restart; inspect agentty server logs"
+        );
     }
-    start()
+    let pid = pidfile::read();
+    report(
+        match pid {
+            Some(pid) => format!("restarted {} (pid {pid})", executable.display()),
+            None => format!("restarted {}", executable.display()),
+        },
+        json!({
+            "restarted": true,
+            "pid": pid,
+            "exe": executable.display().to_string(),
+        }),
+    )
 }
 
 pub fn logs() -> Result<Outcome> {
@@ -130,7 +101,9 @@ pub fn logs() -> Result<Outcome> {
             }
         }
         Err(_) => {
-            human.push_str("no log file yet — set AGENTTY_LOG=info before starting the server\n");
+            human.push_str(
+                "no warning or error has been logged yet — set AGENTTY_LOG=info for verbose server diagnostics\n",
+            );
         }
     }
     report(
@@ -138,61 +111,3 @@ pub fn logs() -> Result<Outcome> {
         json!({ "path": path.display().to_string(), "lines": lines }),
     )
 }
-
-fn server_exe() -> Result<PathBuf> {
-    if let Some(explicit) = std::env::var_os(SERVER_EXE_ENV).filter(|v| !v.is_empty()) {
-        return Ok(PathBuf::from(explicit));
-    }
-    let name = if cfg!(windows) {
-        "agentty-server.exe"
-    } else {
-        "agentty-server"
-    };
-    if let Ok(own) = std::env::current_exe() {
-        if let Some(dir) = own.parent() {
-            let sibling = dir.join(name);
-            if sibling.exists() {
-                return Ok(sibling);
-            }
-        }
-    }
-    if let Some(paths) = std::env::var_os("PATH") {
-        for dir in std::env::split_paths(&paths) {
-            let candidate = dir.join(name);
-            if candidate.is_file() {
-                return Ok(candidate);
-            }
-        }
-    }
-    bail!(
-        "could not find {name} next to this binary or on PATH — install it, or point \
-         {SERVER_EXE_ENV} at it"
-    )
-}
-
-#[cfg(unix)]
-fn detach(cmd: &mut Command) {
-    use std::os::unix::process::CommandExt as _;
-    unsafe {
-        cmd.pre_exec(|| {
-            if libc::setsid() == -1 {
-                return Err(std::io::Error::last_os_error());
-            }
-            Ok(())
-        });
-    }
-}
-
-#[cfg(windows)]
-fn detach(cmd: &mut Command) {
-    use std::os::windows::process::CommandExt as _;
-
-    const DETACHED_PROCESS: u32 = 0x0000_0008;
-    const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
-    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-
-    cmd.creation_flags(DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW);
-}
-
-#[cfg(not(any(unix, windows)))]
-fn detach(_cmd: &mut Command) {}

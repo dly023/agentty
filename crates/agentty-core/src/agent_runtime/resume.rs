@@ -32,6 +32,13 @@ pub fn shell_line(invocation: &ResumeInvocation) -> Vec<u8> {
     rendered.into_bytes()
 }
 
+pub fn shell_command(invocation: &ResumeInvocation) -> String {
+    String::from_utf8(shell_line(invocation))
+        .expect("shell materialization is UTF-8")
+        .trim_end_matches('\r')
+        .to_string()
+}
+
 fn shell_word(value: &str) -> String {
     if !value.is_empty()
         && value

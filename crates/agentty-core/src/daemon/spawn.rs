@@ -1,6 +1,6 @@
 use std::io;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use crate::core::config;
@@ -11,6 +11,7 @@ const STARTUP_TIMEOUT: Duration = Duration::from_secs(3);
 const POLL_INTERVAL: Duration = Duration::from_millis(50);
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(2);
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(6);
+pub const SERVER_EXE_ENV: &str = "AGENTTY_SERVER_EXE";
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 const REAP_TERM_TIMEOUT: Duration = Duration::from_secs(6);
 #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -27,6 +28,92 @@ pub fn take_mismatched_daemon() -> Option<MismatchedDaemon> {
 }
 
 static LOCAL_DAEMON: std::sync::Mutex<Option<DaemonVersion>> = std::sync::Mutex::new(None);
+static STARTUP_GATE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+fn with_startup_gate<T>(operation: impl FnOnce() -> anyhow::Result<T>) -> anyhow::Result<T> {
+    let path = config::config_path("daemon.start.lock")
+        .ok_or_else(|| anyhow::anyhow!("no config directory for the local runtime startup gate"))?;
+    with_startup_gate_at(&path, operation)
+}
+
+fn with_startup_gate_at<T>(
+    path: &Path,
+    operation: impl FnOnce() -> anyhow::Result<T>,
+) -> anyhow::Result<T> {
+    let _guard = STARTUP_GATE
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    let _file_lock = StartupFileLock::acquire(path)?;
+    operation()
+}
+
+struct StartupFileLock {
+    _file: std::fs::File,
+}
+
+impl StartupFileLock {
+    fn acquire(path: &Path) -> io::Result<Self> {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        acquire_startup_file_lock(path).map(|file| Self { _file: file })
+    }
+}
+
+#[cfg(unix)]
+fn acquire_startup_file_lock(path: &Path) -> io::Result<std::fs::File> {
+    use std::os::fd::AsRawFd as _;
+
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .open(path)?;
+    loop {
+        if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) } == 0 {
+            return Ok(file);
+        }
+        let error = io::Error::last_os_error();
+        if error.kind() != io::ErrorKind::Interrupted {
+            return Err(error);
+        }
+    }
+}
+
+#[cfg(windows)]
+fn acquire_startup_file_lock(path: &Path) -> io::Result<std::fs::File> {
+    use std::os::windows::fs::OpenOptionsExt as _;
+
+    loop {
+        match std::fs::OpenOptions::new()
+            .create(true)
+            .read(true)
+            .write(true)
+            .share_mode(0)
+            .open(path)
+        {
+            Ok(file) => return Ok(file),
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::PermissionDenied | io::ErrorKind::WouldBlock
+                ) =>
+            {
+                std::thread::sleep(POLL_INTERVAL);
+            }
+            Err(error) => return Err(error),
+        }
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
+fn acquire_startup_file_lock(path: &Path) -> io::Result<std::fs::File> {
+    std::fs::OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .open(path)
+}
 
 pub fn local_daemon_supports(feature: &str) -> bool {
     LOCAL_DAEMON
@@ -47,6 +134,67 @@ enum VersionProbe {
     Speaks(DaemonVersion),
     Legacy,
     Unresponsive,
+}
+
+fn local_runtime_ready(pane_protocol_current: bool, control_endpoint_matches: bool) -> bool {
+    pane_protocol_current && control_endpoint_matches
+}
+
+/// The single local-runtime readiness authority used by GUI and CLI callers.
+/// A pane-only process is deliberately not ready because it cannot serve Host
+/// RPCs such as session discovery or machine-tree synchronization.
+pub fn is_ready() -> bool {
+    let Ok(mut stream) = transport::connect() else {
+        return false;
+    };
+    matches!(
+        query_daemon_version(&mut stream),
+        VersionProbe::Speaks(version)
+            if local_runtime_ready(
+                version.protocol == PROTOCOL_VERSION,
+                control_endpoint_matches_recorded_daemon(&version),
+            )
+    )
+}
+
+/// Whether any pane daemon currently accepts a connection. This is weaker than
+/// readiness and exists only so lifecycle commands can accurately report that
+/// they cleaned up a degraded process.
+pub fn is_reachable() -> bool {
+    transport::connect().is_ok()
+}
+
+fn control_endpoint_matches_recorded_daemon(version: &DaemonVersion) -> bool {
+    use crate::daemon::control::{ControlClient, ControlHello, ControlRequest, ReplyOk};
+
+    let Some(expected_pid) = pidfile::read() else {
+        return false;
+    };
+    let hello = ControlHello::host_rpc("agentty-readiness-probe", "this computer");
+    let events: crate::daemon::control::EventSink = Box::new(|_| {});
+    #[cfg(unix)]
+    let client = crate::host::server::control_socket_path()
+        .and_then(std::os::unix::net::UnixStream::connect)
+        .and_then(|socket| ControlClient::over_unix(socket, &hello, events));
+    #[cfg(windows)]
+    let client = crate::host::server::connect_control()
+        .and_then(|socket| ControlClient::over_tcp(socket, &hello, events));
+    #[cfg(not(any(unix, windows)))]
+    let client: io::Result<ControlClient> = Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        "local Host control endpoint is unavailable on this platform",
+    ));
+    let Ok(client) = client else {
+        return false;
+    };
+    if client.hello().protocol_version != version.protocol || client.hello().build != version.build
+    {
+        return false;
+    }
+    matches!(
+        client.call(ControlRequest::Status),
+        Ok(ReplyOk::Status(status)) if status.pid == expected_pid
+    )
 }
 
 const DAEMON_EXE_STEMS: [&str; 3] = ["agentty-app", "agentty-server", "agentty"];
@@ -79,11 +227,23 @@ fn is_reapable_daemon_name(name: &str) -> bool {
 }
 
 pub fn ensure_running() -> anyhow::Result<()> {
+    with_startup_gate(ensure_running_locked)
+}
+
+fn ensure_running_locked() -> anyhow::Result<()> {
     if let Ok(mut stream) = transport::connect() {
         match query_daemon_version(&mut stream) {
             VersionProbe::Speaks(v) if v.protocol == PROTOCOL_VERSION => {
-                note_local_daemon(Some(v));
-                return Ok(());
+                if local_runtime_ready(true, control_endpoint_matches_recorded_daemon(&v)) {
+                    note_local_daemon(Some(v));
+                    return Ok(());
+                }
+                log::warn!(
+                    "pane daemon is reachable but its Host control endpoint is absent or owned by another process; restarting the degraded local runtime"
+                );
+                note_local_daemon(None);
+                drop(stream);
+                stop_locked();
             }
             VersionProbe::Speaks(v) => {
                 log::warn!(
@@ -113,7 +273,7 @@ pub fn ensure_running() -> anyhow::Result<()> {
                 log::info!("daemon did not answer the version handshake; restarting it");
                 note_local_daemon(None);
                 drop(stream);
-                stop();
+                stop_locked();
             }
         }
     } else {
@@ -124,22 +284,44 @@ pub fn ensure_running() -> anyhow::Result<()> {
         }
     }
 
-    spawn_detached()?;
+    let (daemon_executable, mut child) = spawn_detached()?;
 
     let deadline = Instant::now() + STARTUP_TIMEOUT;
     loop {
         if let Ok(mut stream) = transport::connect() {
             match query_daemon_version(&mut stream) {
-                VersionProbe::Speaks(v) => note_local_daemon(Some(v)),
-                _ => note_local_daemon(None),
+                VersionProbe::Speaks(v)
+                    if local_runtime_ready(
+                        v.protocol == PROTOCOL_VERSION,
+                        control_endpoint_matches_recorded_daemon(&v),
+                    ) =>
+                {
+                    note_local_daemon(Some(v));
+                    return Ok(());
+                }
+                _ => {}
             }
-            return Ok(());
+        }
+        if let Some(status) = child.try_wait().map_err(|error| {
+            anyhow::anyhow!(
+                "could not inspect detached daemon {}: {error}",
+                daemon_executable.display()
+            )
+        })? {
+            anyhow::bail!(
+                "local runtime {} exited during startup with {status}; inspect {}",
+                daemon_executable.display(),
+                daemon_log_display()
+            );
         }
         if Instant::now() >= deadline {
+            stop_locked();
             anyhow::bail!(
-                "daemon did not start listening at {} within {:?}",
+                "local runtime {} did not make both {} and the Host control endpoint ready within {:?}; inspect {}",
+                daemon_executable.display(),
                 transport::endpoint_display(),
-                STARTUP_TIMEOUT
+                STARTUP_TIMEOUT,
+                daemon_log_display()
             );
         }
         std::thread::sleep(POLL_INTERVAL);
@@ -172,11 +354,22 @@ fn query_daemon_version(stream: &mut transport::Stream) -> VersionProbe {
 }
 
 pub fn restart() -> anyhow::Result<()> {
-    stop();
-    ensure_running()
+    with_startup_gate(|| {
+        stop_locked();
+        ensure_running_locked()
+    })
 }
 
 pub fn stop() {
+    if let Err(error) = with_startup_gate(|| {
+        stop_locked();
+        Ok(())
+    }) {
+        log::error!("could not acquire the local runtime lifecycle gate for stop: {error}");
+    }
+}
+
+fn stop_locked() {
     use std::io::Write as _;
 
     if let Ok(mut stream) = transport::connect() {
@@ -272,11 +465,51 @@ fn reap_recorded_daemon() {
 #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
 fn reap_recorded_daemon() {}
 
-fn spawn_detached() -> anyhow::Result<()> {
-    let exe = std::env::current_exe()
-        .map_err(|e| anyhow::anyhow!("could not locate own executable: {e}"))?;
+fn dedicated_daemon_executable(current_exe: &Path) -> PathBuf {
+    let mut executable = current_exe.to_path_buf();
+    executable.set_file_name(if cfg!(windows) {
+        "agentty-server.exe"
+    } else {
+        "agentty-server"
+    });
+    executable
+}
 
-    let mut cmd = Command::new(exe);
+pub fn daemon_executable() -> anyhow::Result<PathBuf> {
+    if let Some(explicit) = std::env::var_os(SERVER_EXE_ENV).filter(|value| !value.is_empty()) {
+        let executable = PathBuf::from(explicit);
+        if executable.is_file() {
+            return Ok(executable);
+        }
+        anyhow::bail!(
+            "{SERVER_EXE_ENV} points to missing local runtime {}",
+            executable.display()
+        );
+    }
+
+    let current_exe = std::env::current_exe()
+        .map_err(|e| anyhow::anyhow!("could not locate own executable: {e}"))?;
+    let executable = dedicated_daemon_executable(&current_exe);
+    if !executable.is_file() {
+        anyhow::bail!(
+            "dedicated local runtime is missing at {}; install or build agentty-server beside {}",
+            executable.display(),
+            current_exe.display()
+        );
+    }
+    Ok(executable)
+}
+
+fn daemon_log_display() -> String {
+    config::config_path("agentty.log")
+        .map(|path| path.display().to_string())
+        .unwrap_or_else(|| "the Agentty config directory's agentty.log".to_string())
+}
+
+fn spawn_detached() -> anyhow::Result<(PathBuf, Child)> {
+    let exe = daemon_executable()?;
+
+    let mut cmd = Command::new(&exe);
     cmd.arg("--daemon");
 
     if let Some(dir) = config::config_dir_path() {
@@ -294,7 +527,7 @@ fn spawn_detached() -> anyhow::Result<()> {
     detach(&mut cmd);
 
     match cmd.spawn() {
-        Ok(_child) => Ok(()),
+        Ok(child) => Ok((exe, child)),
         Err(e) => Err(anyhow::anyhow!("failed to spawn daemon process: {e}")),
     }
 }
@@ -442,6 +675,64 @@ mod tests {
     use std::io::ErrorKind;
     use std::os::unix::net::UnixStream;
     use std::path::Path;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Arc, Barrier};
+
+    #[test]
+    fn pane_endpoint_without_control_endpoint_is_degraded() {
+        assert!(!local_runtime_ready(true, false));
+        assert!(!local_runtime_ready(false, true));
+        assert!(local_runtime_ready(true, true));
+    }
+
+    #[test]
+    fn concurrent_lifecycle_callers_share_one_startup_gate() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let gate = Arc::new(dir.path().join("daemon.start.lock"));
+        let barrier = Arc::new(Barrier::new(5));
+        let active = Arc::new(AtomicUsize::new(0));
+        let maximum = Arc::new(AtomicUsize::new(0));
+        let mut callers = Vec::new();
+        for _ in 0..4 {
+            let barrier = barrier.clone();
+            let gate = gate.clone();
+            let active = active.clone();
+            let maximum = maximum.clone();
+            callers.push(std::thread::spawn(move || {
+                barrier.wait();
+                with_startup_gate_at(&gate, || {
+                    let now = active.fetch_add(1, Ordering::SeqCst) + 1;
+                    maximum.fetch_max(now, Ordering::SeqCst);
+                    std::thread::sleep(Duration::from_millis(10));
+                    active.fetch_sub(1, Ordering::SeqCst);
+                    Ok(())
+                })
+                .unwrap();
+            }));
+        }
+        barrier.wait();
+        for caller in callers {
+            caller.join().unwrap();
+        }
+        assert_eq!(maximum.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn daemon_executable_is_the_headless_sibling() {
+        let gui = Path::new("/Applications/Agentty.app/Contents/MacOS/agentty-app");
+        assert_eq!(
+            dedicated_daemon_executable(gui),
+            Path::new("/Applications/Agentty.app/Contents/MacOS/agentty-server")
+        );
+        #[cfg(windows)]
+        {
+            let windows = Path::new(r"C:\\Program Files\\Agentty\\agentty-app.exe");
+            assert_eq!(
+                dedicated_daemon_executable(windows),
+                Path::new(r"C:\\Program Files\\Agentty\\agentty-server.exe")
+            );
+        }
+    }
 
     #[test]
     fn supported_shell_detection_matches_shell_basenames_only() {

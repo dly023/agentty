@@ -15,8 +15,14 @@ pub fn init(cx: &mut App) {
     let effective = effective_bindings(cx);
     let mut bindings = action_bindings(&effective);
     bindings.push(KeyBinding::new("secondary-+", IncreaseFontSize, None));
-    bindings.push(KeyBinding::new("tab", SendTab, Some("Terminal")));
-    bindings.push(KeyBinding::new("shift-tab", SendBackTab, Some("Terminal")));
+    bindings.push(KeyBinding::new("tab", CompleteFocusedSurface, None));
+    bindings.push(KeyBinding::new(
+        "shift-tab",
+        CompleteFocusedSurfaceBack,
+        None,
+    ));
+    // Terminal still accepts programmatic SendTab; keystrokes route through
+    // CompleteFocusedSurface so composer focus owns Tab when docked.
     cx.bind_keys(bindings);
     cx.set_global(BoundKeystrokes(bound_keystrokes(&effective)));
 
@@ -298,7 +304,7 @@ pub(crate) fn default_bindings() -> Vec<(&'static str, &'static str)> {
         ("ToggleSftp", ""),
         ("ShowSshForwards", ""),
         ("ToggleCodePanel", "secondary-shift-e"),
-        ("ToggleComposer", "secondary-alt-enter"),
+        ("ToggleComposer", "secondary-l"),
         ("EditorSave", "secondary-s"),
         ("OpenSshProfiles", ""),
         ("RestartSshSession", "secondary-shift-r"),
@@ -593,6 +599,10 @@ fn make_binding(action: &str, keystroke: &str) -> Option<KeyBinding> {
         "ShowSshForwards" => KeyBinding::new(keystroke, ShowSshForwards, None),
         "ToggleCodePanel" => KeyBinding::new(keystroke, ToggleCodePanel, None),
         "ToggleComposer" => KeyBinding::new(keystroke, ToggleComposer, None),
+        "CompleteFocusedSurface" => KeyBinding::new(keystroke, CompleteFocusedSurface, None),
+        "CompleteFocusedSurfaceBack" => {
+            KeyBinding::new(keystroke, CompleteFocusedSurfaceBack, None)
+        }
         "EditorSave" => KeyBinding::new(keystroke, EditorSave, None),
         "OpenSshProfiles" => KeyBinding::new(keystroke, OpenSshProfiles, None),
         "RestartSshSession" => KeyBinding::new(keystroke, RestartSshSession, None),

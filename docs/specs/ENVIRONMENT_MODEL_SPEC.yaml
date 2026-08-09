@@ -1,5 +1,5 @@
 version: 2
-updated: 2026-07-31
+updated: 2026-08-05
 domain: environment_and_window_model
 contracts:
   - id: ENV-WINDOW-BOUNDARY-01
@@ -32,6 +32,24 @@ contracts:
       - open_environment_management
     forbidden:
       - changing_the_current_window_authority_in_place
+  - id: ENV-INDICATOR-LEAD-14
+    rule: The Environment Indicator's horizontal lead inset derives from one pure mapping shared with other content-column title-bar headers (title_bar_content_lead). When the session sidebar is open, that lead is the shared panel_split_chrome_inset — the same authority used by right-panel leading chrome and other split-adjacent tiles (UI-PANEL-EDGE-GUTTER-08) — so left and right of the content column keep one distance to their splits. The macOS traffic-light lead applies only when the content-column title bar owns the traffic lights (sidebar collapsed). The content-column TitleBar shell itself must keep a zero leading pad (title_bar_shell_leading_pad) so gpui-component's default 80px traffic-light pad never stacks on top of title_bar_content_lead.
+    forbidden:
+      - traffic_light_lead_while_sidebar_owns_traffic_lights
+      - per_callsite_divergent_title_bar_lead
+      - environment_indicator_floating_far_from_sidebar_split
+      - split_lead_divergent_from_panel_split_chrome_inset
+      - title_bar_shell_padding_stacked_on_content_lead
+  - id: ENV-INDICATOR-GLYPH-13
+    rule: The Environment Indicator renders a persistent machine-kind glyph before the health dot and short name, so a local window and a remote server window are distinguishable at a glance without reading the label. The glyph derives from the same Environment authority as the label through one pure mapping, never from incidental focus or transport state, and connection health remains expressed by the dot and tooltip rather than by swapping the glyph.
+    display:
+      - local_machine_glyph_for_local_authority
+      - remote_machine_glyph_for_remote_authority
+      - health_dot_and_tooltip_unchanged
+    forbidden:
+      - text_only_environment_indicator
+      - glyph_derived_from_focus_or_transport_instead_of_authority
+      - hiding_the_health_dot_when_the_glyph_is_present
   - id: ENV-NAVIGATOR-SEPARATION-05
     rule: The left Agent Session Navigator lists sessions for the window Environment and does not replace the Environment Indicator.
   - id: ENV-PERSISTENCE-06
@@ -46,3 +64,14 @@ contracts:
     rule: Running ssh inside a terminal remains an OpenSSH child process in that window and does not change Agentty Environment authority. Selecting an SSH Environment through Agentty uses the managed russh path and opens or focuses a dedicated Environment window.
   - id: ENV-OPEN-OR-FOCUS-11
     rule: Opening a managed Environment deduplicates by EnvironmentId. If its window is already open Agentty activates that window; otherwise Agentty creates a new window bound to that Environment.
+  - id: ENV-PROFILE-DISPLAY-LABEL-12
+    rule: A saved SSH profile Environment keeps the profile UUID in EnvironmentId and routing, while every user-visible short label resolves from the current profile registry name. Renaming a profile updates presentation without changing EnvironmentId. A missing profile uses an explicit stable fallback and never exposes a raw UUID as the normal connected label.
+    forbidden:
+      - using_profile_name_as_environment_identity
+      - rendering_raw_profile_uuid_when_the_profile_registry_entry_exists
+  - id: ENV-SESSION-OPS-FACADE-15
+    rule: Session Navigator discovery, store-root resolution, and related Host-backed session actions are addressed only to the window Environment through EnvironmentSessionContext (or equivalent). UI production call sites request Environment-scoped ops and must not branch on local vs remote transport, reconstruct remote roots from GUI HOME, or fall back to the local host for a remote Environment. Local vs remote transport and handshake roots live inside the facade and Host/AgentRuntimeAdapter implementations.
+    forbidden:
+      - ui_is_local_branch_for_session_discovery
+      - gui_guessing_remote_provider_roots
+      - remote_session_ops_falling_back_to_local_host

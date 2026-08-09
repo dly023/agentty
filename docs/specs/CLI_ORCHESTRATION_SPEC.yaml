@@ -1,0 +1,15 @@
+version: 1
+updated: 2026-08-09
+domain: cli_orchestration
+contracts:
+  - id: CLI-AGENT-WAIT-01
+    rule: agentty wait resolves one pane address, polls the existing aggregate AgentStates control request, and blocks until the requested agent state is observed. A live pane without agent state is idle; a dead or vanished pane is exit, including a pane whose stale agent snapshot still reports a status. Exit always ends the wait and succeeds only when explicitly requested, with structured output otherwise. The optional changed mode rejects the initial status and activity cursor so a prior turn cannot wake a new delegation. Timeout returns exit code 124 without sleeping past its deadline. Polling is bounded to a validated interval and remains stateless at the protocol level.
+    forbidden:
+      - screen_scraping_terminal_output_for_agent_state
+      - adding_a_second_event_or_agent_protocol
+      - treating_a_vanished_pane_as_idle
+      - returning_success_for_an_unrequested_exit
+      - returning_a_generic_error_code_for_timeout
+      - treating_a_level_from_a_prior_turn_as_a_new_edge_in_changed_mode
+      - trusting_agent_status_without_periodic_pane_liveness
+status: verified

@@ -1,6 +1,6 @@
 mod boxdraw;
 mod cmd_editor;
-mod completion;
+pub(crate) mod completion;
 pub mod element;
 pub mod fps;
 mod fuzzy;

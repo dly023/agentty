@@ -12,12 +12,25 @@ required=(
   crates/agentty-core/src/agent_runtime/service.rs
   crates/agentty-core/src/agent_runtime/adapter.rs
   crates/agentty-core/src/agent_runtime/navigator.rs
+  crates/agentty-core/src/daemon/install/mod.rs
+  crates/agentty-core/src/daemon/install/wsl.rs
+  .github/scripts/bundle-macos.sh
+  .github/scripts/bundle-windows.ps1
+  .github/scripts/bundle-linux.sh
+  .github/scripts/bundle-appimage.sh
+  .github/workflows/ci.yml
+  .github/workflows/release.yml
+  .github/workflows/nightly.yml
+  script/check_package_cleanup
 )
 for path in "${required[@]}"; do
   [[ -f "$path" ]] || { echo "[remote-helper] missing $path" >&2; exit 1; }
 done
 rg -q 'pub const AGENT_HELPER' crates/agentty-core/src/daemon/control.rs
 rg -q 'HelperHello' crates/agentty-core/src/daemon/control.rs
+rg -q 'fn discovery_available' crates/agentty-core/src/agent_runtime/adapter.rs
+rg -q 'store_roots_derive_from_hello_home_when_omitted' crates/agentty-core/src/host/remote.rs
+rg -q 'AgentStoreRoots::for_home' crates/agentty-core/src/host/remote.rs
 rg -q 'DiscoverAgentSessions' crates/agentty-core/src/daemon/control.rs
 rg -q 'ResumeInvocation' crates/agentty-core/src/agent_runtime/resume.rs
 rg -q 'physical_source_limit_is_explicit_not_enumeration_truncation' crates/agentty-core/src/agent_runtime/*.rs
@@ -28,6 +41,62 @@ rg -q 'SessionNavigator' crates/agentty-core/src/agent_runtime/*.rs
 rg -q 'opaque_row_identity_survives_carrier_replacement' crates/agentty-core/src/agent_runtime/*.rs
 rg -q 'coordinate_reuse_after_delete_allocates_new_identity' crates/agentty-core/src/agent_runtime/*.rs
 rg -q 'restore_failure_rolls_back_without_duplicate_row' crates/agentty-core/src/agent_runtime/*.rs
+rg -q 'BundledServerBinary::discover' crates/agentty-core/src/daemon/install/mod.rs
+rg -q 'an_implicit_bundle_that_lacks_the_asset_falls_back_to_the_release' crates/agentty-core/src/daemon/install/tests.rs
+rg -q 'an_explicit_bundle_that_lacks_the_asset_does_not_fall_back_to_the_network' crates/agentty-core/src/daemon/install/tests.rs
+rg -q 'a_bundled_first_install_does_not_prompt_for_download_approval' crates/agentty-core/src/daemon/install/tests.rs
+rg -q 'origin_kind == BinaryOrigin::Downloaded' crates/agentty-core/src/daemon/install/mod.rs
+rg -q 'REMOTE-FIRST-PANE-MATERIALIZATION-12' docs/specs/REMOTE_HELPER_SPEC.yaml
+rg -q 'HELPER-VERSION-MISMATCH-NOTICE-13' docs/specs/REMOTE_HELPER_SPEC.yaml
+rg -q 'REMOTE-HELPER-DIALECT-SKEW-14' docs/specs/REMOTE_HELPER_SPEC.yaml
+rg -q 'WSL-SERVER-LIFECYCLE-PARITY-15' docs/specs/REMOTE_HELPER_SPEC.yaml
+rg -q 'wsl_restart_is_supported_but_replace_remains_explicitly_unsupported' crates/agentty-core/src/daemon/router.rs
+rg -q 'restart_wsl_daemon' crates/agentty-core/src/daemon/router.rs
+rg -q 'pub fn can_restart_server' crates/agentty-core/src/core/session.rs
+rg -q 'target.can_restart_server()' src/ui/app.rs src/ui/switcher.rs
+rg -q 'WSL-COMPLETION-AUTHORITY-16' docs/specs/REMOTE_HELPER_SPEC.yaml
+rg -q 'REMOTE-IMAGE-PASTE-17' docs/specs/REMOTE_HELPER_SPEC.yaml
+rg -q 'wsl_workspace_completion_uses_remote_authority' src/terminal/view.rs
+rg -q 'remote_image_paste_stages_on_every_platform' src/terminal/view.rs
+rg -q 'prepare_remote_clipboard_dir' src/terminal/view.rs
+if rg -n 'restartable = target\.is_ssh|if !target\.is_ssh' src/ui/app.rs src/ui/switcher.rs; then
+  echo '[remote-helper] restart UI capability must not be inferred from SSH transport identity' >&2
+  exit 1
+fi
+rg -q 'provider_enum_growth_advances_the_control_dialect' crates/agentty-core/src/daemon/control.rs
+rg -q 'known_dialect_skew_offers_only_replace_server' src/ui/switcher.rs
+rg -q 'replacing_prefers_a_matching_bundled_helper' crates/agentty-core/src/daemon/install/tests.rs
+rg -q 'live_replace_remote_helper_full_chain' crates/agentty-core/src/daemon/ssh/mod.rs
+rg -q 'DialectFailureActions::ReplaceOnly' src/ui/switcher.rs
+rg -q 'remote_mismatch_remains_after_modal_cancel' src/ui/remote_workspace.rs
+rg -q 'every_remote_mismatch_action_routes_to_replace_server' src/ui/remote_workspace.rs
+rg -q 'replace_mismatched_remote_server' src/ui/remote_workspace.rs src/ui/app.rs
+rg -q 'mismatch_route' src/ui/remote_workspace.rs
+rg -q 'render_remote_mismatch_notice' src/ui/app.rs
+rg -q 'common.replace_server' src/ui/remote_connect.rs src/ui/remote_workspace.rs src/ui/app.rs src/ui/switcher.rs
+rg -q 'daemon.remote_mismatch' assets/i18n/en-US.yaml assets/i18n/zh-CN.yaml
+if rg -n 'restart_mismatched_remote_server|remote-mismatch-restart' src/ui; then
+  echo '[remote-helper] known dialect mismatch must not use the restart-only path' >&2
+  exit 1
+fi
+rg -q 'link_up_hydration_preserves_pending_local_tree_commit' src/ui/tree_sync.rs
+rg -q 'failed_remote_tree_commit_cleans_orphan_and_surfaces_retryable_error' src/ui/tree_sync.rs src/ui/app.rs
+rg -q 'begin_hydration' src/ui/tree_sync.rs
+for workflow in .github/workflows/ci.yml .github/workflows/release.yml .github/workflows/nightly.yml; do
+  rg -q 'agentty-server-linux-x86_64-musl' "$workflow"
+  rg -q 'agentty-server-linux-aarch64-musl' "$workflow"
+  if rg -q 'agentty-server is not a workspace member|continue-on-error:[[:space:]]*true' "$workflow"; then
+    echo "[remote-helper] helper packaging must fail closed in $workflow" >&2
+    exit 1
+  fi
+  rg -q 'nightly-2026-07-31' "$workflow"
+done
+for bundle in .github/scripts/bundle-macos.sh .github/scripts/bundle-windows.ps1 .github/scripts/bundle-linux.sh .github/scripts/bundle-appimage.sh; do
+  rg -q 'bundled-server' "$bundle"
+  rg -q 'agentty-server-linux-x86_64-musl' "$bundle"
+  rg -q 'agentty-server-linux-aarch64-musl' "$bundle"
+done
+./script/check_package_cleanup
 if rg -n 'fallback.*local|LocalHost::shared' crates/agentty-core/src/agent_runtime crates/agentty-core/src/host/server.rs; then
   echo '[remote-helper] remote helper must not contain a local fallback path' >&2
   exit 1

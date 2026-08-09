@@ -26,20 +26,10 @@ impl AgenttyApp {
             .unwrap_or_default();
 
         let theme = cx.theme();
+        let severity = crate::ui::notice::NoticeSeverity::Danger;
 
-        let bar = h_flex()
-            .occlude()
-            .items_center()
-            .gap_2()
-            .px_3()
-            .py_1p5()
-            .rounded_lg()
-            .bg(theme.popover)
-            .border_1()
-            .border_color(theme.danger.opacity(0.4))
-            .shadow_md()
-            .text_xs()
-            .text_color(theme.muted_foreground)
+        let bar = crate::ui::notice::notice_surface(severity, cx)
+            .child(crate::ui::notice::notice_icon(severity, cx))
             .child(
                 div()
                     .font_weight(FontWeight::MEDIUM)

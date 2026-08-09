@@ -10,7 +10,140 @@ use gpui_component::input::{Input, InputEvent, InputState};
 use gpui_component::menu::{ContextMenuExt as _, DropdownMenu as _, PopupMenuItem};
 use gpui_component::{ActiveTheme as _, Icon, IconName, Sizable as _, h_flex, v_flex};
 
+use agentty_core::core::machine::TabId;
+
+#[derive(Default)]
+pub(crate) struct TabSwitchState {
+    hold: Option<TabSwitchHold>,
+}
+
+struct TabSwitchHold {
+    origin: TabId,
+    snapshot: Vec<TabId>,
+    cursor: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum TabSwitchFinish {
+    Commit(TabId),
+    Restore(TabId),
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum TabSwitchFinishKind {
+    Escape,
+    Deactivation,
+}
+
+impl TabSwitchState {
+    pub(crate) fn step(&mut self, active: TabId, mru: &[TabId], forward: bool) -> Option<TabId> {
+        if self.hold.is_none() {
+            let mut snapshot: Vec<_> = mru.iter().copied().filter(|id| *id != active).collect();
+            snapshot.insert(0, active);
+            snapshot.dedup();
+            if snapshot.len() < 2 {
+                return None;
+            }
+            self.hold = Some(TabSwitchHold {
+                origin: active,
+                snapshot,
+                cursor: 0,
+            });
+        }
+        let hold = self.hold.as_mut()?;
+        hold.cursor = if forward {
+            (hold.cursor + 1) % hold.snapshot.len()
+        } else {
+            (hold.cursor + hold.snapshot.len() - 1) % hold.snapshot.len()
+        };
+        Some(hold.snapshot[hold.cursor])
+    }
+
+    pub(crate) fn release(&mut self, live: &[TabId]) -> Option<TabSwitchFinish> {
+        let hold = self.hold.take()?;
+        let candidate = hold.snapshot[hold.cursor];
+        live.contains(&candidate)
+            .then_some(TabSwitchFinish::Commit(candidate))
+            .or_else(|| live.first().copied().map(TabSwitchFinish::Commit))
+    }
+
+    pub(crate) fn cancel(
+        &mut self,
+        live: &[TabId],
+        _kind: TabSwitchFinishKind,
+    ) -> Option<TabSwitchFinish> {
+        let hold = self.hold.take()?;
+        live.contains(&hold.origin)
+            .then_some(TabSwitchFinish::Restore(hold.origin))
+    }
+
+    pub(crate) fn is_holding(&self) -> bool {
+        self.hold.is_some()
+    }
+}
 use agentty_core::core::session::{RemoteTarget, WorkspaceId};
+
+#[cfg(test)]
+mod tab_switch_hold_tests {
+    use super::*;
+
+    fn ids() -> [TabId; 3] {
+        [TabId::new(), TabId::new(), TabId::new()]
+    }
+
+    #[test]
+    fn tab_switch_hold_uses_a_fixed_mru_snapshot() {
+        let [a, b, c] = ids();
+        let mut state = TabSwitchState::default();
+        assert_eq!(state.step(a, &[a, b, c], true), Some(b));
+        assert_eq!(state.step(b, &[c, b, a], true), Some(c));
+        assert_eq!(state.step(c, &[c, b, a], false), Some(b));
+    }
+
+    #[test]
+    fn tab_switch_release_commits_exactly_once() {
+        let [a, b, _] = ids();
+        let mut state = TabSwitchState::default();
+        state.step(a, &[a, b], true);
+        assert_eq!(state.release(&[a, b]), Some(TabSwitchFinish::Commit(b)));
+        assert_eq!(state.release(&[a, b]), None);
+    }
+
+    #[test]
+    fn tab_switch_escape_and_deactivation_restore_the_origin() {
+        let [a, b, _] = ids();
+        for finish in [
+            TabSwitchFinishKind::Escape,
+            TabSwitchFinishKind::Deactivation,
+        ] {
+            let mut state = TabSwitchState::default();
+            state.step(a, &[a, b], true);
+            assert_eq!(
+                state.cancel(&[a, b], finish),
+                Some(TabSwitchFinish::Restore(a))
+            );
+        }
+    }
+
+    #[test]
+    fn tab_switch_revalidates_removed_origin_and_candidate() {
+        let [a, b, c] = ids();
+        let mut state = TabSwitchState::default();
+        state.step(a, &[a, b, c], true);
+        assert_eq!(state.release(&[c]), Some(TabSwitchFinish::Commit(c)));
+        let mut state = TabSwitchState::default();
+        state.step(a, &[a, b, c], true);
+        assert_eq!(state.cancel(&[b, c], TabSwitchFinishKind::Escape), None);
+    }
+
+    #[test]
+    fn tab_switch_single_tab_is_a_noop() {
+        let [a, _, _] = ids();
+        let mut state = TabSwitchState::default();
+        assert_eq!(state.step(a, &[a], true), None);
+        assert_eq!(state.release(&[a]), None);
+    }
+}
 
 use crate::core::session::WorkspaceStore;
 use crate::daemon::install::InstallPhase;
@@ -80,6 +213,23 @@ struct Row {
 pub(crate) struct HostSnapshot {
     pub target: RemoteTarget,
     pub rows: Vec<RemoteWorkspaceRow>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DialectFailureActions {
+    None,
+    RetryOnly,
+    ReplaceOnly,
+}
+
+fn dialect_failure_actions(error: &str, has_target: bool) -> DialectFailureActions {
+    if !has_target {
+        DialectFailureActions::None
+    } else if crate::daemon::control::is_dialect_refusal(error) {
+        DialectFailureActions::ReplaceOnly
+    } else {
+        DialectFailureActions::RetryOnly
+    }
 }
 
 pub(crate) struct Switcher {
@@ -607,6 +757,7 @@ impl AgenttyApp {
         if let Some(error) = group.error.as_ref().filter(|_| group.installing.is_none()) {
             let retry = GroupRef::of(group);
             let replace = retry.clone();
+            let actions = dialect_failure_actions(error, group.target.is_some());
             let theme = cx.theme();
             block =
                 block.child(
@@ -626,10 +777,9 @@ impl AgenttyApp {
                                 .text_color(theme.muted_foreground)
                                 .child(error.clone()),
                         )
-                        .child(
-                            h_flex()
-                                .gap(px(4.))
-                                .child(
+                        .when(actions == DialectFailureActions::RetryOnly, |card| {
+                            card.child(
+                                h_flex().gap(px(4.)).child(
                                     Button::new(gpui::SharedString::from(format!(
                                         "switcher-retry:{}",
                                         group.key
@@ -649,36 +799,32 @@ impl AgenttyApp {
                                             );
                                         }
                                     })),
-                                )
-                                .when(
-                                    crate::daemon::control::is_dialect_refusal(error)
-                                        && replace.target.is_some(),
-                                    |row| {
-                                        row.child(
-                                            Button::new(gpui::SharedString::from(format!(
-                                                "switcher-replace:{}",
-                                                group.key
-                                            )))
-                                            .label(crate::core::i18n::current(
-                                                cx,
-                                                "common.restart_server",
-                                            ))
-                                            .ghost()
-                                            .xsmall()
-                                            .on_click(cx.listener(move |this, _, window, cx| {
-                                                if let Some(target) = replace.target.clone() {
-                                                    this.confirm_replace_remote_server(
-                                                        target,
-                                                        replace.label.clone(),
-                                                        window,
-                                                        cx,
-                                                    );
-                                                }
-                                            })),
-                                        )
-                                    },
                                 ),
-                        ),
+                            )
+                        })
+                        .when(actions == DialectFailureActions::ReplaceOnly, |card| {
+                            card.child(
+                                h_flex().gap(px(4.)).child(
+                                    Button::new(gpui::SharedString::from(format!(
+                                        "switcher-replace:{}",
+                                        group.key
+                                    )))
+                                    .label(crate::core::i18n::current(cx, "common.replace_server"))
+                                    .ghost()
+                                    .xsmall()
+                                    .on_click(cx.listener(move |this, _, window, cx| {
+                                        if let Some(target) = replace.target.clone() {
+                                            this.confirm_replace_remote_server(
+                                                target,
+                                                replace.label.clone(),
+                                                window,
+                                                cx,
+                                            );
+                                        }
+                                    })),
+                                ),
+                            )
+                        }),
                 );
         }
         if expanded && !rows.is_empty() {
@@ -1225,7 +1371,7 @@ fn group_menu(
         return menu;
     };
     let connected = group.link == Link::Connected;
-    let restartable = target.is_ssh();
+    let restartable = target.can_restart_server();
     let (label, for_restart) = (group.label.clone(), target.clone());
     let menu = menu.separator().item(
         PopupMenuItem::new(crate::core::i18n::current(cx, "menu.disconnect"))
@@ -1318,4 +1464,26 @@ fn glyph_col(w: f32, child: impl IntoElement) -> impl IntoElement {
         .items_center()
         .justify_center()
         .child(child)
+}
+
+#[cfg(test)]
+mod dialect_failure_tests {
+    use super::{DialectFailureActions, dialect_failure_actions};
+
+    #[test]
+    fn known_dialect_skew_offers_only_replace_server() {
+        let refusal = "control peer (build old) speaks control v6, this build speaks v7";
+        assert_eq!(
+            dialect_failure_actions(refusal, true),
+            DialectFailureActions::ReplaceOnly,
+        );
+        assert_eq!(
+            dialect_failure_actions("Connection refused", true),
+            DialectFailureActions::RetryOnly,
+        );
+        assert_eq!(
+            dialect_failure_actions(refusal, false),
+            DialectFailureActions::None,
+        );
+    }
 }

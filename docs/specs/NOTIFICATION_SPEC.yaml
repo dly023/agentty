@@ -1,0 +1,13 @@
+version: 1
+updated: 2026-08-09
+domain: desktop_notifications
+contracts:
+  - id: NOTIFY-CLICK-REVEAL-01
+    rule: A command or agent desktop notification carries the canonical environment-qualified daemon pane identity. Activating a supported macOS or Windows notification reveals the owning window, tab, and split through the existing tray UI dispatch loop. A missing or stale target is a safe no-op. Unsupported platforms, missing platform identity, saturated bounded queues, or backend errors retain the existing plain notification path. All backend text is Unicode-aware, length-bounded, and stripped of disallowed control characters before platform encoding.
+    forbidden:
+      - routing_notification_clicks_by_gpui_entity_id_or_unqualified_pane_id
+      - touching_gpui_state_from_a_platform_callback_thread
+      - unbounded_waiting_threads_or_live_toast_retention
+      - losing_the_notification_when_clickable_delivery_is_unavailable
+      - handing_terminal_control_bytes_to_platform_notification_markup
+status: verified

@@ -10,11 +10,452 @@ required=(
 for path in "${required[@]}"; do
   [[ -f "$path" ]] || { echo "[session-navigator] missing $path" >&2; exit 1; }
 done
-rg -q 'RemoteAgentRuntime::new' src/ui/session_navigator.rs
+rg -q 'RemoteAgentRuntime::new' src/ui/environment_session.rs
+rg -q 'EnvironmentSessionContext::resolve' src/ui/session_navigator.rs
 rg -q 'run_invocation\(&invocation, cx\)' src/ui/session_navigator.rs src/ui/app.rs
 rg -q 'navigator_row_id' src/ui/pending_pane.rs src/ui/app.rs src/ui/session_navigator.rs
 rg -q 'agent-session-navigator-list' src/ui/tab_sidebar.rs
 rg -q 'RestoreOutcome::Retryable' src/ui/app.rs src/ui/session_navigator.rs
+rg -q 'row\.agent\.icon_path\(\)' src/ui/tab_sidebar.rs
+rg -q 'row\.agent\.accent_rgb\(\)' src/ui/tab_sidebar.rs
+rg -q 'navigator_rows_use_their_agent_icon' src/ui/tab_sidebar.rs
+if rg -n 'IconName::Bot|IconName::SquareTerminal' src/ui/tab_sidebar.rs; then
+  echo '[session-navigator] provider-owned rows must use canonical CLI Agent icons' >&2
+  exit 1
+fi
+rg -q 'DiscoveryRequest::standard' src/ui/session_navigator.rs
+rg -q 'ProviderScanner::OmpJsonl => discover_omp' crates/agentty-core/src/agent_runtime/service.rs
+rg -q 'omp_discovery_reads_one_project_level_and_ignores_diagnostic_only_files' crates/agentty-core/src/agent_runtime/service.rs
+rg -q 'SESSION-GROK-DISCOVERY-31' docs/specs/SESSION_NAVIGATOR_SPEC.yaml
+rg -q 'SESSION-GEMINI-DISCOVERY-32' docs/specs/SESSION_NAVIGATOR_SPEC.yaml
+rg -q 'SESSION-DISCOVERY-TIMEOUT-VISIBLE-33' docs/specs/SESSION_NAVIGATOR_SPEC.yaml
+rg -q 'ProviderId::Grok' crates/agentty-core/src/agent_runtime/provider.rs
+rg -q 'ProviderId::Gemini' crates/agentty-core/src/agent_runtime/provider.rs
+rg -q 'ProviderScanner::GrokSummaryJson' crates/agentty-core/src/agent_runtime/provider.rs crates/agentty-core/src/agent_runtime/service.rs
+rg -q 'ProviderScanner::GeminiTmpJsonl' crates/agentty-core/src/agent_runtime/provider.rs crates/agentty-core/src/agent_runtime/service.rs
+rg -q 'fn grok_sessions' crates/agentty-core/src/agent_runtime/stores.rs
+rg -q 'fn gemini_tmp' crates/agentty-core/src/agent_runtime/stores.rs
+rg -q 'grok_discovery_reads_summary_json_and_ignores_sibling_caches' crates/agentty-core/src/agent_runtime/service.rs
+rg -q 'gemini_discovery_reads_tmp_chats_and_skips_session_context_titles' crates/agentty-core/src/agent_runtime/service.rs
+rg -q 'gemini_discovery_ignores_antigravity_cli_tree' crates/agentty-core/src/agent_runtime/service.rs
+rg -q 'grok_summary_requires_directory_identity_match' crates/agentty-core/src/agent_runtime/service.rs
+rg -q 'grok_resume_uses_native_resume_flag' crates/agentty-core/src/core/cli_agent.rs
+rg -q 'gemini_resume_uses_native_resume_flag' crates/agentty-core/src/core/cli_agent.rs
+rg -q 'grok_summary_metadata' crates/agentty-core/src/agent_runtime/parse.rs
+rg -q 'gemini_header_metadata' crates/agentty-core/src/agent_runtime/parse.rs
+rg -q 'discovery_timeout_maps_to_localized_scan_error' src/ui/session_navigator.rs
+rg -q 'navigator.scan_timed_out' assets/i18n/en-US.yaml assets/i18n/zh-CN.yaml
+rg -q 'SessionDeleteSource::Directory' crates/agentty-core/src/agent_runtime/delete.rs
+rg -q 'id: ProviderId::Grok' crates/agentty-core/src/agent_runtime/provider.rs
+rg -q 'id: ProviderId::Gemini' crates/agentty-core/src/agent_runtime/provider.rs
+rg -q 'omp_session_header_requires_filename_identity_match' crates/agentty-core/src/agent_runtime/service.rs
+rg -q 'missing_optional_provider_does_not_hide_complete_rows' crates/agentty-core/src/agent_runtime/service.rs
+rg -q 'menu.copy_resume_command' src/ui/tab_sidebar.rs
+rg -q 'menu.session_details' src/ui/tab_sidebar.rs
+rg -q 'navigator_subtitle_uses_session_context_without_repeating_provider' src/ui/tab_sidebar.rs
+rg -q 'provider_identity_remains_searchable_when_hidden_from_subtitle' src/ui/tab_sidebar.rs
+if rg -n '\.child\(provider\)' src/ui/tab_sidebar.rs; then
+  echo '[session-navigator] visible subtitles must not repeat provider identity' >&2
+  exit 1
+fi
+rg -q 'delete_plan_captures_source_and_identity_before_mutation' crates/agentty-core/src/agent_runtime/navigator.rs
+rg -q 'commit_delete_removes_row_and_file_atomically' crates/agentty-core/src/agent_runtime/navigator.rs
+rg -q 'tombstone_prevents_reappearance_in_same_generation' crates/agentty-core/src/agent_runtime/navigator.rs
+rg -q 'menu.delete_session' src/ui/tab_sidebar.rs
+rg -q 'apply_session_delete_transaction' src/ui/session_navigator.rs
+rg -q 'active_host\(cx\)' src/ui/session_navigator.rs
+rg -q 'codex_index_delete_source_rewrites_only_matching_entry' crates/agentty-core/src/agent_runtime/delete.rs
+if rg -n 'HostRegistry::local\(cx\)|let _ = h\.remove' src/ui/session_navigator.rs; then
+  echo '[session-navigator] delete must use the selected Host and preserve Host errors' >&2
+  exit 1
+fi
+if rg -n 'apply_session_delete_source' src/ui/session_navigator.rs; then
+  echo '[session-navigator] UI must use the provider+alias delete transaction' >&2
+  exit 1
+fi
+rg -q 'alias_state_is_partitioned_by_environment_identity' crates/agentty-core/src/agent_runtime/user_state.rs
+rg -q 'alias_mutation_failure_rolls_back_visible_state' crates/agentty-core/src/agent_runtime/user_state.rs
+rg -q 'deleted_session_clears_alias_state' crates/agentty-core/src/agent_runtime/user_state.rs
+rg -q 'SessionUserStateStore::load' src/ui/session_navigator.rs
+rg -q 'candidate\.save\(host, &path\)' src/ui/session_navigator.rs
+rg -q 'begin_session_alias_edit' src/ui/tab_sidebar.rs
+rg -q 'keystroke\.key == "escape"' src/ui/tab_sidebar.rs
+rg -q 'SESSION-TITLE-PRECEDENCE-11' docs/specs/SESSION_NAVIGATOR_SPEC.yaml
+rg -q 'pub fn session_display_title' crates/agentty-core/src/agent_runtime/navigator.rs
+rg -q 'session_display_title_prefers_alias_over_title_and_fallback' crates/agentty-core/src/agent_runtime/navigator.rs
+rg -q 'session_display_title_ignores_blank_candidates' crates/agentty-core/src/agent_runtime/navigator.rs
+rg -q 'session_display_title_never_uses_session_id' crates/agentty-core/src/agent_runtime/navigator.rs
+rg -q 'refresh_blank_title_preserves_last_good_title_and_alias_display' crates/agentty-core/src/agent_runtime/navigator.rs
+rg -q 'refresh_product_placeholder_title_preserves_settled_session_title' crates/agentty-core/src/agent_runtime/navigator.rs
+rg -q 'display_title_stable_across_identical_ui_inputs' crates/agentty-core/src/agent_runtime/navigator.rs
+rg -q 'is_absent_session_title' crates/agentty-core/src/agent_runtime/parse.rs
+rg -q 'catch_all_provider_title_yields_to_first_user_message' crates/agentty-core/src/agent_runtime/parse.rs
+rg -q 'catch_all_title_clears_so_first_user_message_can_name_the_row' crates/agentty-core/src/agent_runtime/navigator.rs
+rg -q 'is_non_session_title_placeholder' crates/agentty-core/src/agent_runtime/navigator.rs
+rg -q 'normalize_display_title' crates/agentty-core/src/agent_runtime/navigator.rs
+rg -q 'live_session_rows_omit_tab_and_terminal_titles' src/ui/session_navigator.rs
+rg -Fq 'row.display_title(' src/ui/tab_sidebar.rs
+rg -Fq 'row.display_title(' src/ui/session_navigator.rs
+if awk 'BEGIN{p=1} /^#\[cfg\(test\)\]/{p=0} p' src/ui/session_navigator.rs | rg -n 'tab\.name\.clone\(\)\.unwrap_or|title: Some\(tab\.name|"agentty"\.into\(\)'; then
+  echo '[session-navigator] live_session_rows must not publish tab.name or agentty as session titles' >&2
+  exit 1
+fi
+if rg -n 'alias\.clone\(\)\.or\(row\.title' src/ui/tab_sidebar.rs src/ui/session_navigator.rs; then
+  echo '[session-navigator] display titles must use session_display_title / row.display_title, not ad-hoc alias.or(title)' >&2
+  exit 1
+fi
+for title_ui in src/ui/tab_sidebar.rs src/ui/session_navigator.rs; do
+  if awk 'BEGIN{p=1} /^#\[cfg\(test\)\]/{p=0} p' "$title_ui" | rg -n '\.or\(row\.session_id\.clone\(\)\)'; then
+    echo "[session-navigator] session id must never be a display-title candidate in $title_ui" >&2
+    exit 1
+  fi
+done
+rg -q 'pin_survives_live_history_replacement_and_restart' crates/agentty-core/src/agent_runtime/user_state.rs
+rg -q 'failed_remote_pin_rolls_back_without_local_fallback' crates/agentty-core/src/agent_runtime/user_state.rs
+rg -q 'deleted_session_clears_pin_and_alias_state' crates/agentty-core/src/agent_runtime/user_state.rs
+rg -q 'toggle_session_pin' src/ui/tab_sidebar.rs src/ui/session_navigator.rs
+if rg -n 'pub fn set_pin\(' crates/agentty-core/src/agent_runtime/navigator.rs; then
+  echo '[session-navigator] Navigator pin state must be projection-only' >&2
+  exit 1
+fi
+rg -q 'SESSION-STABLE-REORDER-17' docs/specs/SESSION_NAVIGATOR_SPEC.yaml
+rg -q 'delete_or_refresh_rewriting_survivor_relative_order' docs/specs/SESSION_NAVIGATOR_SPEC.yaml
+rg -q 'reorder_preserves_active_selection_and_row_identity' crates/agentty-core/src/agent_runtime/navigator.rs
+rg -q 'split_siblings_move_as_one_reorder_unit' crates/agentty-core/src/agent_runtime/navigator.rs
+rg -q 'newly_discovered_unit_is_inserted_at_top_without_rewriting_manual_order' crates/agentty-core/src/agent_runtime/navigator.rs
+rg -q 'delete_preserves_survivor_relative_order' crates/agentty-core/src/agent_runtime/navigator.rs
+rg -q 'refresh_reinsert_preserves_first_observed_insertion_order' crates/agentty-core/src/agent_runtime/navigator.rs
+rg -q 'failed_reorder_persistence_preserves_visible_order' crates/agentty-core/src/agent_runtime/user_state.rs
+if ! rg -n 'insertion_order' -A2 crates/agentty-core/src/agent_runtime/navigator.rs | rg -q 'entry\(.*\)|\.entry'; then
+  echo '[session-navigator] upsert must reuse first-seen insertion_order via HashMap::entry' >&2
+  exit 1
+fi
+if ! awk 'BEGIN{p=1} /^#\[cfg\(test\)\]/{p=0} p' crates/agentty-core/src/agent_runtime/navigator.rs | rg -n 'insertion_order' -A5 | rg -q 'or_insert'; then
+  echo '[session-navigator] upsert must reuse first-seen insertion_order via entry().or_insert*' >&2
+  exit 1
+fi
+if awk 'BEGIN{p=1} /^#\[cfg\(test\)\]/{p=0} p' crates/agentty-core/src/agent_runtime/navigator.rs | rg -n 'self\.insertion_order\.insert\('; then
+  echo '[session-navigator] insertion_order.insert overwrites first-seen keys; use entry().or_insert*' >&2
+  exit 1
+fi
+rg -q 'Surface::Navigator' src/ui/tab_sidebar.rs src/ui/reorder.rs
+rg -q 'apply_session_reorder' src/ui/session_navigator.rs src/ui/app.rs
+rg -q 'SESSION-REFRESH-INTENT-18' docs/specs/SESSION_NAVIGATOR_SPEC.yaml
+rg -q 'scan_error_without_retry_after_host_roots_become_ready' docs/specs/SESSION_NAVIGATOR_SPEC.yaml
+rg -q 'requiring_agent_helper_feature_alone_for_session_discovery' docs/specs/SESSION_NAVIGATOR_SPEC.yaml
+rg -q 'leaving_remote_discovery_blocked_when_peer_home_is_known' docs/specs/SESSION_NAVIGATOR_SPEC.yaml
+rg -q 'fn ensure_session_navigator_scan' src/ui/session_navigator.rs
+rg -q 'session_scan_retries_after_host_roots_become_ready' src/ui/session_navigator.rs
+rg -q 'ensure_session_navigator_scan' src/ui/tab_sidebar.rs
+rg -q 'menu.set_session_alias' src/ui/tab_sidebar.rs assets/i18n/en-US.yaml assets/i18n/zh-CN.yaml
+rg -q 'session_context_menu_exposes_set_alias' src/ui/tab_sidebar.rs
+rg -q 'pinned_rows_render_explicit_pin_marker' src/ui/tab_sidebar.rs
+rg -q 'session-pin-marker-' src/ui/tab_sidebar.rs
+test -f assets/icons/pin.svg || {
+  echo '[session-navigator] missing assets/icons/pin.svg for pinned-row marker' >&2
+  exit 1
+}
+rg -q 'SESSION-ROW-ACTIVATION-30' docs/specs/SESSION_NAVIGATOR_SPEC.yaml
+rg -q 'EnvironmentSessionContext::resolve' src/ui/session_navigator.rs
+rg -q 'environment_session_context_resolve_is_the_discovery_authority' src/ui/environment_session.rs
+rg -q 'connect_and_link_up_share_passive_refresh_intent' src/ui/session_navigator.rs
+rg -q 'refresh_host_agent_sessions' src/ui/remote_workspace.rs
+rg -q 'close_live_session_row' src/ui/session_navigator.rs src/ui/tab_sidebar.rs
+rg -q 'close_and_delete_live_session_row' src/ui/session_navigator.rs src/ui/tab_sidebar.rs
+rg -q 'menu.close_session' src/ui/tab_sidebar.rs assets/i18n/en-US.yaml assets/i18n/zh-CN.yaml
+rg -q 'menu.close_and_delete_session' src/ui/tab_sidebar.rs assets/i18n/en-US.yaml assets/i18n/zh-CN.yaml
+rg -q 'plan_close_and_delete' crates/agentty-core/src/agent_runtime/navigator.rs src/ui/session_navigator.rs
+rg -q 'plan_close_and_delete_source' crates/agentty-core/src/agent_runtime/delete.rs src/ui/session_navigator.rs
+rg -q 'apply_session_user_state_delete' crates/agentty-core/src/agent_runtime/delete.rs src/ui/session_navigator.rs
+rg -q 'begin_session_alias_edit_selects_existing_display_title' src/ui/session_navigator.rs
+rg -q 'close_and_delete_handles_missing_provider_source' src/ui/session_navigator.rs
+rg -q 'first_user_title_candidate' crates/agentty-core/src/agent_runtime/parse.rs crates/agentty-core/src/agent_runtime/mod.rs src/terminal/view.rs
+rg -q 'note_first_user_prompt' src/terminal/view.rs src/ui/composer.rs
+rg -q 'session_navigator.select\(&row_id\)' src/ui/session_navigator.rs
+rg -q 'activate_selects_row_before_carrier_focus' crates/agentty-core/src/agent_runtime/navigator.rs
+rg -q 'live_session_menu_uses_close_not_provider_delete' src/ui/tab_sidebar.rs
+rg -q 'live_session_menu_exposes_close_and_delete' src/ui/tab_sidebar.rs
+rg -q 'plan_close_and_delete_captures_live_row' crates/agentty-core/src/agent_runtime/navigator.rs
+rg -q 'historical_delete_still_plans_provider_transaction' crates/agentty-core/src/agent_runtime/navigator.rs
+if awk 'BEGIN{p=1} /^#\[cfg\(test\)\]/{p=0} p' src/ui/session_navigator.rs | rg -n 'host_id\.is_local\(\)'; then
+  echo '[session-navigator] session discovery must use EnvironmentSessionContext, not UI is_local branches' >&2
+  exit 1
+fi
+if ! rg -n 'fn finish_connect' -A 40 src/ui/remote_workspace.rs | rg -q 'refresh_host_agent_sessions'; then
+  echo '[session-navigator] finish_connect must refresh Environment sessions on the host' >&2
+  exit 1
+fi
+if rg -n 'fn close_live_session_row' -A 80 src/ui/session_navigator.rs | rg -q 'apply_session_delete_transaction'; then
+  echo '[session-navigator] live Close must not call provider-file delete' >&2
+  exit 1
+fi
+if ! rg -n 'fn close_and_delete_live_session_row' -A 200 src/ui/session_navigator.rs | rg -q 'apply_session_delete_transaction'; then
+  echo '[session-navigator] Close and Delete must call provider-file delete' >&2
+  exit 1
+fi
+if ! rg -n 'fn close_and_delete_live_session_row' -A 200 src/ui/session_navigator.rs | rg -q 'apply_session_user_state_delete'; then
+  echo '[session-navigator] Close and Delete must tombstone when no provider source exists' >&2
+  exit 1
+fi
+if ! rg -n 'fn close_and_delete_live_session_row' -A 40 src/ui/session_navigator.rs | rg -q 'plan_close_and_delete'; then
+  echo '[session-navigator] Close and Delete must capture plan_close_and_delete before carrier close' >&2
+  exit 1
+fi
+if ! rg -n 'fn begin_session_alias_edit' -A 40 src/ui/session_navigator.rs | rg -q 'SelectAll'; then
+  echo '[session-navigator] alias edit must SelectAll the seeded display title' >&2
+  exit 1
+fi
+if ! awk 'BEGIN{p=1} /^#\[cfg\(test\)\]/{p=0} p' src/ui/session_navigator.rs | rg -n 'fn live_session_rows' -A 80 | rg -q 'live_first_user_title'; then
+  echo '[session-navigator] live_session_rows must project live_first_user_title only' >&2
+  exit 1
+fi
+if awk 'BEGIN{p=1} /^#\[cfg\(test\)\]/{p=0} p' src/ui/tab_sidebar.rs | rg -n 'PopupMenuItem::new\("[A-Za-z]'; then
+  echo '[session-navigator] session menus must use i18n keys, not hardcoded English' >&2
+  exit 1
+fi
+prod_pin=$(awk 'BEGIN{p=1} /^#\[cfg\(test\)\]/{p=0} p' src/ui/tab_sidebar.rs)
+if ! printf '%s\n' "$prod_pin" | rg -q 'row\.pinned' || ! printf '%s\n' "$prod_pin" | rg -q 'icons/pin\.svg'; then
+  echo '[session-navigator] pinned rows must render an explicit pin glyph' >&2
+  exit 1
+fi
+if ! printf '%s\n' "$prod_pin" | rg -q 'menu\.set_session_alias'; then
+  echo '[session-navigator] context menu must expose Set Alias' >&2
+  exit 1
+fi
+rg -q 'SESSION-PROVIDER-REGISTRY-19' docs/specs/SESSION_NAVIGATOR_SPEC.yaml
+rg -q 'SESSION-STORE-ROOT-CONTEXT-20' docs/specs/SESSION_NAVIGATOR_SPEC.yaml
+rg -q 'SESSION-VIEWPORT-PROJECTION-21' docs/specs/SESSION_NAVIGATOR_SPEC.yaml
+rg -q 'SessionViewportProjection' src/ui/session_navigator.rs src/ui/tab_sidebar.rs
+rg -q 'gpui::ListState' src/ui/app.rs
+rg -q 'gpui::list' src/ui/tab_sidebar.rs
+rg -q 'viewport_indices_never_become_row_identity' src/ui/session_navigator.rs
+rg -q 'offscreen_rows_are_not_built_but_keep_canonical_order' src/ui/session_navigator.rs
+rg -q 'filtered_projection_keeps_split_siblings_as_one_unit' src/ui/session_navigator.rs
+rg -q 'SESSION-GLOBAL-SEARCH-22' docs/specs/SESSION_NAVIGATOR_SPEC.yaml
+rg -q 'SessionSearchDocumentId' src/ui/session_navigator.rs src/ui/windows.rs src/ui/palette.rs
+rg -q 'publish_session_documents' src/ui/session_navigator.rs src/ui/windows.rs
+rg -q 'ActivateSession' src/ui/palette.rs src/ui/app.rs
+rg -q 'palette_search_uses_committed_rows_without_discovery' src/ui/windows.rs
+rg -q 'closing_window_removes_its_session_search_partition' src/ui/windows.rs
+rg -q 'session_search_identity_combines_environment_and_row_id' src/ui/session_navigator.rs
+rg -q 'SESSION-NAVIGATOR-VISUAL-23' docs/specs/SESSION_NAVIGATOR_SPEC.yaml
+rg -q 'session_delete_hover_fill' src/ui/tab_sidebar.rs
+rg -q 'smart_path_truncation_keeps_informative_suffix' src/ui/tab_sidebar.rs
+rg -q 'session_row_visual_contract_is_distinct' src/ui/tab_sidebar.rs
+rg -q 'session_row_paint_uses_surfaces_sidebar_not_theme_muted' src/ui/tab_sidebar.rs
+rg -q 'fn session_row_surface_fill' src/ui/tab_sidebar.rs
+rg -q 'fn session_row_hover_fill' src/ui/tab_sidebar.rs
+# Row fills must come from Surfaces.sidebar, never theme muted as fill authority.
+if awk 'BEGIN{p=1} /^#\[cfg\(test\)\]/{p=0} p' src/ui/tab_sidebar.rs | rg -q 'item\.bg\(cx\.theme\(\)\.muted\)|item\.bg\(cx\.theme\(\)\.sidebar_accent\)'; then
+  echo '[session-navigator] session rows must not paint fill from theme().muted / sidebar_accent' >&2
+  exit 1
+fi
+if ! awk 'BEGIN{p=1} /^#\[cfg\(test\)\]/{p=0} p' src/ui/tab_sidebar.rs | rg -q 'session_row_surface_fill|session_row_hover_fill'; then
+  echo '[session-navigator] session rows must paint from Surfaces.sidebar helpers' >&2
+  exit 1
+fi
+if ! awk 'BEGIN{p=1} /^#\[cfg\(test\)\]/{p=0} p' src/ui/tab_sidebar.rs | rg -n 'fn session_row_text_fade' -A 20 | rg -q 'Surfaces>\(\)\.sidebar|\.sidebar'; then
+  echo '[session-navigator] session_row_text_fade must match Surfaces.sidebar solids' >&2
+  exit 1
+fi
+# Stronger: the fade helper must resolve Surfaces.sidebar (not theme muted).
+if awk 'BEGIN{p=1} /^#\[cfg\(test\)\]/{p=0} p' src/ui/tab_sidebar.rs | rg -n 'fn session_row_text_fade' -A 25 | rg -q 'theme\(\)\.muted[^_]'; then
+  echo '[session-navigator] session_row_text_fade must not use theme().muted as fade solid' >&2
+  exit 1
+fi
+if ! awk 'BEGIN{p=1} /^#\[cfg\(test\)\]/{p=0} p' src/ui/tab_sidebar.rs | rg -n 'fn session_row_text_fade' -A 12 | rg -q 'presets::Surfaces'; then
+  echo '[session-navigator] session_row_text_fade must read Surfaces.sidebar' >&2
+  exit 1
+fi
+rg -q 'SESSION-SCHEMA-BOUNDED-DISCOVERY-24' docs/specs/SESSION_NAVIGATOR_SPEC.yaml
+rg -q 'SESSION-SIDEBAR-SURFACE-HIERARCHY-25' docs/specs/SESSION_NAVIGATOR_SPEC.yaml
+rg -q 'SESSION-SIDEBAR-ROW-DENSITY-29' docs/specs/SESSION_NAVIGATOR_SPEC.yaml
+rg -q 'SESSION-SPLIT-GROUP-PRESENTATION-26' docs/specs/SESSION_NAVIGATOR_SPEC.yaml
+rg -q 'session_sidebar_surface_metrics' src/ui/tab_sidebar.rs
+rg -q 'session_unit_visual_kind' src/ui/tab_sidebar.rs
+rg -q 'session_sidebar_surface_metrics_are_explicit' src/ui/tab_sidebar.rs
+rg -q 'session_row_selection_keeps_stable_horizontal_inset' src/ui/tab_sidebar.rs
+rg -q 'session_resume_affordance_overlays_without_flex_slot' src/ui/tab_sidebar.rs
+rg -q 'session_row_text_overflow_uses_trailing_fade_not_ellipsis' src/ui/tab_sidebar.rs
+rg -q 'fn session_row_reserves_border' src/ui/tab_sidebar.rs
+rg -q 'fn session_row_content_inset' src/ui/tab_sidebar.rs
+rg -q 'fn session_row_text_fade' src/ui/tab_sidebar.rs
+rg -q 'split_session_units_use_one_visual_container' src/ui/tab_sidebar.rs
+rg -q 'rendered_sidebar_uses_search_surface_and_split_group_geometry' src/ui/tab_sidebar.rs
+rg -Fq 'session_search_surface(cx)' src/ui/tab_sidebar.rs
+rg -Fq 'session_unit_stack_surface(grouped, group_selected, cx)' src/ui/tab_sidebar.rs
+rg -Fq 'metrics.row_pad_x' src/ui/tab_sidebar.rs
+rg -Fq 'metrics.icon_text_gap' src/ui/tab_sidebar.rs
+rg -Fq 'metrics.icon_radius' src/ui/tab_sidebar.rs
+rg -Fq 'metrics.text_fade_width' src/ui/tab_sidebar.rs
+rg -Fq 'metrics.icon_radius' src/ui/tab_sidebar.rs
+rg -Fq 'agent_icon_badge(' src/ui/tab_sidebar.rs
+rg -Fq 'session_row_text_fade(selected, cx)' src/ui/tab_sidebar.rs
+rg -Fq '.absolute()' src/ui/tab_sidebar.rs
+rg -Fq '.right(px(pad))' src/ui/tab_sidebar.rs
+if rg -n '\.pl_3\(\)|\.gap_1p5\(\)|\.py_1p5\(\)|size\(px\(22\.\)\)' src/ui/tab_sidebar.rs; then
+  echo '[session-navigator] row geometry must come from session_sidebar_surface_metrics, not ad-hoc literals' >&2
+  exit 1
+fi
+if ! rg -Fq '.border_1()' src/ui/tab_sidebar.rs; then
+  echo '[session-navigator] session rows must always reserve a border width for stable selection inset' >&2
+  exit 1
+fi
+if rg -n 'SessionRowHoverAffordance::ResumeAction' -A 20 src/ui/tab_sidebar.rs | rg -q 'flex_shrink_0'; then
+  echo '[session-navigator] resume affordance must overlay, not reserve a permanent flex column' >&2
+  exit 1
+fi
+# Production row body only — exclude the #[cfg(test)] module so assertion
+# strings mentioning forbidden APIs do not trip the gate.
+prod_sidebar=$(awk 'BEGIN{p=1} /^#\[cfg\(test\)\]/{p=0} p' src/ui/tab_sidebar.rs)
+if printf '%s\n' "$prod_sidebar" | rg -n 'size\(px\(metrics\.icon_size\)\)' -A 2 | rg -q 'rounded_full'; then
+  echo '[session-navigator] provider icons must be rounded rectangles, not circles' >&2
+  exit 1
+fi
+if printf '%s\n' "$prod_sidebar" | rg -n 'session-alias-label-' -A 12 | rg -q '\.truncate\(\)|\.text_ellipsis\(\)'; then
+  echo '[session-navigator] session title overflow must use trailing fade, not ellipsis truncate' >&2
+  exit 1
+fi
+if rg -n 'session\.navigator_title' src/ui/tab_sidebar.rs assets/i18n/en-US.yaml assets/i18n/zh-CN.yaml; then
+  echo '[session-navigator] sidebar chrome must not render a redundant navigator section title under traffic lights' >&2
+  exit 1
+fi
+rg -q 'cursor_scanner_ignores_unrelated_project_cache_nodes' crates/agentty-core/src/agent_runtime/service.rs
+rg -q 'collect_cursor_jsonl' crates/agentty-core/src/agent_runtime/service.rs
+rg -q 'session\.search_placeholder' src/ui/app.rs assets/i18n/en-US.yaml assets/i18n/zh-CN.yaml
+rg -q 'session\.discovering' src/ui/tab_sidebar.rs
+rg -q 'session\.empty' src/ui/tab_sidebar.rs
+rg -q 'session\.no_match' src/ui/tab_sidebar.rs
+if rg -n 'refresh_session_navigator|DiscoveryRequest|discover\(' src/ui/palette.rs; then
+  echo '[session-navigator] palette search must consume committed session documents without discovery' >&2
+  exit 1
+fi
+if rg -n 'session_navigator.rows().to_vec()' src/ui/tab_sidebar.rs; then
+  echo '[session-navigator] committed rows must be projected into a lazy variable-height list' >&2
+  exit 1
+fi
+rg -q 'standard_discovery_covers_registered_persisted_providers' crates/agentty-core/src/agent_runtime/service.rs
+rg -q 'provider_descriptor_rejects_noncanonical_sources' crates/agentty-core/src/agent_runtime/provider.rs
+rg -q 'registry_has_no_descriptor_for_unpersisted_agents' crates/agentty-core/src/agent_runtime/provider.rs
+rg -q 'custom_codex_and_claude_roots_apply_to_scan_and_mutation' crates/agentty-core/src/agent_runtime/service.rs
+rg -q 'remote_helper_never_guesses_daemon_process_roots' crates/agentty-core/src/daemon/control.rs src/ui/session_navigator.rs
+rg -q 'pub const PERSISTED_PROVIDER_DESCRIPTORS' crates/agentty-core/src/agent_runtime/provider.rs
+rg -q 'store_roots: Option<crate::agent_runtime::AgentStoreRoots>' crates/agentty-core/src/daemon/control.rs
+if rg -n 'pub providers: Vec<String>|vec!\["codex"\.into\(\), "claude"\.into\(\), "omp"\.into\(\)\]|match provider\.as_str\(\)' crates/agentty-core/src/agent_runtime; then
+  echo '[session-navigator] persisted provider discovery must use typed descriptors, not handwritten strings' >&2
+  exit 1
+fi
+if rg -n 'DiscoveryRequest::standard\(AgentStoreRoots::for_home\(home\)\)' src/ui/session_navigator.rs; then
+  echo '[session-navigator] remote discovery must forward the target-owned handshake roots snapshot' >&2
+  exit 1
+fi
+rg -q 'unavailable_remote_refresh_does_not_poison_link_up_refresh' src/ui/session_navigator.rs
+rg -q 'generic_terminal_events_do_not_scan_provider_history' src/ui/session_navigator.rs
+rg -q 'source_mutation_and_agent_close_trigger_passive_refresh' src/ui/session_navigator.rs
+rg -q 'SessionRefreshIntent::RemoteLinkUp' src/ui/remote_workspace.rs
+rg -q 'SessionRefreshIntent::AgentCarrierClosed' src/ui/app.rs
+rg -q 'abandon\(' src/ui/session_navigator.rs
+if rg -n 'set_display_order\(|reorder_rows\([^)]*usize|display_order.*visible.*index' src/ui crates/agentty-core/src; then
+  echo '[session-navigator] reorder must persist stable identity, never viewport indices or row-local mutation authority' >&2
+  exit 1
+fi
+if rg -n 'fn set_alias\(|aliases_snapshot|load_aliases|hydrate_aliases' crates/agentty-core/src/agent_runtime/navigator.rs; then
+  echo '[session-navigator] alias state must have one Environment-scoped authority' >&2
+  exit 1
+fi
+if rg -n 'delete\(.*row_id' crates/agentty-core/src/agent_runtime/navigator.rs; then
+  :
+else
+  echo '[session-navigator] permanent delete must have a typed plan' >&2
+  exit 1
+fi
+rg -q 'provider_title_wins_even_when_it_appears_after_first_user_message' crates/agentty-core/src/agent_runtime/parse.rs
+rg -q 'first_user_message_names_untitled_session' crates/agentty-core/src/agent_runtime/parse.rs
+rg -q 'resolved_title\(\)\.map\(str::to_owned\)' crates/agentty-core/src/agent_runtime/service.rs
+if rg -n 'title = metadata.*codex_user_message|title = metadata.*claude_user_message' crates/agentty-core/src/agent_runtime/parse.rs; then
+  echo '[session-navigator] User messages must not occupy provider title slots' >&2
+  exit 1
+fi
+rg -q 'execution_badge_precedence_is_restoring_then_waiting_then_running_then_focused_live_then_background_live' crates/agentty-core/src/agent_runtime/navigator.rs
+rg -q 'stale_execution_event_cannot_replace_current_state' crates/agentty-core/src/agent_runtime/navigator.rs
+rg -q 'view.agent_session()' src/ui/session_navigator.rs
+rg -q 'execution_badge\(' src/ui/tab_sidebar.rs
+if rg -n 'let status_dot = if active|Some\(cx\.theme\(\)\.success\).*restoring' src/ui/tab_sidebar.rs; then
+  echo '[session-navigator] execution presentation must not collapse to lifecycle dots' >&2
+  exit 1
+fi
+rg -q 'HoverCard::new' src/ui/tab_sidebar.rs
+rg -q 'fn session_hover_sidecar_lead' src/ui/tab_sidebar.rs
+rg -q 'session_hover_sidecar_lead_clears_the_sidebar_split' src/ui/tab_sidebar.rs
+rg -Fq '.ml(px(sidecar_lead))' src/ui/tab_sidebar.rs
+rg -q 'fn session_hover_allowed' src/ui/tab_sidebar.rs
+rg -q 'session_hover_yields_to_open_context_menu' src/ui/tab_sidebar.rs
+rg -q 'session_hover_delays_stay_in_the_snappy_band' src/ui/tab_sidebar.rs
+rg -q 'session_updated_display_uses_local_datetime_formatter' src/ui/tab_sidebar.rs
+rg -q 'format_unix_ms_local_is_readable_not_raw_millis' src/ui/home.rs
+rg -q 'format_session_updated_at' src/ui/tab_sidebar.rs src/ui/home.rs
+rg -q 'raw_unix_millis_as_updated_display' docs/specs/SESSION_NAVIGATOR_SPEC.yaml
+if awk 'BEGIN{p=1} /^#\[cfg\(test\)\]/{p=0} p' src/ui/tab_sidebar.rs | rg -n 'millis\.to_string\(\)'; then
+  echo '[session-navigator] Updated metadata must not render raw unix millis' >&2
+  exit 1
+fi
+rg -q 'begin_session_row_context_menu' src/ui/tab_sidebar.rs
+rg -q 'session_row_menu_open' src/ui/app.rs src/ui/tab_sidebar.rs
+rg -Fq 'from_millis(180)' src/ui/tab_sidebar.rs
+rg -Fq 'from_millis(120)' src/ui/tab_sidebar.rs
+if ! rg -Fq 'session_hover_allowed(self.session_row_menu_open.get())' src/ui/tab_sidebar.rs; then
+  echo '[session-navigator] hover card must yield while the row context menu is open' >&2
+  exit 1
+fi
+# Menu-open path before the dismiss subscription must not force an extra notify.
+begin_open=$(awk '
+  /fn begin_session_row_context_menu/ {p=1}
+  p && /cx\.subscribe/ {exit}
+  p {print}
+' src/ui/tab_sidebar.rs)
+if printf '%s\n' "$begin_open" | rg -q 'cx\.notify\(\)'; then
+  echo '[session-navigator] context-menu open must not cx.notify(); ContextMenu window.refresh owns that frame' >&2
+  exit 1
+fi
+rg -q 'detail_row\(&self, row_id: &NavigatorRowId\)' crates/agentty-core/src/agent_runtime/navigator.rs
+rg -q 'pointer_safe_region_keeps_detail_open' src/ui/tab_sidebar.rs
+if rg -n 'hover_(open|close)_task|session_hover_(open|close)_task|active_hover_index' src/ui crates/agentty-core/src/agent_runtime; then
+  echo '[session-navigator] hover details must reuse HoverCard and stable RowId, not parallel timers or indices' >&2
+  exit 1
+fi
+rg -q 'keyboard_cursor_uses_row_identity_not_list_index' src/ui/session_navigator.rs
+rg -q 'enter_activates_filtered_cursor_and_escape_clears_transient_state' src/ui/session_navigator.rs
+rg -q 'activate_session_keyboard_cursor' src/ui/tab_sidebar.rs src/ui/session_navigator.rs
+if rg -n 'session_keyboard_cursor.*session_navigator\.select|session_navigator\.select.*session_keyboard_cursor|keyboard_cursor_(index|ix)' src/ui crates/agentty-core/src; then
+  echo '[session-navigator] keyboard cursor must remain transient stable RowId state' >&2
+  exit 1
+fi
+rg -q 'resume_carrier_is_bound_before_first_projection' src/ui/session_navigator.rs
+rg -q 'restored_live_binding_survives_placeholder_and_restart' crates/agentty-core/src/core/session.rs
+rg -q 'provider_identity_rebind_preserves_container_row' crates/agentty-core/src/agent_runtime/navigator.rs
+rg -q 'live_binding:.*LiveContainerBinding' src/terminal/view.rs src/ui/pending_pane.rs
+rg -q 'fn apply_live_binding_agent_poll' src/terminal/view.rs
+rg -q 'fn agent_bound_carrier_close_predicate' src/terminal/view.rs
+rg -q 'foreground_agent_stamps_binding_without_session_id' src/terminal/view.rs
+rg -q 'agent_exit_does_not_clear_live_binding_agent' src/terminal/view.rs
+rg -q 'agent_bound_carrier_close_uses_binding_or_session' src/terminal/view.rs
+rg -Fq 'clearing_live_binding_agent_on_process_exit' docs/specs/SESSION_NAVIGATOR_SPEC.yaml
+rg -Fq 'waiting_for_session_id_before_stamping_live_binding_agent' docs/specs/SESSION_NAVIGATOR_SPEC.yaml
+rg -Fq 'agent_carrier_close_refresh_gated_only_on_runtime_session' docs/specs/SESSION_NAVIGATOR_SPEC.yaml
+rg -Fq 'provider_discovery_scan_on_foreground_agent_detect' docs/specs/SESSION_NAVIGATOR_SPEC.yaml
+if rg -n 'leaf\.read\(cx\)\.agent_session\(\)\.is_some\(\)' src/ui/app.rs; then
+  echo '[session-navigator] agent carrier close must use is_agent_bound (binding or session)' >&2
+  exit 1
+fi
+rg -q 'is_agent_bound\(\)' src/ui/app.rs
+if ! rg -n 'DaemonMsg::Agent' -A8 src/terminal/remote.rs | rg -q 'Wakeup'; then
+  echo '[session-navigator] DaemonMsg::Agent must Wakeup so binding stamp is not delayed' >&2
+  exit 1
+fi
+if rg -n 'SessionIdentity::Durable\(format!\("pane:|container_id: format!\("container-\{pane\}"' src crates/agentty-core/src; then
+  echo '[session-navigator] live identity must come from persisted container binding, never pane coordinates' >&2
+  exit 1
+fi
 if rg -n 'std::iter::once\(invocation\.program\)|invocation\.args.*join|resume_command\(' crates/agentty-core/src src/ui src/terminal; then
   echo '[session-navigator] typed resume must not be interpolated by the UI' >&2
   exit 1

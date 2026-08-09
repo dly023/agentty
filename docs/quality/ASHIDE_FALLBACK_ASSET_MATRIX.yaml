@@ -64,12 +64,18 @@ tracks:
       - restore_finalize_has_typed_success_retryable_cancelled_and_model_broken_outcomes
       - missing_restore_content_has_zero_identity_or_persistence_side_effects
       - environment_disconnect_preserves_rows_and_authority
+      - foreground_agent_detect_stamps_binding_without_session_id_or_discovery
+      - agent_process_exit_preserves_live_binding_while_carrier_lives
+      - agent_carrier_close_refresh_uses_binding_not_runtime_session_alone
     minimum_tests:
       - navigator_render_identity_uses_canonical_row_id
       - inline_edit_identity_survives_carrier_replacement
       - coordinate_reuse_after_delete_allocates_new_identity
       - restore_failure_rolls_back_without_duplicate_row
       - closing_live_carrier_hands_off_to_native_history
+      - foreground_agent_stamps_binding_without_session_id
+      - agent_exit_does_not_clear_live_binding_agent
+      - agent_bound_carrier_close_uses_binding_or_session
     fallback_coverage:
       stable_opaque_row_identity_survives_virtual_restoring_live_transitions:
         tests: [opaque_row_identity_survives_carrier_replacement, inline_edit_identity_survives_carrier_replacement]
@@ -80,13 +86,19 @@ tracks:
       deletion_tombstones_identity_and_coordinate_reuse_gets_a_new_identity:
         tests: [coordinate_reuse_after_delete_allocates_new_identity]
       close_of_agent_bound_carrier_triggers_passive_native_history_refresh:
-        tests: [closing_live_carrier_hands_off_to_native_history]
+        tests: [closing_live_carrier_hands_off_to_native_history, agent_bound_carrier_close_uses_binding_or_session]
       restore_finalize_has_typed_success_retryable_cancelled_and_model_broken_outcomes:
         tests: [restore_failure_rolls_back_without_duplicate_row]
       missing_restore_content_has_zero_identity_or_persistence_side_effects:
         tests: [missing_restore_content_has_zero_side_effects]
       environment_disconnect_preserves_rows_and_authority:
         tests: [closing_live_carrier_hands_off_to_native_history, remote_disconnect_never_becomes_local]
+      foreground_agent_detect_stamps_binding_without_session_id_or_discovery:
+        tests: [foreground_agent_stamps_binding_without_session_id]
+      agent_process_exit_preserves_live_binding_while_carrier_lives:
+        tests: [agent_exit_does_not_clear_live_binding_agent]
+      agent_carrier_close_refresh_uses_binding_not_runtime_session_alone:
+        tests: [agent_bound_carrier_close_uses_binding_or_session]
   completion:
     required_fallbacks:
       - deterministic_sources_remain_available_when_dynamic_generators_fail

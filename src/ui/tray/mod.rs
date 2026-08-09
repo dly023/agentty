@@ -11,14 +11,27 @@ use sni::Backend;
 
 use crate::core::cli_agent::AgentStatus;
 use crate::core::config::{Config, NotifyMode};
+use crate::core::i18n::ResolveLocale;
 use gpui::App;
+use std::sync::Mutex;
 
 const POLL: std::time::Duration = std::time::Duration::from_millis(1000);
+const DISPATCH_CAPACITY: usize = 64;
+static SENDER: Mutex<Option<smol::channel::Sender<TrayAction>>> = Mutex::new(None);
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) fn sender() -> Option<smol::channel::Sender<TrayAction>> {
+    SENDER.lock().ok()?.clone()
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum TrayAction {
     ShowWindow,
-    RevealPane { leaf_id: u64 },
+    RevealLeaf {
+        leaf_id: u64,
+    },
+    RevealPane {
+        target: crate::ui::composer::PaneIdentity,
+    },
     SetNotifyMode(NotifyMode),
     OpenSettings,
     CheckForUpdates,
@@ -47,6 +60,7 @@ pub(crate) struct AgentRow {
 pub(crate) struct TraySnapshot {
     pub agents: Vec<AgentRow>,
     pub notify_mode: NotifyMode,
+    pub locale: crate::core::i18n::Locale,
 }
 
 impl TraySnapshot {
@@ -57,13 +71,15 @@ impl TraySnapshot {
 
     pub(crate) fn tooltip(&self) -> String {
         let count = |s: AgentStatus| self.agents.iter().filter(|a| a.status == s).count();
+        let locale = self.locale;
         let mut parts = Vec::new();
-        for (n, word) in [
-            (count(AgentStatus::Waiting), "waiting"),
-            (count(AgentStatus::Working), "working"),
-            (count(AgentStatus::Done), "done"),
+        for (n, key) in [
+            (count(AgentStatus::Waiting), "tray.tooltip.waiting"),
+            (count(AgentStatus::Working), "tray.tooltip.working"),
+            (count(AgentStatus::Done), "tray.tooltip.done"),
         ] {
             if n > 0 {
+                let word = crate::core::i18n::tr(locale, key);
                 parts.push(format!("{n} {word}"));
             }
         }
@@ -90,19 +106,29 @@ pub(crate) enum SpecItem {
 }
 
 pub(crate) fn menu_spec(snap: &TraySnapshot) -> Vec<SpecItem> {
+    let locale = snap.locale;
+    let t = |key| crate::core::i18n::tr(locale, key).to_string();
     let item = |id: &str, label: String| SpecItem::Item {
         id: id.to_string(),
         label,
         checked: None,
         avatar: None,
     };
-    let mut items = vec![item("show", "Show agentty".into()), SpecItem::Separator];
+    let mut items = vec![item("show", t("tray.show")), SpecItem::Separator];
     for a in &snap.agents {
         let state = match a.status {
-            AgentStatus::Waiting => " — needs input",
-            AgentStatus::Working => " — working",
-            AgentStatus::Done => " — done",
-            AgentStatus::Idle => "",
+            AgentStatus::Waiting => format!(
+                " — {}",
+                crate::core::i18n::tr(locale, "tray.status.waiting")
+            ),
+            AgentStatus::Working => format!(
+                " — {}",
+                crate::core::i18n::tr(locale, "tray.status.working")
+            ),
+            AgentStatus::Done => {
+                format!(" — {}", crate::core::i18n::tr(locale, "tray.status.done"))
+            }
+            AgentStatus::Idle => String::new(),
         };
         items.push(SpecItem::Item {
             id: format!("agent:{}", a.leaf_id),
@@ -114,25 +140,29 @@ pub(crate) fn menu_spec(snap: &TraySnapshot) -> Vec<SpecItem> {
     if !snap.agents.is_empty() {
         items.push(SpecItem::Separator);
     }
-    let notify = |id: &str, label: &str, mode: NotifyMode| SpecItem::Item {
+    let notify = |id: &str, label: String, mode: NotifyMode| SpecItem::Item {
         id: id.to_string(),
-        label: label.to_string(),
+        label,
         checked: Some(snap.notify_mode == mode),
         avatar: None,
     };
     items.push(SpecItem::Submenu {
-        label: "Notifications".into(),
+        label: t("tray.notifications"),
         items: vec![
-            notify("notify:never", "Never", NotifyMode::Never),
-            notify("notify:unfocused", "When Unfocused", NotifyMode::Unfocused),
-            notify("notify:always", "Always", NotifyMode::Always),
+            notify("notify:never", t("opt.never"), NotifyMode::Never),
+            notify(
+                "notify:unfocused",
+                t("opt.when_unfocused"),
+                NotifyMode::Unfocused,
+            ),
+            notify("notify:always", t("opt.always"), NotifyMode::Always),
         ],
     });
-    items.push(item("settings", "Settings…".into()));
-    items.push(item("updates", "Check for Updates…".into()));
+    items.push(item("settings", t("palette.cmd.settings")));
+    items.push(item("updates", t("palette.cmd.check_updates")));
     items.push(SpecItem::Separator);
-    items.push(item("quit", "Quit agentty".into()));
-    items.push(item("quit-stop", "Quit and Stop Server…".into()));
+    items.push(item("quit", t("palette.cmd.quit")));
+    items.push(item("quit-stop", t("tray.quit_stop")));
     items
 }
 
@@ -148,7 +178,7 @@ pub(crate) fn action_from_id(id: &str) -> Option<TrayAction> {
         "notify:never" => Some(TrayAction::SetNotifyMode(NotifyMode::Never)),
         _ => {
             let leaf_id = id.strip_prefix("agent:")?.parse().ok()?;
-            Some(TrayAction::RevealPane { leaf_id })
+            Some(TrayAction::RevealLeaf { leaf_id })
         }
     }
 }
@@ -156,6 +186,7 @@ pub(crate) fn action_from_id(id: &str) -> Option<TrayAction> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use agentty_core::core::environment::EnvironmentDescriptor;
 
     fn snapshot_with_agent(status: AgentStatus) -> TraySnapshot {
         TraySnapshot {
@@ -166,6 +197,7 @@ mod tests {
                 detail: "agentty @ main".into(),
             }],
             notify_mode: NotifyMode::Unfocused,
+            locale: crate::core::i18n::Locale::EnUs,
         }
     }
 
@@ -191,10 +223,27 @@ mod tests {
     fn agent_rows_decode_to_reveal_with_their_leaf_id() {
         assert_eq!(
             action_from_id("agent:42"),
-            Some(TrayAction::RevealPane { leaf_id: 42 })
+            Some(TrayAction::RevealLeaf { leaf_id: 42 })
         );
         assert_eq!(action_from_id("agent:nope"), None);
         assert_eq!(action_from_id("bogus"), None);
+    }
+
+    #[test]
+    fn notification_reveal_targets_environment_and_pane_not_entity_id() {
+        let target = crate::ui::composer::PaneIdentity {
+            environment: EnvironmentDescriptor::local().id,
+            pane_id: 42,
+        };
+        assert_eq!(
+            notification_reveal_action(target.clone()),
+            TrayAction::RevealPane { target }
+        );
+    }
+
+    #[test]
+    fn stale_notification_target_is_a_noop() {
+        assert_eq!(dispatch_target_for_reveal(false, true), None);
     }
 
     #[test]
@@ -256,6 +305,7 @@ fn app_snapshot(cx: &mut App) -> TraySnapshot {
     TraySnapshot {
         agents,
         notify_mode: cx.global::<Config>().notify_on_command_finish,
+        locale: cx.global::<Config>().locale.resolve(),
     }
 }
 
@@ -263,16 +313,30 @@ fn dispatch(action: TrayAction, cx: &mut App) {
     use crate::ui::windows::WindowRegistry;
 
     let target = match action {
-        TrayAction::RevealPane { leaf_id } => WindowRegistry::open_windows(cx)
+        TrayAction::RevealLeaf { leaf_id } => WindowRegistry::open_windows(cx)
             .into_iter()
             .find(|(_, weak)| {
                 weak.upgrade()
                     .is_some_and(|app| app.read(cx).owns_leaf(leaf_id))
             })
             .map(|(workspace, _)| workspace),
+        TrayAction::RevealPane { ref target } => WindowRegistry::open_windows(cx)
+            .into_iter()
+            .find(|(workspace, weak)| {
+                crate::core::session::WorkspaceStore::environment_id(cx, *workspace)
+                    == target.environment
+                    && weak
+                        .upgrade()
+                        .is_some_and(|app| app.read(cx).owns_pane_identity(target, cx))
+            })
+            .map(|(workspace, _)| workspace),
         _ => None,
     }
-    .or_else(|| WindowRegistry::most_recent(cx));
+    .or_else(|| {
+        (!matches!(action, TrayAction::RevealPane { .. }))
+            .then(|| WindowRegistry::most_recent(cx))
+            .flatten()
+    });
 
     let Some(workspace) = target else {
         if matches!(action, TrayAction::Quit) {
@@ -294,7 +358,10 @@ fn dispatch(action: TrayAction, cx: &mut App) {
 }
 
 pub(crate) fn init(cx: &mut App) {
-    let (tx, rx) = smol::channel::unbounded::<TrayAction>();
+    let (tx, rx) = smol::channel::bounded::<TrayAction>(DISPATCH_CAPACITY);
+    if let Ok(mut sender) = SENDER.lock() {
+        *sender = Some(tx.clone());
+    }
 
     cx.spawn(async move |cx| {
         while let Ok(action) = rx.recv().await {
@@ -348,4 +415,16 @@ pub(crate) fn init(cx: &mut App) {
         }
     })
     .detach();
+}
+
+fn notification_reveal_action(target: crate::ui::composer::PaneIdentity) -> TrayAction {
+    TrayAction::RevealPane { target }
+}
+
+#[cfg(test)]
+fn dispatch_target_for_reveal(found: bool, has_recent: bool) -> Option<()> {
+    found.then_some(()).or_else(|| {
+        let _ = has_recent;
+        None
+    })
 }

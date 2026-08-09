@@ -29,6 +29,7 @@ fn agent_icon(path: &str) -> Option<&'static [u8]> {
         "icons/panel-left.svg" => include_bytes!("../../assets/icons/panel-left.svg"),
         "icons/panel-right.svg" => include_bytes!("../../assets/icons/panel-right.svg"),
         "icons/plus.svg" => include_bytes!("../../assets/icons/plus.svg"),
+        "icons/pin.svg" => include_bytes!("../../assets/icons/pin.svg"),
         "icons/ellipsis.svg" => include_bytes!("../../assets/icons/ellipsis.svg"),
         "icons/list.svg" => include_bytes!("../../assets/icons/list.svg"),
         "icons/folder-closed.svg" => include_bytes!("../../assets/icons/folder-closed.svg"),
@@ -54,6 +55,7 @@ fn agent_icon(path: &str) -> Option<&'static [u8]> {
         "icons/agents/droid.svg" => include_bytes!("../../assets/icons/agents/droid.svg"),
         "icons/agents/grok.svg" => include_bytes!("../../assets/icons/agents/grok.svg"),
         "icons/agents/pi.svg" => include_bytes!("../../assets/icons/agents/pi.svg"),
+        "icons/agents/omp.svg" => include_bytes!("../../assets/icons/agents/omp.svg"),
         _ => return None,
     };
     Some(bytes)

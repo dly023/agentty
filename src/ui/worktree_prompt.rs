@@ -78,7 +78,7 @@ impl AgenttyApp {
         let base = p.base.read(cx).value().trim().to_string();
         let (name, branch) = match (name.is_empty(), branch.is_empty()) {
             (true, true) => {
-                window.push_notification("The worktree needs a name", cx);
+                window.push_notification(crate::core::i18n::current(cx, "worktree.needs_name"), cx);
                 return;
             }
             (true, false) => (branch.clone(), branch),

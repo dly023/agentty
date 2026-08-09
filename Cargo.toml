@@ -35,6 +35,10 @@ gpui-component-assets = { workspace = true }
 
 anyhow.workspace = true
 log.workspace = true
+# Local datetime for session hover/details Updated fields (`ui::home::format_unix_ms_local`).
+# Already in the tree via gpui, so pinning it here adds no new native code.
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+
 # Smart double-click selection patterns (URL/email/path). Already in the tree
 # transitively, so pinning it here adds no new native code.
 regex = "1"
@@ -131,6 +135,13 @@ libc = "0.2"
 # PATH comes back mangled. 0.61 is already in the tree (tray-icon pulls it), so
 # this pins no new code.
 [target.'cfg(windows)'.dependencies]
+windows = { version = "0.58", features = [
+    "Data_Xml_Dom",
+    "Foundation",
+    "UI_Notifications",
+    "Win32_System_Com",
+    "Win32_UI_Shell",
+] }
 windows-sys = { version = "0.61", features = [
     "Win32_System_Registry",
     "Win32_UI_WindowsAndMessaging",
@@ -252,7 +263,7 @@ gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "1d217ee3
 #
 # Each patch has a guard test in `src/terminal/remote.rs`; drop this fork once
 # both land upstream.
-alacritty_terminal = { git = "https://github.com/l0ng-ai/alacritty", rev = "b79e70484b13308ce766a763531ac25a8302c012" }
+alacritty_terminal = { git = "https://github.com/l0ng-ai/alacritty", rev = "1276f128fbaa8832cbc66210675cbe8aeb570499" }
 
 anyhow = "1"
 log = "0.4"

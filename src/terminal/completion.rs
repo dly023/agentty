@@ -521,23 +521,24 @@ fn home_dir() -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
-pub(super) struct CompletionSession {
-    pub(super) word_start: usize,
-    pub(super) open_word: String,
-    pub(super) all: Vec<Candidate>,
-    pub(super) filtered: Vec<usize>,
-    pub(super) index: Option<usize>,
+#[derive(Debug)]
+pub(crate) struct CompletionSession {
+    pub(crate) word_start: usize,
+    pub(crate) open_word: String,
+    pub(crate) all: Vec<Candidate>,
+    pub(crate) filtered: Vec<usize>,
+    pub(crate) index: Option<usize>,
 }
 
-pub(super) struct Replacement {
-    pub(super) orig: String,
-    pub(super) start: usize,
-    pub(super) end: usize,
-    pub(super) text: String,
+pub(crate) struct Replacement {
+    pub(crate) orig: String,
+    pub(crate) start: usize,
+    pub(crate) end: usize,
+    pub(crate) text: String,
 }
 
 impl Replacement {
-    pub(super) fn apply(&self) -> (String, usize) {
+    pub(crate) fn apply(&self) -> (String, usize) {
         let mut chars: Vec<char> = self.orig.chars().collect();
         let start = self.start.min(chars.len());
         let end = self.end.min(chars.len()).max(start);
@@ -549,7 +550,7 @@ impl Replacement {
 }
 
 impl CompletionSession {
-    pub(super) fn new(word_start: usize, open_word: String, all: Vec<Candidate>) -> Self {
+    pub(crate) fn new(word_start: usize, open_word: String, all: Vec<Candidate>) -> Self {
         let filtered = (0..all.len()).collect();
         Self {
             word_start,
@@ -560,13 +561,13 @@ impl CompletionSession {
         }
     }
 
-    pub(super) fn selected(&self) -> Option<&Candidate> {
+    pub(crate) fn selected(&self) -> Option<&Candidate> {
         self.index
             .and_then(|i| self.filtered.get(i))
             .map(|&i| &self.all[i])
     }
 
-    pub(super) fn select(&mut self, forward: bool) {
+    pub(crate) fn select(&mut self, forward: bool) {
         let n = self.filtered.len();
         if n == 0 {
             return;
@@ -579,7 +580,7 @@ impl CompletionSession {
         });
     }
 
-    pub(super) fn refilter(&mut self, word: &str) -> bool {
+    pub(crate) fn refilter(&mut self, word: &str) -> bool {
         if !word.starts_with(self.open_word.as_str()) {
             return false;
         }
@@ -595,7 +596,7 @@ impl CompletionSession {
         true
     }
 
-    pub(super) fn merge(&mut self, new: Vec<Candidate>, live_word: &str) {
+    pub(crate) fn merge(&mut self, new: Vec<Candidate>, live_word: &str) {
         let selected_text = self
             .index
             .and_then(|i| self.filtered.get(i))
@@ -621,7 +622,7 @@ impl CompletionSession {
         };
     }
 
-    pub(super) fn common_prefix(&self) -> Option<String> {
+    pub(crate) fn common_prefix(&self) -> Option<String> {
         let mut texts = self.filtered.iter().map(|&i| self.all[i].text.as_str());
         let mut lcp: Vec<char> = texts.next()?.chars().collect();
         for t in texts {

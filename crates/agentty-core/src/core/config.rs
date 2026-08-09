@@ -188,6 +188,8 @@ pub struct Config {
     pub tab_completion: bool,
     #[serde(default = "default_true")]
     pub history_search: bool,
+    #[serde(default, deserialize_with = "de_lenient")]
+    pub composer_mode: ComposerMode,
 
     #[serde(default, deserialize_with = "de_lenient")]
     pub cursor_style: CursorStyle,
@@ -196,6 +198,10 @@ pub struct Config {
     pub mouse_hide_while_typing: bool,
     pub focus_follows_mouse: bool,
     pub mouse_scroll_multiplier: f32,
+    /// Ease discrete wheel notches over presented frames. Trackpad gestures
+    /// remain direct because the platform already supplies continuous deltas.
+    #[serde(default = "default_true")]
+    pub smooth_scroll: bool,
     #[serde(default = "default_true")]
     pub mouse_reporting: bool,
     pub clipboard_trim_trailing_spaces: bool,
@@ -271,6 +277,48 @@ pub enum WdStrategy {
     Inherit,
     Home,
     Custom,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ComposerMode {
+    /// Dock ~2 lines when the focused pane owns a CLI Agent; hide for plain shells.
+    #[default]
+    Auto,
+    /// Dock for every focused pane.
+    Always,
+    /// Closed until the user cycles to Auto or Always.
+    Off,
+}
+
+impl ComposerMode {
+    pub const ALL: [ComposerMode; 3] =
+        [ComposerMode::Auto, ComposerMode::Always, ComposerMode::Off];
+
+    pub fn next(self) -> Self {
+        match self {
+            Self::Auto => Self::Always,
+            Self::Always => Self::Off,
+            Self::Off => Self::Auto,
+        }
+    }
+
+    pub fn slug(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Always => "always",
+            Self::Off => "off",
+        }
+    }
+}
+
+/// Pure dock policy for INPUT-COMPOSER-SMART-PREFERENCE-05.
+pub fn composer_should_dock(mode: ComposerMode, focused_has_cli_agent: bool) -> bool {
+    match mode {
+        ComposerMode::Always => true,
+        ComposerMode::Auto => focused_has_cli_agent,
+        ComposerMode::Off => false,
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize)]
@@ -380,8 +428,8 @@ impl Default for Config {
             font_features: None,
             font_size: 15.0,
             line_height: 1.4,
-            theme: "light".to_string(),
-            theme_preset: "light".to_string(),
+            theme: "dracula".to_string(),
+            theme_preset: "dracula".to_string(),
             theme_follow_system: false,
             theme_preset_light: "light".to_string(),
             theme_preset_dark: "dark".to_string(),
@@ -414,11 +462,13 @@ impl Default for Config {
             bell: BellMode::Visual,
             tab_completion: true,
             history_search: true,
+            composer_mode: ComposerMode::Auto,
             cursor_style: CursorStyle::Block,
             macos_option_as_alt: false,
             mouse_hide_while_typing: true,
             focus_follows_mouse: false,
             mouse_scroll_multiplier: 1.0,
+            smooth_scroll: true,
             mouse_reporting: true,
             clipboard_trim_trailing_spaces: false,
             copy_on_select: false,
@@ -771,6 +821,15 @@ mod tests {
     }
 
     #[test]
+    fn default_theme_preset_is_colorful_dracula() {
+        let cfg = Config::default();
+        assert_eq!(cfg.theme_preset, "dracula");
+        assert_eq!(cfg.theme, "dracula");
+        assert_eq!(cfg.theme_preset_light, "light");
+        assert_eq!(cfg.theme_preset_dark, "dark");
+    }
+
+    #[test]
     fn theme_follow_system_defaults_and_round_trips() {
         let cfg: Config = serde_json::from_str(r#"{"theme_preset":"dracula"}"#).unwrap();
         assert!(!cfg.theme_follow_system);
@@ -856,7 +915,7 @@ mod tests {
         )
         .expect("stale override keys must be ignored");
         assert_eq!(cfg.font_size, 20.0);
-        assert_eq!(cfg.theme_preset, "light");
+        assert_eq!(cfg.theme_preset, "dracula");
     }
 
     #[test]
@@ -1030,6 +1089,14 @@ mod tests {
         assert!(!cfg.tab_completion);
         let cfg: Config = serde_json::from_str(r#"{"history_search": false}"#).unwrap();
         assert!(!cfg.history_search);
+        assert_eq!(Config::default().composer_mode, ComposerMode::Auto);
+        let cfg: Config = serde_json::from_str(r#"{"composer_mode":"always"}"#).unwrap();
+        assert_eq!(cfg.composer_mode, ComposerMode::Always);
+        assert!(composer_should_dock(ComposerMode::Always, false));
+        assert!(composer_should_dock(ComposerMode::Auto, true));
+        assert!(!composer_should_dock(ComposerMode::Auto, false));
+        assert!(!composer_should_dock(ComposerMode::Off, true));
+        assert_eq!(ComposerMode::Auto.next(), ComposerMode::Always);
 
         let cfg: Config = serde_json::from_str(
             r#"{"restore_session": false, "mouse_reporting": false, "bell": "audible"}"#,
@@ -1109,7 +1176,7 @@ mod tests {
         assert_eq!(cfg.font_size, 20.0);
         assert_eq!(cfg.line_height, 1.4);
         assert_eq!(cfg.font_family, "Hack");
-        assert_eq!(cfg.theme_preset, "light");
+        assert_eq!(cfg.theme_preset, "dracula");
         assert!(cfg.keybindings.is_empty());
     }
 

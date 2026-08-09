@@ -404,8 +404,14 @@ impl AgenttyApp {
                     },
                 );
                 let host_id = connected.host.id();
-                remote_connect::HostLinks::insert(cx, connected.host, home.clone());
+                remote_connect::HostLinks::insert(
+                    cx,
+                    connected.host,
+                    home.clone(),
+                    connected.store_roots,
+                );
                 RemoteLinks::mark_connected(cx, host_id, &choice.label);
+                refresh_host_agent_sessions(cx, host_id);
                 self.prompt_remote_daemon_mismatch_later(cx);
                 self.connect = None;
             }
@@ -487,8 +493,15 @@ impl AgenttyApp {
         .detach();
     }
 
-    pub(crate) fn prompt_remote_daemon_mismatch(window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn prompt_remote_daemon_mismatch(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         for mismatch in crate::daemon::install::take_mismatched_remote_daemons() {
+            queue_remote_mismatch(&mut self.pending_remote_mismatches, mismatch.clone());
+            self.remote_mismatch_notice_dismissed
+                .retain(|host| host != &mismatch.host);
             let title = remote_connect::mismatch_title(&mismatch, cx);
             let detail = remote_connect::mismatch_detail(&mismatch, cx);
             let answer = window.prompt(
@@ -497,23 +510,27 @@ impl AgenttyApp {
                 Some(&detail),
                 &[
                     crate::core::i18n::current(cx, "common.cancel"),
-                    crate::core::i18n::current(cx, "common.restart_server"),
+                    crate::core::i18n::current(cx, "common.replace_server"),
                 ],
                 cx,
             );
             cx.spawn(async move |this, cx| {
                 if !matches!(answer.await, Ok(1)) {
+                    // Cancel keeps the pending mismatch so the Replace Server
+                    // affordance remains (HELPER-VERSION-MISMATCH-NOTICE-13).
+                    let _ = this.update(cx, |_, cx| cx.notify());
                     return;
                 }
                 let _ = this.update_in(cx, |this, window, cx| {
-                    this.restart_mismatched_remote_server(mismatch, window, cx);
+                    this.replace_mismatched_remote_server(mismatch, window, cx);
                 });
             })
             .detach();
         }
+        cx.notify();
     }
 
-    fn restart_mismatched_remote_server(
+    pub(crate) fn replace_mismatched_remote_server(
         &mut self,
         mismatch: crate::daemon::install::MismatchedRemoteDaemon,
         window: &mut Window,
@@ -523,7 +540,7 @@ impl AgenttyApp {
         match remote_connect::mismatch_target(&mismatch)
             .ok_or_else(|| format!("agentty no longer has a way to reach {label}"))
         {
-            Ok(target) => self.restart_remote_server(target, label, window, cx),
+            Ok(target) => self.replace_remote_server(target, label, window, cx),
             Err(e) => AgenttyApp::report_restart_failure(&label, &e, window, cx),
         }
     }
@@ -609,7 +626,7 @@ impl AgenttyApp {
         cx: &mut Context<Self>,
     ) {
         let title =
-            crate::core::i18n::current_format(cx, "rw.restart_confirm_title", &[("label", &label)]);
+            crate::core::i18n::current_format(cx, "rw.replace_confirm_title", &[("label", &label)]);
         let body =
             crate::core::i18n::current_format(cx, "rw.replace_confirm_body", &[("label", &label)]);
         let answer = window.prompt(
@@ -618,7 +635,7 @@ impl AgenttyApp {
             Some(&body),
             &[
                 crate::core::i18n::current(cx, "common.cancel"),
-                crate::core::i18n::current(cx, "common.restart_server"),
+                crate::core::i18n::current(cx, "common.replace_server"),
             ],
             cx,
         );
@@ -641,7 +658,7 @@ impl AgenttyApp {
         cx: &mut Context<Self>,
     ) {
         let route = match remote_connect::control_route(&target, cx) {
-            Ok(header) => header.replace_server(),
+            Ok(header) => mismatch_route(header),
             Err(e) => {
                 log::warn!("could not address {label} to replace its server: {e}");
                 AgenttyApp::report_restart_failure(&label, &e, window, cx);
@@ -661,8 +678,11 @@ impl AgenttyApp {
                 .await;
             running.store(false, std::sync::atomic::Ordering::Relaxed);
             remote_connect::clear_install_progress(host_id);
-            let _ = this.update_in(cx, |_, window, cx| match outcome {
+            let _ = this.update_in(cx, |this, window, cx| match outcome {
                 Ok(()) => {
+                    clear_remote_mismatch(&mut this.pending_remote_mismatches, &label);
+                    this.remote_mismatch_notice_dismissed
+                        .retain(|host| host != &label);
                     log::info!("{label} is now serving this client's build");
                     reconnect_after_restart(&host, cx);
                 }
@@ -722,11 +742,79 @@ impl AgenttyApp {
 
     fn prompt_remote_daemon_mismatch_later(&self, cx: &mut Context<Self>) {
         cx.spawn(async move |this, cx| {
-            let _ = this.update_in(cx, |_, window, cx| {
-                AgenttyApp::prompt_remote_daemon_mismatch(window, cx);
+            let _ = this.update_in(cx, |this, window, cx| {
+                this.prompt_remote_daemon_mismatch(window, cx);
             });
         })
         .detach();
+    }
+}
+
+/// Keep one pending mismatch per host so Cancel or a failed replacement still
+/// leaves a Replace Server notice (HELPER-VERSION-MISMATCH-NOTICE-13).
+pub(crate) fn queue_remote_mismatch(
+    pending: &mut Vec<crate::daemon::install::MismatchedRemoteDaemon>,
+    mismatch: crate::daemon::install::MismatchedRemoteDaemon,
+) {
+    if let Some(existing) = pending.iter_mut().find(|entry| entry.host == mismatch.host) {
+        *existing = mismatch;
+    } else {
+        pending.push(mismatch);
+    }
+}
+
+pub(crate) fn clear_remote_mismatch(
+    pending: &mut Vec<crate::daemon::install::MismatchedRemoteDaemon>,
+    host: &str,
+) {
+    pending.retain(|entry| entry.host != host);
+}
+
+pub(crate) fn mismatch_route(
+    header: agentty_core::daemon::router::RouteHeader,
+) -> agentty_core::daemon::router::RouteHeader {
+    header.replace_server()
+}
+
+#[cfg(test)]
+mod mismatch_notice_tests {
+    use super::{clear_remote_mismatch, mismatch_route, queue_remote_mismatch};
+    use crate::daemon::install::MismatchedRemoteDaemon;
+    use agentty_core::daemon::router::{RouteAction, RouteHeader};
+    #[test]
+    fn remote_mismatch_remains_after_modal_cancel() {
+        let mut pending = Vec::new();
+        let mismatch = MismatchedRemoteDaemon {
+            host: "iris".into(),
+            running_version: Some("0.0.1+old".into()),
+            running_exe: None,
+            wanted_version: "0.0.1+new".into(),
+        };
+        queue_remote_mismatch(&mut pending, mismatch.clone());
+        // Modal Cancel does not clear pending — notice Replace remains.
+        assert_eq!(pending, vec![mismatch.clone()]);
+        clear_remote_mismatch(&mut pending, "iris");
+        assert!(pending.is_empty());
+        queue_remote_mismatch(&mut pending, mismatch.clone());
+        queue_remote_mismatch(
+            &mut pending,
+            MismatchedRemoteDaemon {
+                running_version: Some("0.0.1+older".into()),
+                ..mismatch.clone()
+            },
+        );
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].running_version.as_deref(), Some("0.0.1+older"));
+    }
+
+    #[test]
+    fn every_remote_mismatch_action_routes_to_replace_server() {
+        let route = mismatch_route(RouteHeader::local_stdio("unused", &[]));
+        assert_eq!(route.action, RouteAction::ReplaceServer);
+        assert_eq!(
+            crate::ui::remote_connect::mismatch_answers(crate::core::i18n::Locale::EnUs)[1],
+            crate::core::i18n::tr(crate::core::i18n::Locale::EnUs, "common.replace_server"),
+        );
     }
 }
 
@@ -1009,6 +1097,7 @@ fn pump_tick(cx: &mut gpui::App) -> bool {
                 changed = true;
                 log::info!("link to {target} is attached");
                 crate::ui::machine_mirror::MachineMirrors::refresh(cx, host);
+                refresh_host_agent_sessions(cx, host);
             }
             continue;
         }
@@ -1208,7 +1297,12 @@ fn finish_attempt(
     match outcome {
         Ok(connected) => {
             let restarted = server_restarted(cx, host, &connected.host);
-            remote_connect::HostLinks::insert(cx, connected.host, connected.home);
+            remote_connect::HostLinks::insert(
+                cx,
+                connected.host,
+                connected.home,
+                connected.store_roots,
+            );
             for (id, _key) in workspaces_on(cx, host) {
                 let reclaimed = {
                     let links = cx.default_global::<RemoteLinks>();
@@ -1222,6 +1316,7 @@ fn finish_attempt(
                 }
                 refresh_window_shells(cx, id);
                 refresh_window_agent_sessions(cx, id);
+                refresh_window_editor_watch(cx, id);
             }
             RemoteLinks::mark(cx, host, |link| {
                 link.state = LinkState::Attached;
@@ -1330,13 +1425,24 @@ fn notify_entered_environment(cx: &mut gpui::App, host: HostId, label: &str) {
     }
 }
 
+fn refresh_host_agent_sessions(cx: &mut gpui::App, host: HostId) {
+    for (id, _key) in workspaces_on(cx, host) {
+        refresh_window_agent_sessions(cx, id);
+    }
+}
+
 fn refresh_window_agent_sessions(cx: &mut gpui::App, workspace: WorkspaceId) {
     let Some(app) =
         crate::ui::windows::WindowRegistry::app_for(cx, workspace).and_then(|app| app.upgrade())
     else {
         return;
     };
-    app.update(cx, |app, cx| app.refresh_session_navigator_passive(cx));
+    app.update(cx, |app, cx| {
+        app.refresh_session_navigator_for(
+            crate::ui::session_navigator::SessionRefreshIntent::RemoteLinkUp,
+            cx,
+        )
+    });
 }
 
 fn refresh_window_shells(cx: &mut gpui::App, workspace: WorkspaceId) {
@@ -1346,6 +1452,15 @@ fn refresh_window_shells(cx: &mut gpui::App, workspace: WorkspaceId) {
         return;
     };
     app.update(cx, |app, cx| app.refresh_shells(cx));
+}
+
+fn refresh_window_editor_watch(cx: &mut gpui::App, workspace: WorkspaceId) {
+    let Some(app) =
+        crate::ui::windows::WindowRegistry::app_for(cx, workspace).and_then(|app| app.upgrade())
+    else {
+        return;
+    };
+    app.update(cx, |app, cx| app.editor_rebind_host(cx));
 }
 
 fn release_panes(cx: &mut gpui::App, workspace: WorkspaceId) {

@@ -1,12 +1,11 @@
 use std::time::Duration;
 
 use gpui::{
-    Animation, AnimationExt as _, App, Context, KeyDownEvent, Keystroke, MouseButton,
-    MouseDownEvent, div, prelude::*, px,
+    Animation, AnimationExt as _, App, Context, KeyDownEvent, MouseButton, MouseDownEvent, div,
+    prelude::*, px,
 };
 use gpui_component::button::{Button, ButtonVariants as _};
-use gpui_component::kbd::Kbd;
-use gpui_component::{ActiveTheme as _, IconName, Sizable as _, h_flex, v_flex};
+use gpui_component::{ActiveTheme as _, Sizable as _, h_flex, v_flex};
 
 use crate::core::session::{SessionPane, SessionTab};
 use crate::ui::app::AgenttyApp;
@@ -84,6 +83,25 @@ pub(crate) fn relative_time(now: u64, then: u64) -> String {
     }
 }
 
+/// Local wall-clock for Navigator hover/details Updated metadata.
+/// Matches Ashide's `%Y-%m-%d %H:%M` and never returns a raw unix-millis string.
+pub(crate) fn format_unix_ms_local(millis: u64) -> Option<String> {
+    use chrono::{Local, TimeZone};
+    let Ok(millis) = i64::try_from(millis) else {
+        return None;
+    };
+    Local
+        .timestamp_millis_opt(millis)
+        .single()
+        .map(|dt| dt.format("%Y-%m-%d %H:%M").to_string())
+}
+
+pub(crate) fn format_session_updated_at(millis: Option<u64>, empty: &str) -> String {
+    millis
+        .and_then(format_unix_ms_local)
+        .unwrap_or_else(|| empty.to_string())
+}
+
 pub(crate) fn display_path(path: &std::path::Path) -> String {
     let text = path.to_string_lossy();
     let shortened = match std::env::var("HOME") {
@@ -102,11 +120,31 @@ pub(crate) fn display_path(path: &std::path::Path) -> String {
     format!("…{tail}")
 }
 
-fn key_hint(action: &str, cx: &App) -> Option<String> {
+fn key_hint_tokens(action: &str, cx: &App) -> Option<Vec<String>> {
     let spec = crate::ui::keymap::effective_key(action, cx)?;
     let first = spec.split_whitespace().next()?;
-    let stroke = Keystroke::parse(first).ok()?;
-    Some(Kbd::format(&stroke))
+    Some(crate::ui::keymap::key_tokens(first))
+}
+
+/// Geometry of the welcome page hierarchy (UI-WELCOME-SURFACE-04).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct WelcomeSurfaceMetrics {
+    pub column_width: f32,
+    pub section_gap: f32,
+    pub row_gap: f32,
+    pub section_padding: f32,
+    pub section_radius: f32,
+}
+
+/// One pure metrics mapping for the welcome page.
+pub(crate) fn welcome_surface_metrics() -> WelcomeSurfaceMetrics {
+    WelcomeSurfaceMetrics {
+        column_width: 340.,
+        section_gap: 40.,
+        row_gap: 8.,
+        section_padding: 12.,
+        section_radius: 10.,
+    }
 }
 
 impl AgenttyApp {
@@ -131,8 +169,9 @@ impl AgenttyApp {
             ),
         ));
 
+        let metrics = welcome_surface_metrics();
         let closed_hint = self.closed.last().and_then(closed_tab_label);
-        let mut list = v_flex().gap_2().w(px(300.)).text_sm().text_color(muted);
+        let mut list = v_flex().w_full().gap(px(metrics.row_gap)).text_sm();
         for (action, label) in HOME_SHORTCUTS {
             let (label, emphasized) = match (&closed_hint, action) {
                 (Some(name), "ReopenClosedTab") => (
@@ -145,14 +184,25 @@ impl AgenttyApp {
                 h_flex()
                     .items_center()
                     .justify_between()
-                    .when(emphasized, |row| row.text_color(foreground))
+                    .text_color(if emphasized { foreground } else { muted })
                     .child(label)
-                    .children(
-                        key_hint(action, cx)
-                            .map(|keys| div().font_family(self.font_family.clone()).child(keys)),
-                    ),
+                    .children(key_hint_tokens(action, cx).map(|tokens| {
+                        h_flex().gap_1().children(
+                            tokens
+                                .into_iter()
+                                .map(|token| crate::ui::kbd::kbd_chip(token, cx)),
+                        )
+                    })),
             );
         }
+        let shortcuts = v_flex()
+            .w(px(metrics.column_width))
+            .p(px(metrics.section_padding))
+            .rounded(px(metrics.section_radius))
+            .border_1()
+            .border_color(theme.border)
+            .bg(theme.sidebar)
+            .child(list);
 
         let status = self.render_remote_status_strip(cx);
 
@@ -162,7 +212,7 @@ impl AgenttyApp {
             .size_full()
             .items_center()
             .justify_center()
-            .gap(px(48.))
+            .gap(px(metrics.section_gap))
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|this, _: &MouseDownEvent, window, cx| this.new_tab(window, cx)),
@@ -172,9 +222,16 @@ impl AgenttyApp {
                     this.new_tab(window, cx);
                 }
             }))
-            .child(logo)
+            .child(
+                v_flex().items_center().gap_3().child(logo).child(
+                    div()
+                        .text_sm()
+                        .text_color(muted)
+                        .child(crate::core::i18n::current(cx, "home.tagline")),
+                ),
+            )
             .children(status)
-            .child(list)
+            .child(shortcuts)
             .with_animation(
                 "home-fade-in",
                 Animation::new(Duration::from_millis(150)),
@@ -190,20 +247,10 @@ impl AgenttyApp {
         let status = self.remote_status(cx)?;
         let message = status.strip_message(&machine, cx)?;
         let action = status.action_label(cx);
-        let theme = cx.theme();
+        let severity = crate::ui::notice::NoticeSeverity::Info;
         Some(
-            h_flex()
-                .items_center()
-                .gap_2()
-                .px(px(12.))
-                .py(px(6.))
-                .rounded(px(10.))
-                .bg(theme.popover)
-                .border_1()
-                .border_color(theme.border)
-                .text_xs()
-                .text_color(theme.muted_foreground)
-                .child(gpui_component::Icon::new(IconName::Globe))
+            crate::ui::notice::notice_surface(severity, cx)
+                .child(crate::ui::notice::notice_icon(severity, cx))
                 .child(message)
                 .when_some(action, |this, label| {
                     this.child(
@@ -229,9 +276,7 @@ mod tests {
             cwd: cwd.map(PathBuf::from),
             pane_id: None,
             ssh_spec: None,
-            agent: None,
-            agent_session_id: None,
-            agent_launch_argv: None,
+            live_binding: Default::default(),
         }
     }
 
@@ -326,6 +371,34 @@ mod tests {
     }
 
     #[test]
+    fn format_unix_ms_local_is_readable_not_raw_millis() {
+        // Screenshot regression: hover/details showed 1784303401029 literally.
+        let millis = 1_784_303_401_029u64;
+        let formatted = format_unix_ms_local(millis).expect("valid unix millis");
+        assert_ne!(formatted, millis.to_string());
+        assert!(
+            regex_is_local_datetime(&formatted),
+            "expected YYYY-MM-DD HH:MM, got {formatted}"
+        );
+        assert_eq!(format_session_updated_at(None, "—"), "—");
+        assert_eq!(format_session_updated_at(Some(millis), "—"), formatted);
+    }
+
+    fn regex_is_local_datetime(value: &str) -> bool {
+        let bytes = value.as_bytes();
+        bytes.len() == 16
+            && bytes[4] == b'-'
+            && bytes[7] == b'-'
+            && bytes[10] == b' '
+            && bytes[13] == b':'
+            && bytes[..4].iter().all(u8::is_ascii_digit)
+            && bytes[5..7].iter().all(u8::is_ascii_digit)
+            && bytes[8..10].iter().all(u8::is_ascii_digit)
+            && bytes[11..13].iter().all(u8::is_ascii_digit)
+            && bytes[14..16].iter().all(u8::is_ascii_digit)
+    }
+
+    #[test]
     fn relative_time_never_renders_a_negative_age() {
         let now = 1_000_000u64;
         assert_eq!(relative_time(now, 0), "just now");
@@ -362,5 +435,14 @@ mod tests {
         for row in &LOGO {
             assert!(row.chars().count() <= width, "row {row:?} exceeds {width}");
         }
+    }
+    #[test]
+    fn welcome_surface_metrics_are_explicit() {
+        let m = welcome_surface_metrics();
+        assert_eq!(m.column_width, 340.);
+        assert_eq!(m.section_gap, 40.);
+        assert_eq!(m.row_gap, 8.);
+        assert_eq!(m.section_padding, 12.);
+        assert_eq!(m.section_radius, 10.);
     }
 }

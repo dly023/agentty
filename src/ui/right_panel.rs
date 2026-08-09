@@ -117,7 +117,7 @@ impl AgenttyApp {
                     .on_double_click(|_, window, _| window.titlebar_double_click())
                     .items_center()
                     .gap(px(2.))
-                    .pl(px(tile_trailing_inset()))
+                    .pl(px(crate::ui::app::panel_split_chrome_inset()))
                     .children(self.right_panel_tabs(cx))
                     .child(div().flex_1())
                     .child(self.window_chrome(window, cx))
@@ -297,22 +297,22 @@ impl AgenttyApp {
         input: &gpui::Entity<gpui_component::input::InputState>,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        h_flex()
-            .flex_none()
-            .items_center()
-            .gap(px(8.))
-            .h(px(30.))
-            .px(px(CONTENT_INSET))
+        crate::ui::panel_chrome::side_panel_search_surface(cx)
+            .mx(px(crate::ui::app::panel_content_gutter()))
+            .mb(px(2.))
             .child(
                 Icon::new(IconName::Search)
-                    .small()
+                    .size(px(12.))
                     .text_color(cx.theme().muted_foreground),
             )
             .child(
                 div()
+                    .h_full()
                     .flex_1()
                     .min_w_0()
-                    .child(Input::new(input).appearance(false).xsmall()),
+                    .flex()
+                    .items_center()
+                    .child(Input::new(input).appearance(false).pl_0().xsmall()),
             )
             .into_any_element()
     }
@@ -337,22 +337,20 @@ impl AgenttyApp {
             .into_any_element()
     }
 
-    fn panel_empty(&self, text: &str, hint: Option<&str>, cx: &mut Context<Self>) -> AnyElement {
-        let muted = cx.theme().muted_foreground;
-        v_flex()
-            .px(px(CONTENT_INSET))
-            .py(px(4.))
-            .gap(px(3.))
-            .text_size(px(12.))
-            .text_color(muted)
-            .child(text.to_string())
-            .children(hint.map(|h| {
-                div()
-                    .text_size(px(11.))
-                    .text_color(muted.opacity(0.75))
-                    .child(h.to_string())
-            }))
-            .into_any_element()
+    fn panel_empty(
+        &self,
+        icon: IconName,
+        text: &str,
+        hint: Option<&str>,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        crate::ui::panel_chrome::side_panel_empty_surface(
+            icon,
+            text.to_string(),
+            hint.map(|h| h.to_string().into()),
+            cx,
+        )
+        .into_any_element()
     }
 
     fn render_panel_info(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
@@ -408,10 +406,12 @@ impl AgenttyApp {
         }
 
         if rows.is_empty() {
+            use crate::core::i18n::current;
             return self.panel_scroll(
                 self.panel_empty(
-                    "No active session.",
-                    Some("Open a tab to see its shell, directory, and processes here."),
+                    IconName::SquareTerminal,
+                    current(cx, "panel.empty.no_active_session"),
+                    Some(current(cx, "panel.empty.no_active_session.hint")),
                     cx,
                 ),
                 title,
@@ -709,11 +709,13 @@ impl AgenttyApp {
             .get(self.active)
             .and_then(|t| t.detail_pane(window, cx))
         else {
+            use crate::core::i18n::current;
             let title = self.panel_title("Outline", None, None, window, cx);
             return self.panel_scroll(
                 self.panel_empty(
-                    "No active session.",
-                    Some("Open a tab to see its shell, directory, and processes here."),
+                    IconName::SquareTerminal,
+                    current(cx, "panel.empty.no_active_session"),
+                    Some(current(cx, "panel.empty.no_active_session.hint")),
                     cx,
                 ),
                 title,
@@ -721,11 +723,13 @@ impl AgenttyApp {
         };
         let count = leaf.read(cx).command_marks().len();
         if count == 0 {
+            use crate::core::i18n::current;
             let title = self.panel_title("Outline", None, None, window, cx);
             return self.panel_scroll(
                 self.panel_empty(
-                    "No commands recorded for this pane.",
-                    Some("Run a command — shell integration marks each one so you can jump back to it."),
+                    IconName::Inbox,
+                    current(cx, "panel.empty.no_commands"),
+                    Some(current(cx, "panel.empty.no_commands.hint")),
                     cx,
                 ),
                 title,
@@ -734,7 +738,10 @@ impl AgenttyApp {
         let title = self.panel_title("Outline", Some(count.to_string()), None, window, cx);
 
         let mono = cx.theme().mono_font_family.clone();
-        let mut list = v_flex().px(px(CONTENT_INSET - 4.)).py(px(2.)).gap(px(1.));
+        let mut list = v_flex()
+            .px(px(crate::ui::app::panel_content_gutter()))
+            .py(px(2.))
+            .gap(px(1.));
         let marks = leaf.read(cx).command_marks();
         for mark in marks.iter().rev() {
             let row = mark.row;
@@ -813,11 +820,13 @@ impl AgenttyApp {
             });
 
         let Some((host, cwd)) = target else {
+            use crate::core::i18n::current;
             let title = self.panel_title("Changes", None, None, window, cx);
             return self.panel_scroll(
                 self.panel_empty(
-                    "No working directory.",
-                    Some("This pane has not reported one yet."),
+                    IconName::Folder,
+                    current(cx, "panel.empty.no_working_directory"),
+                    Some(current(cx, "panel.empty.no_working_directory.hint")),
                     cx,
                 ),
                 title,
@@ -843,24 +852,42 @@ impl AgenttyApp {
         let mono = cx.theme().mono_font_family.clone();
 
         let inner = match &self.right_panel.diff {
-            None => self.panel_empty("Loading…", None, cx),
-            Some(None) => self.panel_empty(
-                "Not a git repository.",
-                Some("cd into one and this tab lists its uncommitted changes."),
-                cx,
-            ),
-            Some(Some(snap)) if snap.files.is_empty() && snap.untracked.is_empty() => self
-                .panel_empty(
-                    "No uncommitted changes.",
-                    Some("The working tree is clean."),
+            None => {
+                use crate::core::i18n::current;
+                self.panel_empty(
+                    IconName::LoaderCircle,
+                    current(cx, "panel.empty.loading"),
+                    None,
                     cx,
-                ),
+                )
+            }
+            Some(None) => {
+                use crate::core::i18n::current;
+                self.panel_empty(
+                    IconName::Github,
+                    current(cx, "panel.empty.not_a_git_repo"),
+                    Some(current(cx, "panel.empty.not_a_git_repo.hint")),
+                    cx,
+                )
+            }
+            Some(Some(snap)) if snap.files.is_empty() && snap.untracked.is_empty() => {
+                use crate::core::i18n::current;
+                self.panel_empty(
+                    IconName::Check,
+                    current(cx, "panel.empty.no_uncommitted_changes"),
+                    Some(current(cx, "panel.empty.no_uncommitted_changes.hint")),
+                    cx,
+                )
+            }
             Some(Some(snap)) => {
                 let snap = Arc::clone(snap);
                 let untracked = snap.untracked_count();
                 let focused = self.diff_overlay_focus(host.id(), &cwd).map(str::to_string);
                 let shown = snap.files.len().min(MAX_RENDERED_FILES);
-                let mut list = v_flex().px(px(CONTENT_INSET - 4.)).py(px(2.)).gap(px(1.));
+                let mut list = v_flex()
+                    .px(px(crate::ui::app::panel_content_gutter()))
+                    .py(px(2.))
+                    .gap(px(1.));
                 for file in snap.files.iter().take(shown) {
                     let path = file.path.clone();
                     let (added, removed) = (file.added, file.removed);
@@ -1012,6 +1039,7 @@ impl AgenttyApp {
                 self.panel_title(current(cx, "panel.activity.title"), None, None, window, cx);
             return self.panel_scroll(
                 self.panel_empty(
+                    IconName::Bot,
                     current(cx, "panel.activity.empty"),
                     Some(current(cx, "panel.activity.empty.hint")),
                     cx,
@@ -1036,6 +1064,7 @@ impl AgenttyApp {
         if state.recent_activity.is_empty() {
             return self.panel_scroll(
                 self.panel_empty(
+                    IconName::Bot,
                     current(cx, "panel.activity.empty"),
                     Some(current(cx, "panel.activity.empty.hint")),
                     cx,

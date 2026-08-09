@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+rg -q 'LOCAL-RUNTIME-READINESS-01' docs/specs/LOCAL_RUNTIME_SPEC.yaml
+rg -q 'LOCAL-RUNTIME-EXECUTABLE-02' docs/specs/LOCAL_RUNTIME_SPEC.yaml
+rg -q 'LOCAL-RUNTIME-DIAGNOSTICS-03' docs/specs/LOCAL_RUNTIME_SPEC.yaml
+rg -q 'LOCAL-RUNTIME-RESOURCE-LEASE-04' docs/specs/LOCAL_RUNTIME_SPEC.yaml
+rg -q 'LOCAL-RUNTIME-START-SINGLEFLIGHT-05' docs/specs/LOCAL_RUNTIME_SPEC.yaml
+rg -q 'LOCAL-RUNTIME-PANE-COLOR-ENV-06' docs/specs/LOCAL_RUNTIME_SPEC.yaml
+rg -Fq 'CLICOLOR' crates/agentty-core/src/daemon/pane.rs
+rg -Fq '("CLICOLOR".to_string(), "1".to_string())' crates/agentty-core/src/daemon/pane.rs
+rg -Fq 'NO_COLOR' crates/agentty-core/src/daemon/pane.rs
+rg -Fq 'COLOR_SUPPRESSOR_ENV' crates/agentty-core/src/daemon/pane.rs
+rg -Fq 'env_remove' crates/agentty-core/src/daemon/pane.rs
+rg -q 'pane_environment_strips_inherited_color_suppressors' crates/agentty-core/src/daemon/pane.rs
+rg -q 'local_runtime_ready' crates/agentty-core/src/daemon/spawn.rs
+rg -q 'dedicated_daemon_executable' crates/agentty-core/src/daemon/spawn.rs
+rg -q 'default-members = \[.*"crates/agentty-server"' Cargo.toml
+rg -q 'agentty-server' .github/scripts/bundle-macos.sh .github/scripts/bundle-linux.sh .github/scripts/bundle-appimage.sh .github/scripts/bundle-windows.ps1
+for workflow in .github/workflows/ci.yml .github/workflows/nightly.yml .github/workflows/release.yml; do
+  rg -q 'cargo build .*--target' "$workflow"
+done
+rg -q 'default_level_for_role' crates/agentty-core/src/core/logfile.rs
+rg -q 'pane_endpoint_without_control_endpoint_is_degraded' crates/agentty-core/src/daemon/spawn.rs
+rg -q 'graceful_shutdown_removes_control_endpoint' crates/agentty-core/src/host/server.rs
+rg -q 'daemon_executable_is_the_headless_sibling' crates/agentty-core/src/daemon/spawn.rs
+rg -q 'server_logging_defaults_to_warnings' crates/agentty-core/src/core/logfile.rs
+rg -q 'server_lifecycle_uses_canonical_dual_endpoint_readiness' crates/agentty-cli/tests/cli_e2e.rs
+rg -q 'zero_resource_runtime_exits_after_grace' crates/agentty-core/src/daemon/lease.rs
+rg -q 'live_pane_cancels_idle_shutdown' crates/agentty-core/src/daemon/lease.rs
+rg -q 'gui_bootstrap_never_starts_the_local_runtime' src/main.rs
+rg -q 'passive_local_link_never_starts_the_local_runtime' src/ui/local_link.rs
+rg -q 'quit_policy_distinguishes_keep_and_stop' src/ui/app.rs
+rg -q 'concurrent_lifecycle_callers_share_one_startup_gate' crates/agentty-core/src/daemon/spawn.rs
+rg -q 'concurrent_server_start_callers_converge_on_one_runtime' crates/agentty-cli/tests/cli_e2e.rs
+rg -q 'control_listener_failure_is_fatal_before_pane_service' crates/agentty-core/src/daemon/server.rs
+rg -q 'STARTUP_GATE' crates/agentty-core/src/daemon/spawn.rs
+rg -q 'daemon.start.lock' crates/agentty-core/src/daemon/spawn.rs
+rg -q 'acquire_startup_file_lock' crates/agentty-core/src/daemon/spawn.rs
+rg -q 'run_daemon_with' crates/agentty-core/src/daemon/server.rs
+if sed -n '/crate::core::cli_install::install(config.install_cli_on_path);/,/gpui_platform::application()/p' src/main.rs | rg -n 'ensure_running|restart'; then
+  echo '[local-runtime] GUI bootstrap must not eagerly start or restart agentty-server' >&2
+  exit 1
+fi
+if ! sed -n '/pub fn spawn_on/,/fn spawn_once/p' src/terminal/remote.rs | rg -q 'spawn::ensure_running'; then
+  echo '[local-runtime] durable pane materialization must be the canonical lazy-start trigger' >&2
+  exit 1
+fi
+if sed -n '/fn connect_existing_blocking/,/^}/p' src/ui/local_link.rs | rg -n 'ensure_running|restart'; then
+  echo '[local-runtime] passive LocalLink reconnect must never start or restart agentty-server' >&2
+  exit 1
+fi
+if rg -n 'Command::new\(exe\).*--daemon' crates/agentty-core/src/daemon/spawn.rs; then
+  echo '[local-runtime] canonical spawn must select the dedicated headless sibling' >&2
+  exit 1
+fi
+if rg -n 'PaneClient|Command::new|START_TIMEOUT|POLL_INTERVAL|fn server_exe|fn detach' crates/agentty-cli/src/server.rs; then
+  echo '[local-runtime] CLI server lifecycle must delegate to daemon::spawn instead of owning pane-only readiness or a detached launcher' >&2
+  exit 1
+fi
+rg -q 'spawn::ensure_running' crates/agentty-cli/src/server.rs
+rg -q 'spawn::restart' crates/agentty-cli/src/server.rs
+echo 'local runtime checks passed'

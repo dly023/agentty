@@ -1,13 +1,22 @@
 version: 1
-updated: 2026-07-31
+updated: 2026-08-09
 domain: localization
 contracts:
   - id: I18N-SYSTEM-DEFAULT-01
     rule: Language defaults to system locale and can be overridden with system, zh-CN, or en-US.
+  - id: I18N-SYSTEM-C-LOCALE-05
+    rule: POSIX/C message locales (LANG or LC_* equal to C, POSIX, or C.*) are not language preferences. On macOS they must not override AppleLanguages; resolution falls through to the OS preferred languages list so a Chinese system still gets zh-CN when developers launch from a C.UTF-8 shell.
   - id: I18N-STABLE-KEYS-02
     rule: User-visible product strings use stable translation keys; source identifiers, commands, and raw server errors remain unchanged.
   - id: I18N-PARITY-03
     rule: zh-CN and en-US catalogs contain the same required keys, checked statically.
   - id: I18N-FULL-COVERAGE-04
     rule: Every user-visible string in interactive surfaces (settings, menus, dialogs, prompts, notifications, tooltips) resolves through the catalog; hardcoded literals outside the allowlist fail the static gate. Parameterized messages use named placeholders.
+  - id: I18N-EXHAUSTIVE-TRANSLATION-06
+    rule: Every shipped locale catalog under assets/i18n/*.yaml must share one identical key set. Every key must have a non-empty trimmed value in every catalog. Duplicate keys inside one catalog fail closed. Static check, build-script validation, and unit tests prove no preferred-locale lookup needs a cross-locale fallback for any catalog key — missing or blank translations cannot ship by falling back to English or the raw key at review time.
+    forbidden:
+      - empty_catalog_value
+      - duplicate_key_in_one_catalog
+      - locale_catalog_key_set_divergence
+      - relying_on_en_fallback_for_keys_present_in_catalog_contract
 status: verified

@@ -11,7 +11,10 @@ use gpui_component::{
 use uuid::Uuid;
 
 use crate::core::config::{Config, RightPanelTab, TabBarPosition};
+use crate::core::i18n::ResolveLocale as _;
+use crate::core::session::WorkspaceId;
 use crate::core::ssh_profile::parse_quick_connect;
+use crate::ui::session_navigator::{SessionSearchDocument, SessionSearchDocumentId};
 
 #[derive(Clone, PartialEq, Eq)]
 pub enum CommandKind {
@@ -83,6 +86,10 @@ pub enum CommandKind {
     OpenSshConnect(String),
     SetTheme(usize),
     ActivateTab(usize),
+    ActivateSession {
+        workspace: WorkspaceId,
+        id: SessionSearchDocumentId,
+    },
     ConnectSavedProfile(Uuid),
     EditSavedProfile(Uuid),
     QuickConnect(String),
@@ -175,6 +182,7 @@ impl CommandKind {
             OpenSshConnect(_)
             | SetTheme(_)
             | ActivateTab(_)
+            | ActivateSession { .. }
             | ConnectSavedProfile(_)
             | EditSavedProfile(_)
             | QuickConnect(_)
@@ -269,6 +277,7 @@ impl CommandKind {
             | OpenSshConnect(_)
             | SetTheme(_)
             | ActivateTab(_)
+            | ActivateSession { .. }
             | ConnectSavedProfile(_)
             | EditSavedProfile(_)
             | QuickConnect(_)
@@ -326,6 +335,7 @@ pub struct ChromeState {
 pub struct Command {
     pub title: String,
     pub subtitle: Option<String>,
+    pub search_text: Option<String>,
     pub kind: CommandKind,
     pub group: CommandGroup,
 }
@@ -335,6 +345,7 @@ impl Command {
         Self {
             title: title.into(),
             subtitle: None,
+            search_text: None,
             kind,
             group: CommandGroup::Application,
         }
@@ -342,6 +353,11 @@ impl Command {
 
     pub fn with_subtitle(mut self, subtitle: impl Into<String>) -> Self {
         self.subtitle = Some(subtitle.into());
+        self
+    }
+
+    pub fn with_search_text(mut self, search_text: impl Into<String>) -> Self {
+        self.search_text = Some(search_text.into());
         self
     }
 
@@ -718,14 +734,43 @@ impl Command {
             .collect()
     }
 
-    fn ssh_connect_command(input: &str) -> Command {
+    fn ssh_connect_command(input: &str, cx: &App) -> Command {
+        Self::ssh_connect_command_loc(input, cx.global::<Config>().locale.resolve())
+    }
+
+    fn ssh_connect_command_loc(input: &str, locale: crate::core::i18n::Locale) -> Command {
+        use crate::core::i18n::{tr, trf};
         let title = if input.trim().is_empty() {
-            "SSH: Add Connection…".to_string()
+            tr(locale, "palette.cmd.ssh_add").to_string()
         } else {
-            format!("SSH: Connect {}", input.trim())
+            trf(
+                locale,
+                "palette.ssh_tab",
+                &[("title", &format!("Connect {}", input.trim()))],
+            )
         };
         Command::new(title, CommandKind::OpenSshConnect(input.to_string()))
     }
+}
+
+pub(crate) fn session_commands_from_documents(
+    documents: Vec<SessionSearchDocument>,
+) -> Vec<Command> {
+    documents
+        .into_iter()
+        .map(|document| {
+            Command::new(
+                document.title,
+                CommandKind::ActivateSession {
+                    workspace: document.workspace,
+                    id: document.id,
+                },
+            )
+            .with_subtitle(document.subtitle)
+            .with_search_text(document.search_text)
+            .in_group(CommandGroup::Agents)
+        })
+        .collect()
 }
 
 pub fn fuzzy_score(query: &str, text: &str) -> Option<i32> {
@@ -792,10 +837,12 @@ fn command_score(query: &str, cmd: &Command) -> Option<i32> {
         .as_deref()
         .and_then(|s| fuzzy_score(query, s))
         .map(|s| s / 2 - 25);
-    match (title, subtitle) {
-        (Some(a), Some(b)) => Some(a.max(b)),
-        (a, b) => a.or(b),
-    }
+    let search_text = cmd
+        .search_text
+        .as_deref()
+        .and_then(|s| fuzzy_score(query, s))
+        .map(|s| s / 3 - 40);
+    title.into_iter().chain(subtitle).chain(search_text).max()
 }
 
 #[derive(Clone)]
@@ -881,20 +928,27 @@ impl PaletteDelegate {
         sections
     }
 
-    fn quick_connect_commands(query: &str) -> Vec<Command> {
+    fn quick_connect_commands(query: &str, cx: &App) -> Vec<Command> {
+        Self::quick_connect_commands_loc(query, cx.global::<Config>().locale.resolve())
+    }
+
+    fn quick_connect_commands_loc(query: &str, locale: crate::core::i18n::Locale) -> Vec<Command> {
+        use crate::core::i18n::tr;
         if !query.contains(['@', ':', '.']) {
             return Vec::new();
         }
         match parse_quick_connect(query) {
             Some(_) => {
                 let target = query.trim().to_string();
+                let connect = tr(locale, "palette.ssh_connect");
+                let save = tr(locale, "palette.ssh_save");
                 vec![
                     Command::new(
-                        format!("Connect to \"{target}\""),
+                        format!("{connect} \"{target}\""),
                         CommandKind::QuickConnect(target.clone()),
                     ),
                     Command::new(
-                        format!("Save \"{target}\" as profile…"),
+                        format!("{save} \"{target}\""),
                         CommandKind::SaveQuickConnect(target),
                     ),
                 ]
@@ -903,12 +957,13 @@ impl PaletteDelegate {
         }
     }
 
-    fn ssh_connect() -> Self {
+    fn ssh_connect(cx: &App) -> Self {
+        let cmd = Command::ssh_connect_command("", cx);
         Self {
             commands: Vec::new(),
             sections: vec![Section {
                 title: None,
-                commands: vec![Command::ssh_connect_command("")],
+                commands: vec![cmd],
             }],
             input: Some(PaletteInput::SshConnect),
             quick_connect_root: false,
@@ -957,7 +1012,7 @@ impl ListDelegate for PaletteDelegate {
         if let Some(PaletteInput::SshConnect) = self.input {
             self.sections = vec![Section {
                 title: None,
-                commands: vec![Command::ssh_connect_command(query)],
+                commands: vec![Command::ssh_connect_command(query, cx)],
             }];
         } else if query.trim().is_empty() {
             self.sections = if self.quick_connect_root {
@@ -977,7 +1032,7 @@ impl ListDelegate for PaletteDelegate {
             scored.sort_by_key(|(score, _)| std::cmp::Reverse(*score));
             let mut commands: Vec<Command> = Vec::new();
             if self.quick_connect_root {
-                commands.extend(Self::quick_connect_commands(query));
+                commands.extend(Self::quick_connect_commands(query, cx));
             }
             commands.extend(scored.into_iter().map(|(_, c)| c));
             self.sections = vec![Section {
@@ -1037,10 +1092,7 @@ impl ListDelegate for PaletteDelegate {
     ) -> Option<Self::Item> {
         let cmd = self.sections.get(ix.section)?.commands.get(ix.row)?.clone();
 
-        let (kbd_bg, border, muted) = {
-            let t = cx.theme();
-            (t.secondary.opacity(0.6), t.border, t.muted_foreground)
-        };
+        let muted = cx.theme().muted_foreground;
 
         let keys = cmd
             .kind
@@ -1066,22 +1118,11 @@ impl ListDelegate for PaletteDelegate {
             );
         }
         if let Some(tokens) = keys {
-            row = row.child(h_flex().gap_1().children(tokens.into_iter().map(move |t| {
-                div()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .min_w(px(20.))
-                    .h(px(20.))
-                    .px_1()
-                    .rounded_md()
-                    .bg(kbd_bg)
-                    .border_1()
-                    .border_color(border)
-                    .text_xs()
-                    .text_color(muted)
-                    .child(t)
-            })));
+            row = row.child(
+                h_flex()
+                    .gap_1()
+                    .children(tokens.into_iter().map(|t| crate::ui::kbd::kbd_chip(t, cx))),
+            );
         }
 
         Some(
@@ -1172,16 +1213,16 @@ impl PaletteView {
     }
 
     fn show_ssh_connect(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let list = Self::build_list_with_delegate(PaletteDelegate::ssh_connect(), window, cx);
+        let list = Self::build_list_with_delegate(PaletteDelegate::ssh_connect(cx), window, cx);
         self._sub = cx.subscribe_in(&list, window, Self::on_list_event);
         self.list = list;
         cx.notify();
     }
 
-    fn search_placeholder(&self) -> &'static str {
+    fn search_placeholder(&self, cx: &App) -> &'static str {
         match self.menu {
             PaletteMenu::SshConnect => "user@host [-p 2222 -J jump]",
-            PaletteMenu::Root => "Search or type user@host to connect…",
+            PaletteMenu::Root => crate::core::i18n::current(cx, "palette.ssh_placeholder"),
             PaletteMenu::Theme => "Search…",
         }
     }
@@ -1263,7 +1304,7 @@ impl Render for PaletteView {
             .pb_1()
             .child(
                 List::new(&self.list)
-                    .search_placeholder(self.search_placeholder())
+                    .search_placeholder(self.search_placeholder(cx))
                     .py_1()
                     .max_h(list_max_h),
             );
@@ -1302,7 +1343,7 @@ mod tests {
     use super::*;
 
     fn row_titles(query: &str) -> Vec<String> {
-        PaletteDelegate::quick_connect_commands(query)
+        PaletteDelegate::quick_connect_commands_loc(query, crate::core::i18n::Locale::EnUs)
             .into_iter()
             .map(|c| c.title)
             .collect()
@@ -1325,12 +1366,12 @@ mod tests {
             "[::1]:2222",
         ] {
             let titles = row_titles(q);
+            let connect =
+                crate::core::i18n::tr(crate::core::i18n::Locale::EnUs, "palette.ssh_connect");
+            let save = crate::core::i18n::tr(crate::core::i18n::Locale::EnUs, "palette.ssh_save");
             assert_eq!(
                 titles,
-                vec![
-                    format!("Connect to \"{q}\""),
-                    format!("Save \"{q}\" as profile…"),
-                ],
+                vec![format!("{connect} \"{q}\""), format!("{save} \"{q}\""),],
                 "query {q:?}"
             );
         }

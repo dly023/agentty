@@ -39,7 +39,7 @@ impl Log for FileLogger {
 }
 
 pub fn install(role: &'static str) {
-    let level = level_from_env();
+    let level = level_from_env(role);
     if level == LevelFilter::Off {
         return;
     }
@@ -57,11 +57,18 @@ pub fn install(role: &'static str) {
     }
 }
 
-fn level_from_env() -> LevelFilter {
-    let raw = std::env::var("AGENTTY_LOG")
-        .or_else(|_| std::env::var("RUST_LOG"))
-        .unwrap_or_default();
-    parse_level(&raw)
+fn level_from_env(role: &str) -> LevelFilter {
+    match std::env::var("AGENTTY_LOG").or_else(|_| std::env::var("RUST_LOG")) {
+        Ok(raw) => parse_level(&raw),
+        Err(_) => default_level_for_role(role),
+    }
+}
+
+fn default_level_for_role(role: &str) -> LevelFilter {
+    match role {
+        "server" | "daemon" => LevelFilter::Warn,
+        _ => LevelFilter::Off,
+    }
 }
 
 fn parse_level(raw: &str) -> LevelFilter {
@@ -120,6 +127,13 @@ mod tests {
         assert_eq!(parse_level("   "), LevelFilter::Off);
         assert_eq!(parse_level("nonsense"), LevelFilter::Off);
         assert_eq!(parse_level("agentty_core::daemon=debug"), LevelFilter::Off);
+    }
+
+    #[test]
+    fn server_logging_defaults_to_warnings() {
+        assert_eq!(default_level_for_role("server"), LevelFilter::Warn);
+        assert_eq!(default_level_for_role("daemon"), LevelFilter::Warn);
+        assert_eq!(default_level_for_role("gui"), LevelFilter::Off);
     }
 
     #[test]

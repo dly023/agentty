@@ -7,7 +7,7 @@ use alacritty_terminal::term::TermMode;
 use gpui::{
     App, ClipboardEntry, ClipboardItem, Context, ExternalPaths, FocusHandle, Focusable, Font,
     KeyDownEvent, Modifiers, MouseButton, MouseDownEvent, Pixels, ScrollDelta, ScrollWheelEvent,
-    Window, actions, div, prelude::*, px,
+    WeakEntity, Window, actions, div, prelude::*, px,
 };
 use gpui_component::kbd::Kbd;
 use gpui_component::menu::{ContextMenuExt, PopupMenuItem};
@@ -62,6 +62,55 @@ pub struct AgentSessionChanged;
 
 impl gpui::EventEmitter<AgentSessionChanged> for TerminalView {}
 
+/// Close-refresh predicate for agent-bound carriers
+/// (SESSION-LIVE-CONTAINER-BINDING-15): stamped binding or runtime session.
+pub(crate) fn agent_bound_carrier_close_predicate(
+    binding_agent: bool,
+    runtime_session: bool,
+) -> bool {
+    binding_agent || runtime_session
+}
+
+/// Stamp live_binding.agent on foreground detect without waiting for
+/// session_id; never clear agent on process exit. Enrich session_id /
+/// launch_argv when identity changes. Returns true when the binding or
+/// identity projection changed and AgentSessionChanged should fire.
+pub(crate) fn apply_live_binding_agent_poll(
+    binding: &mut agentty_core::core::session::LiveContainerBinding,
+    foreground: Option<crate::core::cli_agent::CLIAgent>,
+    session: Option<&crate::core::cli_agent::AgentSessionState>,
+    last_identity: &mut (Option<String>, Option<Vec<String>>),
+) -> bool {
+    let mut changed = false;
+    if let Some(agent) = foreground {
+        if binding.agent != Some(agent) {
+            binding.agent = Some(agent);
+            changed = true;
+        }
+    }
+    let identity = (
+        session.and_then(|s| s.session_id.clone()),
+        session.and_then(|s| s.launch_argv.clone()),
+    );
+    if identity != *last_identity {
+        *last_identity = identity;
+        if let Some(session) = session {
+            if session.session_id.is_some() {
+                binding.session_id = session.session_id.clone();
+            }
+            if session
+                .launch_argv
+                .as_ref()
+                .is_some_and(|argv| !argv.is_empty())
+            {
+                binding.launch_argv = session.launch_argv.clone().unwrap_or_default();
+            }
+        }
+        changed = true;
+    }
+    changed
+}
+
 pub struct NativeSshParts {
     terminal: RemoteTerminal,
     pane_id: u64,
@@ -75,6 +124,7 @@ pub struct ShellParts {
     pub(crate) workspace: Option<crate::terminal::PaneWorkspace>,
     pub(crate) restored: bool,
     pub(crate) owner: Option<crate::core::session::WorkspaceId>,
+    pub(crate) live_binding: agentty_core::core::session::LiveContainerBinding,
 }
 
 #[derive(Clone, Copy)]
@@ -83,6 +133,18 @@ struct DragScroll {
     col: usize,
     side: Side,
 }
+
+#[derive(Clone, Copy)]
+struct ScrollAnim {
+    remaining: f32,
+    last: std::time::Instant,
+}
+
+const SCROLL_ANIM_SMOOTH: f32 = 0.4;
+const SCROLL_ANIM_FRAME: std::time::Duration = std::time::Duration::from_millis(16);
+const SCROLL_ANIM_MIN: f32 = 0.05;
+const SCROLL_ANIM_MIN_JUMP: f32 = 1.0;
+const SCROLL_GESTURE_IDLE: std::time::Duration = std::time::Duration::from_millis(150);
 
 fn cwd_is_on_host(pane_runs_remotely: bool, host_is_local: bool) -> bool {
     match pane_runs_remotely {
@@ -99,7 +161,12 @@ pub struct TerminalView {
     shell_spec: Option<ShellSpec>,
     owner_workspace: Option<crate::core::session::WorkspaceId>,
     restored: bool,
+    live_binding: agentty_core::core::session::LiveContainerBinding,
+    /// Once-only first AgentPrompt excerpt for Navigator display before
+    /// provider discovery publishes a title. Never set from tab/OSC chrome.
+    live_first_user_title: Option<String>,
     ssh_spec: Option<Box<crate::daemon::protocol::NativeSshSpec>>,
+    remote_clipboard_dir: Option<String>,
     pub focus_handle: FocusHandle,
     pub font: Font,
     pub font_bold: Option<Font>,
@@ -112,6 +179,9 @@ pub struct TerminalView {
     selecting: bool,
     drag_scroll: Option<DragScroll>,
     drag_scroll_epoch: u64,
+    scroll_anim: Option<ScrollAnim>,
+    scroll_anim_epoch: u64,
+    gesture_until: Option<std::time::Instant>,
     pub title: String,
     pub marked_text: String,
     last_mouse_cell: Option<(usize, usize)>,
@@ -283,6 +353,7 @@ fn notify_command_finished(
     label: &str,
     elapsed: std::time::Duration,
     locale: crate::core::i18n::Locale,
+    target: crate::ui::composer::PaneIdentity,
 ) {
     let secs = elapsed.as_secs().to_string();
     let label = label.trim();
@@ -295,17 +366,18 @@ fn notify_command_finished(
             &[("label", label), ("secs", &secs)],
         )
     };
-    super::remote::notify_desktop(Some("agentty"), &body);
+    super::remote::notify_desktop_for_pane(Some("agentty"), &body, Some(target));
 }
 
 fn notify_agent_finished(
     agent: crate::core::cli_agent::CLIAgent,
     elapsed: std::time::Duration,
     locale: crate::core::i18n::Locale,
+    target: crate::ui::composer::PaneIdentity,
 ) {
     let secs = elapsed.as_secs().to_string();
     let body = crate::core::i18n::trf(locale, "notify.agent_finished", &[("secs", &secs)]);
-    super::remote::notify_desktop(Some(agent.display_name()), &body);
+    super::remote::notify_desktop_for_pane(Some(agent.display_name()), &body, Some(target));
 }
 
 fn ring_system_bell() -> bool {
@@ -410,7 +482,6 @@ fn clipboard_paste_text(item: &ClipboardItem) -> Option<String> {
     item.text()
 }
 
-#[cfg(not(target_os = "macos"))]
 fn write_clipboard_image(img: &gpui::Image) -> Option<std::path::PathBuf> {
     use gpui::ImageFormat;
     let dir = std::env::temp_dir().join("agentty-clipboard");
@@ -428,7 +499,6 @@ fn write_clipboard_image(img: &gpui::Image) -> Option<std::path::PathBuf> {
     Some(path)
 }
 
-#[cfg(not(target_os = "macos"))]
 fn transcode_to_png(bytes: &[u8], format: gpui::ImageFormat) -> Option<Vec<u8>> {
     use gpui::ImageFormat as G;
     let src = match format {
@@ -448,6 +518,113 @@ fn transcode_to_png(bytes: &[u8], format: gpui::ImageFormat) -> Option<Vec<u8>> 
         .write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Png)
         .ok()?;
     Some(out)
+}
+
+fn remote_paste_spec<'a>(
+    workspace: Option<&'a crate::terminal::PaneWorkspace>,
+    ssh_spec: Option<&'a crate::daemon::protocol::NativeSshSpec>,
+) -> Option<&'a crate::daemon::protocol::NativeSshSpec> {
+    if let Some(workspace) = workspace {
+        if workspace.shares_localhost() {
+            return None;
+        }
+        return workspace.spec.as_deref();
+    }
+    ssh_spec
+}
+
+fn stages_clipboard_image(is_remote: bool) -> bool {
+    cfg!(not(target_os = "macos")) || is_remote
+}
+
+fn wsl_path(windows: &str) -> Option<String> {
+    let mut chars = windows.chars();
+    let drive = chars.next()?.to_ascii_lowercase();
+    if !drive.is_ascii_alphabetic() || chars.next()? != ':' {
+        return None;
+    }
+    if !matches!(chars.next()?, '\\' | '/') {
+        return None;
+    }
+    Some(format!(
+        "/mnt/{drive}/{}",
+        chars.as_str().replace('\\', "/")
+    ))
+}
+
+fn staged_path_for_pane(local: &str, shares_localhost: bool) -> String {
+    if shares_localhost {
+        return wsl_path(local).unwrap_or_else(|| local.to_string());
+    }
+    local.to_string()
+}
+
+const REMOTE_CLIPBOARD_PATH: [&str; 3] = [".cache", "agentty", "clipboard"];
+const REMOTE_CLIPBOARD_MODE: u32 = 0o700;
+
+fn staging_dir_is_safe(
+    is_symlink: bool,
+    kind: Option<crate::daemon::protocol::SftpEntryKind>,
+    mode: u32,
+) -> bool {
+    use crate::daemon::protocol::SftpEntryKind;
+    !is_symlink
+        && matches!(kind, Some(SftpEntryKind::Dir))
+        && mode & 0o7777 == REMOTE_CLIPBOARD_MODE
+}
+
+fn staging_cache(prepared: &Result<String, String>) -> Option<String> {
+    prepared.as_ref().ok().cloned()
+}
+
+fn prepare_remote_clipboard_dir(route: &crate::ui::sftp::SftpRoute) -> Result<String, String> {
+    use crate::daemon::protocol::{SftpOp, SftpOpResult};
+    let home = match route.op(SftpOp::Realpath { path: ".".into() }) {
+        SftpOpResult::Link(home) if home.starts_with('/') => home,
+        SftpOpResult::Error(error) => return Err(error),
+        other => {
+            return Err(format!(
+                "the remote home directory is not a path: {other:?}"
+            ));
+        }
+    };
+    let mut dir = home;
+    for component in REMOTE_CLIPBOARD_PATH {
+        dir = crate::daemon::ssh::sftp::remote_join(&dir, component);
+        let _ = route.op(SftpOp::Mkdir { path: dir.clone() });
+    }
+    if let SftpOpResult::Link(target) = route.op(SftpOp::Readlink { path: dir.clone() }) {
+        return Err(format!("{dir} is a symlink to {target}"));
+    }
+    if let SftpOpResult::Error(error) = route.op(SftpOp::Chmod {
+        path: dir.clone(),
+        mode: REMOTE_CLIPBOARD_MODE,
+    }) {
+        return Err(format!("{dir} is not owned by this session: {error}"));
+    }
+    match route.op(SftpOp::Stat { path: dir.clone() }) {
+        SftpOpResult::Stat(entry)
+            if staging_dir_is_safe(false, Some(entry.kind), entry.permissions) =>
+        {
+            Ok(dir)
+        }
+        SftpOpResult::Stat(entry) => Err(format!(
+            "{dir} is not a private directory (mode {:o})",
+            entry.permissions & 0o7777
+        )),
+        SftpOpResult::Error(error) => Err(error),
+        other => Err(format!("unexpected reply for {dir}: {other:?}")),
+    }
+}
+
+fn completion_authority(
+    host_id: crate::ui::host_ops::HostId,
+) -> agentty_core::agent_runtime::AuthorityKind {
+    if host_id.is_local() {
+        agentty_core::agent_runtime::AuthorityKind::Local
+    } else {
+        agentty_core::agent_runtime::AuthorityKind::Remote
+    }
 }
 
 fn fallback_chain(family: &str, configured: &[String]) -> Vec<String> {
@@ -506,6 +683,7 @@ impl TerminalView {
             workspace,
             restored,
             owner,
+            live_binding: Default::default(),
         })
     }
 
@@ -518,6 +696,7 @@ impl TerminalView {
         view.shell_spec = parts.shell_spec;
         view.owner_workspace = parts.owner;
         view.restored = parts.restored;
+        view.live_binding = parts.live_binding;
         view.set_workspace(parts.workspace);
         view
     }
@@ -703,7 +882,10 @@ impl TerminalView {
             shell_spec: None,
             owner_workspace: None,
             restored: false,
+            live_binding: Default::default(),
+            live_first_user_title: None,
             ssh_spec: None,
+            remote_clipboard_dir: None,
             focus_handle,
             font,
             font_bold,
@@ -716,6 +898,9 @@ impl TerminalView {
             selecting: false,
             drag_scroll: None,
             drag_scroll_epoch: 0,
+            scroll_anim: None,
+            scroll_anim_epoch: 0,
+            gesture_until: None,
             title: "agentty".to_string(),
             marked_text: String::new(),
             last_mouse_cell: None,
@@ -823,7 +1008,7 @@ impl TerminalView {
         self.paths_are_local().then(|| self.cwd())?
     }
 
-    fn paths_are_local(&self) -> bool {
+    pub(crate) fn paths_are_local(&self) -> bool {
         self.remote_context().is_none() && self.host_id.is_local()
     }
 
@@ -865,6 +1050,14 @@ impl TerminalView {
         self.pane_id
     }
 
+    pub(crate) fn completion_history(&self) -> Vec<String> {
+        self.history_ranked.iter().take(200).cloned().collect()
+    }
+
+    pub(crate) fn input_active_for_completion(&self) -> bool {
+        self.input_active()
+    }
+
     pub fn relink_plan(&self) -> (u64, TermSize, u16, u16) {
         (
             self.pane_id,
@@ -903,6 +1096,40 @@ impl TerminalView {
         cwd_is_on_host(!self.paths_are_local(), self.host_id.is_local())
     }
 
+    pub fn live_binding(&self) -> &agentty_core::core::session::LiveContainerBinding {
+        &self.live_binding
+    }
+
+    /// True when this leaf should count as an agent-bound carrier for close
+    /// refresh (SESSION-LIVE-CONTAINER-BINDING-15): stamped binding or runtime
+    /// session. Process exit must not clear the binding, so this stays true
+    /// after the foreground agent leaves.
+    pub fn is_agent_bound(&self) -> bool {
+        agent_bound_carrier_close_predicate(
+            self.live_binding.agent.is_some(),
+            self.agent_session().is_some(),
+        )
+    }
+
+    pub fn set_live_binding(
+        &mut self,
+        binding: agentty_core::core::session::LiveContainerBinding,
+        cx: &mut Context<Self>,
+    ) {
+        self.live_binding = binding;
+        cx.notify();
+    }
+
+    /// Stamp the first delivered AgentPrompt as a live display title when
+    /// absent. Later prompts do not overwrite. Returns true when stamped.
+    pub fn note_first_user_prompt(&mut self, prompt: &str) -> bool {
+        stamp_live_first_user_title(&mut self.live_first_user_title, prompt)
+    }
+
+    pub fn live_first_user_title(&self) -> Option<&str> {
+        self.live_first_user_title.as_deref()
+    }
+
     pub fn agent(&self) -> Option<crate::core::cli_agent::CLIAgent> {
         self.terminal.foreground_agent()
     }
@@ -913,6 +1140,9 @@ impl TerminalView {
 
     pub fn agent_result_unread(&self) -> bool {
         self.agent_result_unread
+    }
+    pub fn is_focused(&self) -> bool {
+        self.focused
     }
 
     pub fn mark_agent_result_unread(&mut self, refocus_incoming: bool) {
@@ -1715,6 +1945,7 @@ impl TerminalView {
     }
 
     fn jump_to_prompt(&mut self) {
+        self.cancel_scroll_anim();
         let mut term = self.terminal.term.lock();
         term.selection = None;
         term.scroll_display(Scroll::Bottom);
@@ -1882,6 +2113,7 @@ impl TerminalView {
         if lines == 0 {
             return;
         }
+        self.cancel_scroll_anim();
         let mut mode = *self.terminal.term.lock().mode();
         if !self.report_mouse {
             mode.remove(TermMode::MOUSE_MODE);
@@ -2014,19 +2246,181 @@ impl TerminalView {
     }
 
     fn paste_clipboard_image(&mut self, img: &gpui::Image, cx: &mut Context<Self>) {
-        #[cfg(not(target_os = "macos"))]
-        if let Some(path) = write_clipboard_image(img) {
-            let text = shell_escape_path(&path.to_string_lossy());
-            self.paste(format!("{text} "), cx);
+        if self.paste_clipboard_image_as_path(img, cx) {
             return;
         }
-        let _ = img;
         self.terminal.write(vec![0x16]);
         self.terminal.term.lock().selection = None;
         cx.notify();
     }
 
+    fn paste_clipboard_image_as_path(&mut self, img: &gpui::Image, cx: &mut Context<Self>) -> bool {
+        let is_remote = remote_paste_spec(self.workspace.as_ref(), self.ssh_spec.as_deref())
+            .is_some()
+            || self
+                .workspace
+                .as_ref()
+                .is_some_and(|workspace| workspace.shares_localhost());
+        if !stages_clipboard_image(is_remote) {
+            return false;
+        }
+        let Some(path) = write_clipboard_image(img) else {
+            return false;
+        };
+        if self.upload_image_for_remote(&path, cx) {
+            return true;
+        }
+        let shares_localhost = self
+            .workspace
+            .as_ref()
+            .is_some_and(|workspace| workspace.shares_localhost());
+        let path = staged_path_for_pane(&path.to_string_lossy(), shares_localhost);
+        self.paste(format!("{} ", shell_escape_path(&path)), cx);
+        true
+    }
+
+    fn upload_image_for_remote(&mut self, local: &std::path::Path, cx: &mut Context<Self>) -> bool {
+        use crate::daemon::protocol::{SftpTransferKind, SftpTransferSpec};
+        let Some(spec) = remote_paste_spec(self.workspace.as_ref(), self.ssh_spec.as_deref())
+        else {
+            return false;
+        };
+        let host = format!("{}@{}", spec.user, spec.host);
+        let Some(name) = local
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .filter(|name| crate::daemon::ssh::sftp::safe_local_name(name))
+        else {
+            log::warn!("refusing to upload a clipboard image named {local:?}");
+            return false;
+        };
+        let route = crate::ui::sftp::SftpRoute::new(self.pane_id, self.workspace.clone());
+        let cached = self.remote_clipboard_dir.clone();
+        let local = local.to_path_buf();
+        let pane_id = self.pane_id;
+        cx.spawn(async move |this, cx| {
+            let prepared = match cached {
+                Some(dir) => Ok(dir),
+                None => {
+                    let route = route.clone();
+                    cx.background_spawn(async move { prepare_remote_clipboard_dir(&route) })
+                        .await
+                }
+            };
+            let dir = match this.update(cx, |view, _| {
+                view.remote_clipboard_dir = staging_cache(&prepared);
+                view.remote_clipboard_dir.clone()
+            }) {
+                Ok(Some(dir)) => dir,
+                Ok(None) => {
+                    let reason = prepared.unwrap_or_else(|error| error);
+                    let _ = this.update_in(cx, |_, window, cx| {
+                        Self::warn_image_upload_failed(&host, &reason, window, cx)
+                    });
+                    return;
+                }
+                Err(_) => return,
+            };
+            let remote = crate::daemon::ssh::sftp::remote_join(&dir, &name);
+            let started = {
+                let route = route.clone();
+                let remote = remote.clone();
+                let local = local.clone();
+                cx.background_spawn(async move {
+                    route.transfer_start(SftpTransferSpec {
+                        pane_id,
+                        kind: SftpTransferKind::Upload,
+                        local,
+                        remote,
+                        recursive: false,
+                    })
+                })
+                .await
+            };
+            let job = match started {
+                Ok(job) => job,
+                Err(reason) => {
+                    let _ = this.update_in(cx, |_, window, cx| {
+                        Self::warn_image_upload_failed(&host, &reason, window, cx)
+                    });
+                    return;
+                }
+            };
+            if let Err(reason) = Self::watch_image_upload(route, job, &remote, cx).await {
+                let _ = this.update_in(cx, |_, window, cx| {
+                    Self::warn_image_upload_failed(&host, &reason, window, cx)
+                });
+                return;
+            }
+            let text = shell_escape_path(&remote);
+            let _ = this.update(cx, |view, cx| view.paste(format!("{text} "), cx));
+        })
+        .detach();
+        true
+    }
+
+    async fn watch_image_upload(
+        route: crate::ui::sftp::SftpRoute,
+        job: u64,
+        remote: &str,
+        cx: &mut gpui::AsyncApp,
+    ) -> Result<(), String> {
+        use crate::daemon::protocol::{SftpJobState, SftpOp};
+        const POLL: std::time::Duration = std::time::Duration::from_millis(500);
+        const POLLS: usize = 600;
+        for _ in 0..POLLS {
+            cx.background_executor().timer(POLL).await;
+            let listed = {
+                let route = route.clone();
+                cx.background_spawn(async move { route.transfer_list() })
+                    .await
+            };
+            let Some(progress) = listed.into_iter().find(|progress| progress.job_id == job) else {
+                return Err("the upload disappeared before completion".into());
+            };
+            match progress.state {
+                SftpJobState::Running => continue,
+                SftpJobState::Done => {
+                    let route = route.clone();
+                    let path = remote.to_string();
+                    let chmod = cx
+                        .background_spawn(
+                            async move { route.op(SftpOp::Chmod { path, mode: 0o600 }) },
+                        )
+                        .await;
+                    return match chmod {
+                        crate::daemon::protocol::SftpOpResult::Error(error) => Err(error),
+                        _ => Ok(()),
+                    };
+                }
+                SftpJobState::Cancelled => return Err("upload cancelled".into()),
+                SftpJobState::Error => {
+                    return Err(progress.error.unwrap_or_else(|| "upload failed".into()));
+                }
+            }
+        }
+        Err("upload timed out".into())
+    }
+
+    fn warn_image_upload_failed(
+        host: &str,
+        reason: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        log::warn!("clipboard image upload to {host} failed: {reason}");
+        window.push_notification(
+            crate::core::i18n::current_format(
+                cx,
+                "sftp.image_paste_upload_failed",
+                &[("host", host), ("error", reason)],
+            ),
+            cx,
+        );
+    }
+
     pub fn clear_scrollback(&mut self, cx: &mut Context<Self>) {
+        self.cancel_scroll_anim();
         self.terminal.term.lock().grid_mut().clear_history();
         self.scroll_frac = 0.;
         self.terminal.marks().clear();
@@ -2140,15 +2534,32 @@ impl TerminalView {
                 let agent = self.running_agent.take();
                 self.running_since = None;
                 if notify_allowed {
+                    let target = crate::ui::composer::PaneIdentity {
+                        environment: self
+                            .workspace
+                            .as_ref()
+                            .map(|workspace| {
+                                crate::core::session::WorkspaceStore::environment_id(
+                                    cx,
+                                    workspace.workspace,
+                                )
+                            })
+                            .unwrap_or_else(|| {
+                                agentty_core::core::environment::EnvironmentDescriptor::local().id
+                            }),
+                        pane_id: self.pane_id,
+                    };
                     match agent {
                         Some(_) if self.agent_was_rich => {}
-                        Some(agent) => notify_agent_finished(agent, elapsed, locale),
+                        Some(agent) => {
+                            notify_agent_finished(agent, elapsed, locale, target.clone())
+                        }
                         None => {
                             let threshold = std::time::Duration::from_secs(
                                 cx.global::<Config>().notify_threshold_secs,
                             );
                             if elapsed >= threshold {
-                                notify_command_finished(&title, elapsed, locale);
+                                notify_command_finished(&title, elapsed, locale, target);
                             }
                         }
                     }
@@ -2219,7 +2630,11 @@ impl TerminalView {
                 .background_spawn(async move {
                     let files = shell_files
                         .into_iter()
-                        .filter_map(|(host, path)| host.read_file(&path, MAX_HISTORY_BYTES).ok())
+                        .filter_map(|(host, source, path)| {
+                            host.read_file(&path, MAX_HISTORY_BYTES)
+                                .ok()
+                                .map(|bytes| (source, bytes))
+                        })
                         .collect();
                     super::history::load_with_shell_files(&loading, files)
                 })
@@ -2244,7 +2659,7 @@ impl TerminalView {
     fn remote_shell_history_sources(
         &self,
         cx: &mut Context<Self>,
-    ) -> Vec<(crate::ui::host_ops::SharedHost, std::path::PathBuf)> {
+    ) -> Vec<(crate::ui::host_ops::SharedHost, String, std::path::PathBuf)> {
         if self.history_scope.is_local() || self.host_id.is_local() {
             return Vec::new();
         }
@@ -2268,7 +2683,13 @@ impl TerminalView {
         };
         super::history::shell_history_names()
             .into_iter()
-            .map(|name| (std::sync::Arc::clone(&host), host.join(&home, name)))
+            .map(|name| {
+                (
+                    std::sync::Arc::clone(&host),
+                    name.to_string(),
+                    host.join(&home, name),
+                )
+            })
             .collect()
     }
 
@@ -2343,12 +2764,12 @@ impl TerminalView {
             self.agent_was_rich = false;
         }
 
-        let identity = (
-            session.as_ref().and_then(|s| s.session_id.clone()),
-            session.as_ref().and_then(|s| s.launch_argv.clone()),
-        );
-        if identity != self.last_agent_session {
-            self.last_agent_session = identity;
+        if apply_live_binding_agent_poll(
+            &mut self.live_binding,
+            self.terminal.foreground_agent(),
+            session.as_ref(),
+            &mut self.last_agent_session,
+        ) {
             cx.emit(AgentSessionChanged);
         }
 
@@ -2385,8 +2806,14 @@ impl TerminalView {
                 let body = session
                     .as_ref()
                     .and_then(|s| s.message.clone())
-                    .unwrap_or_else(|| "Waiting for your input".to_string());
-                super::remote::notify_desktop(Some(agent_name), &body);
+                    .unwrap_or_else(|| {
+                        crate::core::i18n::current(cx, "notify.waiting_input").to_string()
+                    });
+                super::remote::notify_desktop_for_pane(
+                    Some(agent_name),
+                    &body,
+                    Some(self.notification_target(cx)),
+                );
             }
             Some(AgentStatus::Done)
                 if rich
@@ -2404,12 +2831,31 @@ impl TerminalView {
                     ),
                     None => crate::core::i18n::current(cx, "notify.turn_finished").to_string(),
                 };
-                super::remote::notify_desktop(Some(agent_name), &body);
+                super::remote::notify_desktop_for_pane(
+                    Some(agent_name),
+                    &body,
+                    Some(self.notification_target(cx)),
+                );
             }
             _ => {}
         }
         cx.notify();
         turn_finished
+    }
+
+    fn notification_target(&self, cx: &App) -> crate::ui::composer::PaneIdentity {
+        crate::ui::composer::PaneIdentity {
+            environment: self
+                .workspace
+                .as_ref()
+                .map(|workspace| {
+                    crate::core::session::WorkspaceStore::environment_id(cx, workspace.workspace)
+                })
+                .unwrap_or_else(|| {
+                    agentty_core::core::environment::EnvironmentDescriptor::local().id
+                }),
+            pane_id: self.pane_id,
+        }
     }
 
     fn at_shell_prompt(&self) -> bool {
@@ -2973,7 +3419,7 @@ impl TerminalView {
         self.send_to_pty(chord, cx);
     }
 
-    fn tab_pressed(&mut self, forward: bool, cx: &mut Context<Self>) {
+    pub(crate) fn tab_pressed(&mut self, forward: bool, cx: &mut Context<Self>) {
         if self.search_focused {
             cx.propagate();
             return;
@@ -3010,11 +3456,7 @@ impl TerminalView {
             .nth(cursor_chars)
             .map(|(offset, _)| offset)
             .unwrap_or(line.len());
-        let authority = if self.host_id.is_local() {
-            agentty_core::agent_runtime::AuthorityKind::Local
-        } else {
-            agentty_core::agent_runtime::AuthorityKind::Remote
-        };
+        let authority = completion_authority(self.host_id);
         let request = agentty_core::agent_runtime::CompletionRequest {
             operation: agentty_core::agent_runtime::OperationId(
                 self.completion_generation.wrapping_add(1),
@@ -3583,6 +4025,7 @@ impl TerminalView {
         let Some(ds) = self.drag_scroll else {
             return false;
         };
+        self.cancel_scroll_anim();
         let mut term = self.terminal.term.lock();
         let before = term.grid().display_offset();
         term.scroll_display(Scroll::Delta(drag_scroll_step(ds.overshoot)));
@@ -3626,13 +4069,14 @@ impl TerminalView {
         }
     }
 
-    fn on_scroll(&mut self, ev: &ScrollWheelEvent, _window: &mut Window, cx: &mut Context<Self>) {
+    fn on_scroll(&mut self, ev: &ScrollWheelEvent, window: &mut Window, cx: &mut Context<Self>) {
         let mult = cx.global::<Config>().mouse_scroll_multiplier;
         let raw = match ev.delta {
             ScrollDelta::Lines(p) => p.y,
             ScrollDelta::Pixels(p) => p.y.as_f32() / self.line_height.as_f32(),
         };
         let delta = raw * mult;
+        let gesturing = self.track_scroll_gesture(ev.touch_phase);
 
         let quantized = !ev.modifiers.shift && {
             let mode = *self.terminal.term.lock().mode();
@@ -3640,6 +4084,7 @@ impl TerminalView {
                 || mode.contains(TermMode::ALT_SCREEN | TermMode::ALTERNATE_SCROLL)
         };
         if quantized {
+            self.cancel_scroll_anim();
             let total = self.scroll_debt + delta;
             let lines = total.trunc() as i32;
             self.scroll_debt = total - lines as f32;
@@ -3649,7 +4094,67 @@ impl TerminalView {
             return;
         }
 
-        self.smooth_scroll(delta, cx);
+        if self.should_animate_scroll(delta, gesturing, cx) {
+            self.queue_scroll_anim(delta, window, cx);
+        } else {
+            self.cancel_scroll_anim();
+            self.smooth_scroll(delta, cx);
+        }
+    }
+
+    fn track_scroll_gesture(&mut self, phase: gpui::TouchPhase) -> bool {
+        let now = std::time::Instant::now();
+        let live = matches!(phase, gpui::TouchPhase::Started)
+            || self.gesture_until.is_some_and(|until| now < until);
+        self.gesture_until = live.then(|| now + SCROLL_GESTURE_IDLE);
+        live
+    }
+
+    fn should_animate_scroll(&self, delta: f32, gesturing: bool, cx: &App) -> bool {
+        !gesturing
+            && cx.global::<Config>().smooth_scroll
+            && (self.scroll_anim.is_some() || delta.abs() >= SCROLL_ANIM_MIN_JUMP)
+    }
+
+    fn queue_scroll_anim(&mut self, delta: f32, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(anim) = self.scroll_anim.as_mut() {
+            anim.remaining += delta;
+            return;
+        }
+        self.scroll_anim = Some(ScrollAnim {
+            remaining: delta,
+            last: std::time::Instant::now(),
+        });
+        self.scroll_anim_epoch += 1;
+        schedule_scroll_anim_frame(cx.weak_entity(), self.scroll_anim_epoch, window);
+        cx.notify();
+    }
+
+    fn cancel_scroll_anim(&mut self) {
+        if self.scroll_anim.take().is_some() {
+            self.scroll_anim_epoch += 1;
+        }
+    }
+
+    fn scroll_anim_frame(&mut self, epoch: u64, cx: &mut Context<Self>) -> bool {
+        if epoch != self.scroll_anim_epoch {
+            return false;
+        }
+        let Some(anim) = self.scroll_anim.as_mut() else {
+            return false;
+        };
+        let now = std::time::Instant::now();
+        let (step, last) = scroll_anim_step(anim.remaining, now.duration_since(anim.last));
+        anim.last = now;
+        anim.remaining -= step;
+        if last {
+            self.scroll_anim = None;
+        }
+        if !self.smooth_scroll(step, cx) {
+            self.cancel_scroll_anim();
+            return false;
+        }
+        !last
     }
 
     pub fn command_marks(&self) -> Vec<crate::terminal::marks::CommandMark> {
@@ -3657,6 +4162,7 @@ impl TerminalView {
     }
 
     pub fn scroll_to_mark(&mut self, row: i64, cx: &mut Context<Self>) -> bool {
+        self.cancel_scroll_anim();
         use alacritty_terminal::grid::Dimensions as _;
         let mut term = self.terminal.term.lock();
         let history = term.grid().history_size() as i64;
@@ -3672,7 +4178,7 @@ impl TerminalView {
         true
     }
 
-    fn smooth_scroll(&mut self, delta: f32, cx: &mut Context<Self>) {
+    fn smooth_scroll(&mut self, delta: f32, cx: &mut Context<Self>) -> bool {
         let mut term = self.terminal.term.lock();
         let offset = term.grid().display_offset();
         let max = term.grid().history_size();
@@ -3684,7 +4190,9 @@ impl TerminalView {
         if jump != 0 || frac != self.scroll_frac {
             self.scroll_frac = frac;
             cx.notify();
+            return true;
         }
+        false
     }
 
     fn grid_line(
@@ -4486,30 +4994,43 @@ impl Render for TerminalView {
             .children(reverse_search_menu)
             .children(integration_notice)
             .context_menu(move |menu, window, cx| {
+                let copy = crate::core::i18n::current(cx, "menu.copy");
+                let cut = crate::core::i18n::current(cx, "menu.cut");
+                let paste = crate::core::i18n::current(cx, "menu.paste");
+                let select_all = crate::core::i18n::current(cx, "menu.select_all");
+                let find = crate::core::i18n::current(cx, "menu.find");
+                let clear = crate::core::i18n::current(cx, "menu.clear");
+                let split_right = crate::core::i18n::current(cx, "menu.split_right");
+                let split_left = crate::core::i18n::current(cx, "menu.split_left");
+                let split_down = crate::core::i18n::current(cx, "menu.split_down");
+                let split_up = crate::core::i18n::current(cx, "menu.split_up");
+                let maximize = crate::core::i18n::current(cx, "menu.maximize_pane");
+                let new_tab = crate::core::i18n::current(cx, "menu.new_tab");
+                let close_pane = crate::core::i18n::current(cx, "palette.cmd.close_pane");
                 let menu = menu
                     .min_w(px(220.))
                     .action_context(menu_focus.clone())
                     .menu_element_with_disabled(
                         Box::new(CopyText),
                         !has_selection,
-                        menu_row_with_hint("Copy", Some("secondary-c")),
+                        menu_row_with_hint(copy, Some("secondary-c")),
                     )
                     .menu_element_with_disabled(
                         Box::new(CutText),
                         !has_selection,
-                        menu_row_with_hint("Cut", Some("secondary-x")),
+                        menu_row_with_hint(cut, Some("secondary-x")),
                     )
                     .menu_element(
                         Box::new(PasteText),
-                        menu_row_with_hint("Paste", Some("secondary-v")),
+                        menu_row_with_hint(paste, Some("secondary-v")),
                     )
                     .menu_element(
                         Box::new(SelectAll),
-                        menu_row_with_hint("Select All", mac_only("secondary-a")),
+                        menu_row_with_hint(select_all, mac_only("secondary-a")),
                     )
                     .separator()
-                    .menu("Find…", Box::new(FindInTerminal))
-                    .menu("Clear", Box::new(ClearScrollback));
+                    .menu(find, Box::new(FindInTerminal))
+                    .menu(clear, Box::new(ClearScrollback));
 
                 let view = menu_view.read(cx);
                 let fork_label = view.agent().and_then(|a| a.fork_label());
@@ -4524,10 +5045,10 @@ impl Render for TerminalView {
                             .submenu(label, window, cx, move |submenu, _window, _cx| {
                                 submenu
                                     .action_context(focus.clone())
-                                    .menu("Split Right", Box::new(ForkAgentSessionRight))
-                                    .menu("Split Left", Box::new(ForkAgentSessionLeft))
-                                    .menu("Split Down", Box::new(ForkAgentSessionDown))
-                                    .menu("Split Up", Box::new(ForkAgentSessionUp))
+                                    .menu(split_right, Box::new(ForkAgentSessionRight))
+                                    .menu(split_left, Box::new(ForkAgentSessionLeft))
+                                    .menu(split_down, Box::new(ForkAgentSessionDown))
+                                    .menu(split_up, Box::new(ForkAgentSessionUp))
                             })
                     }
                     Some(label) => menu
@@ -4537,12 +5058,12 @@ impl Render for TerminalView {
                 };
 
                 menu.separator()
-                    .menu("Split Right", Box::new(SplitRight))
-                    .menu("Split Down", Box::new(SplitDown))
-                    .menu("Maximize Pane", Box::new(ToggleMaximizePane))
+                    .menu(split_right, Box::new(SplitRight))
+                    .menu(split_down, Box::new(SplitDown))
+                    .menu(maximize, Box::new(ToggleMaximizePane))
                     .separator()
-                    .menu("New Tab", Box::new(NewTab))
-                    .menu("Close Pane", Box::new(CloseActiveTab))
+                    .menu(new_tab, Box::new(NewTab))
+                    .menu(close_pane, Box::new(CloseActiveTab))
             })
     }
 }
@@ -4974,6 +5495,42 @@ fn smooth_scroll_step(offset: usize, frac: f32, delta: f32, max: usize) -> (i32,
     (new_offset as i32 - offset as i32, pos - new_offset)
 }
 
+fn schedule_scroll_anim_frame(view: WeakEntity<TerminalView>, epoch: u64, window: &mut Window) {
+    window.on_next_frame(move |window, cx| {
+        let Some(view) = view.upgrade() else {
+            return;
+        };
+        if view.update(cx, |view, cx| view.scroll_anim_frame(epoch, cx)) {
+            schedule_scroll_anim_frame(view.downgrade(), epoch, window);
+        }
+    });
+}
+
+fn scroll_anim_step(remaining: f32, dt: std::time::Duration) -> (f32, bool) {
+    if remaining.abs() <= SCROLL_ANIM_MIN {
+        return (remaining, true);
+    }
+    let frames = (dt.as_secs_f32() / SCROLL_ANIM_FRAME.as_secs_f32()).clamp(0.1, 8.0);
+    let step = remaining * (1.0 - (1.0 - SCROLL_ANIM_SMOOTH).powf(frames));
+    if (remaining - step).abs() <= SCROLL_ANIM_MIN {
+        (remaining, true)
+    } else {
+        (step, false)
+    }
+}
+
+/// Once-only live title from the first AgentPrompt. Rejects placeholders.
+pub(crate) fn stamp_live_first_user_title(slot: &mut Option<String>, prompt: &str) -> bool {
+    if slot.is_some() {
+        return false;
+    }
+    let Some(title) = agentty_core::agent_runtime::first_user_title_candidate(prompt) else {
+        return false;
+    };
+    *slot = Some(title);
+    true
+}
+
 fn drag_scroll_step(overshoot: f32) -> i32 {
     let lines = overshoot.abs().ceil().clamp(1., 8.) as i32;
     if overshoot < 0. { -lines } else { lines }
@@ -4982,14 +5539,17 @@ fn drag_scroll_step(overshoot: f32) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::{
-        LoopbackPlan, SelectEndCopy, WheelRoute, clipboard_paste_text, cwd_is_on_host,
-        display_width, loopback_plan,
+        LoopbackPlan, SelectEndCopy, WheelRoute, agent_bound_carrier_close_predicate,
+        apply_live_binding_agent_poll, clipboard_paste_text, completion_authority, cwd_is_on_host,
+        display_width, loopback_plan, remote_paste_spec, staged_path_for_pane,
+        stages_clipboard_image, staging_dir_is_safe, stamp_live_first_user_title, wsl_path,
     };
     use super::{
-        drag_scroll_step, encode_mouse, expand_file_command_template, fallback_chain,
-        fig_icon_emoji, fig_icon_glyph, focus_report_bytes, input_overflow_shift,
-        input_overlay_rows, menu_layout, paste_bytes, select_end_copy, shell_escape_path,
-        smooth_scroll_step, submit_bytes, trim_trailing_spaces, wheel_route, wrapped_click_index,
+        SCROLL_ANIM_FRAME, drag_scroll_step, encode_mouse, expand_file_command_template,
+        fallback_chain, fig_icon_emoji, fig_icon_glyph, focus_report_bytes, input_overflow_shift,
+        input_overlay_rows, menu_layout, paste_bytes, scroll_anim_step, select_end_copy,
+        shell_escape_path, smooth_scroll_step, submit_bytes, trim_trailing_spaces, wheel_route,
+        wrapped_click_index,
     };
     use alacritty_terminal::term::TermMode;
     use gpui::{ClipboardEntry, ClipboardItem, ExternalPaths, Modifiers};
@@ -5013,6 +5573,129 @@ mod tests {
                 )
             }),
         }
+    }
+
+    #[test]
+    fn wsl_workspace_completion_uses_remote_authority() {
+        let target = RemoteTarget::Wsl {
+            distro: "Ubuntu-24.04".into(),
+        };
+        assert_eq!(
+            completion_authority(target.host_id()),
+            agentty_core::agent_runtime::AuthorityKind::Remote
+        );
+    }
+
+    #[test]
+    fn remote_image_paste_stages_on_every_platform() {
+        assert!(stages_clipboard_image(true));
+        assert_eq!(
+            stages_clipboard_image(false),
+            cfg!(not(target_os = "macos"))
+        );
+    }
+
+    #[test]
+    fn wsl_image_path_uses_the_distro_automount_view() {
+        assert_eq!(
+            wsl_path(r"C:\Users\me\paste.png").as_deref(),
+            Some("/mnt/c/Users/me/paste.png")
+        );
+        assert_eq!(
+            staged_path_for_pane(r"D:\tmp\paste.png", true),
+            "/mnt/d/tmp/paste.png"
+        );
+        assert!(wsl_path(r"\\server\share\paste.png").is_none());
+        assert!(wsl_path(r"C:relative.png").is_none());
+    }
+
+    #[test]
+    fn remote_paste_selects_only_ssh_authority() {
+        let ssh = ws(RemoteTarget::direct("me", "dev.box", 22), true);
+        let wsl = ws(
+            RemoteTarget::Wsl {
+                distro: "Ubuntu".into(),
+            },
+            false,
+        );
+        assert!(remote_paste_spec(Some(&ssh), None).is_some());
+        assert!(remote_paste_spec(Some(&wsl), None).is_none());
+    }
+
+    #[test]
+    fn remote_clipboard_directory_requires_owner_only_permissions() {
+        use crate::daemon::protocol::SftpEntryKind;
+        assert!(staging_dir_is_safe(false, Some(SftpEntryKind::Dir), 0o700));
+        assert!(!staging_dir_is_safe(false, Some(SftpEntryKind::Dir), 0o755));
+        assert!(!staging_dir_is_safe(true, Some(SftpEntryKind::Dir), 0o700));
+        assert!(!staging_dir_is_safe(
+            false,
+            Some(SftpEntryKind::File),
+            0o700
+        ));
+    }
+
+    #[test]
+    fn foreground_agent_stamps_binding_without_session_id() {
+        let mut binding = agentty_core::core::session::LiveContainerBinding::default();
+        let mut last = (None, None);
+        assert!(apply_live_binding_agent_poll(
+            &mut binding,
+            Some(crate::core::cli_agent::CLIAgent::Codex),
+            None,
+            &mut last,
+        ));
+        assert_eq!(binding.agent, Some(crate::core::cli_agent::CLIAgent::Codex));
+        assert!(binding.session_id.is_none());
+        assert!(!apply_live_binding_agent_poll(
+            &mut binding,
+            Some(crate::core::cli_agent::CLIAgent::Codex),
+            None,
+            &mut last,
+        ));
+    }
+
+    #[test]
+    fn note_first_user_prompt_stamps_once() {
+        let mut title = None;
+        assert!(stamp_live_first_user_title(
+            &mut title,
+            "  Fix the flaky navigator gate  "
+        ));
+        assert_eq!(title.as_deref(), Some("Fix the flaky navigator gate"));
+        assert!(!stamp_live_first_user_title(&mut title, "Second prompt"));
+        assert_eq!(title.as_deref(), Some("Fix the flaky navigator gate"));
+        let mut empty = None;
+        assert!(!stamp_live_first_user_title(&mut empty, "agentty"));
+        assert!(empty.is_none());
+    }
+
+    #[test]
+    fn agent_exit_does_not_clear_live_binding_agent() {
+        let mut binding = agentty_core::core::session::LiveContainerBinding {
+            agent: Some(crate::core::cli_agent::CLIAgent::Codex),
+            ..Default::default()
+        };
+        let mut last = (None, None);
+        assert!(!apply_live_binding_agent_poll(
+            &mut binding,
+            None,
+            None,
+            &mut last,
+        ));
+        assert_eq!(
+            binding.agent,
+            Some(crate::core::cli_agent::CLIAgent::Codex),
+            "process exit must not clear stamped live_binding.agent"
+        );
+    }
+
+    #[test]
+    fn agent_bound_carrier_close_uses_binding_or_session() {
+        assert!(agent_bound_carrier_close_predicate(true, false));
+        assert!(agent_bound_carrier_close_predicate(false, true));
+        assert!(agent_bound_carrier_close_predicate(true, true));
+        assert!(!agent_bound_carrier_close_predicate(false, false));
     }
 
     #[test]
@@ -5123,17 +5806,20 @@ mod tests {
         assert_eq!(argv, vec!["code", "--goto", "{other}"]);
     }
 
-    #[cfg(not(target_os = "macos"))]
     #[test]
-    fn clipboard_image_transcodes_bmp_to_png_and_passes_png_through() {
+    fn clipboard_image_transcodes_tiff_to_png() {
         use gpui::{Image, ImageFormat};
 
         let pixel = image::RgbaImage::from_pixel(1, 1, image::Rgba([1, 2, 3, 255]));
-        let mut bmp = Vec::new();
+        let mut tiff = Vec::new();
         image::DynamicImage::ImageRgba8(pixel)
-            .write_to(&mut std::io::Cursor::new(&mut bmp), image::ImageFormat::Bmp)
+            .write_to(
+                &mut std::io::Cursor::new(&mut tiff),
+                image::ImageFormat::Tiff,
+            )
             .unwrap();
-        let path = super::write_clipboard_image(&Image::from_bytes(ImageFormat::Bmp, bmp)).unwrap();
+        let path =
+            super::write_clipboard_image(&Image::from_bytes(ImageFormat::Tiff, tiff)).unwrap();
         assert_eq!(path.extension().unwrap(), "png");
         assert_eq!(&std::fs::read(&path).unwrap()[..8], b"\x89PNG\r\n\x1a\n");
 
@@ -5393,6 +6079,32 @@ mod tests {
         assert_eq!(smooth_scroll_step(3, 0.5, -10.0, 100), (-3, 0.0));
         assert_eq!(smooth_scroll_step(98, 0.0, 7.3, 100), (2, 0.0));
         assert_eq!(smooth_scroll_step(0, 0.0, 2.5, 0), (0, 0.0));
+    }
+
+    #[test]
+    fn scroll_anim_step_decays_and_lands() {
+        let (first, last) = scroll_anim_step(3.0, SCROLL_ANIM_FRAME);
+        assert!(!last);
+        assert!(first > 0.0 && first < 3.0);
+
+        let mut remaining = 3.0_f32;
+        for _ in 0..200 {
+            let (step, last) = scroll_anim_step(remaining, SCROLL_ANIM_FRAME);
+            remaining -= step;
+            if last {
+                assert!(remaining.abs() < 1e-4);
+                return;
+            }
+        }
+        panic!("animation did not converge: {remaining}");
+    }
+
+    #[test]
+    fn scroll_anim_step_accounts_for_dropped_frames_and_snaps_tail() {
+        let (one, _) = scroll_anim_step(10.0, SCROLL_ANIM_FRAME);
+        let (four, _) = scroll_anim_step(10.0, SCROLL_ANIM_FRAME * 4);
+        assert!(four > one * 2.0);
+        assert_eq!(scroll_anim_step(-0.005, SCROLL_ANIM_FRAME), (-0.005, true));
     }
 
     #[test]
@@ -6847,6 +7559,25 @@ mod gpui_tests {
 
     fn display_offset(view: &TerminalView) -> usize {
         view.terminal.term.lock().grid().display_offset()
+    }
+
+    #[gpui::test]
+    fn a_stale_frame_after_cancellation_does_not_walk(cx: &mut TestAppContext) {
+        let (window, _daemon) = harness(cx);
+        window
+            .update(cx, |view, _, cx| {
+                scroll_into_history(view, 10);
+                view.scroll_anim = Some(ScrollAnim {
+                    remaining: -3.0,
+                    last: std::time::Instant::now() - SCROLL_ANIM_FRAME,
+                });
+                view.scroll_anim_epoch = 7;
+                view.cancel_scroll_anim();
+
+                assert!(!view.scroll_anim_frame(7, cx));
+                assert_eq!(display_offset(view), 10);
+            })
+            .unwrap();
     }
 
     #[gpui::test]

@@ -1,5 +1,5 @@
 version: 1
-updated: 2026-07-31
+updated: 2026-08-09
 domain: remote_agent_helper
 architecture:
   deployment: extend_existing_agentty_server_control_channel
@@ -8,7 +8,7 @@ architecture:
   exclusions: [byok, model_proxy, chat_backend, new_listening_port, second_daemon]
 contracts:
   - id: HELPER-CAPABILITY-NEGOTIATION-01
-    rule: Client and helper negotiate named capabilities and protocol version before using Agent features; an unavailable capability is explicit and never inferred from build labels.
+    rule: Client and helper negotiate named capabilities and protocol version before using Agent features; an unavailable capability is explicit and never inferred from build labels. Session discovery may proceed when HelloOk advertises agent-helper, publishes store_roots, or provides a non-empty peer home from which target-owned default store roots are derived; activity and completion still require the agent-helper feature. Deriving roots from peer home is not a GUI-HOME fallback.
   - id: HELPER-SHARED-CORE-02
     rule: Local and remote execution use the same provider registry, discovery reducer, identity model, resume materialization, activity schema, and completion model; only the transport adapter differs.
   - id: HELPER-DISCOVERY-ATOMIC-03
@@ -23,6 +23,47 @@ contracts:
     rule: Long-running helper operations have operation identity, cancellation, timeout, source limits, and bounded event or candidate delivery.
   - id: HELPER-VERSION-INSTALL-08
     rule: Helper version, protocol, capabilities, instance identity, binary hash, and install outcome are observable through the existing agentty-server lifecycle without a second daemon or listening port.
+  - id: HELPER-VERSION-MISMATCH-NOTICE-13
+    rule: A remote agentty-server whose control or protocol dialect does not match the client is never silently replaced. The mismatch is recorded and surfaced with one explicit Replace Server action that remains available until the user replaces or dismisses it; Cancel on a modal prompt must not erase the pending mismatch without a remaining Replace Server path. Every mismatch surface uses the same canonical replace route, never the restart-only route.
+    forbidden:
+      - silent_auto_replace_of_mismatched_remote_daemon
+      - draining_mismatch_queue_with_no_remaining_replace_affordance
+      - routing_a_known_dialect_mismatch_through_restart_only
+  - id: REMOTE-HELPER-DIALECT-SKEW-14
+    rule: Client and remote helper negotiate the complete request dialect before any typed request is sent. Adding or removing a wire enum variant, request shape, or capability that an older helper cannot deserialize requires advancing the negotiated control dialect. A mismatch fails closed at handshake, keeps remote authority offline, and surfaces exactly one Replace Server action in the affected machine group; generic Retry remains unavailable until replacement succeeds. Replace Server uses the canonical bundled-first verified installer and restarts only after matching bytes are published.
+    forbidden:
+      - sending_typed_requests_after_incomplete_dialect_negotiation
+      - presenting_generic_retry_as_a_fix_for_known_dialect_skew
+      - continuing_with_an_old_helper_after_enum_deserialization_failure
+      - downloading_before_checking_the_matching_bundled_musl_helper
+      - falling_back_to_local_authority_when_remote_helper_dialect_is_rejected
+  - id: WSL-SERVER-LIFECYCLE-PARITY-15
+    rule: A WSL Environment is a routed machine authority, so Restart Server is visible and actionable anywhere machine restart is offered, and is handled by the existing WSL installer lifecycle primitive for that distro. Restart capability is modeled separately from SSH transport identity. The UI constructs the same typed RestartServer route used by other machines; the local router dispatches WSL restart through restart_wsl_daemon off the UI thread, never through SSH and never through a shell command assembled by the UI. Replace Server remains unsupported for WSL until a distinct user-observable replacement contract exists.
+    forbidden:
+      - rejecting_restart_only_because_the_machine_is_wsl
+      - routing_wsl_restart_through_ssh
+      - spawning_wsl_lifecycle_io_from_the_ui
+      - treating_replace_server_as_restart_server_for_wsl
+  - id: WSL-COMPLETION-AUTHORITY-16
+    rule: Path completion for a pane in a WSL Environment executes against the selected distro Host using its POSIX cwd. It never reads the GUI machine's filesystem or a same-named local distro share as fallback. A failed or unavailable WSL Host leaves completion empty or hands control back to the shell without substituting local candidates.
+    forbidden:
+      - reading_a_local_wsl_share_for_a_remote_authority
+      - treating_a_wsl_workspace_cwd_as_a_gui_local_path
+      - falling_back_to_gui_filesystem_candidates_after_wsl_completion_failure
+  - id: REMOTE-IMAGE-PASTE-17
+    rule: Pasting a clipboard image into a pane stages bytes on the GUI machine only when the pane cannot consume the GUI clipboard directly. Native SSH panes and SSH workspace panes upload through the existing SFTP authority into an owner-only remote directory, then paste the remote path. WSL panes share the GUI machine's disk and translate an absolute Windows drive path into the distro's POSIX automount path without uploading. Local macOS panes retain direct clipboard handoff. TIFF and other supported non-agent image encodings are transcoded to PNG before path delivery. Upload and verification run off the UI thread; failure is observable and never claims a remote path was successfully published.
+    forbidden:
+      - forwarding_gui_clipboard_syn_to_a_remote_agent
+      - pasting_a_gui_local_temp_path_into_an_ssh_pane_as_if_remote
+      - uploading_wsl_shared_bytes_over_ssh
+      - performing_sftp_round_trips_on_the_ui_thread
+      - silently_claiming_upload_success_after_a_failed_transfer
   - id: HELPER-LOCAL-REMOTE-PARITY-09
     rule: Every helper contract has local and remote parity tests, including explicit negative tests proving that remote failures cannot fall back to local authority.
+  - id: HELPER-BUNDLED-INSTALL-10
+    rule: Every distributable desktop client ships both supported static Linux helper architectures, resolves the bundle relative to the running executable, and installs the matching remote architecture without requiring a pre-existing GitHub Release; shipping the helper is explicit install consent, so bundled bytes do not trigger a download approval prompt, while release-downloaded bytes still require approval; an explicit bundle override remains fail-closed while an implicit development lookup may use the verified release-download path when no bundled asset exists.
+  - id: PACKAGE-CLEAN-BEFORE-BUILD-11
+    rule: Every desktop packaging entrypoint deletes its own platform-and-architecture stage and final package outputs before creating a new package; cleanup is scoped so one format cannot delete a sibling artifact produced earlier in the same matrix job.
+  - id: REMOTE-FIRST-PANE-MATERIALIZATION-12
+    rule: A managed remote Environment is usable only after its first live pane is addressable through the selected remote workspace tree; link-up hydration preserves any pending local tree commit, a control-channel attachment alone never discharges that debt, and a refused tree commit must surface a retryable pane error and clean up the unreferenced remote pane instead of leaving an orphan.
 status: verified

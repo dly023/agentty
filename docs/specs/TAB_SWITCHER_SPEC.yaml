@@ -1,0 +1,13 @@
+version: 1
+updated: 2026-08-09
+domain: tab_switcher
+contracts:
+  - id: TAB-SWITCHER-MRU-HOLD-01
+    rule: NextTab and PrevTab use one window-local TabId-based MRU snapshot. The first chord previews the adjacent eligible tab, repeated chords cycle the fixed snapshot, and releasing the platform tab-switch modifier commits exactly once. Escape or window deactivation cancels the hold and restores the origin when it still exists. A removed origin or candidate is revalidated without activating a stale index; zero or one eligible tab is a no-op. This capability does not retarget the window to another Environment or Workspace.
+    forbidden:
+      - ordering_tabs_by_mutable_vector_index_instead_of_tab_id
+      - rebuilding_the_mru_snapshot_during_one_hold
+      - committing_twice_on_duplicate_modifier_release
+      - activating_a_removed_or_stale_pending_tab
+      - switching_workspaces_or_falling_back_to_local_data
+status: verified

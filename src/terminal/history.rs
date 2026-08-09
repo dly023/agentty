@@ -91,13 +91,13 @@ pub fn load(scope: &Scope) -> History {
     load_with_shell_files(scope, Vec::new())
 }
 
-pub fn load_with_shell_files(scope: &Scope, shell_files: Vec<Vec<u8>>) -> History {
+pub fn load_with_shell_files(scope: &Scope, shell_files: Vec<(String, Vec<u8>)>) -> History {
     let mut raw: Vec<Raw> = if scope.is_local() {
         load_shell_history()
     } else {
         let mut out = Vec::new();
-        for bytes in &shell_files {
-            parse_shell_history(&String::from_utf8_lossy(bytes), &mut out);
+        for (source, bytes) in &shell_files {
+            parse_history_source(source, &String::from_utf8_lossy(bytes), &mut out);
         }
         out
     };
@@ -109,8 +109,12 @@ pub fn load_with_shell_files(scope: &Scope, shell_files: Vec<Vec<u8>>) -> Histor
     normalize(raw)
 }
 
-pub fn shell_history_names() -> [&'static str; 2] {
-    [".zsh_history", ".bash_history"]
+pub fn shell_history_names() -> [&'static str; 3] {
+    [
+        ".zsh_history",
+        ".bash_history",
+        ".local/share/fish/fish_history",
+    ]
 }
 
 fn looks_absolute(p: &str) -> bool {
@@ -286,34 +290,92 @@ fn normalize(raw: Vec<Raw>) -> History {
 }
 
 fn load_shell_history() -> Vec<Raw> {
-    let mut files: Vec<PathBuf> = Vec::new();
+    let mut files: Vec<(String, PathBuf)> = Vec::new();
     let mut seen = HashSet::new();
     let mut add = |p: PathBuf| {
         if p.is_file() && seen.insert(p.clone()) {
-            files.push(p);
+            files.push((p.to_string_lossy().into_owned(), p));
         }
     };
     if let Some(hf) = std::env::var_os("HISTFILE") {
         add(PathBuf::from(hf));
     }
-    if let Some(home) = std::env::var_os("HOME") {
-        let home = PathBuf::from(home);
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    if let Some(home) = &home {
         add(home.join(".zsh_history"));
         add(home.join(".bash_history"));
     }
-    files.sort_by_key(|p| {
+    if let Some(data) = std::env::var_os("XDG_DATA_HOME")
+        .filter(|data| !data.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| home.map(|home| home.join(".local/share")))
+    {
+        add(data.join("fish/fish_history"));
+    }
+    files.sort_by_key(|(_, p)| {
         std::fs::metadata(p)
             .and_then(|m| m.modified())
             .unwrap_or(SystemTime::UNIX_EPOCH)
     });
 
     let mut out = Vec::new();
-    for path in files {
+    for (source, path) in files {
         if let Ok(bytes) = std::fs::read(&path) {
-            parse_shell_history(&String::from_utf8_lossy(&bytes), &mut out);
+            parse_history_source(&source, &String::from_utf8_lossy(&bytes), &mut out);
         }
     }
     out
+}
+
+fn parse_history_source(source: &str, content: &str, out: &mut Vec<Raw>) {
+    if source.ends_with("fish_history") {
+        parse_fish_history_into(content, out);
+    } else {
+        parse_shell_history(content, out);
+    }
+}
+
+fn parse_fish_history_into(content: &str, out: &mut Vec<Raw>) {
+    let mut pending: Option<Raw> = None;
+    for line in content.lines() {
+        if let Some(encoded) = line.strip_prefix("- cmd: ") {
+            if let Some(record) = pending.take() {
+                out.push(record);
+            }
+            let cmd = decode_fish_command(encoded);
+            if !cmd.contains('\n') {
+                pending = Some(Raw::bare(cmd));
+            }
+            continue;
+        }
+        if let (Some(record), Some(when)) = (&mut pending, line.strip_prefix("  when: ")) {
+            record.ts = when.trim_matches(['\'', '"']).parse().ok();
+        }
+    }
+    if let Some(record) = pending {
+        out.push(record);
+    }
+}
+
+fn decode_fish_command(encoded: &str) -> String {
+    let mut cmd = String::with_capacity(encoded.len());
+    let mut chars = encoded.chars();
+    while let Some(ch) = chars.next() {
+        if ch != '\\' {
+            cmd.push(ch);
+            continue;
+        }
+        match chars.next() {
+            Some('\\') => cmd.push('\\'),
+            Some('n') => cmd.push('\n'),
+            Some(other) => {
+                cmd.push('\\');
+                cmd.push(other);
+            }
+            None => cmd.push('\\'),
+        }
+    }
+    cmd
 }
 
 fn parse_shell_history(content: &str, out: &mut Vec<Raw>) {
@@ -381,6 +443,12 @@ mod tests {
         out.into_iter().map(|r| (r.cmd, r.ts)).collect()
     }
 
+    fn parse_fish_history(content: &str) -> Vec<String> {
+        let mut out = Vec::new();
+        parse_fish_history_into(content, &mut out);
+        out.into_iter().map(|r| r.cmd).collect()
+    }
+
     #[test]
     fn plain_bash_lines() {
         assert_eq!(
@@ -420,6 +488,33 @@ mod tests {
         let got = parse(content);
         assert_eq!(got, ["for f in *; do\\", "echo $f\\", "done"]);
         assert!(got.iter().all(|e| !e.contains('\n')));
+    }
+
+    #[test]
+    fn fish_writes_commands_unquoted_so_yaml_punctuation_is_just_text() {
+        let content = "- cmd: echo : # [ still text\n  when: 1700000000\n";
+        assert_eq!(parse_fish_history(content), ["echo : # [ still text"]);
+    }
+
+    #[test]
+    fn fish_escapes_only_backslash_and_newline() {
+        assert_eq!(
+            decode_fish_command(r#"printf 'C:\\tmp\\file\nnext'"#),
+            "printf 'C:\\tmp\\file\nnext'"
+        );
+    }
+
+    #[test]
+    fn fish_when_timestamp_is_kept_even_when_quoted() {
+        let mut out = Vec::new();
+        parse_fish_history_into("- cmd: echo hi\n  when: '1700000000'\n", &mut out);
+        assert_eq!(out[0].ts, Some(1_700_000_000));
+    }
+
+    #[test]
+    fn a_multiline_fish_command_is_skipped_not_half_recalled() {
+        let content = "- cmd: printf 'first\\nsecond'\n  when: 1700000000\n- cmd: echo safe\n";
+        assert_eq!(parse_fish_history(content), ["echo safe"]);
     }
 
     fn pair(cmd: &str, cwd: Option<&str>) -> Raw {
@@ -756,7 +851,10 @@ mod tests {
         let scope = Scope::remote("me@readfile");
         let zsh = b": 1700000000:0;systemctl status nginx\n".to_vec();
         let bash = b"journalctl -u nginx\n".to_vec();
-        let loaded = load_with_shell_files(&scope, vec![zsh, bash]);
+        let loaded = load_with_shell_files(
+            &scope,
+            vec![(".zsh_history".into(), zsh), (".bash_history".into(), bash)],
+        );
 
         assert!(
             loaded.entries.iter().any(|e| e == "systemctl status nginx"),
@@ -771,6 +869,21 @@ mod tests {
             }),
             "zsh's second field is elapsed seconds, not an exit code"
         );
+    }
+
+    #[test]
+    fn a_remote_scope_routes_fish_bytes_by_source_name() {
+        crate::core::config::pin_test_config_dir();
+
+        let loaded = load_with_shell_files(
+            &Scope::remote("me@fishbox"),
+            vec![(
+                ".local/share/fish/fish_history".into(),
+                b"- cmd: echo : # [ remote fish\n  when: 1700000000\n".to_vec(),
+            )],
+        );
+
+        assert_eq!(loaded.entries, ["echo : # [ remote fish"]);
     }
 
     #[test]

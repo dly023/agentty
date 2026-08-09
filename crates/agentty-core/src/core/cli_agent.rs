@@ -20,11 +20,12 @@ pub enum CLIAgent {
     Vibe,
     Antigravity,
     Grok,
+    Omp,
     Qwen,
 }
 
 impl CLIAgent {
-    pub const ALL: [CLIAgent; 17] = [
+    pub const ALL: [CLIAgent; 18] = [
         CLIAgent::Claude,
         CLIAgent::Codex,
         CLIAgent::Gemini,
@@ -41,6 +42,7 @@ impl CLIAgent {
         CLIAgent::Vibe,
         CLIAgent::Antigravity,
         CLIAgent::Grok,
+        CLIAgent::Omp,
         CLIAgent::Qwen,
     ];
 
@@ -62,6 +64,7 @@ impl CLIAgent {
             CLIAgent::Vibe => &["vibe", "vibe-acp"],
             CLIAgent::Antigravity => &["agy", "antigravity"],
             CLIAgent::Grok => &["grok"],
+            CLIAgent::Omp => &["omp", "oh-my-pi"],
             CLIAgent::Qwen => &["qwen", "qwen-code"],
         }
     }
@@ -84,6 +87,7 @@ impl CLIAgent {
             CLIAgent::Vibe => "vibe",
             CLIAgent::Antigravity => "antigravity",
             CLIAgent::Grok => "grok",
+            CLIAgent::Omp => "omp",
             CLIAgent::Qwen => "qwen",
         }
     }
@@ -111,6 +115,7 @@ impl CLIAgent {
             CLIAgent::Vibe => "Vibe",
             CLIAgent::Antigravity => "Antigravity",
             CLIAgent::Grok => "Grok",
+            CLIAgent::Omp => "Omp",
             CLIAgent::Qwen => "Qwen Code",
         }
     }
@@ -143,6 +148,7 @@ impl CLIAgent {
             CLIAgent::Copilot => ("copilot", flags),
             CLIAgent::Grok => ("grok", flags),
             CLIAgent::Pi => ("pi", flags),
+            CLIAgent::Omp => ("omp", flags),
             _ => return None,
         };
         match self {
@@ -154,7 +160,7 @@ impl CLIAgent {
                 args.push("--resume".into());
                 args.push(session_id.into());
             }
-            CLIAgent::OpenCode | CLIAgent::Pi => {
+            CLIAgent::OpenCode | CLIAgent::Pi | CLIAgent::Omp => {
                 args.push("--session".into());
                 args.push(session_id.into());
             }
@@ -330,12 +336,24 @@ impl CLIAgent {
             CLIAgent::Vibe => 0xFF7000,
             CLIAgent::Antigravity => 0x2563EB,
             CLIAgent::Grok => 0x000000,
+            // omp.sh hero sits on warm light body (oklch 0.94 0.006 80 ≈ #EFEDE9);
+            // brand-purple glyph (glyph_rgb) keeps the π readable on that plate.
+            CLIAgent::Omp => 0xEFEDE9,
             CLIAgent::Qwen => 0x7C3AED,
+        }
+    }
+
+    /// Badge silhouette color. White on dark accents; Omp uses brand purple on its light site plate.
+    pub fn glyph_rgb(self) -> u32 {
+        match self {
+            CLIAgent::Omp => 0x9B4DFF,
+            _ => 0xFFFFFF,
         }
     }
 
     pub fn icon_path(self) -> &'static str {
         match self {
+            // Bundled currentColor SVG silhouettes (UI-AGENT-BRAND-ICON-07).
             CLIAgent::Claude => "icons/agents/claude.svg",
             CLIAgent::Codex => "icons/agents/codex.svg",
             CLIAgent::Gemini => "icons/agents/gemini.svg",
@@ -347,6 +365,7 @@ impl CLIAgent {
             CLIAgent::Droid => "icons/agents/droid.svg",
             CLIAgent::Grok => "icons/agents/grok.svg",
             CLIAgent::Pi => "icons/agents/pi.svg",
+            CLIAgent::Omp => "icons/agents/omp.svg",
             CLIAgent::Aider
             | CLIAgent::Auggie
             | CLIAgent::Hermes
@@ -658,6 +677,57 @@ pub fn parse_agent_event(payload: &[u8]) -> Option<AgentEvent> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn omp_resume_uses_the_native_session_flag() {
+        let invocation = CLIAgent::Omp
+            .resume_invocation(
+                "019fa6d8-49ed-7000-b67f-09845d463582",
+                None,
+                Some("/work".into()),
+            )
+            .unwrap();
+        assert_eq!(invocation.program, "omp");
+        assert_eq!(
+            invocation.args,
+            ["--session", "019fa6d8-49ed-7000-b67f-09845d463582"]
+        );
+        assert_eq!(invocation.cwd.as_deref(), Some("/work"));
+    }
+
+    #[test]
+    fn grok_resume_uses_native_resume_flag() {
+        let invocation = CLIAgent::Grok
+            .resume_invocation(
+                "019fd593-3979-7551-825d-bf5f8681a697",
+                None,
+                Some("/work/grok".into()),
+            )
+            .unwrap();
+        assert_eq!(invocation.program, "grok");
+        assert_eq!(
+            invocation.args,
+            ["--resume", "019fd593-3979-7551-825d-bf5f8681a697"]
+        );
+        assert_eq!(invocation.cwd.as_deref(), Some("/work/grok"));
+    }
+
+    #[test]
+    fn gemini_resume_uses_native_resume_flag() {
+        let invocation = CLIAgent::Gemini
+            .resume_invocation(
+                "abcdef12-3456-7890-abcd-ef1234567890",
+                None,
+                Some("/work/gemini".into()),
+            )
+            .unwrap();
+        assert_eq!(invocation.program, "gemini");
+        assert_eq!(
+            invocation.args,
+            ["--resume", "abcdef12-3456-7890-abcd-ef1234567890"]
+        );
+        assert_eq!(invocation.cwd.as_deref(), Some("/work/gemini"));
+    }
+
     fn argv(parts: &[&str]) -> Vec<String> {
         parts.iter().map(|s| s.to_string()).collect()
     }
@@ -765,6 +835,13 @@ mod tests {
     fn black_branded_avatars_keep_their_brand_field() {
         assert_eq!(CLIAgent::Codex.accent_rgb(), 0x000000);
         assert_eq!(CLIAgent::Grok.accent_rgb(), 0x000000);
+    }
+
+    #[test]
+    fn omp_badge_uses_light_site_plate_and_purple_glyph() {
+        assert_eq!(CLIAgent::Omp.accent_rgb(), 0xEFEDE9);
+        assert_eq!(CLIAgent::Omp.glyph_rgb(), 0x9B4DFF);
+        assert_eq!(CLIAgent::Claude.glyph_rgb(), 0xFFFFFF);
     }
 
     #[test]

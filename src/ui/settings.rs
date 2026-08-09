@@ -1230,7 +1230,7 @@ impl AgenttyApp {
                 .small()
                 .w(px(180.))
                 .h(control_h)
-                .search_placeholder("Search fonts…")
+                .search_placeholder(crate::core::i18n::current(cx, "settings.search_fonts"))
                 .menu_max_h(px(224.))
                 .into_any_element()
         };
@@ -1675,8 +1675,8 @@ impl AgenttyApp {
 
         let mut list = v_flex().gap_0p5().w_full().child(self.render_ssh_row(
             "ssh-defaults-row",
-            "Defaults",
-            "Inherited by every host",
+            crate::core::i18n::current(cx, "settings.ssh_defaults"),
+            crate::core::i18n::current(cx, "settings.ssh_defaults.desc"),
             detail == SshDetail::Defaults,
             None,
             sf,
@@ -2187,7 +2187,12 @@ impl AgenttyApp {
                 v_flex()
                     .gap_1()
                     .mb_6()
-                    .child(self.header_text("Defaults", cx))
+                    .child(
+                        self.header_text(
+                            crate::core::i18n::current(cx, "settings.ssh_defaults"),
+                            cx,
+                        ),
+                    )
                     .child(div().text_sm().text_color(muted).child(
                         "Every host starts from these. Any host can override one under \
                          its own Advanced.",
@@ -2652,7 +2657,7 @@ impl AgenttyApp {
         let title = match (name.is_empty(), host.is_empty()) {
             (false, _) => name,
             (true, false) => host,
-            (true, true) => "New host".to_string(),
+            (true, true) => crate::core::i18n::current(cx, "settings.new_host").to_string(),
         };
 
         let auth_idx = match form.auth {
@@ -3364,37 +3369,48 @@ impl AgenttyApp {
         v_flex()
             .child(self.section_intro(
                 crate::core::i18n::current(cx, "settings.shell_section"),
-                crate::core::i18n::current_format(cx, "settings.shell_section.desc", &[("platform_default", &platform_default)]),
+                crate::core::i18n::current_format(
+                    cx,
+                    "settings.shell_section.desc",
+                    &[("platform_default", &platform_default)],
+                ),
                 cx,
             ))
             .child(self.settings_row(
-                 crate::core::i18n::current(cx, "settings.program"), crate::core::i18n::current(cx, "settings.program.desc"),
+                crate::core::i18n::current(cx, "settings.program"),
+                crate::core::i18n::current(cx, "settings.program.desc"),
                 program_control,
                 cx,
             ))
             .child(self.settings_row(
-                 crate::core::i18n::current(cx, "settings.arguments"), crate::core::i18n::current(cx, "settings.arguments.desc"),
+                crate::core::i18n::current(cx, "settings.arguments"),
+                crate::core::i18n::current(cx, "settings.arguments.desc"),
                 args_control,
                 cx,
             ))
             .child(self.settings_row(
-                 crate::core::i18n::current(cx, "settings.start_in"), crate::core::i18n::current(cx, "settings.start_in.desc"),
+                crate::core::i18n::current(cx, "settings.start_in"),
+                crate::core::i18n::current(cx, "settings.start_in.desc"),
                 wd_radio,
                 cx,
             ))
-            .when(wd_strategy == crate::core::config::WdStrategy::Custom, |v| {
-                v.child(self.settings_row(
-                     crate::core::i18n::current(cx, "settings.custom_path"), crate::core::i18n::current(cx, "settings.custom_path.desc"),
-                    wd_path_control,
-                    cx,
-                ))
-            })
+            .when(
+                wd_strategy == crate::core::config::WdStrategy::Custom,
+                |v| {
+                    v.child(self.settings_row(
+                        crate::core::i18n::current(cx, "settings.custom_path"),
+                        crate::core::i18n::current(cx, "settings.custom_path.desc"),
+                        wd_path_control,
+                        cx,
+                    ))
+                },
+            )
             .child(
                 div()
                     .mt_3()
                     .text_xs()
                     .text_color(muted_fg)
-                    .child("Applies to shells with nothing to inherit — like the first tab of a window. New tabs and splits keep inheriting the active pane's directory, and shells already open keep running."),
+                    .child(crate::core::i18n::current(cx, "settings.start_in.hint")),
             )
             .into_any_element()
     }
@@ -3407,6 +3423,7 @@ impl AgenttyApp {
         let mouse_hide = cfg.mouse_hide_while_typing;
         let focus_follows = cfg.focus_follows_mouse;
         let scroll_mult = cfg.mouse_scroll_multiplier;
+        let smooth_scroll = cfg.smooth_scroll;
         let mouse_reporting = cfg.mouse_reporting;
         let bell = cfg.bell;
         let scrollback_idx = match cfg.scrollback_limit {
@@ -3464,6 +3481,10 @@ impl AgenttyApp {
             .checked(mouse_reporting)
             .on_click(cx.listener(|this, on: &bool, _w, cx| this.set_mouse_reporting(*on, cx)))
             .into_any_element();
+        let smooth_scroll_switch = crate::ui::theme::switch("term-smooth-scroll", cx)
+            .checked(smooth_scroll)
+            .on_click(cx.listener(|this, on: &bool, _w, cx| this.set_smooth_scroll(*on, cx)))
+            .into_any_element();
         let bell_idx = match bell {
             BellMode::None => 0,
             BellMode::Visual => 1,
@@ -3513,6 +3534,12 @@ impl AgenttyApp {
                 scroll_control,
                 cx,
             ))
+            .child(self.settings_row(
+                crate::core::i18n::current(cx, "settings.smooth_scroll"),
+                crate::core::i18n::current(cx, "settings.smooth_scroll.desc"),
+                smooth_scroll_switch,
+                cx,
+            ))
             .child(self.section_rule(cx))
             .child(self.section_header(crate::core::i18n::current(cx, "settings.h.mouse"), cx))
             .child(self.settings_row(
@@ -3560,13 +3587,8 @@ impl AgenttyApp {
                 cx,
             ))
             .child(self.settings_row(
-                "Open files with",
-                format!(
-                    "Command run when {LINK_MODIFIER_LABEL}-clicking a file link, instead of \
-                     the default app. Use {{path}}, {{line}}, {{column}}; a flag whose value \
-                     is absent is dropped (e.g. herdr edit {{path}} --line={{line}}). Empty \
-                     uses the default app."
-                ),
+                crate::core::i18n::current(cx, "settings.open_files_with"),
+                crate::core::i18n::current(cx, "settings.open_files_with.desc"),
                 link_file_command_control,
                 cx,
             ))
@@ -3711,14 +3733,29 @@ impl AgenttyApp {
                 for (i, row) in rows.into_iter().enumerate() {
                     let agent = row.agent;
                     let (dot_color, status_text) = match row.state {
-                        HooksState::NotInstalled => (muted_fg, "Not installed"),
-                        HooksState::Installed => (success, "Installed"),
-                        HooksState::Outdated => (warning, "Outdated"),
+                        HooksState::NotInstalled => (
+                            muted_fg,
+                            crate::core::i18n::current(cx, "settings.hooks.not_installed"),
+                        ),
+                        HooksState::Installed => (
+                            success,
+                            crate::core::i18n::current(cx, "settings.hooks.installed"),
+                        ),
+                        HooksState::Outdated => (
+                            warning,
+                            crate::core::i18n::current(cx, "settings.hooks.outdated"),
+                        ),
                     };
                     let primary_label = match row.state {
-                        HooksState::NotInstalled => "Install",
-                        HooksState::Installed => "Reinstall",
-                        HooksState::Outdated => "Update",
+                        HooksState::NotInstalled => {
+                            crate::core::i18n::current(cx, "settings.hooks.install")
+                        }
+                        HooksState::Installed => {
+                            crate::core::i18n::current(cx, "settings.hooks.reinstall")
+                        }
+                        HooksState::Outdated => {
+                            crate::core::i18n::current(cx, "settings.hooks.update")
+                        }
                     };
                     let row_note = note
                         .as_ref()
@@ -4411,22 +4448,9 @@ impl AgenttyApp {
             .active_settings()
             .and_then(|s| s.rebinding_note.clone());
 
-        let keycap = move |tok: String| {
-            div()
-                .flex()
-                .items_center()
-                .justify_center()
-                .min_w(px(22.))
-                .h(px(22.))
-                .px_1p5()
-                .rounded_md()
-                .bg(kbd_bg)
-                .border_1()
-                .border_color(border)
-                .text_xs()
-                .text_color(foreground)
-                .child(tok)
-        };
+        let (chip_fill, chip_border, chip_ink) = crate::ui::kbd::kbd_chip_colors(cx);
+        let keycap =
+            move |tok: String| crate::ui::kbd::kbd_chip_with(tok, chip_fill, chip_border, chip_ink);
 
         let preset_control = self.segmented(
             "kb-preset",

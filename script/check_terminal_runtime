@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+rg -q 'TERMINAL-CONPTY-STREAM-RESIZE-01' docs/specs/TERMINAL_RUNTIME_SPEC.yaml
+rg -q 'FEATURE_RESIZE_ECHO' crates/agentty-core/src/daemon/protocol.rs src/terminal/remote.rs
+rg -q 'resize_echoes_size_to_the_controller_between_old_and_new_output' crates/agentty-core/src/daemon/pane.rs
+rg -q 'conpty_resize: cfg!\(windows\)' src/terminal/remote.rs
+rg -Uq '(?s)DaemonMsg::Size\(ws\).*?term\.resize' src/terminal/remote.rs
+rg -q 'resize_echoed' src/terminal/remote.rs
+echo 'terminal runtime checks passed'

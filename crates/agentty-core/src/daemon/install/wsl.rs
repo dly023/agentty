@@ -7,8 +7,8 @@ use std::time::Duration;
 use tokio::io::AsyncWriteExt as _;
 
 use super::{
-    ExecOutput, InstallError, Installer, LoadedBinary, RemoteOps, RemoteStat, ServerBinarySource,
-    install_confirm, shell_quote,
+    BinaryOrigin, ExecOutput, InstallError, Installer, LoadedBinary, RemoteOps, RemoteStat,
+    ServerBinarySource, install_confirm, shell_quote,
 };
 
 pub const WSL_EXE: &str = "wsl.exe";
@@ -541,6 +541,7 @@ impl ServerBinarySource for BundledServerBinary {
         Ok(LoadedBinary {
             bytes,
             origin: path.display().to_string(),
+            origin_kind: BinaryOrigin::Bundled,
         })
     }
 }
@@ -1339,7 +1340,7 @@ mod tests {
 
         assert!(report.installed);
         assert!(report.launched);
-        assert!(report.confirmed, "a first install asks");
+        assert!(!report.confirmed, "bundled bytes need no download approval");
         let dialect = crate::daemon::install::RemoteProtocol::of_this_build();
         assert_eq!(
             report.paths.binary,
@@ -1363,17 +1364,10 @@ mod tests {
             "the temp file is renamed away, not left behind"
         );
 
-        let asked = confirm.0.lock().unwrap();
-        assert_eq!(asked.len(), 1);
-        assert_eq!(
-            asked[0].source_url,
-            dir.join(super::super::asset::ASSET_X86_64)
-                .display()
-                .to_string()
+        assert!(
+            confirm.0.lock().unwrap().is_empty(),
+            "shipping the helper is explicit install consent"
         );
-        assert_eq!(asked[0].host, "wsl:Ubuntu");
-        assert_eq!(asked[0].size_bytes, b"\x7fELF pretend server".len() as u64);
-        assert!(!asked[0].source_url.starts_with("https://"), "no download");
 
         assert!(
             ops.ran()
@@ -1404,22 +1398,26 @@ mod tests {
         assert!(!again.installed, "already there");
         assert!(!again.launched, "already serving");
         assert!(!again.confirmed);
-        assert_eq!(confirm.0.lock().unwrap().len(), 1, "asked exactly once");
+        assert!(
+            confirm.0.lock().unwrap().is_empty(),
+            "never prompts for bundled bytes"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
-    fn declining_writes_nothing_into_the_distribution() {
-        let dir = scratch("declined");
+    fn bundled_install_does_not_delegate_to_the_download_confirmation() {
+        let dir = scratch("bundled-no-confirm");
         let source = bundled(&dir, b"\x7fELF pretend server");
         let ops = FakeDistro::default();
 
-        let err = Installer::with_source(&ops, &source, &Decline, host_label("Ubuntu"))
+        let report = Installer::with_source(&ops, &source, &Decline, host_label("Ubuntu"))
             .with_version("26.7.5")
             .run()
-            .expect_err("declined");
-        assert!(matches!(err, InstallError::Declined { .. }), "{err}");
-        assert!(ops.files.lock().unwrap().is_empty(), "nothing was written");
+            .expect("bundled install does not ask the download confirmer");
+        assert!(report.installed);
+        assert!(!report.confirmed);
+        assert!(ops.files.lock().unwrap().contains_key(&report.paths.binary));
         let _ = std::fs::remove_dir_all(&dir);
     }
 
