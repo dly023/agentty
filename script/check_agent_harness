@@ -20,7 +20,7 @@ done
 
 for skill in .agents/skills/*/SKILL.md; do
   dir=$(basename "$(dirname "$skill")")
-  name=$(sed -n 's/^name: //p' "$skill" | head -1)
+  name=$(awk '/^name: / && !found { sub(/^name: /, ""); first=$0; found=1 } END { print first }' "$skill")
   [[ "$name" == "$dir" ]] || { echo "[agent-harness] $skill name must match directory" >&2; exit 1; }
   grep -q '^description: .*Use when' "$skill" || { echo "[agent-harness] $skill needs a Use when trigger" >&2; exit 1; }
 done

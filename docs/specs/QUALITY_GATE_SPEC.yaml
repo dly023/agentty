@@ -1,0 +1,15 @@
+version: 1
+updated: 2026-08-09
+domain: engineering_quality_gates
+contracts:
+  - id: QUALITY-CANONICAL-PRESUBMIT-CI-01
+    rule: Required CI runs the repository's canonical quick presubmit entrypoint rather than maintaining a partial parallel list of architecture checks. The quick entrypoint runs every static check and the quality gates' own executable contract tests.
+    forbidden:
+      - ci_copy_of_a_partial_static_check_list
+      - orphaned_quality_gate_contract_tests
+  - id: QUALITY-DETERMINISTIC-SHELL-GATES-02
+    rule: Shell quality gates running with pipefail fully consume producer output when testing for a match. Early-exit consumers such as rg -q, grep -q, and head are forbidden at the end of a live producer pipeline because upstream SIGPIPE must never turn unchanged source into a transient gate failure.
+    forbidden:
+      - pipefail_pipeline_ending_in_early_exit_matcher
+      - per_gate_reimplementation_without_repository_wide_lint
+status: verified

@@ -9,6 +9,7 @@ mode=${1:-quick}
 ./script/check_development_tracker
 ./script/check_feature_gap_audit
 ./script/check_test_references
+./script/check_quality_gates
 ./script/check_environment_boundary
 ./script/check_remote_helper
 ./script/check_local_runtime
@@ -25,6 +26,7 @@ mode=${1:-quick}
 ./script/check_ui_visual_system
 ./script/check_i18n
 bash .github/scripts/check-host-boundary.sh
+bash script/tests/quality_gate_contract.sh
 cargo fmt --check
 
 case "$mode" in

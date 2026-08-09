@@ -11,6 +11,17 @@ feedback_policy:
   promotion_rule: Before implementation, promote the feedback into a stable spec contract, milestone item, traceability row, static check, and failing focused test as applicable.
   retention_rule: Never delete feedback silently; declined or superseded entries retain the reason and replacement ID when one exists.
 feedback:
+  - id: FEEDBACK-20260809-010
+    summary: Before Agentty has users, aggressively eliminate historical debt, design debt, duplicated or obsolete paths, and avoidable performance costs; even small evidence-backed improvements are worth complete refactors now.
+    status: promoted
+    priority: high
+    area: pre_user_architecture_and_performance_debt
+    decision: Audit the whole repository rather than limiting work to tty7 parity. Rank debt by user impact, architectural leverage, runtime cost, and verification strength. Promote each selected slice through SPEC → tracker → matrix → static check → failing test → implementation → delete old path → focused/quick/full verification. Internal Rust APIs may be replaced outright; preserve only spec-required user data and external protocol compatibility.
+    promoted_to:
+      spec: QUALITY-CANONICAL-PRESUBMIT-CI-01
+      milestone: M10-DEBT-RESET/DEBT-QUALITY-001
+      traceability: QUALITY-CANONICAL-PRESUBMIT-CI-097
+    next_action: Implement the first high-leverage batch: restore canonical CI/presubmit ownership, eliminate repository-wide pipefail/SIGPIPE hazards, run orphaned gate contracts, and repair the broken macOS notification build boundary. Subsequent batches tackle canonical completion, connection registry, terminal paint allocation, queue bounds, and legacy path deletion.
   - id: FEEDBACK-20260809-009
     summary: Independently recheck the claimed fix for the transient pre-push Session Navigator visual gate failure rather than treating a successful rerun as a diagnosis.
     status: verified
@@ -2209,6 +2220,35 @@ milestones:
         tests: [concurrent_lifecycle_callers_share_one_startup_gate, concurrent_server_start_callers_converge_on_one_runtime, control_listener_failure_is_fatal_before_pane_service]
         red_test_evidence: 2026-08-03 focused core tests first failed with missing with_startup_gate and run_daemon_with. A 20-caller isolated live stress then reproduced 20/20 startup failures caused by competing children, pid/control ownership races, and winner teardown; the concurrent_server_start_callers_converge_on_one_runtime E2E locks this regression.
         evidence: 2026-08-03 lifecycle mutation now holds one config-scoped OS file lock across GUI and CLI processes plus an in-process mutex; the server fails before pane service when control startup fails and removes endpoints it owned on listener-thread creation failure. Focused core tests and concurrent-start CLI E2E passed; an isolated 20-caller live stress improved from 20/20 failures to 0/20 and reported one dual-endpoint-ready runtime.
+  - id: M10-DEBT-RESET
+    title: Pre-user architecture, quality, and performance debt reset
+    status: in_progress
+    outcome: Remove known parallel ownership, nondeterministic gates, broken build boundaries, dead paths, and measured hot-path costs before compatibility pressure exists.
+    items:
+      - id: DEBT-QUALITY-001
+        title: Make quick presubmit the single CI/static-gate authority
+        status: verified
+        spec: QUALITY-CANONICAL-PRESUBMIT-CI-01
+        source: [.github/workflows/ci.yml, script/presubmit, script/tests/quality_gate_contract.sh]
+        tests: [quality_infrastructure_contract, quality_gate_contract]
+        red_test_evidence: 2026-08-09 quality_infrastructure_contract failed because CI bypassed canonical quick presubmit and presubmit orphaned the quality contract suite.
+        evidence: 2026-08-09 CI now invokes only the canonical quick presubmit plus the independent version-policy check; quick presubmit runs the quality contract suite. Focused infrastructure contracts and canonical quick presubmit passed.
+      - id: DEBT-QUALITY-002
+        title: Eliminate pipefail early-exit matcher nondeterminism repository-wide
+        status: verified
+        spec: QUALITY-DETERMINISTIC-SHELL-GATES-02
+        source: [script/check_quality_gates, script/check_ui_visual_system, script/check_local_runtime, script/check_agent_harness]
+        tests: [quality_infrastructure_contract]
+        red_test_evidence: 2026-08-09 repository audit found 17 live producer pipelines ending in rg -q, grep -q, or head after the same class caused a real transient pre-push failure.
+        evidence: 2026-08-09 all repository shell gates and GitHub helper scripts use fully consuming matchers; check_quality_gates fails closed on regressions. Focused contract, affected gates, and quick presubmit passed.
+      - id: DEBT-NOTIFY-003
+        title: Repair the macOS clickable notification compile boundary
+        status: verified
+        spec: NOTIFY-CLICK-REVEAL-01
+        source: [Cargo.toml, src/terminal/remote.rs, script/check_desktop_notifications]
+        tests: [notification_text_removes_unsafe_controls_and_clamps_unicode, saturated_click_backend_falls_back_to_plain_notification]
+        red_test_evidence: 2026-08-09 cargo check/clippy --workspace --all-targets failed at remote.rs because production imports mac_notification_sys without declaring it as a direct macOS dependency.
+        evidence: 2026-08-09 mac-notification-sys is now a direct target-specific dependency. cargo check --bin agentty-app --all-targets --locked and four notification focused tests passed; the static gate requires the direct boundary.
 technical_debt:
   - id: DEBT-BUNDLE-VERSION-STAMP
     title: Desktop bundle version metadata cannot distinguish builds

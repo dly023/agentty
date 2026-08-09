@@ -6,5 +6,6 @@ rg -q 'sanitize_notification_text' src/terminal/remote.rs
 rg -q 'PaneIdentity' src/terminal/view.rs src/ui/tray/mod.rs
 rg -q 'RevealPane' src/ui/tray/mod.rs
 rg -q 'try_clickable_notification' src/terminal/remote.rs
+rg -Fq 'mac-notification-sys = "0.6.15"' Cargo.toml
 rg -q 'notification_reveal_targets_environment_and_pane_not_entity_id' src/ui/tray/mod.rs
 echo 'desktop notification checks passed'

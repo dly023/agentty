@@ -40,7 +40,7 @@ if rg -n 'TITLE_BAR_SPLIT_HUG' src/ui; then
   exit 1
 fi
 # Content-column TitleBar must zero the shell pad (override gpui-component's 80px).
-if ! rg -n 'let title_bar = TitleBar::new\(\)' -A 8 src/ui/app.rs | rg -q 'title_bar_shell_leading_pad'; then
+if ! rg -n 'let title_bar = TitleBar::new\(\)' -A 8 src/ui/app.rs | rg 'title_bar_shell_leading_pad' >/dev/null; then
   echo '[ui-visual] TitleBar must set pl(title_bar_shell_leading_pad()) so 80px does not stack' >&2
   exit 1
 fi
@@ -60,7 +60,7 @@ rg -q 'content_column_trailing_respects_panel_split_chrome_inset' src/ui/tab_str
 rg -q 'fn session_row_hover_affordance' src/ui/tab_sidebar.rs
 rg -q 'SessionRowHoverAffordance' src/ui/tab_sidebar.rs
 rg -q 'historical_row_hover_uses_icon_affordance_not_text' src/ui/tab_sidebar.rs
-if rg -n 'group_hover\("agent-session-row"[^)]*\)[\s\S]{0,200}session\.resume' src/ui/tab_sidebar.rs | rg -q 'child'; then
+if rg -n 'group_hover\("agent-session-row"[^)]*\)[\s\S]{0,200}session\.resume' src/ui/tab_sidebar.rs | rg 'child' >/dev/null; then
   if ! rg -Fq '.tooltip(' src/ui/tab_sidebar.rs >/dev/null; then
     echo '[ui-visual] resume action must be an icon affordance with a tooltip, not hover prose' >&2
     exit 1
@@ -131,7 +131,7 @@ if printf '%s\n' "$prod_tab_strip" | rg -n 'titlebar-app-menu|IconName::Ellipsis
   echo '[ui-visual] ellipsis app menu is forbidden; Settings must be a direct icon tile' >&2
   exit 1
 fi
-if printf '%s\n' "$prod_tab_strip" | rg -n 'Command Palette|TogglePalette' | rg -q 'dropdown_menu|\.menu\('; then
+if printf '%s\n' "$prod_tab_strip" | rg -n 'Command Palette|TogglePalette' | rg 'dropdown_menu|\.menu\(' >/dev/null; then
   echo '[ui-visual] Command Palette must be a content-bar icon, not nested under a menu' >&2
   exit 1
 fi
@@ -139,7 +139,7 @@ if printf '%s\n' "$prod_tab_strip" | rg -n '"Close Tabs Below"|"Close Tabs to th
   echo '[ui-visual] tab close-direction menus must use i18n keys' >&2
   exit 1
 fi
-if ! printf '%s\n' "$prod_tab_strip" | rg -q 'titlebar-add-rail'; then
+if ! printf '%s\n' "$prod_tab_strip" | rg 'titlebar-add-rail' >/dev/null; then
   echo '[ui-visual] left-rail open must keep New Tab Plus (titlebar-add-rail)' >&2
   exit 1
 fi
@@ -169,15 +169,15 @@ if ls assets/icons/agents/*.png >/dev/null 2>&1; then
   exit 1
 fi
 prod_agent_icon=$(awk 'BEGIN{p=1} /^#\[cfg\(test\)\]/{p=0} p' src/ui/agent_icon.rs)
-if printf '%s\n' "$prod_agent_icon" | rg -q 'agent_icon_preserves_colors|img\('; then
+if printf '%s\n' "$prod_agent_icon" | rg 'agent_icon_preserves_colors|img\(' >/dev/null; then
   echo '[ui-visual] agent badge must be accent+contrasting SVG, not color-preserving/raster paths' >&2
   exit 1
 fi
-if printf '%s\n' "$prod_agent_icon" | rg -q 'text_color\(gpui::white\(\)\)'; then
+if printf '%s\n' "$prod_agent_icon" | rg 'text_color\(gpui::white\(\)\)' >/dev/null; then
   echo '[ui-visual] agent badge must not hard-code white glyphs (light plates need brand/dark glyphs)' >&2
   exit 1
 fi
-if ! printf '%s\n' "$prod_agent_icon" | rg -q 'text_color\(rgb\(glyph\)\)'; then
+if ! printf '%s\n' "$prod_agent_icon" | rg 'text_color\(rgb\(glyph\)\)' >/dev/null; then
   echo '[ui-visual] agent badge must tint via rgb(glyph)' >&2
   exit 1
 fi
@@ -198,15 +198,15 @@ rg -q 'unbranded_avatar_radius' src/ui/tab_strip.rs
 rg -q 'panel_content_gutter' src/ui/file_tree.rs
 rg -q 'fn tree_row_text_fade' src/ui/file_tree.rs
 prod_file_tree=$(awk 'BEGIN{p=1} /^#\[cfg\(test\)\]/{p=0} p' src/ui/file_tree.rs)
-if ! printf '%s\n' "$prod_file_tree" | rg -n 'fn tree_row_text_fade' -A 15 | rg -q 'presets::Surfaces|Surfaces>\(\)\.popover'; then
+if ! printf '%s\n' "$prod_file_tree" | rg -n 'fn tree_row_text_fade' -A 15 | rg 'presets::Surfaces|Surfaces>\(\)\.popover' >/dev/null; then
   echo '[ui-visual] tree_row_text_fade must match Surfaces.popover row fills' >&2
   exit 1
 fi
-if ! printf '%s\n' "$prod_file_tree" | rg -n 'fn tree_row_text_fade' -A 12 | rg -q '\.popover'; then
+if ! printf '%s\n' "$prod_file_tree" | rg -n 'fn tree_row_text_fade' -A 12 | rg '\.popover' >/dev/null; then
   echo '[ui-visual] tree_row_text_fade must use Surfaces.popover' >&2
   exit 1
 fi
-if printf '%s\n' "$prod_file_tree" | rg -n 'fn tree_row_text_fade' -A 25 | rg -q 'theme\(\)\.muted[^_]'; then
+if printf '%s\n' "$prod_file_tree" | rg -n 'fn tree_row_text_fade' -A 25 | rg 'theme\(\)\.muted[^_]' >/dev/null; then
   echo '[ui-visual] tree_row_text_fade must not use theme().muted as fade solid' >&2
   exit 1
 fi
@@ -220,20 +220,20 @@ for key in \
   panel.empty.not_a_git_repo \
   panel.empty.no_uncommitted_changes
 do
-  if ! printf '%s\n' "$prod_right_panel" | rg -Fq "$key"; then
+  if ! printf '%s\n' "$prod_right_panel" | rg -F "$key" >/dev/null; then
     echo "[ui-visual] right_panel empty states must use i18n key $key" >&2
     exit 1
   fi
 done
-if printf '%s\n' "$prod_right_panel" | rg -q '"(No active session\.|Loading…|Not a git repository\.|No uncommitted changes\.|No working directory\.|No commands recorded)'; then
+if printf '%s\n' "$prod_right_panel" | rg '"(No active session\.|Loading…|Not a git repository\.|No uncommitted changes\.|No working directory\.|No commands recorded)' >/dev/null; then
   echo '[ui-visual] right_panel must not hard-code English empty-state literals' >&2
   exit 1
 fi
-if printf '%s\n' "$prod_file_tree" | rg -n '\.text_ellipsis\(\)' | rg -q 'tree|label|entry\.name'; then
+if printf '%s\n' "$prod_file_tree" | rg -n '\.text_ellipsis\(\)' | rg 'tree|label|entry\.name' >/dev/null; then
   echo '[ui-visual] file-tree labels must use trailing fade, not text_ellipsis' >&2
   exit 1
 fi
-if printf '%s\n' "$prod_file_tree" | rg -q '\.px_1\(\)'; then
+if printf '%s\n' "$prod_file_tree" | rg '\.px_1\(\)' >/dev/null; then
   echo '[ui-visual] file-tree column must use panel_content_gutter, not px_1' >&2
   exit 1
 fi
@@ -249,7 +249,7 @@ if rg -n 'ScrollbarShow::Always' src/ui/theme.rs src/ui/scrollbar.rs; then
   echo '[ui-visual] side-panel/theme scrollbars must not use Always' >&2
   exit 1
 fi
-if ! rg -n 'Scrollbar::vertical' -A 3 src/ui/scrollbar.rs | rg -q 'scrollbar_show\(SIDE_PANEL_SCROLLBAR_SHOW\)'; then
+if ! rg -n 'Scrollbar::vertical' -A 3 src/ui/scrollbar.rs | rg 'scrollbar_show\(SIDE_PANEL_SCROLLBAR_SHOW\)' >/dev/null; then
   echo '[ui-visual] with_vertical_scrollbar must force SIDE_PANEL_SCROLLBAR_SHOW' >&2
   exit 1
 fi

@@ -32,9 +32,11 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install ripgrep
         run: sudo apt-get update && sudo apt-get install -y ripgrep
-      - run: ./script/check_agent_harness
-      - run: ./script/check_spec_matrix
-      - run: ./script/check_development_tracker
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2026-07-31
+          components: rustfmt
+      - run: ./script/presubmit quick
       - run: ./script/check_version_policy
 
   fmt:

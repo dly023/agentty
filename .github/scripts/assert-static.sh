@@ -29,7 +29,7 @@ fail=0
 # linked" for a position-independent one. Rust's musl targets have shipped both
 # shapes depending on toolchain version, and both are equally self-contained, so
 # accept either — but nothing else.
-if ! file "$BIN" | grep -Eq 'statically linked|static-pie linked'; then
+if ! file "$BIN" | grep -E 'statically linked|static-pie linked' >/dev/null; then
   echo "::error::$BIN is not statically linked (D10 requires a self-contained binary)"
   fail=1
 fi
@@ -37,13 +37,13 @@ fi
 # The decisive check: a static binary has no PT_INTERP segment, i.e. no
 # request for /lib/ld-musl-*.so or ld-linux-*.so. This catches the case `file`
 # alone would not, where a dynamic loader is still required.
-if readelf -l "$BIN" | grep -q 'Requesting program interpreter'; then
+if readelf -l "$BIN" | grep 'Requesting program interpreter' >/dev/null; then
   echo "::error::$BIN requires a dynamic loader (PT_INTERP present) — not a static build"
   fail=1
 fi
 
 # Belt and braces: no DT_NEEDED entries, i.e. no shared libraries to resolve.
-if readelf -d "$BIN" 2>/dev/null | grep -q 'NEEDED'; then
+if readelf -d "$BIN" 2>/dev/null | grep 'NEEDED' >/dev/null; then
   echo "::error::$BIN has shared-library dependencies (DT_NEEDED) — not a static build"
   fail=1
 fi

@@ -15,7 +15,7 @@ if [[ ! "$DATE" =~ ^[0-9]{8}$ ]]; then
   exit 1
 fi
 
-LAST=$(git tag -l 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1 || true)
+LAST=$(git tag -l 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sed -n '1p' || true)
 if [[ -n "$LAST" ]]; then
   BASE=${LAST#v}
 else

@@ -1,6 +1,20 @@
 version: 1
 updated: 2026-08-03
 entries:
+  - id: QUALITY-CANONICAL-PRESUBMIT-CI-097
+    spec: QUALITY-CANONICAL-PRESUBMIT-CI-01
+    source: [docs/specs/QUALITY_GATE_SPEC.yaml, script/presubmit, .github/workflows/ci.yml, script/tests/quality_gate_contract.sh, script/tests/quality_infrastructure_contract.sh]
+    static_check: script/check_quality_gates
+    tests: [quality_infrastructure_contract, quality_gate_contract]
+    verification: bash script/tests/quality_infrastructure_contract.sh && bash script/tests/quality_gate_contract.sh && ./script/check_quality_gates && ./script/presubmit quick
+    evidence: "2026-08-09 audit found CI directly ran only 4 of 22 check_* scripts and no presubmit path invoked script/tests/quality_gate_contract.sh. The focused contract was observed red, then CI was reduced to the canonical quick entrypoint, presubmit gained the executable contract suite, focused contracts and quick presubmit passed."
+  - id: QUALITY-DETERMINISTIC-SHELL-GATES-098
+    spec: QUALITY-DETERMINISTIC-SHELL-GATES-02
+    source: [docs/specs/QUALITY_GATE_SPEC.yaml, script/check_quality_gates, script/check_ui_visual_system, script/check_local_runtime, script/check_agent_harness]
+    static_check: script/check_quality_gates
+    tests: [quality_infrastructure_contract]
+    verification: bash script/tests/quality_infrastructure_contract.sh && ./script/check_quality_gates && ./script/presubmit quick
+    evidence: "2026-08-09 audit found the already-proven pipefail/SIGPIPE failure class in 17 additional repository pipelines. The focused contract was observed red with exact paths, every live early-exit consumer was replaced by a fully consuming matcher, a repository-wide fail-closed lint was added, and focused contracts plus quick presubmit passed."
   - id: SESSION-JCODE-STABLE-LIST-GATE-096
     spec: SESSION-JCODE-STABLE-LIST-GATE-34
     source: [docs/specs/SESSION_NAVIGATOR_SPEC.yaml, crates/agentty-core/src/core/cli_agent.rs, crates/agentty-core/src/agent_runtime/provider.rs]

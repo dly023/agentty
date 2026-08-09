@@ -42,7 +42,7 @@ if sed -n '/crate::core::cli_install::install(config.install_cli_on_path);/,/gpu
   echo '[local-runtime] GUI bootstrap must not eagerly start or restart agentty-server' >&2
   exit 1
 fi
-if ! sed -n '/pub fn spawn_on/,/fn spawn_once/p' src/terminal/remote.rs | rg -q 'spawn::ensure_running'; then
+if ! sed -n '/pub fn spawn_on/,/fn spawn_once/p' src/terminal/remote.rs | rg 'spawn::ensure_running' >/dev/null; then
   echo '[local-runtime] durable pane materialization must be the canonical lazy-start trigger' >&2
   exit 1
 fi

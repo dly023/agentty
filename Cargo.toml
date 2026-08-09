@@ -157,6 +157,11 @@ winresource = "0.1"
 # app appearance to match the active theme (see `ui::theme::sync_native_appearance`)
 # so the native traffic-light buttons render in the right light/dark style.
 [target.'cfg(target_os = "macos")'.dependencies]
+# Clickable notification delivery waits for the native response and routes a
+# click back through the bounded tray dispatch loop. notify-rust also uses this
+# crate internally, but production code imports its public API directly, so it
+# must be a declared direct dependency rather than an accidental transitive one.
+mac-notification-sys = "0.6.15"
 # CFStringTokenizer FFI for dictionary-based CJK word segmentation on
 # double-click (`terminal::smart_select`). Already in the tree transitively,
 # and it makes jieba unnecessary here — see the non-macos section below.

@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+rg -Fq 'QUALITY-CANONICAL-PRESUBMIT-CI-01' docs/specs/QUALITY_GATE_SPEC.yaml
+rg -Fq 'QUALITY-DETERMINISTIC-SHELL-GATES-02' docs/specs/QUALITY_GATE_SPEC.yaml
+
+python3 - <<'PY'
+from pathlib import Path
+import re
+import sys
+
+roots = [Path("script"), Path(".github/scripts")]
+violations = []
+early = re.compile(r"\|\s*(?:(?:rg|grep)\b[^|\n]*?(?:^|\s)-[^|\n]*q\b|head\b)")
+for root in roots:
+    for path in sorted(root.rglob("*")):
+        if not path.is_file():
+            continue
+        if path == Path("script/check_quality_gates"):
+            continue
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except UnicodeDecodeError:
+            continue
+        for lineno, line in enumerate(lines, 1):
+            if early.search(line):
+                violations.append(f"{path}:{lineno}:{line.strip()}")
+if violations:
+    print("[quality-gates] pipefail pipelines must fully consume producer output:", file=sys.stderr)
+    print("\n".join(violations), file=sys.stderr)
+    sys.exit(1)
+PY
+
+python3 - <<'PY'
+from pathlib import Path
+import re
+import sys
+
+ci = Path('.github/workflows/ci.yml').read_text(encoding='utf-8')
+match = re.search(r'^  architecture-contracts:\n(?P<body>.*?)(?=^  [a-zA-Z0-9_-]+:|\Z)', ci, re.M | re.S)
+if not match or './script/presubmit quick' not in match.group('body'):
+    print('[quality-gates] architecture-contracts must invoke ./script/presubmit quick', file=sys.stderr)
+    sys.exit(1)
+presubmit = Path('script/presubmit').read_text(encoding='utf-8')
+if 'bash script/tests/quality_gate_contract.sh' not in presubmit:
+    print('[quality-gates] canonical presubmit must run quality_gate_contract.sh', file=sys.stderr)
+    sys.exit(1)
+PY
+
+echo 'quality gate checks passed'
