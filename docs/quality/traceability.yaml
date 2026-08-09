@@ -233,7 +233,7 @@ entries:
     static_check: script/check_session_navigator
     tests: [smart_path_truncation_keeps_informative_suffix, session_row_visual_contract_is_distinct, navigator_subtitle_uses_session_context_without_repeating_provider]
     verification: cargo test --bin agentty-app ui::tab_sidebar::tests --locked && ./script/check_session_navigator
-    evidence: "2026-08-03: observed missing destructive-hover helper red compile failure; rows are now tighter, delete hover uses a danger tint, and existing selected/hover/cursor, placeholder, suffix truncation, scan/error/empty/no-match states are locked by tests and static checks."
+    evidence: "2026-08-03: observed missing destructive-hover helper red compile failure; rows are now tighter, delete hover uses a danger tint, and existing selected/hover/cursor, placeholder, suffix truncation, scan/error/empty/no-match states are locked by tests and static checks. 2026-08-09 independent gate recheck reproduced an intermittent false failure with unchanged UI source: piped rg -q exited early and pipefail surfaced upstream SIGPIPE. Pipeline searches now consume complete input, future piped rg -q is rejected, and 100 consecutive full gate runs passed."
   - id: SESSION-SCHEMA-BOUNDED-DISCOVERY-061
     spec: SESSION-SCHEMA-BOUNDED-DISCOVERY-24
     source: [docs/specs/SESSION_NAVIGATOR_SPEC.yaml, crates/agentty-core/src/agent_runtime/service.rs, crates/agentty-core/src/agent_runtime/provider.rs]

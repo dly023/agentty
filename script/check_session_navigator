@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
+
+# `rg -q` exits on the first match. Under pipefail that can SIGPIPE an upstream
+# awk/rg producer and turn a successful content assertion into a random failure.
+# Pipeline predicates must consume their complete input instead.
+rg_consume() {
+  rg "$@" >/dev/null
+}
 required=(
   src/ui/session_navigator.rs
   src/ui/tab_sidebar.rs
@@ -128,11 +135,11 @@ rg -q 'newly_discovered_unit_is_inserted_at_top_without_rewriting_manual_order' 
 rg -q 'delete_preserves_survivor_relative_order' crates/agentty-core/src/agent_runtime/navigator.rs
 rg -q 'refresh_reinsert_preserves_first_observed_insertion_order' crates/agentty-core/src/agent_runtime/navigator.rs
 rg -q 'failed_reorder_persistence_preserves_visible_order' crates/agentty-core/src/agent_runtime/user_state.rs
-if ! rg -n 'insertion_order' -A2 crates/agentty-core/src/agent_runtime/navigator.rs | rg -q 'entry\(.*\)|\.entry'; then
+if ! rg -n 'insertion_order' -A2 crates/agentty-core/src/agent_runtime/navigator.rs | rg_consume 'entry\(.*\)|\.entry'; then
   echo '[session-navigator] upsert must reuse first-seen insertion_order via HashMap::entry' >&2
   exit 1
 fi
-if ! awk 'BEGIN{p=1} /^#\[cfg\(test\)\]/{p=0} p' crates/agentty-core/src/agent_runtime/navigator.rs | rg -n 'insertion_order' -A5 | rg -q 'or_insert'; then
+if ! awk 'BEGIN{p=1} /^#\[cfg\(test\)\]/{p=0} p' crates/agentty-core/src/agent_runtime/navigator.rs | rg -n 'insertion_order' -A5 | rg_consume 'or_insert'; then
   echo '[session-navigator] upsert must reuse first-seen insertion_order via entry().or_insert*' >&2
   exit 1
 fi
@@ -183,31 +190,31 @@ if awk 'BEGIN{p=1} /^#\[cfg\(test\)\]/{p=0} p' src/ui/session_navigator.rs | rg 
   echo '[session-navigator] session discovery must use EnvironmentSessionContext, not UI is_local branches' >&2
   exit 1
 fi
-if ! rg -n 'fn finish_connect' -A 40 src/ui/remote_workspace.rs | rg -q 'refresh_host_agent_sessions'; then
+if ! rg -n 'fn finish_connect' -A 40 src/ui/remote_workspace.rs | rg_consume 'refresh_host_agent_sessions'; then
   echo '[session-navigator] finish_connect must refresh Environment sessions on the host' >&2
   exit 1
 fi
-if rg -n 'fn close_live_session_row' -A 80 src/ui/session_navigator.rs | rg -q 'apply_session_delete_transaction'; then
+if rg -n 'fn close_live_session_row' -A 80 src/ui/session_navigator.rs | rg_consume 'apply_session_delete_transaction'; then
   echo '[session-navigator] live Close must not call provider-file delete' >&2
   exit 1
 fi
-if ! rg -n 'fn close_and_delete_live_session_row' -A 200 src/ui/session_navigator.rs | rg -q 'apply_session_delete_transaction'; then
+if ! rg -n 'fn close_and_delete_live_session_row' -A 200 src/ui/session_navigator.rs | rg_consume 'apply_session_delete_transaction'; then
   echo '[session-navigator] Close and Delete must call provider-file delete' >&2
   exit 1
 fi
-if ! rg -n 'fn close_and_delete_live_session_row' -A 200 src/ui/session_navigator.rs | rg -q 'apply_session_user_state_delete'; then
+if ! rg -n 'fn close_and_delete_live_session_row' -A 200 src/ui/session_navigator.rs | rg_consume 'apply_session_user_state_delete'; then
   echo '[session-navigator] Close and Delete must tombstone when no provider source exists' >&2
   exit 1
 fi
-if ! rg -n 'fn close_and_delete_live_session_row' -A 40 src/ui/session_navigator.rs | rg -q 'plan_close_and_delete'; then
+if ! rg -n 'fn close_and_delete_live_session_row' -A 40 src/ui/session_navigator.rs | rg_consume 'plan_close_and_delete'; then
   echo '[session-navigator] Close and Delete must capture plan_close_and_delete before carrier close' >&2
   exit 1
 fi
-if ! rg -n 'fn begin_session_alias_edit' -A 40 src/ui/session_navigator.rs | rg -q 'SelectAll'; then
+if ! rg -n 'fn begin_session_alias_edit' -A 40 src/ui/session_navigator.rs | rg_consume 'SelectAll'; then
   echo '[session-navigator] alias edit must SelectAll the seeded display title' >&2
   exit 1
 fi
-if ! awk 'BEGIN{p=1} /^#\[cfg\(test\)\]/{p=0} p' src/ui/session_navigator.rs | rg -n 'fn live_session_rows' -A 80 | rg -q 'live_first_user_title'; then
+if ! awk 'BEGIN{p=1} /^#\[cfg\(test\)\]/{p=0} p' src/ui/session_navigator.rs | rg -n 'fn live_session_rows' -A 80 | rg_consume 'live_first_user_title'; then
   echo '[session-navigator] live_session_rows must project live_first_user_title only' >&2
   exit 1
 fi
@@ -216,11 +223,11 @@ if awk 'BEGIN{p=1} /^#\[cfg\(test\)\]/{p=0} p' src/ui/tab_sidebar.rs | rg -n 'Po
   exit 1
 fi
 prod_pin=$(awk 'BEGIN{p=1} /^#\[cfg\(test\)\]/{p=0} p' src/ui/tab_sidebar.rs)
-if ! printf '%s\n' "$prod_pin" | rg -q 'row\.pinned' || ! printf '%s\n' "$prod_pin" | rg -q 'icons/pin\.svg'; then
+if ! printf '%s\n' "$prod_pin" | rg_consume 'row\.pinned' || ! printf '%s\n' "$prod_pin" | rg_consume 'icons/pin\.svg'; then
   echo '[session-navigator] pinned rows must render an explicit pin glyph' >&2
   exit 1
 fi
-if ! printf '%s\n' "$prod_pin" | rg -q 'menu\.set_session_alias'; then
+if ! printf '%s\n' "$prod_pin" | rg_consume 'menu\.set_session_alias'; then
   echo '[session-navigator] context menu must expose Set Alias' >&2
   exit 1
 fi
@@ -248,24 +255,24 @@ rg -q 'session_row_paint_uses_surfaces_sidebar_not_theme_muted' src/ui/tab_sideb
 rg -q 'fn session_row_surface_fill' src/ui/tab_sidebar.rs
 rg -q 'fn session_row_hover_fill' src/ui/tab_sidebar.rs
 # Row fills must come from Surfaces.sidebar, never theme muted as fill authority.
-if awk 'BEGIN{p=1} /^#\[cfg\(test\)\]/{p=0} p' src/ui/tab_sidebar.rs | rg -q 'item\.bg\(cx\.theme\(\)\.muted\)|item\.bg\(cx\.theme\(\)\.sidebar_accent\)'; then
+if awk 'BEGIN{p=1} /^#\[cfg\(test\)\]/{p=0} p' src/ui/tab_sidebar.rs | rg_consume 'item\.bg\(cx\.theme\(\)\.muted\)|item\.bg\(cx\.theme\(\)\.sidebar_accent\)'; then
   echo '[session-navigator] session rows must not paint fill from theme().muted / sidebar_accent' >&2
   exit 1
 fi
-if ! awk 'BEGIN{p=1} /^#\[cfg\(test\)\]/{p=0} p' src/ui/tab_sidebar.rs | rg -q 'session_row_surface_fill|session_row_hover_fill'; then
+if ! awk 'BEGIN{p=1} /^#\[cfg\(test\)\]/{p=0} p' src/ui/tab_sidebar.rs | rg_consume 'session_row_surface_fill|session_row_hover_fill'; then
   echo '[session-navigator] session rows must paint from Surfaces.sidebar helpers' >&2
   exit 1
 fi
-if ! awk 'BEGIN{p=1} /^#\[cfg\(test\)\]/{p=0} p' src/ui/tab_sidebar.rs | rg -n 'fn session_row_text_fade' -A 20 | rg -q 'Surfaces>\(\)\.sidebar|\.sidebar'; then
+if ! awk 'BEGIN{p=1} /^#\[cfg\(test\)\]/{p=0} p' src/ui/tab_sidebar.rs | rg -n 'fn session_row_text_fade' -A 20 | rg_consume 'Surfaces>\(\)\.sidebar|\.sidebar'; then
   echo '[session-navigator] session_row_text_fade must match Surfaces.sidebar solids' >&2
   exit 1
 fi
 # Stronger: the fade helper must resolve Surfaces.sidebar (not theme muted).
-if awk 'BEGIN{p=1} /^#\[cfg\(test\)\]/{p=0} p' src/ui/tab_sidebar.rs | rg -n 'fn session_row_text_fade' -A 25 | rg -q 'theme\(\)\.muted[^_]'; then
+if awk 'BEGIN{p=1} /^#\[cfg\(test\)\]/{p=0} p' src/ui/tab_sidebar.rs | rg -n 'fn session_row_text_fade' -A 25 | rg_consume 'theme\(\)\.muted[^_]'; then
   echo '[session-navigator] session_row_text_fade must not use theme().muted as fade solid' >&2
   exit 1
 fi
-if ! awk 'BEGIN{p=1} /^#\[cfg\(test\)\]/{p=0} p' src/ui/tab_sidebar.rs | rg -n 'fn session_row_text_fade' -A 12 | rg -q 'presets::Surfaces'; then
+if ! awk 'BEGIN{p=1} /^#\[cfg\(test\)\]/{p=0} p' src/ui/tab_sidebar.rs | rg -n 'fn session_row_text_fade' -A 12 | rg_consume 'presets::Surfaces'; then
   echo '[session-navigator] session_row_text_fade must read Surfaces.sidebar' >&2
   exit 1
 fi
@@ -303,18 +310,18 @@ if ! rg -Fq '.border_1()' src/ui/tab_sidebar.rs; then
   echo '[session-navigator] session rows must always reserve a border width for stable selection inset' >&2
   exit 1
 fi
-if rg -n 'SessionRowHoverAffordance::ResumeAction' -A 20 src/ui/tab_sidebar.rs | rg -q 'flex_shrink_0'; then
+if rg -n 'SessionRowHoverAffordance::ResumeAction' -A 20 src/ui/tab_sidebar.rs | rg_consume 'flex_shrink_0'; then
   echo '[session-navigator] resume affordance must overlay, not reserve a permanent flex column' >&2
   exit 1
 fi
 # Production row body only — exclude the #[cfg(test)] module so assertion
 # strings mentioning forbidden APIs do not trip the gate.
 prod_sidebar=$(awk 'BEGIN{p=1} /^#\[cfg\(test\)\]/{p=0} p' src/ui/tab_sidebar.rs)
-if printf '%s\n' "$prod_sidebar" | rg -n 'size\(px\(metrics\.icon_size\)\)' -A 2 | rg -q 'rounded_full'; then
+if printf '%s\n' "$prod_sidebar" | rg -n 'size\(px\(metrics\.icon_size\)\)' -A 2 | rg_consume 'rounded_full'; then
   echo '[session-navigator] provider icons must be rounded rectangles, not circles' >&2
   exit 1
 fi
-if printf '%s\n' "$prod_sidebar" | rg -n 'session-alias-label-' -A 12 | rg -q '\.truncate\(\)|\.text_ellipsis\(\)'; then
+if printf '%s\n' "$prod_sidebar" | rg -n 'session-alias-label-' -A 12 | rg_consume '\.truncate\(\)|\.text_ellipsis\(\)'; then
   echo '[session-navigator] session title overflow must use trailing fade, not ellipsis truncate' >&2
   exit 1
 fi
@@ -415,7 +422,7 @@ begin_open=$(awk '
   p && /cx\.subscribe/ {exit}
   p {print}
 ' src/ui/tab_sidebar.rs)
-if printf '%s\n' "$begin_open" | rg -q 'cx\.notify\(\)'; then
+if printf '%s\n' "$begin_open" | rg_consume 'cx\.notify\(\)'; then
   echo '[session-navigator] context-menu open must not cx.notify(); ContextMenu window.refresh owns that frame' >&2
   exit 1
 fi
@@ -450,7 +457,7 @@ if rg -n 'leaf\.read\(cx\)\.agent_session\(\)\.is_some\(\)' src/ui/app.rs; then
   exit 1
 fi
 rg -q 'is_agent_bound\(\)' src/ui/app.rs
-if ! rg -n 'DaemonMsg::Agent' -A8 src/terminal/remote.rs | rg -q 'Wakeup'; then
+if ! rg -n 'DaemonMsg::Agent' -A8 src/terminal/remote.rs | rg_consume 'Wakeup'; then
   echo '[session-navigator] DaemonMsg::Agent must Wakeup so binding stamp is not delayed' >&2
   exit 1
 fi
@@ -464,6 +471,10 @@ if rg -n 'std::iter::once\(invocation\.program\)|invocation\.args.*join|resume_c
 fi
 if rg -n 'sidebar_sections|SidebarGrouping|sidebar_group_keys|DragGroup|SidebarRows|SidebarGroups|workspace_head\(|AVATAR_PX' src/ui; then
   echo '[session-navigator] legacy repository-grouped sidebar path still exists' >&2
+  exit 1
+fi
+if rg -n '\|[[:space:]]+rg[[:space:]]+-[^ ]*q([[:space:]]|$)' "$0"; then
+  echo '[session-navigator] piped searches must consume input; rg -q races pipefail via SIGPIPE' >&2
   exit 1
 fi
 echo 'session navigator checks passed'

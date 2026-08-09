@@ -11,6 +11,17 @@ feedback_policy:
   promotion_rule: Before implementation, promote the feedback into a stable spec contract, milestone item, traceability row, static check, and failing focused test as applicable.
   retention_rule: Never delete feedback silently; declined or superseded entries retain the reason and replacement ID when one exists.
 feedback:
+  - id: FEEDBACK-20260809-009
+    summary: Independently recheck the claimed fix for the transient pre-push Session Navigator visual gate failure rather than treating a successful rerun as a diagnosis.
+    status: verified
+    priority: high
+    area: session_navigator_static_gate_reliability
+    decision: The earlier Jcode commit did not modify tab_sidebar and therefore did not fix the visual gate. Repeated execution reproduced the failure with an unchanged source hash. Root cause was `rg -q` exiting on its first match inside pipelines while `set -o pipefail` observed the upstream awk/rg writer's SIGPIPE as failure. All piped predicates in check_session_navigator now use a consuming rg helper, and the script rejects future piped `rg -q` usage.
+    evidence:
+      - commit 308db7e changed provider/spec/tracker/matrix/check references but did not change src/ui/tab_sidebar.rs
+      - unchanged tab_sidebar sha256 06f46a7b84d60d50d0ce478483acd0773c08c2b2f865abad15276f394a1230fc reproduced `session rows must paint from Surfaces.sidebar helpers`
+      - after replacing 22 early-exit pipeline searches, 100 consecutive complete check_session_navigator runs passed with the same source hash
+    next_action: None — keep the self-check that forbids piped rg -q and retain full pre-push verification.
   - id: FEEDBACK-20260809-008
     summary: Agentty must discover Jcode user sessions without exposing the many subagent or multi-process internal session files; ashide previously solved this with a filtering mechanism that should be audited for its invariants.
     status: promoted
