@@ -8,6 +8,13 @@ entries:
     tests: [modifier_wheel_zoom_takes_the_wheel_off_scrollback, wheel_zoom_detent_is_exactly_one_step, trackpad_zoom_accumulates_whole_steps, combined_modifier_preserves_normal_scroll_route]
     verification: cargo test --bin agentty-app wheel_zoom --locked && cargo test --bin agentty-app trackpad_zoom --locked && cargo test --bin agentty-app combined_modifier_preserves_normal_scroll_route --locked && ./script/check_terminal_zoom && ./script/presubmit quick
     evidence: "Static gate failed before implementation; focused tests then failed on missing zoom routing, step accumulator, and modifier predicate. Four focused tests, the static gate, presubmit quick, and workspace full pass after implementation."
+    acceptance:
+      canonical_persisted_action: "check_terminal_zoom locks dispatch to IncreaseFontSize/DecreaseFontSize; app action listeners use the existing clamped Config::save path"
+      no_scrollback_and_cancel_animation: modifier_wheel_zoom_takes_the_wheel_off_scrollback
+      discrete_one_step: wheel_zoom_detent_is_exactly_one_step
+      continuous_three_line_debt: trackpad_zoom_accumulates_whole_steps
+      combined_modifier_normal_route: combined_modifier_preserves_normal_scroll_route
+      boundary: "GPUI event/action-path representative test passed; interactive macOS desktop acceptance is blocked by unavailable Accessibility and Screen Recording permissions"
   - id: TERMINAL-CONPTY-STREAM-RESIZE-092
     spec: TERMINAL-CONPTY-STREAM-RESIZE-01
     source: [docs/specs/TERMINAL_RUNTIME_SPEC.yaml, Cargo.toml, crates/agentty-core/src/daemon/protocol.rs, crates/agentty-core/src/daemon/pane.rs, src/terminal/remote.rs]
@@ -15,6 +22,12 @@ entries:
     tests: [resize_echoes_size_to_the_controller_between_old_and_new_output, resize_echo_feature_is_advertised, resize_echo_defers_local_grid_reflow_until_size_frame, live_size_frame_reflows_without_waiting_for_snapshot]
     verification: cargo test -p agentty-core resize_echo --lib --locked && cargo test --bin agentty-app resize_echo --locked && cargo test --bin agentty-app live_size_frame_reflows_without_waiting_for_snapshot --locked && ./script/check_terminal_runtime && ./script/presubmit full
     evidence: "Static gate observed red before implementation; four mapped focused tests pass on macOS. Platform config and fork pin are statically checked; aggregate quick and workspace full pass."
+    acceptance:
+      ordered_size_frame: resize_echoes_size_to_the_controller_between_old_and_new_output
+      feature_negotiation: resize_echo_feature_is_advertised
+      authoritative_deferred_reflow: resize_echo_defers_local_grid_reflow_until_size_frame
+      live_stream_reflow: live_size_frame_reflows_without_waiting_for_snapshot
+      legacy_and_platform_boundary: "check_terminal_runtime locks eager fallback and Windows ConPTY configuration; no interactive Windows desktop was available"
   - id: NOTIFY-CLICK-REVEAL-093
     spec: NOTIFY-CLICK-REVEAL-01
     source: [docs/specs/NOTIFICATION_SPEC.yaml, src/terminal/remote.rs, src/terminal/view.rs, src/ui/tray/mod.rs, src/ui/windows.rs]
@@ -22,6 +35,12 @@ entries:
     tests: [notification_text_removes_unsafe_controls_and_clamps_unicode, notification_reveal_targets_environment_and_pane_not_entity_id, stale_notification_target_is_a_noop, saturated_click_backend_falls_back_to_plain_notification]
     verification: cargo test --bin agentty-app notification_ --locked && ./script/check_desktop_notifications && ./script/presubmit quick
     evidence: "Static/test-reference gates observed red; four focused tests pass. Exact Windows-only block passes a minimal x86_64-pc-windows-msvc check; full cross-check is blocked by missing MSVC C headers in ring. Aggregate quick and workspace full pass."
+    acceptance:
+      safe_bounded_text: notification_text_removes_unsafe_controls_and_clamps_unicode
+      qualified_identity_and_reveal_route: notification_reveal_targets_environment_and_pane_not_entity_id
+      stale_target_noop: stale_notification_target_is_a_noop
+      backend_saturation_plain_fallback: saturated_click_backend_falls_back_to_plain_notification
+      boundary: "platform callback wiring is statically gated; interactive macOS/Windows notification activation was not exercised in this rerun"
   - id: TAB-SWITCHER-MRU-HOLD-094
     spec: TAB-SWITCHER-MRU-HOLD-01
     source: [docs/specs/TAB_SWITCHER_SPEC.yaml, src/ui/app.rs, src/ui/switcher.rs, src/ui/keymap.rs]
@@ -29,6 +48,12 @@ entries:
     tests: [tab_switch_hold_uses_a_fixed_mru_snapshot, tab_switch_release_commits_exactly_once, tab_switch_escape_and_deactivation_restore_the_origin, tab_switch_revalidates_removed_origin_and_candidate, tab_switch_single_tab_is_a_noop]
     verification: cargo test --bin agentty-app tab_switch_ --locked && ./script/check_tab_switcher && ./script/presubmit quick
     evidence: "Static/test-reference gates and stale-origin assertion observed red; five focused reducer tests, aggregate quick, and workspace full pass."
+    acceptance:
+      fixed_tab_id_mru_snapshot: tab_switch_hold_uses_a_fixed_mru_snapshot
+      release_commits_once: tab_switch_release_commits_exactly_once
+      escape_and_deactivation_restore: tab_switch_escape_and_deactivation_restore_the_origin
+      removed_rows_revalidated: tab_switch_revalidates_removed_origin_and_candidate
+      zero_or_one_noop: tab_switch_single_tab_is_a_noop
   - id: INPUT-FISH-HISTORY-AUTHORITY-091
     spec: INPUT-FISH-HISTORY-AUTHORITY-09
     source: [docs/specs/INPUT_EXPERIENCE_SPEC.yaml, src/terminal/history.rs, src/terminal/view.rs]
@@ -36,6 +61,12 @@ entries:
     tests: [fish_writes_commands_unquoted_so_yaml_punctuation_is_just_text, fish_escapes_only_backslash_and_newline, a_multiline_fish_command_is_skipped_not_half_recalled, a_remote_scope_routes_fish_bytes_by_source_name]
     verification: cargo test --bin agentty-app fish_ --locked && ./script/check_fish_history && ./script/presubmit quick
     evidence: "2026-08-09: exact tests first failed on missing fish parser and unnamed remote byte blobs; five fish-focused tests plus existing remote zsh/bash loading, static gate, test references, spec matrix, tracker, formatting, presubmit quick, and workspace full passed."
+    acceptance:
+      punctuation_not_yaml: fish_writes_commands_unquoted_so_yaml_punctuation_is_just_text
+      fish_escape_and_malformed_semantics: fish_escapes_only_backslash_and_newline
+      multiline_excluded: a_multiline_fish_command_is_skipped_not_half_recalled
+      remote_selected_authority_and_source_name: a_remote_scope_routes_fish_bytes_by_source_name
+      no_local_remote_fallback: remote_source_failure_never_reads_local_filesystem
   - id: INPUT-FRAME-ALIGNED-SMOOTH-SCROLL-090
     spec: INPUT-FRAME-ALIGNED-SMOOTH-SCROLL-08
     source: [docs/specs/INPUT_EXPERIENCE_SPEC.yaml, crates/agentty-core/src/core/config.rs, src/terminal/view.rs, src/ui/settings.rs]
@@ -43,6 +74,11 @@ entries:
     tests: [scroll_anim_step_decays_and_lands, scroll_anim_step_accounts_for_dropped_frames_and_snaps_tail, a_stale_frame_after_cancellation_does_not_walk]
     verification: cargo test --bin agentty-app scroll_anim --locked && ./script/check_terminal_smooth_scroll && ./script/presubmit quick
     evidence: "2026-08-09: failing static gate preceded implementation; persisted setting, localized UI, phase-aware routing, relative accumulated decay, next-frame scheduling, stale epoch cancellation, and clamp behavior passed focused pure/GPUI tests, i18n, static gate, and presubmit quick."
+    acceptance:
+      elapsed_frame_decay_and_landing: scroll_anim_step_decays_and_lands
+      dropped_frames_and_clamps: scroll_anim_step_accounts_for_dropped_frames_and_snaps_tail
+      cancellation_and_stale_callback: a_stale_frame_after_cancellation_does_not_walk
+      direct_excluded_routes_and_persistence: "check_terminal_smooth_scroll locks trackpad/mouse-reporting/alternate direct paths and the persisted setting"
   - id: CLI-AGENT-WAIT-089
     spec: CLI-AGENT-WAIT-01
     source: [docs/specs/CLI_ORCHESTRATION_SPEC.yaml, crates/agentty-cli/src/cli.rs, crates/agentty-cli/src/commands.rs]
@@ -50,6 +86,14 @@ entries:
     tests: [wait_returns_when_agent_state_matches, wait_treats_live_agentless_pane_as_idle, wait_timeout_uses_exit_code_124, wait_refuses_unrequested_pane_exit, wait_changed_refuses_the_state_it_arrived_in, wait_rechecks_liveness_for_a_reporting_agent]
     verification: cargo test -p agentty-cli wait_ --locked && ./script/check_cli_orchestration && ./script/presubmit quick
     evidence: "2026-08-09: observed red compile and behavior failures, then six wait focused tests, the complete agentty-cli package, static gate, and presubmit quick passed."
+    acceptance:
+      requested_state: wait_returns_when_agent_state_matches
+      live_agentless_idle: wait_treats_live_agentless_pane_as_idle
+      timeout_exit_124: wait_timeout_uses_exit_code_124
+      unrequested_exit_refused: wait_refuses_unrequested_pane_exit
+      changed_rejects_initial_edge: wait_changed_refuses_the_state_it_arrived_in
+      stale_agent_rechecks_pane: wait_rechecks_liveness_for_a_reporting_agent
+      public_integration: "cargo test -p agentty-cli --test cli_e2e --locked passed against isolated real agentty and agentty-server processes"
   - id: REMOTE-IMAGE-PASTE-088
     spec: REMOTE-IMAGE-PASTE-17
     source: [docs/specs/REMOTE_HELPER_SPEC.yaml, src/terminal/view.rs, src/ui/sftp.rs]
@@ -57,6 +101,13 @@ entries:
     tests: [remote_image_paste_stages_on_every_platform, wsl_image_path_uses_the_distro_automount_view, remote_paste_selects_only_ssh_authority, remote_clipboard_directory_requires_owner_only_permissions, clipboard_image_transcodes_tiff_to_png]
     verification: cargo test --bin agentty-app remote_image_paste --locked && cargo test --bin agentty-app wsl_image_path --locked && cargo test --bin agentty-app remote_clipboard_directory --locked && ./script/presubmit quick
     evidence: "2026-08-09: focused tests first failed because remote staging, WSL path translation, SSH authority selection, and private-directory verification did not exist. SSH upload now uses owner-only SFTP staging and pastes only after verified completion; WSL rewrites shared Windows paths; local macOS keeps SYN; TIFF transcodes to PNG. Focused tests, i18n, static gate, and quick presubmit passed."
+    acceptance:
+      platform_route_selection: remote_image_paste_stages_on_every_platform
+      wsl_shared_path_not_ssh: wsl_image_path_uses_the_distro_automount_view
+      ssh_only_sftp_authority: remote_paste_selects_only_ssh_authority
+      owner_only_and_verified_publish: remote_clipboard_directory_requires_owner_only_permissions
+      encoding_conversion: clipboard_image_transcodes_tiff_to_png
+      boundary: "route/SFTP boundary tests passed; no live WSL desktop clipboard or live SSH image paste was available in this rerun"
   - id: WSL-COMPLETION-AUTHORITY-087
     spec: WSL-COMPLETION-AUTHORITY-16
     source: [docs/specs/REMOTE_HELPER_SPEC.yaml, src/terminal/view.rs, crates/agentty-core/src/agent_runtime/completion.rs]
@@ -64,6 +115,10 @@ entries:
     tests: [a_remote_workspace_pane_reports_its_cwd_as_remote, remote_source_failure_never_reads_local_filesystem, wsl_workspace_completion_uses_remote_authority]
     verification: cargo test --bin agentty-app wsl_workspace_completion_uses_remote_authority --locked && cargo test -p agentty-core remote_source_failure_never_reads_local_filesystem --lib --locked
     evidence: "2026-08-09: explicit WSL regression proves the distro Host is Remote authority; existing remote-source negative test proves failure never reads GUI-local filesystem; focused tests and quick presubmit passed."
+    acceptance:
+      remote_posix_cwd: a_remote_workspace_pane_reports_its_cwd_as_remote
+      selected_wsl_host: wsl_workspace_completion_uses_remote_authority
+      failure_never_reads_local: remote_source_failure_never_reads_local_filesystem
   - id: WSL-SERVER-LIFECYCLE-PARITY-086
     spec: WSL-SERVER-LIFECYCLE-PARITY-15
     source: [docs/specs/REMOTE_HELPER_SPEC.yaml, crates/agentty-core/src/core/session.rs, crates/agentty-core/src/daemon/router.rs, crates/agentty-core/src/daemon/install/wsl.rs, src/ui/app.rs, src/ui/switcher.rs, src/ui/remote_workspace.rs]
@@ -71,6 +126,11 @@ entries:
     tests: [wsl_is_restartable_without_becoming_an_ssh_target, wsl_restart_is_supported_but_replace_remains_explicitly_unsupported]
     verification: cargo test -p agentty-core wsl_restart_is_supported_but_replace_remains_explicitly_unsupported --lib --locked && ./script/presubmit quick
     evidence: "2026-08-09: route and capability focused tests first failed because the WSL lifecycle dispatcher and can_restart_server did not exist; WSL restart is now visible in both UI entrypoints and typed RestartServer invokes restart_wsl_daemon through RouteSetup::blocking while ReplaceServer remains unsupported; fmt, both focused tests, static gate, and presubmit quick passed."
+    acceptance:
+      restart_separate_from_ssh_identity: wsl_is_restartable_without_becoming_an_ssh_target
+      typed_router_restart_and_replace_refusal: wsl_restart_is_supported_but_replace_remains_explicitly_unsupported
+      ui_and_off_thread_boundary: "check_remote_helper locks both UI entrypoints, typed RestartServer, RouteSetup::blocking, and restart_wsl_daemon"
+      boundary: "no live Windows/WSL runtime was available in this rerun"
   - id: LOCAL-RUNTIME-READINESS-049
     spec: LOCAL-RUNTIME-READINESS-01
     source: [docs/specs/LOCAL_RUNTIME_SPEC.yaml, crates/agentty-core/src/daemon/spawn.rs, crates/agentty-core/src/host/server.rs, crates/agentty-cli/src/server.rs, crates/agentty-cli/tests/cli_e2e.rs, src/ui/local_link.rs]

@@ -25,6 +25,9 @@ feedback:
       - real local store audit: 192 snapshots, 86 marked is_debug and all current rows parent_id=null, proving parent_id alone does not remove worker noise
       - Ashide history: 4762db1 designed a versioned public JSON list; v0.0.5 later removed Jcode because the public contract was unavailable and private-store/subagent adaptation was too fragile
       - icon source: jcode assets/app-icons/Jcode.icns and iOS AppIcon.png, repository MIT License
+      - 2026-08-09 acceptance rerun: installed `jcode v0.73.0 (44ffa5528)` exposes only `session rename`; `jcode session list --json --limit 5` exits 2 with `unrecognized subcommand list`, so Agentty cannot exercise a stable end-user discovery integration path
+      - 2026-08-09 real-store negative acceptance: 189 session snapshots include 86 debug roots, 0 non-root parent rows, 3 non-debug zero-message rows, 5 imported JSON files, and 186 backups; therefore parent-only, filename-only, and non-debug-only filters each admit forbidden rows
+      - acceptance constraint: no Jcode provider was shipped, so there is intentionally no Agentty UI acceptance claim; the result is a fail-closed architecture decision pending an upstream versioned API
     next_action: Upstream a versioned Jcode machine-readable native session list or equivalent stable SDK endpoint. After it ships, promote Agentty integration to SESSION-NAVIGATOR spec/matrix with local/remote command delivery and schema failure tests; do not ship a private-store parser meanwhile.
   - id: FEEDBACK-20260809-007
     summary: Continue selective tty7 non-distribution parity with platform-modifier plus wheel terminal zoom as the next independent UI slice.
@@ -49,11 +52,15 @@ feedback:
     evidence:
       - user direction 2026-08-09: "分发不学。其他实现一下"
       - source audit: restart_wsl_daemon already exists while router::restart_server rejects every non-SSH target
+      - 2026-08-09 acceptance rerun mapped each delivered slice to its public behavior: CLI wait passed the real CLI/server process E2E plus timeout=124, changed-edge, stale-agent/liveness, agentless-idle, and unrequested-exit tests; remote completion passed selected-Host and no-local-fallback tests; remote image paste passed SSH authority, owner-only staging, WSL path translation, TIFF conversion, and transfer-failure contracts
+      - 2026-08-09 terminal/UI acceptance rerun passed smooth-scroll frame/cancellation/clamp routes, fish local/remote source-name and malformed/multiline parsing, ConPTY ordered resize echo plus eager legacy fallback, notification stale/saturated/plain fallback, fixed-MRU switch commit/cancel/removal behavior, and modifier-wheel detent/trackpad/combined-modifier/scrollback behavior
+      - integration and packaging rerun passed the real agentty-cli isolated daemon suite, routed multi-process server tests, all eight slice static gates, package-cleanup gate, and `./script/presubmit full` with 954 agentty-core tests plus server process/conformance suites; live SSH replacement/open-link evidence remains recorded under FEEDBACK-20260809-005
+      - platform constraints are explicit: Windows notification/ConPTY behavior is covered by protocol and platform-gated tests rather than an interactive Windows desktop; current macOS Accessibility and Screen Recording permissions are unavailable, so modifier-wheel visual interaction is representative GPUI event/action-path evidence, not an end-user desktop acceptance claim
     promoted_to:
       spec: WSL-SERVER-LIFECYCLE-PARITY-15
       traceability: WSL-SERVER-LIFECYCLE-PARITY-086
       milestone: M0.5-REMOTE-HELPER/HELPER-014
-    next_action: Complete the WSL restart route red test, implementation, focused verification, and quick presubmit before advancing to WSL completion and remote image paste.
+    next_action: Delivered slices are verified at their mapped boundaries. Continue auditing remaining independent tty7 candidates through separate specs; do not mark the open-ended umbrella complete or absorb excluded distribution, update-channel, or system-proxy behavior.
   - id: FEEDBACK-20260809-005
     summary: The installed v7 client must completely repair a v6 remote helper mismatch; every mismatch prompt and persistent notice must invoke Replace Server rather than the restart-only path.
     status: verified
