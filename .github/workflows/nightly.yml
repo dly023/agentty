@@ -39,13 +39,10 @@ jobs:
             echo "build=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          # Nightly version = next stable patch + date suffix, so semver
-          # ordering lands between the previous and the next stable release:
-          # 26.7.0 < 26.7.1-nightly.20260716 < 26.7.1.
-          LAST=$(git tag -l 'v*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
-          BASE=${LAST#v}
-          NEXT="${BASE%.*}.$(( ${BASE##*.} + 1 ))"
-          VERSION="${NEXT}-nightly.$(date -u +%Y%m%d)"
+          # Nightly version = next stable patch + date suffix. With no vX.Y.Z
+          # tags yet, plan-nightly-version.sh bumps [workspace.package] instead
+          # of emitting a leading-dot version (".1-nightly…") that cargo rejects.
+          VERSION=$(bash .github/scripts/plan-nightly-version.sh)
           echo "building $VERSION from ${GITHUB_SHA::7}"
           echo "build=true" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"

@@ -12,6 +12,13 @@ set -euo pipefail
 
 VERSION="$1"
 
+# Reject plan-job fallthrough like ".1-nightly.20260808" before rewriting
+# Cargo.toml — a bad stamp poisons every subsequent cargo metadata / build.
+if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+  echo "::error::stamp-version.sh: invalid version '$VERSION' (need SemVer X.Y.Z or X.Y.Z-prerelease)" >&2
+  exit 1
+fi
+
 awk -v ver="$VERSION" '!done && /^version = /{ $0 = "version = \"" ver "\""; done = 1 } { print }' \
   Cargo.toml > Cargo.toml.tmp
 mv Cargo.toml.tmp Cargo.toml
