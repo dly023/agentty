@@ -11,6 +11,17 @@ feedback_policy:
   promotion_rule: Before implementation, promote the feedback into a stable spec contract, milestone item, traceability row, static check, and failing focused test as applicable.
   retention_rule: Never delete feedback silently; declined or superseded entries retain the reason and replacement ID when one exists.
 feedback:
+  - id: FEEDBACK-20260809-011
+    summary: Local development and packaging workflows left multiple visible Agentty application bundles; keep only the newest installed application and do not leave user-visible backup or duplicate bundles behind.
+    status: captured
+    priority: medium
+    area: local_application_bundle_lifecycle
+    decision: The immediate machine state was repaired by retaining only /Applications/Agentty.app, deleting the older /Applications backup bundle and the duplicate dist bundle, then launching and verifying the retained application. Treat recurrence prevention as packaging lifecycle work rather than deleting Cargo build artifacts.
+    evidence:
+      - final Spotlight application-bundle query returned only /Applications/Agentty.app
+      - /Applications/Agentty.app.before-20260809-dialect-v7.bak and /Users/admin/agentty/dist/Agentty.app were absent after cleanup
+      - retained application PID 47439 reported frontmost=true and visible=true
+    next_action: Triage whether local install/package scripts can create visible backup or duplicate .app bundles outside their scoped staging lifecycle; if reproducible, promote through package-cleanup SPEC, matrix, static check, and failing contract before changing scripts.
   - id: FEEDBACK-20260809-010
     summary: Before Agentty has users, aggressively eliminate historical debt, design debt, duplicated or obsolete paths, and avoidable performance costs; even small evidence-backed improvements are worth complete refactors now.
     status: promoted
