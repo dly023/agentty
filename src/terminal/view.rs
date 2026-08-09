@@ -24,8 +24,9 @@ use super::reverse_search::{self, ReverseSearch};
 use super::search::{LinkTarget, SearchState};
 use super::typeahead::{RawInput, Typeahead};
 use crate::core::actions::{
-    CloseActiveTab, ForkAgentSessionDown, ForkAgentSessionLeft, ForkAgentSessionRight,
-    ForkAgentSessionUp, NewTab, SendBackTab, SendTab, SplitDown, SplitRight, ToggleMaximizePane,
+    CloseActiveTab, DecreaseFontSize, ForkAgentSessionDown, ForkAgentSessionLeft,
+    ForkAgentSessionRight, ForkAgentSessionUp, IncreaseFontSize, NewTab, SendBackTab, SendTab,
+    SplitDown, SplitRight, ToggleMaximizePane,
 };
 use crate::core::config::{BellMode, Config, NotifyMode};
 use crate::daemon::protocol::{RemoteContext, ShellSpec};
@@ -145,6 +146,11 @@ const SCROLL_ANIM_FRAME: std::time::Duration = std::time::Duration::from_millis(
 const SCROLL_ANIM_MIN: f32 = 0.05;
 const SCROLL_ANIM_MIN_JUMP: f32 = 1.0;
 const SCROLL_GESTURE_IDLE: std::time::Duration = std::time::Duration::from_millis(150);
+const ZOOM_SCROLL_LINES: f32 = 3.0;
+
+fn modifier_wheel_zooms(modifiers: &Modifiers) -> bool {
+    modifiers.secondary() && modifiers.number_of_modifiers() == 1
+}
 
 fn cwd_is_on_host(pane_runs_remotely: bool, host_is_local: bool) -> bool {
     match pane_runs_remotely {
@@ -188,6 +194,7 @@ pub struct TerminalView {
     last_hover_cell: Option<(usize, usize)>,
     link_modifier_down: bool,
     scroll_debt: f32,
+    zoom_debt: f32,
     pub(super) scroll_frac: f32,
     pub search: Option<SearchState>,
     pub cursor_visible: bool,
@@ -908,6 +915,7 @@ impl TerminalView {
             last_hover_cell: None,
             link_modifier_down: false,
             scroll_debt: 0.,
+            zoom_debt: 0.,
             scroll_frac: 0.,
             search: None,
             cursor_visible: true,
@@ -4070,6 +4078,10 @@ impl TerminalView {
     }
 
     fn on_scroll(&mut self, ev: &ScrollWheelEvent, window: &mut Window, cx: &mut Context<Self>) {
+        if modifier_wheel_zooms(&ev.modifiers) {
+            self.zoom_scroll(ev, window, cx);
+            return;
+        }
         let mult = cx.global::<Config>().mouse_scroll_multiplier;
         let raw = match ev.delta {
             ScrollDelta::Lines(p) => p.y,
@@ -4099,6 +4111,24 @@ impl TerminalView {
         } else {
             self.cancel_scroll_anim();
             self.smooth_scroll(delta, cx);
+        }
+    }
+
+    fn zoom_scroll(&mut self, ev: &ScrollWheelEvent, window: &mut Window, cx: &mut Context<Self>) {
+        self.cancel_scroll_anim();
+        let lines = match ev.delta {
+            ScrollDelta::Lines(point) => point.y,
+            ScrollDelta::Pixels(point) => point.y.as_f32() / self.line_height.as_f32(),
+        };
+        let gesturing = self.track_scroll_gesture(ev.touch_phase);
+        let (steps, debt) = zoom_scroll_steps(lines, self.zoom_debt, gesturing);
+        self.zoom_debt = debt;
+        for _ in 0..steps.unsigned_abs() {
+            if steps > 0 {
+                window.dispatch_action(Box::new(IncreaseFontSize), cx);
+            } else {
+                window.dispatch_action(Box::new(DecreaseFontSize), cx);
+            }
         }
     }
 
@@ -5534,6 +5564,24 @@ pub(crate) fn stamp_live_first_user_title(slot: &mut Option<String>, prompt: &st
 fn drag_scroll_step(overshoot: f32) -> i32 {
     let lines = overshoot.abs().ceil().clamp(1., 8.) as i32;
     if overshoot < 0. { -lines } else { lines }
+}
+
+fn zoom_scroll_steps(lines: f32, debt: f32, gesturing: bool) -> (i32, f32) {
+    if !gesturing {
+        return (
+            if lines > 0. {
+                1
+            } else if lines < 0. {
+                -1
+            } else {
+                0
+            },
+            0.,
+        );
+    }
+    let total = debt + lines;
+    let steps = (total / ZOOM_SCROLL_LINES).trunc();
+    (steps as i32, total - steps * ZOOM_SCROLL_LINES)
 }
 
 #[cfg(test)]
@@ -7559,6 +7607,63 @@ mod gpui_tests {
 
     fn display_offset(view: &TerminalView) -> usize {
         view.terminal.term.lock().grid().display_offset()
+    }
+
+    #[gpui::test]
+    fn modifier_wheel_zoom_takes_the_wheel_off_scrollback(cx: &mut TestAppContext) {
+        let (window, _daemon) = harness(cx);
+        window
+            .update(cx, |view, window, cx| {
+                scroll_into_history(view, 10);
+                view.scroll_anim = Some(ScrollAnim {
+                    remaining: -3.0,
+                    last: std::time::Instant::now() - SCROLL_ANIM_FRAME,
+                });
+                let event = ScrollWheelEvent {
+                    delta: ScrollDelta::Lines(gpui::point(0., -4.9)),
+                    modifiers: Modifiers::secondary_key(),
+                    ..Default::default()
+                };
+
+                view.on_scroll(&event, window, cx);
+
+                assert_eq!(display_offset(view), 10, "zoom moved the scrollback");
+                assert!(
+                    view.scroll_anim.is_none(),
+                    "zoom left old scroll motion queued"
+                );
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn wheel_zoom_detent_is_exactly_one_step() {
+        assert_eq!(zoom_scroll_steps(4.9, 0., false), (1, 0.));
+        assert_eq!(zoom_scroll_steps(-4.9, 0., false), (-1, 0.));
+        assert_eq!(zoom_scroll_steps(0., 0., false), (0, 0.));
+    }
+
+    #[test]
+    fn trackpad_zoom_accumulates_whole_steps() {
+        let (mut debt, mut steps) = (0., 0);
+        for _ in 0..20 {
+            let (step, remainder) = zoom_scroll_steps(1. / 3., debt, true);
+            steps += step;
+            debt = remainder;
+        }
+        assert_eq!(steps, 2, "continuous fragments became individual steps");
+        assert!(debt > 0., "the sub-step remainder was lost");
+    }
+
+    #[test]
+    fn combined_modifier_preserves_normal_scroll_route() {
+        let platform_only = Modifiers::secondary_key();
+        let combined = Modifiers {
+            shift: true,
+            ..platform_only
+        };
+        assert!(modifier_wheel_zooms(&platform_only));
+        assert!(!modifier_wheel_zooms(&combined));
     }
 
     #[gpui::test]

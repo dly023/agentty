@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+rg -q 'INPUT-MODIFIER-WHEEL-ZOOM-10' docs/specs/INPUT_EXPERIENCE_SPEC.yaml
+rg -q 'const ZOOM_SCROLL_LINES: f32 = 3\.0;' src/terminal/view.rs
+rg -q 'fn zoom_scroll_steps\(' src/terminal/view.rs
+rg -q 'window\.dispatch_action\(Box::new\(IncreaseFontSize\)' src/terminal/view.rs
+rg -q 'window\.dispatch_action\(Box::new\(DecreaseFontSize\)' src/terminal/view.rs
+rg -q 'modifier_wheel_zoom_takes_the_wheel_off_scrollback' src/terminal/view.rs
+rg -q 'wheel_zoom_detent_is_exactly_one_step' src/terminal/view.rs
+rg -q 'trackpad_zoom_accumulates_whole_steps' src/terminal/view.rs
+rg -q 'combined_modifier_preserves_normal_scroll_route' src/terminal/view.rs
+
+echo 'terminal modifier wheel zoom checks passed'

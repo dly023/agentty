@@ -50,4 +50,12 @@ contracts:
       - losing_remote_source_names_before_parser_selection
       - reading_local_fish_history_for_a_remote_environment
       - offering_half_of_a_multiline_fish_command
+  - id: INPUT-MODIFIER-WHEEL-ZOOM-10
+    rule: Holding only the platform modifier while scrolling over a terminal changes the persisted terminal font size through the existing IncreaseFontSize and DecreaseFontSize actions instead of moving scrollback or forwarding mouse reporting. A discrete wheel detent produces exactly one size step regardless of its reported line magnitude. Continuous trackpad motion accumulates independently until three lines earn a whole step. Adding any other modifier preserves the existing scroll route, and entering zoom cancels pending smooth-scroll motion.
+    forbidden:
+      - changing_font_size_outside_the_canonical_font_actions
+      - moving_scrollback_or_forwarding_mouse_reporting_during_zoom
+      - treating_each_trackpad_fragment_as_a_font_step
+      - hijacking_platform_modifier_plus_another_modifier
+      - carrying_scroll_debt_between_zoom_and_scrollback
 status: verified

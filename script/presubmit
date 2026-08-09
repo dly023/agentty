@@ -17,6 +17,7 @@ mode=${1:-quick}
 ./script/check_completion_surface
 ./script/check_cli_orchestration
 ./script/check_terminal_smooth_scroll
+./script/check_terminal_zoom
 ./script/check_fish_history
 ./script/check_terminal_runtime
 ./script/check_desktop_notifications

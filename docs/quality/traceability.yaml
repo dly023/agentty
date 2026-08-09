@@ -1,6 +1,13 @@
 version: 1
 updated: 2026-08-03
 entries:
+  - id: INPUT-MODIFIER-WHEEL-ZOOM-095
+    spec: INPUT-MODIFIER-WHEEL-ZOOM-10
+    source: [docs/specs/INPUT_EXPERIENCE_SPEC.yaml, src/terminal/view.rs, src/ui/app.rs]
+    static_check: script/check_terminal_zoom
+    tests: [modifier_wheel_zoom_takes_the_wheel_off_scrollback, wheel_zoom_detent_is_exactly_one_step, trackpad_zoom_accumulates_whole_steps, combined_modifier_preserves_normal_scroll_route]
+    verification: cargo test --bin agentty-app wheel_zoom --locked && cargo test --bin agentty-app trackpad_zoom --locked && cargo test --bin agentty-app combined_modifier_preserves_normal_scroll_route --locked && ./script/check_terminal_zoom && ./script/presubmit quick
+    evidence: "Static gate failed before implementation; focused tests then failed on missing zoom routing, step accumulator, and modifier predicate. Four focused tests, the static gate, presubmit quick, and workspace full pass after implementation."
   - id: TERMINAL-CONPTY-STREAM-RESIZE-092
     spec: TERMINAL-CONPTY-STREAM-RESIZE-01
     source: [docs/specs/TERMINAL_RUNTIME_SPEC.yaml, Cargo.toml, crates/agentty-core/src/daemon/protocol.rs, crates/agentty-core/src/daemon/pane.rs, src/terminal/remote.rs]

@@ -11,6 +11,35 @@ feedback_policy:
   promotion_rule: Before implementation, promote the feedback into a stable spec contract, milestone item, traceability row, static check, and failing focused test as applicable.
   retention_rule: Never delete feedback silently; declined or superseded entries retain the reason and replacement ID when one exists.
 feedback:
+  - id: FEEDBACK-20260809-008
+    summary: Agentty must discover Jcode user sessions without exposing the many subagent or multi-process internal session files; ashide previously solved this with a filtering mechanism that should be audited for its invariants.
+    status: triaged
+    priority: high
+    area: jcode_session_discovery
+    decision: Do not parse ~/.jcode/sessions as an Agentty provider contract. Jcode's canonical picker merges snapshot+journal metadata, excludes imported files and conversations with zero visible messages, hides is_debug rows without spending the ordinary-session quota, and identifies user roots with parent_id=None; the installed v0.73.0 binary does not expose the machine-readable `jcode session list --json` command that Ashide Stage A assumed. Require Jcode to publish a versioned machine list whose default rows satisfy parent_id=null, is_debug=false, visible_message_count>0 and resumable=true. Agentty will invoke that target-owned API for local and remote discovery, filter non-resumable rows defensively, and preserve the last complete generation on command/schema/partial failure. Use the official MIT-licensed Jcode app icon as the asset source, adapted to Agentty's monochrome currentColor badge rather than inventing an unofficial mark.
+    evidence:
+      - user direction 2026-08-09: Jcode has many session files, most apparently subagent or multi-process artifacts, and ashide previously filtered them successfully
+      - reference repository: https://github.com/1jehuang/jcode
+      - current Jcode v0.73.0: `jcode session list --json --limit 5` fails because `session list` is not a public subcommand
+      - current native picker: snapshot+journal merge, visible-message filtering, separate debug quota, and default is_debug hiding are implemented in jcode-tui session_picker/loading.rs and filter.rs
+      - real local store audit: 192 snapshots, 86 marked is_debug and all current rows parent_id=null, proving parent_id alone does not remove worker noise
+      - Ashide history: 4762db1 designed a versioned public JSON list; v0.0.5 later removed Jcode because the public contract was unavailable and private-store/subagent adaptation was too fragile
+      - icon source: jcode assets/app-icons/Jcode.icns and iOS AppIcon.png, repository MIT License
+    next_action: Upstream a versioned Jcode machine-readable native session list or equivalent stable SDK endpoint. After it ships, promote Agentty integration to SESSION-NAVIGATOR spec/matrix with local/remote command delivery and schema failure tests; do not ship a private-store parser meanwhile.
+  - id: FEEDBACK-20260809-007
+    summary: Continue selective tty7 non-distribution parity with platform-modifier plus wheel terminal zoom as the next independent UI slice.
+    status: verified
+    priority: medium
+    area: terminal_modifier_wheel_zoom
+    decision: Reuse the canonical IncreaseFontSize and DecreaseFontSize actions so persistence and clamping remain single-source. Keep zoom debt separate from scroll debt, require the platform modifier alone, and leave combined-modifier scrolling unchanged.
+    evidence:
+      - continuation direction 2026-08-09: proceed with the remaining non-distribution UI candidates after the verified push
+      - tty7 source audit: 68d6b4b routes wheel zoom through existing font-size actions and distinguishes wheel detents from continuous gestures
+    promoted_to:
+      spec: INPUT-MODIFIER-WHEEL-ZOOM-10
+      traceability: INPUT-MODIFIER-WHEEL-ZOOM-095
+      milestone: M2-INPUT/INPUT-023
+    next_action: None — focused tests, static gate, quick presubmit, and workspace full presubmit passed; commit and push with the persisted Jcode discovery audit.
   - id: FEEDBACK-20260809-006
     summary: Absorb the useful tty7 feature set except distribution, in-app update channels, and system proxy behavior; begin with remote and WSL parity.
     status: promoted
@@ -1389,6 +1418,20 @@ milestones:
           - tab_switch_single_tab_is_a_noop
         evidence: Static/test-reference gates and stale-origin assertion were observed red before implementation. Five focused reducer tests pass, including fixed snapshot, single commit, Escape/deactivation, removed identities, and single-tab no-op. Aggregate quick and workspace full presubmit pass.
         old_path_removal: Route both action and key-event callers through one tab-switch reducer; do not keep direct index cycling as a parallel Ctrl+Tab behavior.
+      - id: INPUT-023
+        title: Zoom terminal font with the platform modifier and wheel
+        status: verified
+        spec: INPUT-MODIFIER-WHEEL-ZOOM-10
+        source:
+          - src/terminal/view.rs
+          - src/ui/app.rs
+        tests:
+          - modifier_wheel_zoom_takes_the_wheel_off_scrollback
+          - wheel_zoom_detent_is_exactly_one_step
+          - trackpad_zoom_accumulates_whole_steps
+          - combined_modifier_preserves_normal_scroll_route
+        evidence: Specification, promoted feedback, traceability row, fail-closed static gate, and focused compile failures preceded implementation. Four focused tests, the static gate, presubmit quick, and workspace full pass. tty7 68d6b4b is the behavioral reference; Agentty retains its canonical font actions and frame-aligned scroll implementation.
+        old_path_removal: Extend the canonical TerminalView wheel router and dispatch existing font actions; do not add a second font persistence or clamp path.
       - id: HELPER-011
         title: Delete stale package outputs before every desktop package build
         status: verified
