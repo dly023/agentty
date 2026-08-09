@@ -12,4 +12,10 @@ contracts:
       - returning_a_generic_error_code_for_timeout
       - treating_a_level_from_a_prior_turn_as_a_new_edge_in_changed_mode
       - trusting_agent_status_without_periodic_pane_liveness
+  - id: CLI-IMPLEMENTED-HELP-SURFACE-02
+    rule: The public agentty command grammar and every nested help surface advertise only commands backed by an implemented canonical execution path. Planned workspace or machine operations remain absent until their protocol and behavior contracts ship; placeholder verbs that parse only to return "not implemented" are forbidden.
+    forbidden:
+      - public_help_advertising_stubbed_workspace_verbs
+      - public_help_advertising_stubbed_machine_verbs
+      - parser_variants_with_only_not_implemented_execution_branches
 status: verified

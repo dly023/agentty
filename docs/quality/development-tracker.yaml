@@ -2249,6 +2249,14 @@ milestones:
         tests: [notification_text_removes_unsafe_controls_and_clamps_unicode, saturated_click_backend_falls_back_to_plain_notification]
         red_test_evidence: 2026-08-09 cargo check/clippy --workspace --all-targets failed at remote.rs because production imports mac_notification_sys without declaring it as a direct macOS dependency.
         evidence: 2026-08-09 mac-notification-sys is now a direct target-specific dependency. cargo check --bin agentty-app --all-targets --locked and four notification focused tests passed; the static gate requires the direct boundary.
+      - id: DEBT-CLI-004
+        title: Remove public CLI verbs with no implementation
+        status: verified
+        spec: CLI-IMPLEMENTED-HELP-SURFACE-02
+        source: [crates/agentty-cli/src/cli.rs, crates/agentty-cli/src/commands.rs, crates/agentty-cli/tests/cli_e2e.rs]
+        tests: [public_help_advertises_only_implemented_verbs]
+        red_test_evidence: 2026-08-09 the compiled public binary advertised ws stop, machine connect, and machine disconnect even though each parsed only to an immediate not-implemented error and had no protocol implementation.
+        evidence: 2026-08-09 the compiled public `agentty ws --help` and `agentty machine --help` no longer advertise the three absent capabilities. Their parser variants, not-implemented execution branches, and obsolete mock expectations were deleted. Public help E2E, all 84 binary tests, static gate, and the full real-server CLI E2E passed.
 technical_debt:
   - id: DEBT-BUNDLE-VERSION-STAMP
     title: Desktop bundle version metadata cannot distinguish builds

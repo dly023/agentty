@@ -1,6 +1,13 @@
 version: 1
 updated: 2026-08-03
 entries:
+  - id: CLI-IMPLEMENTED-HELP-SURFACE-099
+    spec: CLI-IMPLEMENTED-HELP-SURFACE-02
+    source: [docs/specs/CLI_ORCHESTRATION_SPEC.yaml, crates/agentty-cli/src/cli.rs, crates/agentty-cli/src/commands.rs, crates/agentty-cli/tests/cli_e2e.rs]
+    static_check: script/check_cli_orchestration
+    tests: [public_help_advertises_only_implemented_verbs]
+    verification: cargo test -p agentty-cli --test cli_e2e --locked && ./script/check_cli_orchestration && ./script/presubmit quick
+    evidence: "2026-08-09 audit found public ws and machine help advertised three placeholder verbs whose only execution path returned not implemented without touching the protocol. The compiled public-help E2E was observed red with the actual ws help output, then passed after the parser variants, execution branches, and obsolete mock test were deleted; all 84 CLI binary tests and the complete real-server E2E passed."
   - id: QUALITY-CANONICAL-PRESUBMIT-CI-097
     spec: QUALITY-CANONICAL-PRESUBMIT-CI-01
     source: [docs/specs/QUALITY_GATE_SPEC.yaml, script/presubmit, .github/workflows/ci.yml, script/tests/quality_gate_contract.sh, script/tests/quality_infrastructure_contract.sh]

@@ -22,6 +22,10 @@ fn main() {
 
     let standalone_tests: &[(&str, fn())] = &[
         (
+            "public_help_advertises_only_implemented_verbs",
+            public_help_advertises_only_implemented_verbs,
+        ),
+        (
             "concurrent_server_start_callers_converge_on_one_runtime",
             concurrent_server_start_callers_converge_on_one_runtime,
         ),
@@ -100,6 +104,32 @@ fn main() {
     if failed > 0 {
         eprintln!("{failed} e2e test(s) failed");
         std::process::exit(1);
+    }
+}
+
+fn public_help_advertises_only_implemented_verbs() {
+    for (group, forbidden) in [
+        ("ws", &["stop"][..]),
+        ("machine", &["connect", "disconnect"][..]),
+    ] {
+        let out = Command::new(env!("CARGO_BIN_EXE_agentty"))
+            .args([group, "--help"])
+            .output()
+            .unwrap_or_else(|e| panic!("could not run public {group} help: {e}"));
+        assert!(
+            out.status.success(),
+            "agentty {group} --help failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let help = String::from_utf8_lossy(&out.stdout);
+        for verb in forbidden {
+            assert!(
+                !help
+                    .lines()
+                    .any(|line| line.split_whitespace().next() == Some(*verb)),
+                "agentty {group} --help advertised unimplemented verb {verb}:\n{help}"
+            );
+        }
     }
 }
 

@@ -59,10 +59,6 @@ pub fn execute(cli: Cli, ctx: &Context, backend: &mut dyn Backend) -> Result<Out
         Some(Command::Ws(WsCmd::Tree { ws })) => ws_tree(ws.as_deref(), ctx, backend),
         Some(Command::Ws(WsCmd::New { name })) => ws_new(name, backend),
         Some(Command::Ws(WsCmd::Rename { ws, name })) => ws_rename(&ws, name, backend),
-        Some(Command::Ws(WsCmd::Stop { .. })) => bail!(
-            "`agentty ws stop` is not implemented yet — the control dialect has no \
-             workspace-stop request; it arrives with the multi-subscriber slice"
-        ),
         Some(Command::Ws(WsCmd::Rm { ws })) => ws_rm(&ws, backend),
         Some(Command::Ws(WsCmd::Attach { ws })) => {
             ws_attach(address::parse_workspace(&ws), backend)
@@ -90,11 +86,6 @@ pub fn execute(cli: Cli, ctx: &Context, backend: &mut dyn Backend) -> Result<Out
         Some(Command::Wait(args)) => wait(args, ctx, backend),
         Some(Command::Status) | Some(Command::Server(ServerCmd::Status)) => status(backend),
         Some(Command::Machine(MachineCmd::Ls)) => machine_ls(backend),
-        Some(Command::Machine(MachineCmd::Connect { .. }))
-        | Some(Command::Machine(MachineCmd::Disconnect { .. })) => bail!(
-            "managing machine links from the CLI is not implemented yet — \
-             use the GUI's connection manager for now"
-        ),
         Some(Command::Server(ServerCmd::Start)) => {
             local_server(machine.as_deref(), "start", crate::server::start)
         }
@@ -1637,33 +1628,6 @@ mod tests {
             let err = execute(cli(&["agentty", path]), &Context::default(), &mut mock())
                 .expect_err("the GUI launcher is not implemented yet");
             assert!(err.to_string().contains("not wired up"), "{path}: {err}");
-        }
-    }
-
-    #[test]
-    fn the_still_missing_verbs_say_so_without_touching_the_wire() {
-        for (args, needle) in [
-            (vec!["agentty", "ws", "stop", "api"], "not implemented"),
-            (
-                vec!["agentty", "machine", "connect", "devbox"],
-                "not implemented",
-            ),
-            (
-                vec!["agentty", "machine", "disconnect", "devbox"],
-                "not implemented",
-            ),
-        ] {
-            let mut backend = mock();
-            let err = execute(cli(&args), &Context::default(), &mut backend)
-                .expect_err("stubbed verbs must fail loudly, not pretend");
-            assert!(
-                err.to_string().contains(needle),
-                "{args:?} should mention '{needle}': {err}"
-            );
-            assert!(
-                backend.control_calls.is_empty(),
-                "{args:?} must not invent protocol traffic"
-            );
         }
     }
 

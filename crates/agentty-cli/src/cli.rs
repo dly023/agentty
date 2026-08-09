@@ -297,12 +297,6 @@ pub enum WsCmd {
         name: String,
     },
 
-    #[command(about = "End the shells, keep the layout (not implemented yet)")]
-    Stop {
-        #[arg(value_name = "WORKSPACE")]
-        ws: String,
-    },
-
     #[command(about = "Delete the workspace")]
     Rm {
         #[arg(value_name = "WORKSPACE")]
@@ -395,18 +389,6 @@ pub enum PaneCmd {
 pub enum MachineCmd {
     #[command(about = "This machine and every linked remote")]
     Ls,
-
-    #[command(about = "Open a link to a machine from an SSH profile (not implemented yet)")]
-    Connect {
-        #[arg(value_name = "PROFILE")]
-        profile: String,
-    },
-
-    #[command(about = "Drop the link; the remote server keeps running (not implemented yet)")]
-    Disconnect {
-        #[arg(value_name = "MACHINE")]
-        machine: String,
-    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -584,10 +566,6 @@ mod tests {
             Some(Command::Ws(WsCmd::Rename { ws, name })) if ws == "api" && name == "web"
         ));
         assert!(matches!(
-            parse(&["agentty", "ws", "stop", "api"]).command,
-            Some(Command::Ws(WsCmd::Stop { ws })) if ws == "api"
-        ));
-        assert!(matches!(
             parse(&["agentty", "ws", "rm", "api"]).command,
             Some(Command::Ws(WsCmd::Rm { ws })) if ws == "api"
         ));
@@ -645,14 +623,6 @@ mod tests {
         assert!(matches!(
             parse(&["agentty", "machine", "ls"]).command,
             Some(Command::Machine(MachineCmd::Ls))
-        ));
-        assert!(matches!(
-            parse(&["agentty", "machine", "connect", "devbox"]).command,
-            Some(Command::Machine(MachineCmd::Connect { profile })) if profile == "devbox"
-        ));
-        assert!(matches!(
-            parse(&["agentty", "machine", "disconnect", "devbox"]).command,
-            Some(Command::Machine(MachineCmd::Disconnect { machine })) if machine == "devbox"
         ));
         for (verb, want) in [
             ("start", ServerCmd::Start),
