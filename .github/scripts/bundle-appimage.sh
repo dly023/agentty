@@ -111,7 +111,10 @@ done
 
 # Phase 2 — pack the finished AppDir. Done separately from linuxdeploy so the
 # completions added above are included.
-"$APPIMAGETOOL" "$APPDIR" "dist/${NAME}.AppImage"
+# Bundled musl helpers for both remote Linux arches live under usr/bin/server/,
+# so appimagetool sees multiple ELF architectures and requires an explicit ARCH
+# for the *desktop* host binary — not the helpers.
+ARCH="$LD_ARCH" "$APPIMAGETOOL" "$APPDIR" "dist/${NAME}.AppImage"
 chmod +x "dist/${NAME}.AppImage"
 rm -rf "$APPDIR" "$TOOLS"
 echo "✅ dist/${NAME}.AppImage"
