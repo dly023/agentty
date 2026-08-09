@@ -81,11 +81,11 @@ entries:
       direct_excluded_routes_and_persistence: "check_terminal_smooth_scroll locks trackpad/mouse-reporting/alternate direct paths and the persisted setting"
   - id: CLI-AGENT-WAIT-089
     spec: CLI-AGENT-WAIT-01
-    source: [docs/specs/CLI_ORCHESTRATION_SPEC.yaml, crates/agentty-cli/src/cli.rs, crates/agentty-cli/src/commands.rs]
+    source: [docs/specs/CLI_ORCHESTRATION_SPEC.yaml, crates/agentty-cli/src/cli.rs, crates/agentty-cli/src/commands.rs, crates/agentty-cli/tests/cli_e2e.rs]
     static_check: script/check_cli_orchestration
-    tests: [wait_returns_when_agent_state_matches, wait_treats_live_agentless_pane_as_idle, wait_timeout_uses_exit_code_124, wait_refuses_unrequested_pane_exit, wait_changed_refuses_the_state_it_arrived_in, wait_rechecks_liveness_for_a_reporting_agent]
-    verification: cargo test -p agentty-cli wait_ --locked && ./script/check_cli_orchestration && ./script/presubmit quick
-    evidence: "2026-08-09: observed red compile and behavior failures, then six wait focused tests, the complete agentty-cli package, static gate, and presubmit quick passed."
+    tests: [wait_returns_when_agent_state_matches, wait_treats_live_agentless_pane_as_idle, wait_timeout_uses_exit_code_124, wait_refuses_unrequested_pane_exit, wait_changed_refuses_the_state_it_arrived_in, wait_rechecks_liveness_for_a_reporting_agent, public_wait_observes_real_server_pane_state_and_timeout]
+    verification: cargo test -p agentty-cli wait_ --locked && cargo test -p agentty-cli --test cli_e2e --locked && ./script/check_cli_orchestration && ./script/presubmit quick
+    evidence: "2026-08-09: observed red compile and behavior failures, then six wait focused tests, the complete agentty-cli package, static gate, and presubmit quick passed. Acceptance follow-up first made the static gate red for a missing public E2E, then the real agentty binary against an isolated real agentty-server observed a live agentless pane as idle and emitted JSON timeout state with process exit code 124."
     acceptance:
       requested_state: wait_returns_when_agent_state_matches
       live_agentless_idle: wait_treats_live_agentless_pane_as_idle
@@ -93,7 +93,7 @@ entries:
       unrequested_exit_refused: wait_refuses_unrequested_pane_exit
       changed_rejects_initial_edge: wait_changed_refuses_the_state_it_arrived_in
       stale_agent_rechecks_pane: wait_rechecks_liveness_for_a_reporting_agent
-      public_integration: "cargo test -p agentty-cli --test cli_e2e --locked passed against isolated real agentty and agentty-server processes"
+      public_integration: public_wait_observes_real_server_pane_state_and_timeout
   - id: REMOTE-IMAGE-PASTE-088
     spec: REMOTE-IMAGE-PASTE-17
     source: [docs/specs/REMOTE_HELPER_SPEC.yaml, src/terminal/view.rs, src/ui/sftp.rs]

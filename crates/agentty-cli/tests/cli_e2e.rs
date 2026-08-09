@@ -48,6 +48,10 @@ fn main() {
             "run_keep_files_the_pane_so_ls_shows_it",
             run_keep_files_the_pane_so_ls_shows_it,
         ),
+        (
+            "public_wait_observes_real_server_pane_state_and_timeout",
+            public_wait_observes_real_server_pane_state_and_timeout,
+        ),
         ("send_then_capture_round_trip", send_then_capture_round_trip),
         (
             "status_reports_the_live_server",
@@ -520,6 +524,46 @@ fn run_keep_files_the_pane_so_ls_shows_it(daemon: &Daemon) {
         .expect("pane ls --json lists panes");
     assert_eq!(filed.len(), 1, "{panes}");
     assert!(filed[0]["pane"].as_u64().is_some_and(|p| p >= 1), "{panes}");
+}
+
+fn public_wait_observes_real_server_pane_state_and_timeout(daemon: &Daemon) {
+    let created = daemon.run_json(&["new", &workdir()]);
+    let pane = created["pane"]
+        .as_u64()
+        .expect("new prints the live pane id");
+    let target = format!("%{pane}");
+
+    let idle = daemon.run_json(&[
+        "wait",
+        &target,
+        "--until",
+        "idle",
+        "--timeout",
+        "2",
+        "--interval",
+        "50",
+    ]);
+    assert_eq!(idle["pane"].as_u64(), Some(pane), "{idle}");
+    assert_eq!(idle["status"].as_str(), Some("idle"), "{idle}");
+    assert_eq!(idle["matched"].as_bool(), Some(true), "{idle}");
+
+    let timed_out = daemon.run(&[
+        "wait",
+        &target,
+        "--until",
+        "done",
+        "--timeout",
+        "0",
+        "--interval",
+        "50",
+        "--json",
+    ]);
+    assert_eq!(timed_out.status.code(), Some(124), "{timed_out:?}");
+    let response: serde_json::Value = serde_json::from_slice(&timed_out.stdout)
+        .unwrap_or_else(|e| panic!("timed-out wait printed no JSON ({e}): {timed_out:?}"));
+    assert_eq!(response["pane"].as_u64(), Some(pane), "{response}");
+    assert_eq!(response["status"].as_str(), Some("idle"), "{response}");
+    assert_eq!(response["timed_out"].as_bool(), Some(true), "{response}");
 }
 
 fn config_dir_alone_resolves_both_endpoints(daemon: &Daemon) {
