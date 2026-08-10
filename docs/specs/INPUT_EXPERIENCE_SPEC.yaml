@@ -35,6 +35,12 @@ contracts:
       - changing_persisted_composer_mode_when_collapsing_the_dock
       - discarding_the_draft_when_collapsing_from_the_activity_bar
       - hiding_the_activity_summary_together_with_the_composer
+  - id: INPUT-COMPOSER-DOCK-REFLOW-11
+    rule: The expanded Composer is a compact in-flow dock below the terminal viewport and above the Agent Activity Bar. Opening or growing it reduces the terminal viewport so the terminal's bottom content remains visible above the dock; it never absolutely overlays terminal cells. The dock avoids a redundant title/mode header because the persistent Activity Bar owns status and the expand/collapse affordance. Input subscriptions mutate AgenttyApp through the callback's existing entity lease and never reacquire the same entity during GPUI effect delivery.
+    forbidden:
+      - absolute_composer_over_terminal_cells
+      - redundant_composer_header_above_activity_bar
+      - composer_input_callback_reacquiring_agentty_app
   - id: INPUT-FRAME-ALIGNED-SMOOTH-SCROLL-08
     rule: Discrete wheel scrolls of at least one line may be smoothed when the persisted smooth_scroll preference is enabled. The relative remaining distance advances from GPUI next-frame callbacks, scales decay by elapsed frame time, accumulates successive notches, wakes an idle window when queued, and is cancelled by every other viewport movement. Trackpad gestures, sub-line moves, mouse-reporting, and alternate-scroll remain direct. Stale callbacks and top/bottom clamps terminate without moving the viewport.
     forbidden:

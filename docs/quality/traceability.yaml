@@ -1,6 +1,13 @@
 version: 1
 updated: 2026-08-03
 entries:
+  - id: INPUT-COMPOSER-DOCK-REFLOW-101
+    spec: INPUT-COMPOSER-DOCK-REFLOW-11
+    source: [docs/specs/INPUT_EXPERIENCE_SPEC.yaml, src/ui/app.rs, src/ui/composer.rs]
+    static_check: script/check_ui_visual_system
+    tests: [composer_dock_reflow_contract]
+    verification: bash script/tests/composer_dock_reflow_contract.sh && cargo test --bin agentty-app composer --locked && ./script/presubmit quick
+    evidence: "2026-08-10 the contract was observed red on the absolute Composer overlay. Composer now participates in terminal-column flex flow above the Activity Bar, its redundant header is removed, and InputEvent mutates through the callback's existing AgenttyApp lease. Seven focused Composer tests passed; the repaired desktop binary entered its run loop without changing crash.log."
   - id: QUALITY-NO-UNOWNED-DEAD-PATHS-100
     spec: QUALITY-NO-UNOWNED-DEAD-PATHS-03
     source: [docs/specs/QUALITY_GATE_SPEC.yaml, src/ui/host_ops.rs, src/ui/host_registry.rs, src/core/keychain.rs, src/ui/settings.rs, src/ui/app.rs]

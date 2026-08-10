@@ -263,22 +263,19 @@ impl crate::ui::app::AgenttyApp {
                 .placeholder(crate::core::i18n::current(cx, "composer.placeholder"))
                 .default_value(initial)
         });
-        let weak = cx.weak_entity();
         cx.subscribe_in(
             &input,
             window,
-            move |_this, _input, event, window, cx| match event {
+            move |this, _input, event, window, cx| match event {
                 gpui_component::input::InputEvent::PressEnter { shift: false, .. } => {
-                    let _ = weak.update(cx, |this, cx| {
-                        if this.composer_completion.is_some() {
-                            this.composer_completion_accept(window, cx);
-                        } else {
-                            this.submit_composer(window, cx);
-                        }
-                    });
+                    if this.composer_completion.is_some() {
+                        this.composer_completion_accept(window, cx);
+                    } else {
+                        this.submit_composer(window, cx);
+                    }
                 }
                 gpui_component::input::InputEvent::Change => {
-                    let _ = weak.update(cx, |this, cx| this.composer_completion_refilter(cx));
+                    this.composer_completion_refilter(cx);
                 }
                 _ => {}
             },
@@ -647,35 +644,18 @@ impl crate::ui::app::AgenttyApp {
         &mut self,
         _window: &mut Window,
         cx: &mut gpui::Context<Self>,
-    ) -> Option<impl IntoElement> {
+    ) -> Option<impl IntoElement + use<>> {
         let state = self.composer.as_ref()?;
-        let mode = cx.global::<crate::core::config::Config>().composer_mode;
-        let mode_label = crate::core::i18n::current(cx, mode_i18n_key(mode));
         let menu = self.render_composer_completion_menu(cx);
         Some(
             div()
-                .absolute()
-                .left(px(12.))
-                .right(px(12.))
-                .bottom(px(10.))
+                .flex_shrink_0()
                 .gap_1()
-                .p(px(8.))
-                .rounded(px(10.))
-                .bg(cx.theme().popover)
-                .border_1()
+                .px_2()
+                .py_1()
+                .bg(cx.theme().background)
+                .border_t_1()
                 .border_color(cx.theme().border)
-                .shadow_lg()
-                .child(
-                    div()
-                        .flex()
-                        .items_center()
-                        .justify_between()
-                        .px_1()
-                        .text_xs()
-                        .text_color(cx.theme().muted_foreground)
-                        .child(crate::core::i18n::current(cx, "composer.dock_hint"))
-                        .child(mode_label),
-                )
                 .children(menu)
                 .child(Input::new(&state.input)),
         )

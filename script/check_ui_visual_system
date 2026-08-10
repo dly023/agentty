@@ -261,5 +261,6 @@ rg -q 'activity_bar_toggles_composer_without_mutating_mode' src/ui/composer.rs
 rg -q 'composer.toggle.expand' src/ui/activity_bar.rs assets/i18n/en-US.yaml assets/i18n/zh-CN.yaml
 rg -q 'composer.toggle.collapse' src/ui/activity_bar.rs assets/i18n/en-US.yaml assets/i18n/zh-CN.yaml
 rg -q 'toggle_composer_from_activity_bar' src/ui/activity_bar.rs
+bash script/tests/composer_dock_reflow_contract.sh
 
 echo "ui visual system checks passed"

@@ -11,6 +11,40 @@ feedback_policy:
   promotion_rule: Before implementation, promote the feedback into a stable spec contract, milestone item, traceability row, static check, and failing focused test as applicable.
   retention_rule: Never delete feedback silently; declined or superseded entries retain the reason and replacement ID when one exists.
 feedback:
+  - id: FEEDBACK-20260810-014
+    summary: Some configured remote hosts connect in Agentty while others do not.
+    status: verified
+    priority: high
+    area: native_ssh_connectivity
+    decision: Compare every configured alias through the target-owning OpenSSH client before changing Agentty. Thirteen aliases completed a real BatchMode command; n150 alone timed out at TCP connect to 192.168.80.142:22, matching Agentty's repeated timeout and network-unreachable diagnostics. Do not add an Agentty fallback for a host that OpenSSH cannot reach.
+    evidence:
+      - america, dev-100, dev-150, dnyx216, dnyx226, gpu, hermes, iris, o1, o3, o5, owls, and vps returned AGENTTY_SSH_OK
+      - n150 failed with ssh exit 255 and Operation timed out to 192.168.80.142 port 22
+      - ssh -G n150 and Agentty config both resolve user bajrang, host 192.168.80.142, port 22
+      - Agentty logs report the same endpoint as connection timed out or Network is unreachable
+    next_action: Repair n150 network reachability, routing, VPN, power, or sshd outside Agentty; rerun the same real-host matrix afterward. Separately triage stale remote server protocol/build warnings only if they reproduce on a currently reachable host.
+  - id: FEEDBACK-20260810-013
+    summary: Inspect recent Agentty logs and fix actionable bugs rather than waiting for a separate crash report.
+    status: verified
+    priority: high
+    area: composer_input_crash
+    decision: crash.log shows a deterministic GPUI double-lease panic in ensure_composer_open when an InputEvent callback calls weak.update on AgenttyApp while the subscription already owns its update lease. Remove the nested reacquisition through the canonical callback context and lock it with the Composer dock contract.
+    promoted_to:
+      spec: INPUT-COMPOSER-DOCK-REFLOW-11
+      traceability: INPUT-COMPOSER-DOCK-REFLOW-101
+      milestone: M2-INPUT/INPUT-024
+    next_action: None — nested reacquisition was removed, focused tests and the structural ownership contract pass, and the repaired app entered its real run loop without adding a crash record.
+  - id: FEEDBACK-20260810-012
+    summary: Make the bottom Composer visually simpler and reflow the terminal upward when it opens instead of covering the terminal's existing input line.
+    status: verified
+    priority: high
+    area: composer_layout
+    decision: Replace the floating absolute card with one compact in-flow dock between terminal body and Agent Activity Bar. Remove the redundant hint/mode header; Activity Bar remains the status and toggle owner.
+    promoted_to:
+      spec: INPUT-COMPOSER-DOCK-REFLOW-11
+      traceability: INPUT-COMPOSER-DOCK-REFLOW-101
+      milestone: M2-INPUT/INPUT-024
+    next_action: None — the Composer now occupies terminal-column flow above the Activity Bar, its redundant header is gone, focused tests pass, and the repaired desktop binary entered its real run loop.
   - id: FEEDBACK-20260809-011
     summary: Local development and packaging workflows left multiple visible Agentty application bundles; keep only the newest installed application and do not leave user-visible backup or duplicate bundles behind.
     status: captured
@@ -2276,6 +2310,14 @@ milestones:
         tests: [production_dead_path_contract]
         red_test_evidence: 2026-08-09 exact call-site search found HostOps::run_or_notify, HostRegistry::local/len, CredentialStore::delete_ref, ThemeEditor::for_id, and AgenttyApp::open_config_file only at their own definitions or write site.
         evidence: 2026-08-09 all six paths and their dead-code suppressions/write sites were deleted. The focused contract first failed on run_or_notify and then passed, canonical quality contracts passed, all-targets check passed, and all 1,024 non-ignored agentty-app tests passed.
+      - id: INPUT-024
+        title: Reflow the terminal for a compact Composer and eliminate input double-lease crashes
+        status: verified
+        spec: INPUT-COMPOSER-DOCK-REFLOW-11
+        source: [src/ui/app.rs, src/ui/composer.rs]
+        tests: [composer_dock_reflow_contract]
+        red_test_evidence: 2026-08-10 production Composer uses absolute positioning inside body_area; crash.log records cannot update AgenttyApp while it is already being updated from ensure_composer_open InputEvent delivery.
+        evidence: 2026-08-10 the structural contract first failed on absolute overlay. Composer moved between body_area and Activity Bar in terminal-column flex flow, the redundant header was removed, and InputEvent now mutates through the existing subscription lease. Seven focused Composer tests passed; the real binary entered its run loop and crash.log mtime/size remained unchanged.
 technical_debt:
   - id: DEBT-BUNDLE-VERSION-STAMP
     title: Desktop bundle version metadata cannot distinguish builds

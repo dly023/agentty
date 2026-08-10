@@ -118,7 +118,7 @@ impl AgenttyApp {
         &mut self,
         window: &mut Window,
         cx: &mut Context<Self>,
-    ) -> Option<impl IntoElement> {
+    ) -> Option<impl IntoElement + use<>> {
         let terminal = self.focused_leaf(window, cx)?;
         let (state, target) = {
             let terminal_view = terminal.read(cx);

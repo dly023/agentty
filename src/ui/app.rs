@@ -5499,8 +5499,7 @@ impl Render for AgenttyApp {
             })
             .when_some(self.render_worktree_prompt_overlay(cx), |this, el| {
                 this.child(el)
-            })
-            .when_some(self.render_composer(window, cx), |this, el| this.child(el));
+            });
 
         let diff_overlay = self.render_diff_overlay(window, cx);
 
@@ -5543,6 +5542,7 @@ impl Render for AgenttyApp {
             .relative()
             .when_some(column_title_bar, |this, bar| this.child(bar))
             .child(body_area)
+            .when_some(self.render_composer(window, cx), |this, el| this.child(el))
             .when_some(activity_bar, |this, bar| this.child(bar))
             .children(column_overlays);
         let panel_row = div()
