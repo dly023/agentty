@@ -184,7 +184,14 @@ fn discover_jcode(host: &dyn Host, request: &DiscoveryRequest) -> DiscoveryOutco
     let mut rows = rows;
     rows.sort_by(|a, b| b.updated_at_unix_ms.cmp(&a.updated_at_unix_ms));
     rows.truncate(JCODE_SESSION_LIMIT);
-    DiscoveryOutcome::Complete(rows)
+    if rows.is_empty() {
+        // A live Jcode API may legitimately answer with an empty or filtered
+        // list while the durable session files still contain history. Do not
+        // publish an empty API result over the canonical file fallback.
+        file_result
+    } else {
+        DiscoveryOutcome::Complete(rows)
+    }
 }
 
 fn discover_jcode_session_files(host: &dyn Host, request: &DiscoveryRequest) -> DiscoveryOutcome {
