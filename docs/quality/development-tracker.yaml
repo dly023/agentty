@@ -11,6 +11,13 @@ feedback_policy:
   promotion_rule: Before implementation, promote the feedback into a stable spec contract, milestone item, traceability row, static check, and failing focused test as applicable.
   retention_rule: Never delete feedback silently; declined or superseded entries retain the reason and replacement ID when one exists.
 feedback:
+  - id: FEEDBACK-20260814-012
+    summary: Local acceptance must distinguish the non-GUI agentty launcher from the real agentty-app GUI binary, remove stale packages before building, and provide a directly testable development or packaged launch path for the user.
+    status: captured
+    priority: high
+    area: local_gui_acceptance_workflow
+    decision: Do not report a successful build or a running non-GUI launcher as desktop acceptance. The canonical local acceptance workflow must identify the correct binary, clean only stale platform/architecture outputs, launch the GUI, expose the exact artifact or command to the user, and record when OS-level visual interaction is unavailable.
+    next_action: Add a deterministic local acceptance script/check for agentty-app versus agentty, stale artifact cleanup, launch readiness, and artifact handoff; keep real click/input validation explicitly user- or OS-tool-dependent.
   - id: FEEDBACK-20260814-011
     summary: The Resume hover triangle/badge is visually noisy and should be removed. Clicking a historical session row should already have automatic resume as the default interaction semantics, without a separate hover affordance.
     status: implemented
