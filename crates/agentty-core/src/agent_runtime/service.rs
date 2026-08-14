@@ -57,6 +57,7 @@ impl DiscoveryRequest {
             physical_source_limit: DEFAULT_PHYSICAL_SOURCE_LIMIT,
         }
     }
+
 }
 
 pub fn discover(host: &dyn Host, request: &DiscoveryRequest) -> DiscoveryOutcome {
@@ -227,6 +228,7 @@ fn discover_jcode_session_files(host: &dyn Host, request: &DiscoveryRequest) -> 
                 .then(|| message.get("content"))
                 .flatten()
                 .and_then(jcode_message_text)
+                .filter(|text| !is_jcode_internal_system_reminder(text))
                 .and_then(|text| first_user_title_candidate(&text))
         });
         let has_user_message = first_user_message.is_some();
@@ -278,6 +280,10 @@ fn jcode_message_text(value: &serde_json::Value) -> Option<String> {
             .map(str::to_owned),
         _ => None,
     }
+}
+
+fn is_jcode_internal_system_reminder(text: &str) -> bool {
+    text.trim_start().starts_with("<system-reminder>")
 }
 
 #[cfg(not(unix))]
