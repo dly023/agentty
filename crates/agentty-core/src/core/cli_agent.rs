@@ -22,10 +22,11 @@ pub enum CLIAgent {
     Grok,
     Omp,
     Qwen,
+    Jcode,
 }
 
 impl CLIAgent {
-    pub const ALL: [CLIAgent; 18] = [
+    pub const ALL: [CLIAgent; 19] = [
         CLIAgent::Claude,
         CLIAgent::Codex,
         CLIAgent::Gemini,
@@ -44,6 +45,7 @@ impl CLIAgent {
         CLIAgent::Grok,
         CLIAgent::Omp,
         CLIAgent::Qwen,
+        CLIAgent::Jcode,
     ];
 
     fn aliases(self) -> &'static [&'static str] {
@@ -66,6 +68,7 @@ impl CLIAgent {
             CLIAgent::Grok => &["grok"],
             CLIAgent::Omp => &["omp", "oh-my-pi"],
             CLIAgent::Qwen => &["qwen", "qwen-code"],
+            CLIAgent::Jcode => &["jcode"],
         }
     }
 
@@ -89,6 +92,7 @@ impl CLIAgent {
             CLIAgent::Grok => "grok",
             CLIAgent::Omp => "omp",
             CLIAgent::Qwen => "qwen",
+            CLIAgent::Jcode => "jcode",
         }
     }
 
@@ -117,6 +121,7 @@ impl CLIAgent {
             CLIAgent::Grok => "Grok",
             CLIAgent::Omp => "Omp",
             CLIAgent::Qwen => "Qwen Code",
+            CLIAgent::Jcode => "Jcode",
         }
     }
 
@@ -340,6 +345,7 @@ impl CLIAgent {
             // brand-purple glyph (glyph_rgb) keeps the π readable on that plate.
             CLIAgent::Omp => 0xEFEDE9,
             CLIAgent::Qwen => 0x7C3AED,
+            CLIAgent::Jcode => 0x7E7E7E,
         }
     }
 
@@ -366,6 +372,7 @@ impl CLIAgent {
             CLIAgent::Grok => "icons/agents/grok.svg",
             CLIAgent::Pi => "icons/agents/pi.svg",
             CLIAgent::Omp => "icons/agents/omp.svg",
+            CLIAgent::Jcode => "icons/agents/jcode.svg",
             CLIAgent::Aider
             | CLIAgent::Auggie
             | CLIAgent::Hermes
@@ -819,6 +826,15 @@ mod tests {
             None
         );
         assert_eq!(CLIAgent::detect_from_argv(&argv(&[])), None);
+    }
+
+    #[test]
+    fn detects_jcode_as_runtime_agent_for_live_carrier_projection() {
+        assert_eq!(
+            CLIAgent::detect_from_argv(&argv(&["jcode"])),
+            Some(CLIAgent::Jcode)
+        );
+        assert_eq!(CLIAgent::Jcode.icon_path(), "icons/agents/jcode.svg");
     }
 
     #[test]

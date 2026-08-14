@@ -33,10 +33,10 @@ contracts:
     forbidden:
       - indefinite_discovering_spinner_after_scan_timeout
   - id: SESSION-JCODE-STABLE-LIST-GATE-34
-    rule: Jcode session history is not advertised as a Session Navigator provider, CLI Agent identity, scanner, store root, or resumable row until Jcode publishes a versioned machine-readable list contract that can run in the selected Environment. The future contract must default to user-root, non-debug, visible-message-bearing, resumable sessions and distinguish command, schema, partial, stale, cancellation, and timeout failure so Agentty can preserve the last complete generation. Private ~/.jcode snapshot, journal, imported, backup, filename, count, parent-only, or timestamp heuristics are never a provider boundary. While the upstream contract is absent, public Agentty discovery must remain unchanged and expose no partial Jcode integration.
+    rule: Jcode may be recognized as a runtime CLI identity solely to project a non-persistent live carrier when a foreground `jcode` process is detected. Jcode session history is not advertised as a Session Navigator provider, scanner, store root, or resumable row until Jcode publishes a versioned machine-readable list contract that can run in the selected Environment. The future contract must default to user-root, non-debug, visible-message-bearing, resumable sessions and distinguish command, schema, partial, stale, cancellation, and timeout failure so Agentty can preserve the last complete generation. Private ~/.jcode snapshot, journal, imported, backup, filename, count, parent-only, or timestamp heuristics are never a provider boundary. While the upstream contract is absent, only the runtime carrier path is allowed and public history discovery must remain unchanged.
     forbidden:
       - advertising_jcode_from_private_store_files
-      - registering_jcode_identity_without_a_stable_list_contract
+      - registering_jcode_history_provider_without_a_stable_list_contract
       - treating_parent_id_null_as_sufficient_user_session_filtering
       - publishing_partial_jcode_rows_on_command_or_schema_failure
   - id: SESSION-ROW-ACTIONS-07

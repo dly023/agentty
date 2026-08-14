@@ -11,6 +11,20 @@ feedback_policy:
   promotion_rule: Before implementation, promote the feedback into a stable spec contract, milestone item, traceability row, static check, and failing focused test as applicable.
   retention_rule: Never delete feedback silently; declined or superseded entries retain the reason and replacement ID when one exists.
 feedback:
+  - id: FEEDBACK-20260814-014
+    summary: The environment switcher indicator is too sparse when it shows only an alias. It should carry richer target context such as resolved host/IP, user, and remote/local state so users can distinguish similarly named environments.
+    status: captured
+    priority: high
+    area: environment_switcher_identity
+    decision: Keep the configured alias as the primary label, add a secondary environment identity line or tooltip containing user@host/IP, port when meaningful, and local/remote state, while redacting secrets and preserving stable Environment identity. This must not change routing authority or expose credentials.
+    next_action: Trace the canonical environment display model and switcher render path, add representative local/remote/duplicate-alias tests, then implement through the existing Environment/Host metadata source.
+  - id: FEEDBACK-20260814-013
+    summary: Real acceptance still shows that entering a remote environment does not automatically open the left sidebar, despite the existing refresh-side mutation. The remote attach lifecycle is therefore not behaviorally complete.
+    status: captured
+    priority: critical
+    area: remote_session_sidebar_lifecycle
+    decision: Treat the observed failure as a regression against SESSION-REMOTE-SIDEBAR-36. Trace the actual connect, workspace selection, navigator refresh, and render timing path instead of relying on a conditional mutation inside discovery completion. Add a test that starts collapsed, attaches remote, waits for the committed generation, and observes an open sidebar with remote-scoped rows.
+    next_action: Reproduce with the same remote attach path, identify which state owner overwrites sidebar_collapsed or prevents the refresh callback, then fix through one canonical lifecycle transition and verify with a real remote environment.
   - id: FEEDBACK-20260814-012
     summary: Local acceptance must distinguish the non-GUI agentty launcher from the real agentty-app GUI binary, remove stale packages before building, and provide a directly testable development or packaged launch path for the user.
     status: captured

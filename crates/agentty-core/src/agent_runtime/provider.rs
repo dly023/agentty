@@ -306,8 +306,8 @@ mod tests {
     fn jcode_is_not_advertised_without_stable_machine_list_contract() {
         assert_eq!(
             CLIAgent::from_slug("jcode"),
-            None,
-            "the public CLI Agent identity must stay absent until Jcode has a stable list API"
+            Some(CLIAgent::Jcode),
+            "runtime CLI identity is needed for temporary live carrier detection"
         );
         assert!(
             PERSISTED_PROVIDER_DESCRIPTORS
