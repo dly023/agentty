@@ -42,7 +42,7 @@
 
 ## 仍需补强的验证项
 
-- [ ] **Jcode 文件发现 fixture 测试**
+- [x] **Jcode 文件发现 fixture 测试**
   - 覆盖：主会话、子代理、debug、journal、纯 system-reminder、system-reminder + 真实用户消息。
 
 - [ ] **Jcode API fallback 的 system-reminder 语义**

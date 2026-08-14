@@ -1283,6 +1283,84 @@ mod tests {
     }
 
     #[test]
+    fn jcode_discovery_filters_internal_sessions_and_keeps_real_user_sessions() {
+        let temp = tempfile::tempdir().unwrap();
+        let roots = roots(temp.path());
+        let sessions = roots.home.join(".jcode/sessions");
+        fs::create_dir_all(&sessions).unwrap();
+        let write = |name: &str, value: serde_json::Value| {
+            fs::write(sessions.join(name), serde_json::to_vec(&value).unwrap()).unwrap();
+        };
+        write(
+            "main.json",
+            serde_json::json!({
+                "id": "main",
+                "title": "Named session",
+                "messages": [{"role":"user","content":"Actual request"}]
+            }),
+        );
+        write(
+            "mixed.json",
+            serde_json::json!({
+                "id": "mixed",
+                "messages": [
+                    {"role":"user","content":"<system-reminder>bootstrap</system-reminder>"},
+                    {"role":"user","content":[{"type":"text","text":"Keep this session"}]}
+                ]
+            }),
+        );
+        write(
+            "reminder-only.json",
+            serde_json::json!({
+                "id": "reminder-only",
+                "messages": [{"role":"user","content":"<system-reminder>only internal</system-reminder>"}]
+            }),
+        );
+        write(
+            "child.json",
+            serde_json::json!({
+                "id": "child",
+                "parent_id": "main",
+                "messages": [{"role":"user","content":"child"}]
+            }),
+        );
+        write(
+            "debug.json",
+            serde_json::json!({
+                "id": "debug",
+                "is_debug": true,
+                "messages": [{"role":"user","content":"debug"}]
+            }),
+        );
+        write(
+            "journal.journal.json",
+            serde_json::json!({
+                "id": "journal",
+                "messages": [{"role":"user","content":"journal"}]
+            }),
+        );
+
+        let DiscoveryOutcome::Complete(rows) = discover(
+            &*LocalHost::new(),
+            &DiscoveryRequest {
+                providers: vec![ProviderId::Jcode],
+                ..DiscoveryRequest::standard(roots)
+            },
+        ) else {
+            panic!("Jcode filtering should complete");
+        };
+        let ids: Vec<_> = rows.iter().map(|row| row.key.session_id.as_str()).collect();
+        assert_eq!(ids.len(), 2);
+        assert!(ids.contains(&"main"));
+        assert!(ids.contains(&"mixed"));
+        assert!(!ids.iter().any(|id| ["reminder-only", "child", "debug", "journal"].contains(id)));
+        assert_eq!(
+            rows.iter().find(|row| row.key.session_id == "mixed").and_then(|row| row.title.as_deref()),
+            Some("Keep this session")
+        );
+    }
+
+    #[test]
     fn cursor_scanner_ignores_unrelated_project_cache_nodes() {
         let temp = tempfile::tempdir().unwrap();
         let roots = roots(temp.path());

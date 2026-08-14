@@ -22,7 +22,7 @@ feedback:
       traceability: SESSION-JCODE-STABLE-LIST-GATE-34
     evidence:
       - docs/quality/JCODE_SOURCE_ALIGNMENT_CHECKLIST.md records source paths, adopted rules, open checks, and desktop acceptance items.
-    next_action: Add the missing Jcode discovery fixtures and resolve the stable API fallback boundary before claiming full alignment.
+    next_action: Resolve the stable API fallback boundary and complete desktop acceptance before claiming full alignment.
   - id: FEEDBACK-20260814-020
     summary: Default session titles should use the first user message only when no explicit session name exists. Jcode must hide internal system-reminder-only sessions, and its official logo needs a higher-contrast badge plate.
     status: promoted

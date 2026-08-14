@@ -87,9 +87,9 @@ entries:
     evidence: "2026-08-09 audit found the already-proven pipefail/SIGPIPE failure class in 17 additional repository pipelines. The focused contract was observed red with exact paths, every live early-exit consumer was replaced by a fully consuming matcher, a repository-wide fail-closed lint was added, and focused contracts plus quick presubmit passed."
   - id: SESSION-JCODE-STABLE-LIST-GATE-096
     spec: SESSION-JCODE-STABLE-LIST-GATE-34
-    source: [docs/specs/SESSION_NAVIGATOR_SPEC.yaml, crates/agentty-core/src/core/cli_agent.rs, crates/agentty-core/src/agent_runtime/provider.rs]
+    source: [docs/specs/SESSION_NAVIGATOR_SPEC.yaml, crates/agentty-core/src/core/cli_agent.rs, crates/agentty-core/src/agent_runtime/provider.rs, crates/agentty-core/src/agent_runtime/service.rs]
     static_check: script/check_session_navigator
-    tests: [jcode_is_advertised_only_through_stable_harness_api]
+    tests: [jcode_is_advertised_only_through_stable_harness_api, jcode_discovery_filters_internal_sessions_and_keeps_real_user_sessions]
     verification: cargo test -p agentty-core jcode_is_advertised_only_through_stable_harness_api --lib --locked && ./script/check_session_navigator && ./script/presubmit quick
     evidence: "2026-08-09: installed Jcode v0.73.0 public list command exited 2 and real private-store rows disproved parent/debug/filename heuristics. The new static gate was observed red before the registry regression existed; the focused public-boundary test then passed, proving neither CLIAgent slug lookup nor persisted provider discovery advertises Jcode while the stable upstream contract is absent."
     acceptance:
