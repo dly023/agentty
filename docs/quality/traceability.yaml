@@ -1,6 +1,48 @@
 version: 1
 updated: 2026-08-03
 entries:
+  - id: WINDOW-SESSION-MULTI-01
+    spec: WINDOW-SESSION-MULTI-01
+    source: [docs/specs/WINDOW_SESSION_LAYOUT_SPEC.yaml, src/ui/tab_strip.rs, src/ui/app.rs, src/core/session.rs]
+    static_check: script/check_spec_matrix
+    tests: []
+    verification: implementation pending; ./script/presubmit quick
+    evidence: "2026-08-14: window-level multi-session, canonical split reuse, detach, atomic persistence, and restore recovery contracts were promoted from user feedback; implementation tests are pending."
+  - id: WINDOW-SESSION-DROP-SPLIT-RIGHT-02
+    spec: WINDOW-SESSION-DROP-SPLIT-RIGHT-02
+    source: [docs/specs/WINDOW_SESSION_LAYOUT_SPEC.yaml, src/ui/tab_strip.rs]
+    static_check: script/check_spec_matrix
+    tests: []
+    verification: implementation pending; ./script/presubmit quick
+    evidence: "2026-08-14: drag-to-right-split contract recorded; implementation pending."
+  - id: WINDOW-SESSION-SPLIT-MENU-03
+    spec: WINDOW-SESSION-SPLIT-MENU-03
+    source: [docs/specs/WINDOW_SESSION_LAYOUT_SPEC.yaml, src/ui/tab_strip.rs]
+    static_check: script/check_spec_matrix
+    tests: []
+    verification: implementation pending; ./script/presubmit quick
+    evidence: "2026-08-14: context-menu split actions recorded; implementation pending."
+  - id: WINDOW-SESSION-DETACH-04
+    spec: WINDOW-SESSION-DETACH-04
+    source: [docs/specs/WINDOW_SESSION_LAYOUT_SPEC.yaml, src/ui/tab_strip.rs, src/ui/windows.rs]
+    static_check: script/check_spec_matrix
+    tests: []
+    verification: implementation pending; ./script/presubmit quick
+    evidence: "2026-08-14: precise detach-to-new-window contract recorded; implementation pending."
+  - id: WINDOW-SESSION-PERSISTENCE-05
+    spec: WINDOW-SESSION-PERSISTENCE-05
+    source: [docs/specs/WINDOW_SESSION_LAYOUT_SPEC.yaml, src/ui/app.rs]
+    static_check: script/check_spec_matrix
+    tests: []
+    verification: implementation pending; ./script/presubmit quick
+    evidence: "2026-08-14: atomic window layout persistence contract recorded; implementation pending."
+  - id: WINDOW-SESSION-RECOVERY-06
+    spec: WINDOW-SESSION-RECOVERY-06
+    source: [docs/specs/WINDOW_SESSION_LAYOUT_SPEC.yaml, src/ui/app.rs]
+    static_check: script/check_spec_matrix
+    tests: []
+    verification: implementation pending; ./script/presubmit quick
+    evidence: "2026-08-14: last-complete-commit recovery contract recorded; implementation pending."
   - id: REMOTE-CONNECTION-GENERATION-18
     spec: REMOTE-CONNECTION-GENERATION-18
     source: [docs/specs/REMOTE_HELPER_SPEC.yaml, src/ui/remote_workspace.rs]
@@ -8,6 +50,13 @@ entries:
     tests: [stale_remote_connection_result_is_ignored]
     verification: cargo test --bin agentty-app remote_workspace --locked && ./script/presubmit quick
     evidence: "2026-08-14: connection attempts now carry a per-host generation so late results cannot replace a newer attempt."
+  - id: REMOTE-INSTALL-REUSE-WITHOUT-UNAME-19
+    spec: REMOTE-INSTALL-REUSE-WITHOUT-UNAME-19
+    source: [docs/specs/REMOTE_HELPER_SPEC.yaml, crates/agentty-core/src/daemon/install/mod.rs]
+    static_check: script/check_spec_matrix
+    tests: [an_usable_published_server_does_not_require_uname_probe]
+    verification: cargo test -p agentty-core daemon::install::tests --locked && ./script/presubmit quick
+    evidence: "2026-08-14: a compatible published helper now reaches daemon setup without uname; the focused regression and all 53 installer tests pass."
   - id: SESSION-TITLE-PRECEDENCE-11
     spec: SESSION-TITLE-PRECEDENCE-11
     source: [docs/specs/SESSION_NAVIGATOR_SPEC.yaml, crates/agentty-core/src/agent_runtime/service.rs, crates/agentty-core/src/agent_runtime/navigator.rs]

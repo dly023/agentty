@@ -554,7 +554,7 @@ impl From<InstallError> for io::Error {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InstallReport {
-    pub asset: &'static str,
+    pub asset: Option<&'static str>,
     pub paths: RemotePaths,
     pub installed: bool,
     pub confirmed: bool,
@@ -676,19 +676,6 @@ impl<'a> Installer<'a> {
     }
 
     pub fn run(&self) -> Result<InstallReport, InstallError> {
-        let uname = self
-            .ops
-            .run("uname -sm")
-            .map_err(InstallError::Probe)
-            .and_then(|out| {
-                if out.success() {
-                    Ok(out.stdout)
-                } else {
-                    Err(InstallError::Probe(out.failure_reason()))
-                }
-            })?;
-        let asset = asset::asset_for_uname(&uname).map_err(InstallError::Unsupported)?;
-
         let home = self.ops.home_dir().map_err(InstallError::NoHome)?;
         let paths = self.paths_for(&home);
 
@@ -701,7 +688,7 @@ impl<'a> Installer<'a> {
             })?;
 
         let mut report = InstallReport {
-            asset,
+            asset: None,
             paths: paths.clone(),
             installed: false,
             confirmed: false,
@@ -712,6 +699,19 @@ impl<'a> Installer<'a> {
 
         let usable = already.is_some_and(|stat| !stat.is_dir && stat.mode & 0o100 != 0);
         if !usable {
+            let uname = self
+                .ops
+                .run("uname -sm")
+                .map_err(InstallError::Probe)
+                .and_then(|out| {
+                    if out.success() {
+                        Ok(out.stdout)
+                    } else {
+                        Err(InstallError::Probe(out.failure_reason()))
+                    }
+                })?;
+            let asset = asset::asset_for_uname(&uname).map_err(InstallError::Unsupported)?;
+            report.asset = Some(asset);
             match self.adoptable_running_server()? {
                 Some((exe, spoken)) => {
                     log::info!(

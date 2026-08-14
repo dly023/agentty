@@ -1,0 +1,19 @@
+version: 1
+updated: 2026-08-14
+domain: cross_window_session_layout
+contracts:
+  - id: WINDOW-SESSION-MULTI-01
+    rule: An application window may contain multiple independent sessions. Session identity and provider authority remain unchanged when sessions share a window.
+  - id: WINDOW-SESSION-DROP-SPLIT-RIGHT-02
+    rule: Dropping a session tab onto another tab in a window places the dragged session as the target session's right-hand split by calling the existing horizontal split primitive.
+    forbidden:
+      - replacing_the_target_session
+      - creating_a_parallel_split_tree
+  - id: WINDOW-SESSION-SPLIT-MENU-03
+    rule: The session context menu exposes the existing right and down split actions and routes both through the canonical split primitive.
+  - id: WINDOW-SESSION-DETACH-04
+    rule: The session context menu exposes Move to New Window. The action removes the session from the current window and creates one new window containing it, or rolls back without losing the session if window creation fails.
+  - id: WINDOW-SESSION-PERSISTENCE-05
+    rule: Window ownership, split layout, tab order, and window geometry persist atomically. Restart restores the last complete committed layout; incomplete writes never replace it.
+  - id: WINDOW-SESSION-RECOVERY-06
+    rule: If a persisted window or session is missing during restore, the session remains discoverable in an unassigned group and no unrelated session is deleted.

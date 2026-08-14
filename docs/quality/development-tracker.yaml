@@ -11,6 +11,54 @@ feedback_policy:
   promotion_rule: Before implementation, promote the feedback into a stable spec contract, milestone item, traceability row, static check, and failing focused test as applicable.
   retention_rule: Never delete feedback silently; declined or superseded entries retain the reason and replacement ID when one exists.
 feedback:
+  - id: FEEDBACK-20260814-031
+    summary: 分屏布局必须直接复用现有向右分屏和向下分屏能力，不新增平行的分屏实现。
+    status: captured
+    priority: critical
+    area: split_layout_primitive_reuse
+    decision: 跨窗口会话聚合只负责解析拖拽目标并调用现有 split-right/split-down canonical primitive；不复制树布局、pane materialization 或 split 持久化逻辑。默认拖拽到标签使用现有向右分屏，右键可选择向右或向下分屏。
+    next_action: 开工前审计现有分屏 primitive、调用入口、持久化和回滚测试，将窗口级会话移动接入同一条 canonical 路径。
+
+  - id: FEEDBACK-20260814-030
+    summary: 标签拖拽到另一个标签上时，默认将被拖拽会话作为目标会话右侧分屏；同窗口会话需要通过会话右键菜单精确移出当前窗口。
+    status: captured
+    priority: critical
+    area: tab_drop_split_and_window_detach
+    decision: 拖拽到 Tab 命中区采用“右侧分屏”语义，不直接合并或替换会话；会话右键菜单提供“移出到新窗口”，作为精确且可发现的窗口脱离入口。拖拽和菜单共用同一窗口/分屏布局持久化 primitive，并支持取消、回滚和窗口创建失败恢复。
+    next_action: 将窗口、分屏、Tab drop target、detach menu、持久化和恢复失败路径提升为 SPEC/MATRIX，并先写拖拽命中与右键移出失败测试。
+
+  - id: FEEDBACK-20260814-029
+    summary: 用户澄清这里的“屏幕”主要指应用窗口，而不是物理显示器；会话需要在窗口之间聚合、拖出和持久化。
+    status: captured
+    priority: critical
+    area: session_window_ownership
+    decision: 修正交互模型：窗口是会话容器，物理显示器只是窗口位置承载。拖拽会话 Tab 可在窗口间移动，拖到窗口外创建新窗口；右键提供移动到已有窗口和新建窗口并移动。持久化保存 session_id 到 window_id 的归属及窗口布局，不绑定物理显示器编号。
+    next_action: 以窗口生命周期、跨窗口拖拽、窗口关闭恢复和持久化为正本重新编写 spec 与矩阵，删除“屏幕”歧义。
+
+  - id: FEEDBACK-20260814-028
+    summary: 同一屏幕内的多个会话需要能够拖拽出来形成独立屏幕/窗口；用户询问是否仅用右键菜单即可完成。
+    status: captured
+    priority: high
+    area: cross_screen_session_drag_out
+    decision: 右键菜单保留为精确操作入口，但不能替代拖拽。建议支持会话 Tab 的拖拽脱离：拖到屏幕外或边缘创建新屏幕容器，拖到已有屏幕合并；右键提供“移动到屏幕”“新建屏幕并移动”“聚焦所在屏幕”作为键盘和无鼠标替代路径。
+    next_action: 在跨屏布局 spec 中定义 drag threshold、drop target、取消回滚、持久化提交和窗口创建失败恢复测试。
+
+  - id: FEEDBACK-20260814-027
+    summary: 跨屏会话聚合布局不能只在当前运行时生效，需要持久化，重启后保持会话与屏幕布局。
+    status: captured
+    priority: high
+    area: cross_screen_session_layout_persistence
+    decision: 持久化会话到屏幕的用户布局映射及布局版本，不复制会话数据；恢复时按会话稳定身份重建分组，缺失会话进入未归类组，冲突采用最后一次完整提交，写入失败不得覆盖上一次有效布局。
+    next_action: 与跨屏聚合反馈合并为稳定 spec，定义布局 schema、原子提交、恢复降级、会话删除/重命名和跨设备冲突测试。
+
+  - id: FEEDBACK-20260814-026
+    summary: 用户希望把原本属于不同屏幕的会话标签聚合到同一个屏幕，并要求交互快速、精准、省事。
+    status: captured
+    priority: high
+    area: cross_screen_session_aggregation
+    decision: 建议采用单一聚合会话导航器作为入口，按环境/屏幕分组但不复制会话；点击会话后自动聚焦所属屏幕，跨屏移动使用明确的“移动到当前屏幕”动作，默认不改变会话归属，避免误操作。
+    next_action: 先补充跨屏会话聚合的 spec、交互矩阵和失败路径测试，再实现“聚合查看 + 一键聚焦 + 显式移动”的 canonical 路径。
+
   - id: FEEDBACK-20260814-025
     summary: 会话名称显示仍大量退化为“Agent 会话”，但这些会话有 user 消息；名称优先级应为显式别名 > Agent 自带会话命名 > 用户首条消息 > Agent 类型，最后才使用通用兜底，最好附带时间戳。
     status: captured

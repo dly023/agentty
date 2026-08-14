@@ -41,6 +41,7 @@ struct FakeRemote {
     files: Mutex<HashMap<String, FakeFile>>,
     journal: Mutex<Vec<Journal>>,
     uname: String,
+    uname_error: Option<String>,
     put_error: Option<String>,
     daemon_running: Mutex<bool>,
     running_exe: Mutex<Option<String>>,
@@ -64,6 +65,7 @@ impl FakeRemote {
             files: Mutex::new(files),
             journal: Mutex::new(Vec::new()),
             uname: "Linux x86_64\n".to_string(),
+            uname_error: None,
             put_error: None,
             daemon_running: Mutex::new(false),
             running_exe: Mutex::new(None),
@@ -89,6 +91,11 @@ impl FakeRemote {
             .lock()
             .unwrap()
             .insert(BINARY.to_string(), ours());
+        self
+    }
+
+    fn with_uname_error(mut self, error: &str) -> Self {
+        self.uname_error = Some(error.to_string());
         self
     }
 
@@ -154,6 +161,9 @@ impl RemoteOps for FakeRemote {
             })
         };
         if cmd == "uname -sm" {
+            if let Some(error) = &self.uname_error {
+                return Err(error.clone());
+            }
             return ok(&self.uname);
         }
         if let Some(exe) = cmd.strip_suffix(&format!(" {PROTOCOL_FLAG}")) {
@@ -315,6 +325,26 @@ impl RemoteOps for FakeRemote {
     }
 }
 
+#[test]
+fn an_usable_published_server_does_not_require_uname_probe() {
+    let remote = FakeRemote::new()
+        .with_previous_install()
+        .with_uname_error("command channel unavailable")
+        .serving(BINARY);
+    let release = FakeRelease::new();
+    let user = FakeUser::declining();
+
+    let report = installer(&remote, &release, &user, "me@reliable-box:22")
+        .run()
+        .expect("an already compatible helper must be reusable");
+
+    assert!(!report.installed);
+    assert!(report.reused.is_none());
+    assert!(!remote.journal().iter().any(|entry| {
+        matches!(entry, Journal::Exec(command) if command == "uname -sm")
+    }));
+}
+
 struct FakeRelease {
     asset_bytes: Vec<u8>,
     manifest_of: Vec<u8>,
@@ -418,7 +448,7 @@ fn first_install_runs_all_six_steps() {
         .run()
         .expect("a clean install must succeed");
 
-    assert_eq!(report.asset, ASSET_X86_64);
+    assert_eq!(report.asset, Some(ASSET_X86_64));
     assert_eq!(report.paths.binary, BINARY);
     assert!(report.installed, "bytes were transferred");
     assert!(report.confirmed, "a new machine is confirmed once");

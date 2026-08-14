@@ -7,6 +7,11 @@ architecture:
   remote_path: control_rpc_to_same_agent_runtime
   exclusions: [byok, model_proxy, chat_backend, new_listening_port, second_daemon]
 contracts:
+  - id: REMOTE-INSTALL-REUSE-WITHOUT-UNAME-19
+    rule: When the target-owned published helper is executable and speaks the negotiated dialect, the installer reuses it and proceeds to daemon attachment without requiring a uname command-channel probe. uname is only required when selecting an asset for installation or replacement.
+    forbidden:
+      - requiring_uname_before_reusing_a_compatible_published_helper
+      - turning_a_reusable_helper_into_a_reconnect_loop_after_transport_attach
   - id: REMOTE-CONNECTION-GENERATION-18
     rule: Each remote connection attempt owns a monotonically increasing generation. A completion or failure from an older generation is stale, must not replace the current HostLink or change the visible connection state, and must not trigger a second reconnect prompt.
     forbidden:
