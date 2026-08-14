@@ -11,6 +11,14 @@ feedback_policy:
   promotion_rule: Before implementation, promote the feedback into a stable spec contract, milestone item, traceability row, static check, and failing focused test as applicable.
   retention_rule: Never delete feedback silently; declined or superseded entries retain the reason and replacement ID when one exists.
 feedback:
+  - id: FEEDBACK-20260814-024
+    summary: 反复进入远程环境的问题仍存在，说明当前远程环境进入状态或重复触发路径尚未闭环。
+    status: captured
+    priority: critical
+    area: remote_environment_reentry
+    decision: 暂不宣称完成。需要追踪远程环境连接事件、当前环境身份、重复通知和会话发现刷新之间的状态迁移，建立幂等进入门禁与失败测试。
+    next_action: 读取远程连接入口和 UI 状态更新调用链，先写重复进入失败测试，再实现单一 canonical 状态迁移并做真实桌面验收。
+
   - id: FEEDBACK-20260814-023
     summary: 本地出现两个 Agentty，实际来源是 dist/Agentty.app 残留构建副本与 /Applications/Agentty.app 安装版本同时被 Launch Services 注册。
     status: captured
