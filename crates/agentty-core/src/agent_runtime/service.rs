@@ -173,11 +173,15 @@ fn discover_jcode_session_files(host: &dyn Host, request: &DiscoveryRequest) -> 
     struct JcodeSessionHeader {
         id: String,
         #[serde(default)]
+        parent_id: Option<String>,
+        #[serde(default)]
         title: Option<String>,
         #[serde(default)]
         custom_title: Option<String>,
         #[serde(default)]
         working_dir: Option<String>,
+        #[serde(default)]
+        is_debug: bool,
     }
 
     let root = request.roots.home.join(".jcode/sessions");
@@ -200,6 +204,9 @@ fn discover_jcode_session_files(host: &dyn Host, request: &DiscoveryRequest) -> 
         let Ok(header) = serde_json::from_slice::<JcodeSessionHeader>(&bytes) else {
             continue;
         };
+        if header.parent_id.is_some() || header.is_debug {
+            continue;
+        }
         let title = header
             .custom_title
             .filter(|value| !value.trim().is_empty())

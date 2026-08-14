@@ -154,6 +154,7 @@ impl CLIAgent {
             CLIAgent::Grok => ("grok", flags),
             CLIAgent::Pi => ("pi", flags),
             CLIAgent::Omp => ("omp", flags),
+            CLIAgent::Jcode => ("jcode", flags),
             _ => return None,
         };
         match self {
@@ -167,6 +168,10 @@ impl CLIAgent {
             }
             CLIAgent::OpenCode | CLIAgent::Pi | CLIAgent::Omp => {
                 args.push("--session".into());
+                args.push(session_id.into());
+            }
+            CLIAgent::Jcode => {
+                args.push("--resume".into());
                 args.push(session_id.into());
             }
             CLIAgent::Codex | CLIAgent::Amp => {}
@@ -1213,6 +1218,13 @@ mod tests {
                     "--session".into(),
                     "0199c3f2-1b0e-7c3a-9f21-6d4b8e2a5c17".into(),
                 ],
+            ))
+        );
+        assert_eq!(
+            invocation(CLIAgent::Jcode, "session_123", None),
+            Some((
+                "jcode".into(),
+                vec!["--resume".into(), "session_123".into()],
             ))
         );
         assert_eq!(invocation(CLIAgent::Aider, "abc", None), None);
