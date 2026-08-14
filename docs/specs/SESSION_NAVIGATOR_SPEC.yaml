@@ -2,6 +2,10 @@ version: 1
 updated: 2026-08-07
 domain: agent_session_navigator
 contracts:
+  - id: SESSION-NAVIGATOR-REFRESH-37
+    rule: The session navigator refresh control uses the familiar circular refresh asset and keeps the existing refresh-session action and localized tooltip.
+    forbidden:
+      - window_restore_icon_for_session_refresh
   - id: SESSION-ENVIRONMENT-AUTHORITY-01
     rule: The visible session collection belongs to the active local or remote environment; local history must never appear as remote history.
   - id: SESSION-DISCOVERY-ATOMIC-02

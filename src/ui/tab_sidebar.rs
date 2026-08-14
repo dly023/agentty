@@ -368,7 +368,7 @@ impl AgenttyApp {
             .child(div().flex_1().min_w(px(GRAB_HANDLE_W)))
             .child(
                 crate::ui::tab_strip::chrome_tile(
-                    Button::new("session-refresh").icon(IconName::WindowRestore),
+                    Button::new("session-refresh").icon(Icon::empty().path("icons/refresh.svg")),
                     false,
                     cx,
                 )
@@ -1680,6 +1680,15 @@ mod tests {
         let production = source.split("#[cfg(test)]").next().unwrap_or(source);
         assert!(!production.contains("IconName::Play"));
         assert!(production.contains("this.activate_navigator_row(row_id.clone(), window, cx)"));
+    }
+
+    #[test]
+    fn session_navigator_refresh_uses_standard_refresh_asset() {
+        let source = include_str!("tab_sidebar.rs");
+        let production = source.split("#[cfg(test)]").next().unwrap_or(source);
+        assert!(production.contains("Button::new(\"session-refresh\")"));
+        assert!(production.contains("icons/refresh.svg"));
+        assert!(!production.contains("IconName::WindowRestore"));
     }
 
     #[test]

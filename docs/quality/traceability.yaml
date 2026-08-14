@@ -1,6 +1,13 @@
 version: 1
 updated: 2026-08-03
 entries:
+  - id: SESSION-NAVIGATOR-REFRESH-37
+    spec: SESSION-NAVIGATOR-REFRESH-37
+    source: [docs/specs/SESSION_NAVIGATOR_SPEC.yaml, src/ui/tab_sidebar.rs, assets/icons/refresh.svg]
+    static_check: [script/check_session_navigator, script/check_ui_visual_system]
+    tests: [session_navigator_refresh_uses_standard_refresh_asset]
+    verification: cargo test --bin agentty-app session_navigator_refresh_uses_standard_refresh_asset --locked && ./script/presubmit quick
+    evidence: "2026-08-14 user requested the standard circular refresh icon for Agent session refresh."
   - id: ENV-WINDOW-MENU-16
     spec: ENV-WINDOW-MENU-16
     source: [docs/specs/ENVIRONMENT_MODEL_SPEC.yaml, src/ui/tab_strip.rs, src/ui/windows.rs, src/ui/app.rs]

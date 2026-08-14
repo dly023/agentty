@@ -11,6 +11,40 @@ feedback_policy:
   promotion_rule: Before implementation, promote the feedback into a stable spec contract, milestone item, traceability row, static check, and failing focused test as applicable.
   retention_rule: Never delete feedback silently; declined or superseded entries retain the reason and replacement ID when one exists.
 feedback:
+  - id: FEEDBACK-20260814-019
+    summary: The Agent session refresh control should use the familiar circular refresh icon instead of the current window-restore glyph.
+    status: implemented
+    priority: medium
+    area: session_navigator_refresh_affordance
+    decision: Use the existing canonical assets/icons/refresh.svg asset for the session navigator refresh control, preserving the refresh action and localized tooltip.
+    promoted_to:
+      spec: SESSION-NAVIGATOR-REFRESH-37
+      traceability: SESSION-NAVIGATOR-REFRESH-37
+    evidence:
+      - src/ui/tab_sidebar.rs now renders icons/refresh.svg for session-refresh
+      - session_navigator_refresh_uses_standard_refresh_asset passes
+    next_action: Verify the icon visually in the next desktop acceptance run.
+  - id: FEEDBACK-20260814-018
+    summary: Desktop acceptance shows the dock/tab bar right-click menu does not contain the expected environment window shortcuts.
+    status: captured
+    priority: critical
+    area: environment_window_context_menu
+    decision: The previous implementation attached the menu to a tab-strip surface that is not the user-visible dock hit target, so it cannot be considered delivered. Trace the actual dock event surface and attach the menu to the canonical visible dock container, with a failing UI contract for the real right-click target.
+    next_action: Reproduce on the desktop binary, identify the dock/tab bar element receiving secondary clicks, move the environment menu there, and retest with multiple environments.
+  - id: FEEDBACK-20260814-016
+    summary: Desktop acceptance still shows that typing jcode in a new terminal creates neither a temporary session container nor a discovered historical Jcode row in the left navigator.
+    status: captured
+    priority: critical
+    area: jcode_live_carrier_and_history_discovery
+    decision: Treat the previous Jcode identity-only implementation as insufficient. Trace the actual terminal process observation, carrier projection, and provider discovery path. Do not advertise Jcode history until a real machine-readable contract exists, but the live temporary carrier must appear on the observed runtime path.
+    next_action: Reproduce with the same desktop binary, inspect foreground-agent polling and remote/local observation boundaries, add a failing acceptance-aligned test, then implement.
+  - id: FEEDBACK-20260814-017
+    summary: Desktop acceptance still shows that connecting to dnyx226 does not automatically expand the left session navigator.
+    status: captured
+    priority: critical
+    area: remote_session_sidebar_lifecycle
+    decision: Existing conditional sidebar mutation is not sufficient. Trace the actual remote attach, workspace adoption, refresh generation, and render lifecycle. The canonical connected transition must force the sidebar open and preserve that state through discovery completion.
+    next_action: Reproduce the dnyx226 attach path, identify the state overwrite or missed callback, add a failing lifecycle test, then fix and retest.
   - id: FEEDBACK-20260814-015
     summary: When multiple environments exist, right-clicking the dock/tab bar should offer quick actions to open each environment in its own window, with the environment name used as the window title.
     status: implemented
