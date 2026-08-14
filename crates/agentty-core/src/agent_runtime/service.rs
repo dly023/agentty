@@ -236,8 +236,8 @@ fn discover_jcode_session_files(host: &dyn Host, request: &DiscoveryRequest) -> 
         let title = header
             .custom_title
             .filter(|value| !value.trim().is_empty())
-            .or(first_user_message)
             .or(header.title)
+            .or(first_user_message)
             .or_else(|| Some(format!("Jcode session {}", header.id)));
         let resume_id = header.id.clone();
         rows.push(record(

@@ -11,8 +11,8 @@ pub struct SessionMetadata {
 
 impl SessionMetadata {
     pub fn resolved_title(&self) -> Option<&str> {
-        meaningful_title(self.first_user_message.as_deref())
-            .or_else(|| meaningful_title(self.title.as_deref()))
+        meaningful_title(self.title.as_deref())
+            .or_else(|| meaningful_title(self.first_user_message.as_deref()))
     }
 }
 
@@ -461,13 +461,13 @@ mod tests {
     }
 
     #[test]
-    fn first_user_message_wins_over_provider_title() {
+    fn provider_title_wins_over_first_user_message_when_named() {
         let values = vec![
             serde_json::json!({"type":"event_msg","payload":{"type":"user_message","message":"fallback user text"}}),
             serde_json::json!({"type":"response_item","title":"Provider title"}),
         ];
         let metadata = codex_transcript_metadata(&values);
-        assert_eq!(metadata.resolved_title(), Some("fallback user text"));
+        assert_eq!(metadata.resolved_title(), Some("Provider title"));
     }
 
     #[test]

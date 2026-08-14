@@ -16,7 +16,7 @@ feedback:
     status: promoted
     priority: high
     area: session_title_abstraction_and_jcode_branding
-    decision: Make first_user_message the canonical fallback before provider-generated titles for every provider metadata parser. Keep custom user aliases first, parse Jcode message content using its stored string/array/object forms, exclude journal files, and use a dark slate plate with a light official Jcode mark.
+    decision: Keep explicit user aliases and meaningful provider-authored session names authoritative. Use first_user_message as the shared fallback only when no session name exists. Parse Jcode message content using its stored string/array/object forms, exclude journal files, and use a dark slate plate with a light official Jcode mark.
     promoted_to:
       spec: SESSION-TITLE-PRECEDENCE-11
       traceability: SESSION-TITLE-PRECEDENCE-11
