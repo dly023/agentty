@@ -427,11 +427,62 @@ impl AgenttyApp {
         )
     }
 
+    fn environment_menu(
+        mut menu: PopupMenu,
+        current_environment: agentty_core::core::environment::EnvironmentId,
+        hosts: &[crate::ui::remote_connect::HostChoice],
+        app: &gpui::WeakEntity<Self>,
+        cx: &App,
+    ) -> PopupMenu {
+        menu = menu.min_w(px(260.)).item(
+            PopupMenuItem::new(crate::core::i18n::current(cx, "menu.this_mac"))
+                .disabled(current_environment.is_local())
+                .on_click(|_, _window, cx| {
+                    crate::ui::windows::open_or_focus_environment(cx, None, None);
+                }),
+        );
+        let mut seen = std::collections::HashSet::new();
+        for host in hosts {
+            let target = host.target.clone();
+            let environment = agentty_core::core::environment::EnvironmentId::for_remote(&target);
+            if !seen.insert(environment.clone()) {
+                continue;
+            }
+            let selected = environment == current_environment;
+            let label = if host.detail.trim().is_empty() {
+                host.label.clone()
+            } else {
+                format!("{}  ·  {}", host.label, host.detail)
+            };
+            menu = menu.item(PopupMenuItem::new(label).disabled(selected).on_click({
+                let target = target.clone();
+                move |_, _window, cx| {
+                    crate::ui::windows::open_or_focus_environment(cx, Some(target.clone()), None);
+                }
+            }));
+        }
+        menu.separator().item(
+            PopupMenuItem::new(crate::core::i18n::current(cx, "menu.manage_ssh_envs")).on_click({
+                let app = app.clone();
+                move |_, window, cx| {
+                    if let Some(app) = app.upgrade() {
+                        app.update(cx, |this, cx| {
+                            this.open_settings_section(
+                                crate::ui::settings::SettingsSection::Ssh,
+                                window,
+                                cx,
+                            );
+                        });
+                    }
+                }
+            }),
+        )
+    }
+
     pub(crate) fn environment_indicator(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let (label, state, dot, icon) = self.environment_indicator_label(cx);
         let current_environment =
             crate::core::session::WorkspaceStore::environment_id(cx, self.workspace);
-        let current_id = current_environment.clone();
         let hosts = crate::ui::remote_connect::available_hosts(cx);
         let app_for_menu = cx.entity().downgrade();
         Button::new("tabstrip-environment-indicator")
@@ -467,48 +518,8 @@ impl AgenttyApp {
                 "environment.tooltip",
                 &[("state", &state)],
             ))
-            .dropdown_menu(move |menu, _window, _cx| {
-                let mut menu = menu.min_w(px(230.)).item(
-                    PopupMenuItem::new(crate::core::i18n::current(_cx, "menu.this_mac"))
-                        .disabled(current_id.is_local())
-                        .on_click(move |_, _window, cx| {
-                            crate::ui::windows::open_or_focus_environment(cx, None, None);
-                        }),
-                );
-                for host in &hosts {
-                    let target = host.target.clone();
-                    let id = agentty_core::core::environment::EnvironmentId::for_remote(&target);
-                    let selected = id == current_environment;
-                    let target_for_click = target.clone();
-                    menu = menu.item(
-                        PopupMenuItem::new(host.label.clone())
-                            .disabled(selected)
-                            .on_click(move |_, _window, cx| {
-                                crate::ui::windows::open_or_focus_environment(
-                                    cx,
-                                    Some(target_for_click.clone()),
-                                    None,
-                                );
-                            }),
-                    );
-                }
-                menu.separator().item(
-                    PopupMenuItem::new(crate::core::i18n::current(_cx, "menu.manage_ssh_envs"))
-                        .on_click({
-                            let app = app_for_menu.clone();
-                            move |_, window, cx| {
-                                if let Some(app) = app.upgrade() {
-                                    app.update(cx, |this, cx| {
-                                        this.open_settings_section(
-                                            crate::ui::settings::SettingsSection::Ssh,
-                                            window,
-                                            cx,
-                                        );
-                                    });
-                                }
-                            }
-                        }),
-                )
+            .dropdown_menu(move |menu, _window, cx| {
+                Self::environment_menu(menu, current_environment.clone(), &hosts, &app_for_menu, cx)
             })
     }
 
@@ -1373,9 +1384,22 @@ impl AgenttyApp {
             (!panel_open || !cfg!(target_os = "macos")).then(|| self.window_chrome(window, cx));
         let split_chrome = crate::ui::app::panel_split_chrome_inset();
         let needs_trailing_split_pad = right_chrome.is_none();
+        let environment_menu_hosts = crate::ui::remote_connect::available_hosts(cx);
+        let environment_menu_current =
+            crate::core::session::WorkspaceStore::environment_id(cx, self.workspace);
+        let environment_menu_app = cx.entity().downgrade();
 
         h_flex()
             .id("tab-strip")
+            .context_menu(move |menu, _window, cx| {
+                Self::environment_menu(
+                    menu,
+                    environment_menu_current.clone(),
+                    &environment_menu_hosts,
+                    &environment_menu_app,
+                    cx,
+                )
+            })
             .items_center()
             .gap_1p5()
             .when(show_chips, |this| this.w(strip_w))
@@ -1608,6 +1632,33 @@ mod tests {
                 && prod.contains("panel_split_chrome_inset()")
                 && prod.contains(".when(needs_trailing_split_pad"),
             "when the right panel owns window chrome, the content column must pad the trailing palette with panel_split_chrome_inset"
+        );
+    }
+
+    #[test]
+    fn environment_menu_uses_canonical_open_or_focus_path() {
+        let source = include_str!("tab_strip.rs");
+        let prod = source.split("#[cfg(test)]").next().unwrap_or(source);
+        assert!(
+            prod.contains("environment_menu_hosts")
+                && prod.contains(".context_menu(move |menu")
+                && prod.contains("Self::environment_menu(")
+        );
+        assert!(
+            prod.contains("open_or_focus_environment(cx, Some(target.clone()), None)")
+                && prod.contains("EnvironmentId::for_remote")
+        );
+        let windows = include_str!("windows.rs");
+        assert!(
+            windows.contains("open_or_focus_environment")
+                && windows.contains("WindowRegistry::window_for_environment"),
+            "environment window opening must use the canonical deduplicating path"
+        );
+        let app = include_str!("app.rs");
+        assert!(
+            app.contains("remote_connect::label_for")
+                && app.contains("unwrap_or_else(|| \"Local\""),
+            "new environment windows must receive an environment-derived title"
         );
     }
 

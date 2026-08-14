@@ -64,6 +64,15 @@ contracts:
     rule: Running ssh inside a terminal remains an OpenSSH child process in that window and does not change Agentty Environment authority. Selecting an SSH Environment through Agentty uses the managed russh path and opens or focuses a dedicated Environment window.
   - id: ENV-OPEN-OR-FOCUS-11
     rule: Opening a managed Environment deduplicates by EnvironmentId. If its window is already open Agentty activates that window; otherwise Agentty creates a new window bound to that Environment.
+  - id: ENV-WINDOW-MENU-16
+    rule: When multiple environments are available, the tab/dock bar context menu exposes one quick open-or-focus item per environment. Selecting an item uses the canonical open_or_focus_environment_window path, never retargets the current window, and the resulting window title uses the environment display name.
+    display:
+      - environment_name
+      - remote_endpoint_detail_when_available
+    forbidden:
+      - duplicate_environment_menu_items
+      - retargeting_current_window_in_place
+      - opening_a_window_without_environment_authority
   - id: ENV-PROFILE-DISPLAY-LABEL-12
     rule: A saved SSH profile Environment keeps the profile UUID in EnvironmentId and routing, while every user-visible short label resolves from the current profile registry name. Renaming a profile updates presentation without changing EnvironmentId. A missing profile uses an explicit stable fallback and never exposes a raw UUID as the normal connected label.
     forbidden:

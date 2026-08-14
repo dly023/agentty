@@ -2285,9 +2285,16 @@ impl AgenttyApp {
     pub(crate) fn sync_window_title(&self, window: &mut Window, cx: &App) {
         let title = WorkspaceStore::all(cx)
             .get(self.workspace)
-            .filter(|w| crate::ui::machine_mirror::pane_count(cx, w).unwrap_or(0) > 0)
-            .and_then(|w| crate::ui::machine_mirror::display_name(cx, w))
-            .unwrap_or_else(|| "agentty".to_string());
+            .and_then(|w| {
+                crate::ui::machine_mirror::pane_count(cx, w)
+                    .filter(|count| *count > 0)
+                    .and_then(|_| crate::ui::machine_mirror::display_name(cx, w))
+                    .or_else(|| {
+                        WorkspaceStore::remote_ref(cx, self.workspace)
+                            .map(|remote| crate::ui::remote_connect::label_for(&remote.target, cx))
+                    })
+            })
+            .unwrap_or_else(|| "Local".to_string());
         if *self.window_title.borrow() == title {
             return;
         }

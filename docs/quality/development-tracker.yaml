@@ -11,6 +11,16 @@ feedback_policy:
   promotion_rule: Before implementation, promote the feedback into a stable spec contract, milestone item, traceability row, static check, and failing focused test as applicable.
   retention_rule: Never delete feedback silently; declined or superseded entries retain the reason and replacement ID when one exists.
 feedback:
+  - id: FEEDBACK-20260814-015
+    summary: When multiple environments exist, right-clicking the dock/tab bar should offer quick actions to open each environment in its own window, with the environment name used as the window title.
+    status: promoted
+    priority: high
+    area: environment_window_context_menu
+    decision: Reuse the existing Environment Indicator host list and canonical open_or_focus_environment path. Add the same environment actions to the tab/dock bar context menu, deduplicate by EnvironmentId, and keep current-window authority immutable.
+    promoted_to:
+      spec: ENV-WINDOW-MENU-16
+      traceability: ENV-WINDOW-MENU-16
+    next_action: Implement and verify menu rendering, open-or-focus behavior, title synchronization, and duplicate/closed-environment cases.
   - id: FEEDBACK-20260814-014
     summary: The environment switcher indicator is too sparse when it shows only an alias. It should carry richer target context such as resolved host/IP, user, and remote/local state so users can distinguish similarly named environments.
     status: captured
