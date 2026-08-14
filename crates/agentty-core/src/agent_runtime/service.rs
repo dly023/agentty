@@ -205,6 +205,7 @@ fn discover_jcode_session_files(host: &dyn Host, request: &DiscoveryRequest) -> 
             .filter(|value| !value.trim().is_empty())
             .or(header.title)
             .or_else(|| Some(format!("Jcode session {}", header.id)));
+        let resume_id = header.id.clone();
         rows.push(record(
             CLIAgent::Jcode,
             "jcode",
@@ -212,7 +213,7 @@ fn discover_jcode_session_files(host: &dyn Host, request: &DiscoveryRequest) -> 
             title,
             header.working_dir,
             host.stat(&path).ok().and_then(|meta| meta.mtime),
-            vec!["jcode".into(), "--resume".into()],
+            vec!["jcode".into(), "--resume".into(), resume_id],
             Some(path.to_string_lossy().into_owned()),
             None,
         ));
