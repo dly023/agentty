@@ -1975,7 +1975,7 @@ milestones:
           - src/ui/tab_sidebar.rs
           - src/ui/session_navigator.rs
         tests:
-          - provider_title_wins_even_when_it_appears_after_first_user_message
+          - provider_title_wins_over_first_user_message_when_named
           - first_user_message_names_untitled_session
           - provider_identity_is_never_a_session_alias
           - session_display_title_prefers_alias_over_title_and_fallback

@@ -12,8 +12,8 @@ entries:
     spec: ENV-WINDOW-MENU-16
     source: [docs/specs/ENVIRONMENT_MODEL_SPEC.yaml, src/ui/tab_strip.rs, src/ui/tab_sidebar.rs, src/ui/windows.rs, src/ui/app.rs]
     static_check: [script/check_spec_matrix, script/check_ui_visual_system]
-    tests: [environment_menu_uses_canonical_open_or_focus_path, visible_session_dock_owns_environment_context_menu]
-    verification: cargo test --bin agentty-app environment_menu_uses_canonical_open_or_focus_path --locked && cargo test --bin agentty-app visible_session_dock_owns_environment_context_menu --locked && ./script/presubmit quick
+    tests: [environment_menu_uses_canonical_open_or_focus_path, session_dock_does_not_steal_tab_context_menu]
+    verification: cargo test --bin agentty-app environment_menu_uses_canonical_open_or_focus_path --locked && cargo test --bin agentty-app session_dock_does_not_steal_tab_context_menu --locked && ./script/presubmit quick
     evidence: "2026-08-14 user acceptance requested quick open actions for multiple environments from the dock/tab bar, with environment-named windows."
   - id: INPUT-COMPOSER-NATIVE-RICH-AREA-106
     spec: INPUT-COMPOSER-NATIVE-RICH-AREA-13
@@ -617,7 +617,7 @@ entries:
     spec: SESSION-TITLE-PRECEDENCE-11
     source: [docs/specs/SESSION_NAVIGATOR_SPEC.yaml, crates/agentty-core/src/agent_runtime/parse.rs, crates/agentty-core/src/agent_runtime/navigator.rs, crates/agentty-core/src/agent_runtime/service.rs, src/ui/tab_sidebar.rs, src/ui/session_navigator.rs, src/terminal/view.rs, src/ui/composer.rs]
     static_check: script/check_session_navigator
-    tests: [provider_title_wins_even_when_it_appears_after_first_user_message, first_user_message_names_untitled_session, catch_all_provider_title_yields_to_first_user_message, catch_all_title_alone_resolves_absent, provider_identity_is_never_a_session_alias, session_display_title_prefers_alias_over_title_and_fallback, session_display_title_ignores_blank_candidates, session_display_title_never_uses_session_id, refresh_blank_title_preserves_last_good_title_and_alias_display, display_title_stable_across_identical_ui_inputs, refresh_product_placeholder_title_preserves_settled_session_title, catch_all_title_clears_so_first_user_message_can_name_the_row, live_session_rows_omit_tab_and_terminal_titles, first_user_title_candidate_rejects_placeholders_and_excerpts_prompt, note_first_user_prompt_stamps_once, codex_response_item_user_message_names_session_after_skipping_injections]
+    tests: [provider_title_wins_over_first_user_message_when_named, first_user_message_names_untitled_session, catch_all_provider_title_yields_to_first_user_message, catch_all_title_alone_resolves_absent, provider_identity_is_never_a_session_alias, session_display_title_prefers_alias_over_title_and_fallback, session_display_title_ignores_blank_candidates, session_display_title_never_uses_session_id, refresh_blank_title_preserves_last_good_title_and_alias_display, display_title_stable_across_identical_ui_inputs, refresh_product_placeholder_title_preserves_settled_session_title, catch_all_title_clears_so_first_user_message_can_name_the_row, live_session_rows_omit_tab_and_terminal_titles, first_user_title_candidate_rejects_placeholders_and_excerpts_prompt, note_first_user_prompt_stamps_once, codex_response_item_user_message_names_session_after_skipping_injections]
     verification: cargo test -p agentty-core first_user_title_candidate --lib --locked && cargo test -p agentty-core catch_all_provider_title --lib --locked && cargo test -p agentty-core codex_response_item_user_message --lib --locked && cargo test -p agentty-core session_display_title --lib --locked && cargo test --bin agentty-app note_first_user_prompt_stamps_once --locked && ./script/check_session_navigator
     evidence: "2026-08-09: Codex response_item user turns name untitled sessions; skip AGENTS.md/environment_context injections (FEEDBACK-20260809-002)"
   - id: AGENT-EXECUTION-STATE-040
