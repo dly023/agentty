@@ -116,10 +116,12 @@ fn discover_jcode(host: &dyn Host, request: &DiscoveryRequest) -> DiscoveryOutco
     use std::io::{BufRead, BufReader, Write};
     use std::os::unix::net::UnixStream;
 
+    let file_result = discover_jcode_session_files(host, request);
+    if matches!(&file_result, DiscoveryOutcome::Complete(rows) if !rows.is_empty()) {
+        return file_result;
+    }
     if !host.id().is_local() {
-        return DiscoveryOutcome::SourceMissing {
-            source: "jcode harness API is not available through remote Host yet".into(),
-        };
+        return file_result;
     }
     let socket = request.roots.jcode_api_socket();
     let Ok(mut stream) = UnixStream::connect(&socket) else {
