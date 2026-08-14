@@ -279,13 +279,32 @@ impl SshManager {
         setup: &RouteSetup,
         server_command: Option<&str>,
     ) -> anyhow::Result<(RemoteLink, Arc<SshConnection>)> {
-        let (conn, _reused) = self.open_connection(spec, &setup.broker).await?;
+        let (mut conn, reused) = self.open_connection(spec, &setup.broker).await?;
 
         let installed = {
             let install_conn = conn.clone();
             setup
                 .blocking(move || crate::daemon::install::ensure_remote_server(&install_conn))
-                .await??
+                .await?
+        };
+        let installed = match installed {
+            Ok(path) => path,
+            Err(first_error) if reused => {
+                log::info!(
+                    "reused ssh connection to {}:{} failed remote setup ({first_error}); reconnecting",
+                    spec.host,
+                    spec.port
+                );
+                conn.mark_dead();
+                self.evict_connection(conn.key());
+                let (fresh, _) = self.open_connection(spec, &setup.broker).await?;
+                conn = fresh;
+                let install_conn = conn.clone();
+                setup
+                    .blocking(move || crate::daemon::install::ensure_remote_server(&install_conn))
+                    .await??
+            }
+            Err(first_error) => return Err(first_error.into()),
         };
 
         let base = match server_command {

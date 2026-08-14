@@ -57,6 +57,13 @@ entries:
     tests: [an_usable_published_server_does_not_require_uname_probe]
     verification: cargo test -p agentty-core daemon::install::tests --locked && ./script/presubmit quick
     evidence: "2026-08-14: a compatible published helper now reaches daemon setup without uname; the focused regression and all 53 installer tests pass."
+  - id: REMOTE-SSH-REUSE-RETRY-20
+    spec: REMOTE-SSH-REUSE-RETRY-20
+    source: [docs/specs/REMOTE_HELPER_SPEC.yaml, crates/agentty-core/src/daemon/ssh/mod.rs]
+    static_check: script/check_spec_matrix
+    tests: []
+    verification: implementation pending; cargo check -p agentty-core --locked && ./script/presubmit quick
+    evidence: "2026-08-14: open_remote_link now evicts a reused connection after setup failure and retries once on a fresh SSH connection; compile verification passes, focused integration test still to add."
   - id: SESSION-TITLE-PRECEDENCE-11
     spec: SESSION-TITLE-PRECEDENCE-11
     source: [docs/specs/SESSION_NAVIGATOR_SPEC.yaml, crates/agentty-core/src/agent_runtime/service.rs, crates/agentty-core/src/agent_runtime/navigator.rs]

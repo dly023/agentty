@@ -12,6 +12,11 @@ contracts:
     forbidden:
       - requiring_uname_before_reusing_a_compatible_published_helper
       - turning_a_reusable_helper_into_a_reconnect_loop_after_transport_attach
+  - id: REMOTE-SSH-REUSE-RETRY-20
+    rule: If remote setup or the first command-channel operation fails on a reused SSH connection, the router marks that connection dead, evicts it from the cache, opens one fresh connection, and retries setup once. A fresh-connection failure is surfaced without an unbounded retry loop.
+    forbidden:
+      - retrying_remote_setup_forever_on_one_dead_cached_connection
+      - publishing_remote_link_after_setup_failed
   - id: REMOTE-CONNECTION-GENERATION-18
     rule: Each remote connection attempt owns a monotonically increasing generation. A completion or failure from an older generation is stale, must not replace the current HostLink or change the visible connection state, and must not trigger a second reconnect prompt.
     forbidden:
