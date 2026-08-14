@@ -153,6 +153,17 @@ fn discover_jcode(host: &dyn Host, request: &DiscoveryRequest) -> DiscoveryOutco
     };
     let rows = sessions.iter().filter_map(|session| {
         let id = session.get("session_id")?.as_str()?.to_owned();
+        if session
+            .get("parent_id")
+            .and_then(serde_json::Value::as_str)
+            .is_some()
+            || session
+                .get("is_debug")
+                .and_then(serde_json::Value::as_bool)
+                == Some(true)
+        {
+            return None;
+        }
         Some(record(
             CLIAgent::Jcode,
             "jcode",
