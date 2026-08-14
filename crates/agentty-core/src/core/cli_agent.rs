@@ -350,7 +350,9 @@ impl CLIAgent {
             // brand-purple glyph (glyph_rgb) keeps the π readable on that plate.
             CLIAgent::Omp => 0xEFEDE9,
             CLIAgent::Qwen => 0x7C3AED,
-            CLIAgent::Jcode => 0x7E7E7E,
+            // The official mark is a cool gray, so it needs a dark slate plate
+            // instead of the previous low-contrast gray-on-gray treatment.
+            CLIAgent::Jcode => 0x252936,
         }
     }
 

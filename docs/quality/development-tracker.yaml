@@ -11,6 +11,21 @@ feedback_policy:
   promotion_rule: Before implementation, promote the feedback into a stable spec contract, milestone item, traceability row, static check, and failing focused test as applicable.
   retention_rule: Never delete feedback silently; declined or superseded entries retain the reason and replacement ID when one exists.
 feedback:
+  - id: FEEDBACK-20260814-020
+    summary: Default session titles should use the first user message through one shared abstraction, while explicit user renames remain authoritative. Jcode should not have a separate title policy, and its official logo needs a higher-contrast badge plate.
+    status: promoted
+    priority: high
+    area: session_title_abstraction_and_jcode_branding
+    decision: Make first_user_message the canonical fallback before provider-generated titles for every provider metadata parser. Keep custom user aliases first, parse Jcode message content using its stored string/array/object forms, exclude journal files, and use a dark slate plate with a light official Jcode mark.
+    promoted_to:
+      spec: SESSION-TITLE-PRECEDENCE-11
+      traceability: SESSION-TITLE-PRECEDENCE-11
+    evidence:
+      - crates/agentty-core/src/agent_runtime/parse.rs now resolves first_user_message before provider title
+      - Jcode file discovery now extracts the first user message from all documented content shapes
+      - Jcode journal files are excluded from discovery
+      - Jcode badge plate changed from low-contrast gray to dark slate
+    next_action: Add focused cross-provider and Jcode fixture tests, then visually verify the title and icon in a fresh desktop build.
   - id: FEEDBACK-20260814-019
     summary: The Agent session refresh control should use the familiar circular refresh icon instead of the current window-restore glyph.
     status: implemented

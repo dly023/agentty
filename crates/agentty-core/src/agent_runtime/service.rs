@@ -10,7 +10,7 @@ use super::parse::{
     claude_transcript_metadata, codex_index_metadata, codex_transcript_metadata,
     gemini_first_user_excerpt, gemini_header_metadata, gemini_updated_at_unix_ms,
     grok_summary_metadata, grok_summary_updated_at_unix_ms, omp_transcript_metadata,
-    parse_jsonl_strict,
+    first_user_title_candidate, parse_jsonl_strict,
 };
 use super::provider::{
     PERSISTED_PROVIDER_DESCRIPTORS, ProviderDescriptor, ProviderId, ProviderScanner,
@@ -210,7 +210,10 @@ fn discover_jcode_session_files(host: &dyn Host, request: &DiscoveryRequest) -> 
     };
     let mut rows = Vec::new();
     for entry in entries.into_iter().filter(|entry| {
-        !entry.is_dir && !entry.is_symlink && entry.name.ends_with(".json")
+        !entry.is_dir
+            && !entry.is_symlink
+            && entry.name.ends_with(".json")
+            && !entry.name.ends_with(".journal.json")
     }) {
         let path = host.join(&root, &entry.name);
         let Ok(bytes) = host.read_file_prefix(&path, DEFAULT_HEAD_BYTES) else {
@@ -219,18 +222,21 @@ fn discover_jcode_session_files(host: &dyn Host, request: &DiscoveryRequest) -> 
         let Ok(header) = serde_json::from_slice::<JcodeSessionHeader>(&bytes) else {
             continue;
         };
-        let has_user_message = header.messages.iter().any(|message| {
-            message.get("role").and_then(serde_json::Value::as_str) == Some("user")
-                && message.get("content").is_some_and(|content| {
-                    !content.to_string().trim_matches('"').trim().is_empty()
-                })
+        let first_user_message = header.messages.iter().find_map(|message| {
+            (message.get("role").and_then(serde_json::Value::as_str) == Some("user"))
+                .then(|| message.get("content"))
+                .flatten()
+                .and_then(jcode_message_text)
+                .and_then(|text| first_user_title_candidate(&text))
         });
+        let has_user_message = first_user_message.is_some();
         if header.parent_id.is_some() || header.is_debug || !has_user_message {
             continue;
         }
         let title = header
             .custom_title
             .filter(|value| !value.trim().is_empty())
+            .or(first_user_message)
             .or(header.title)
             .or_else(|| Some(format!("Jcode session {}", header.id)));
         let resume_id = header.id.clone();
@@ -247,6 +253,31 @@ fn discover_jcode_session_files(host: &dyn Host, request: &DiscoveryRequest) -> 
         ));
     }
     DiscoveryOutcome::Complete(rows)
+}
+
+fn jcode_message_text(value: &serde_json::Value) -> Option<String> {
+    match value {
+        serde_json::Value::String(text) => Some(text.clone()),
+        serde_json::Value::Array(parts) => {
+            let text = parts
+                .iter()
+                .filter_map(|part| match part {
+                    serde_json::Value::String(text) => Some(text.as_str()),
+                    serde_json::Value::Object(object) => object
+                        .get("text")
+                        .and_then(serde_json::Value::as_str),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join(" ");
+            (!text.trim().is_empty()).then_some(text)
+        }
+        serde_json::Value::Object(object) => object
+            .get("text")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_owned),
+        _ => None,
+    }
 }
 
 #[cfg(not(unix))]
