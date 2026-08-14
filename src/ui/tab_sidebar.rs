@@ -200,15 +200,12 @@ fn session_unit_stack_surface(grouped: bool, group_selected: bool, cx: &gpui::Ap
         })
 }
 
-/// Hover affordance for one Session Navigator row
-/// (SESSION-ROW-ACTION-AFFORDANCE-27). Historical inactive rows reveal a
-/// resume icon action; restoring rows keep an explicit status label; the
-/// active row shows nothing.
+/// Status affordance for one Session Navigator row. Historical rows resume on
+/// the canonical row click, so they do not need a second hover action glyph.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum SessionRowHoverAffordance {
     None,
     RestoringStatus,
-    ResumeAction,
 }
 
 pub(crate) fn session_row_hover_affordance(
@@ -217,10 +214,9 @@ pub(crate) fn session_row_hover_affordance(
 ) -> SessionRowHoverAffordance {
     if badge == Some(agentty_core::agent_runtime::ExecutionBadge::Restoring) {
         SessionRowHoverAffordance::RestoringStatus
-    } else if active {
-        SessionRowHoverAffordance::None
     } else {
-        SessionRowHoverAffordance::ResumeAction
+        let _ = active;
+        SessionRowHoverAffordance::None
     }
 }
 
@@ -768,40 +764,6 @@ impl AgenttyApp {
                         .text_color(cx.theme().muted_foreground)
                         .child(crate::core::i18n::current(cx, "session.restoring")),
                 ),
-                SessionRowHoverAffordance::ResumeAction => {
-                    let affordance_id = gpui::SharedString::from(format!(
-                        "session-resume-affordance-{}",
-                        row.row_id.as_str()
-                    ));
-                    let resume_label = crate::core::i18n::current(cx, "session.resume").to_string();
-                    let pad = session_sidebar_surface_metrics().row_pad_x;
-                    item.child(
-                        div()
-                            .id(affordance_id)
-                            .absolute()
-                            .right(px(pad))
-                            .top_0()
-                            .bottom_0()
-                            .flex()
-                            .items_center()
-                            .justify_center()
-                            .size(px(20.))
-                            .rounded_md()
-                            .opacity(0.)
-                            .group_hover("agent-session-row", |slot| {
-                                slot.opacity(1.).bg(cx.theme().accent.opacity(0.16))
-                            })
-                            .tooltip(move |_window, cx| {
-                                gpui_component::tooltip::Tooltip::new(resume_label.clone())
-                                    .build(_window, cx)
-                            })
-                            .child(
-                                Icon::new(IconName::Play)
-                                    .size(px(11.))
-                                    .text_color(cx.theme().accent),
-                            ),
-                    )
-                }
                 SessionRowHoverAffordance::None => item,
             })
             .context_menu({
@@ -1692,15 +1654,15 @@ mod tests {
         );
     }
     #[test]
-    fn historical_row_hover_uses_icon_affordance_not_text() {
+    fn historical_row_click_is_the_only_resume_affordance() {
         use agentty_core::agent_runtime::ExecutionBadge as Badge;
         assert_eq!(
             session_row_hover_affordance(false, None),
-            SessionRowHoverAffordance::ResumeAction
+            SessionRowHoverAffordance::None
         );
         assert_eq!(
             session_row_hover_affordance(false, Some(Badge::CompletedUnread)),
-            SessionRowHoverAffordance::ResumeAction
+            SessionRowHoverAffordance::None
         );
         assert_eq!(
             session_row_hover_affordance(true, None),
@@ -1714,6 +1676,10 @@ mod tests {
             session_row_hover_affordance(true, Some(Badge::Restoring)),
             SessionRowHoverAffordance::RestoringStatus
         );
+        let source = include_str!("tab_sidebar.rs");
+        let production = source.split("#[cfg(test)]").next().unwrap_or(source);
+        assert!(!production.contains("IconName::Play"));
+        assert!(production.contains("this.activate_navigator_row(row_id.clone(), window, cx)"));
     }
 
     #[test]

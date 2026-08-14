@@ -56,6 +56,7 @@ fn agent_icon(path: &str) -> Option<&'static [u8]> {
         "icons/agents/grok.svg" => include_bytes!("../../assets/icons/agents/grok.svg"),
         "icons/agents/pi.svg" => include_bytes!("../../assets/icons/agents/pi.svg"),
         "icons/agents/omp.svg" => include_bytes!("../../assets/icons/agents/omp.svg"),
+        "icons/agents/jcode.svg" => include_bytes!("../../assets/icons/agents/jcode.svg"),
         _ => return None,
     };
     Some(bytes)
@@ -93,6 +94,15 @@ mod tests {
                 agent.display_name()
             );
         }
+    }
+
+    #[test]
+    fn jcode_official_logo_asset_resolves() {
+        let logo = Assets
+            .load("icons/agents/jcode.svg")
+            .unwrap()
+            .expect("official Jcode logo asset present");
+        assert!(!logo.is_empty());
     }
 
     #[test]

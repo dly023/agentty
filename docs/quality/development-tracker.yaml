@@ -13,18 +13,28 @@ feedback_policy:
 feedback:
   - id: FEEDBACK-20260814-011
     summary: The Resume hover triangle/badge is visually noisy and should be removed. Clicking a historical session row should already have automatic resume as the default interaction semantics, without a separate hover affordance.
-    status: captured
+    status: implemented
     priority: medium
     area: session_resume_affordance
     decision: Keep resume as the canonical click behavior, remove the redundant triangular hover icon, and preserve accessible text/details/context-menu semantics where needed. Add a structural test that the row does not render the obsolete triangle while click activation still routes through the canonical resume path.
-    next_action: Locate the resume hover decoration and its tests, remove only the redundant visual affordance, add the negative/positive interaction contract, and verify row activation plus keyboard behavior.
+    promoted_to:
+      spec: SESSION-ROW-ACTION-AFFORDANCE-27
+      traceability: SESSION-ROW-ACTION-AFFORDANCE-27
+    evidence:
+      - src/ui/tab_sidebar.rs removes the hover Play affordance and keeps restoring status text
+      - historical_row_click_is_the_only_resume_affordance passes
+      - check_ui_visual_system, check_session_navigator, and check_spec_matrix pass
+    next_action: Verify the updated row visually in the real agentty-app GUI; the automated GUI launch timed out, so visual acceptance remains open.
   - id: FEEDBACK-20260814-009
     summary: The requested official Jcode logo was not extracted or wired into Agentty; current agent icon assets contain no Jcode asset, and the previous audit only recorded a source path without shipping a usable light/dark or monochrome variant.
     status: captured
     priority: high
     area: jcode_brand_asset
     decision: Do not claim Jcode branding is complete. Obtain the official logo from the requested jcode.sh source or the audited upstream asset, add explicit background-safe variants, register them through the canonical asset loader, and add packaging plus visual-resource checks before implementation is marked complete.
-    next_action: Verify the authoritative logo asset and license, add the Jcode asset under assets/icons/agents, wire ui/assets.rs and the provider row/icon path, then add a focused resource and package verification.
+    evidence:
+      - assets/icons/agents/jcode.svg downloaded from https://jcode.sh/favicon.svg
+      - src/ui/assets.rs registers the asset and jcode_official_logo_asset_resolves passes
+    next_action: Add background-safe variants and connect the asset to a real Jcode provider row once provider identity is implemented.
   - id: FEEDBACK-20260814-008
     summary: Remote environment attach must automatically open the left sidebar and show the complete session list for that remote environment, not merely refresh an internal discovery request.
     status: captured
@@ -2261,7 +2271,7 @@ milestones:
         status: implemented
         spec: SESSION-ROW-ACTION-AFFORDANCE-27
         source: [src/ui/tab_sidebar.rs]
-        tests: [historical_row_hover_uses_icon_affordance_not_text, empty_session_states_render_icon_and_message_hierarchy]
+        tests: [historical_row_click_is_the_only_resume_affordance, empty_session_states_render_icon_and_message_hierarchy]
         evidence: 2026-08-03 the hover prose "恢复" label is replaced by a fixed-slot Play icon affordance with a localized tooltip, restoring rows keep their explicit status, and the four empty states render distinct glyphs above the message; focused tests and quick presubmit passed.
       - id: POLISH-013
         title: Tab strip overflow window with active-tab visibility

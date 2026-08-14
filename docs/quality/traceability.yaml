@@ -378,8 +378,8 @@ entries:
     spec: SESSION-ROW-ACTION-AFFORDANCE-27
     source: [docs/specs/SESSION_NAVIGATOR_SPEC.yaml, src/ui/tab_sidebar.rs, assets/i18n/en-US.yaml, assets/i18n/zh-CN.yaml]
     static_check: script/check_session_navigator
-    tests: [historical_row_hover_uses_icon_affordance_not_text, session_resume_affordance_overlays_without_flex_slot]
-    verification: cargo test --bin agentty-app historical_row_hover_uses_icon_affordance_not_text --locked && cargo test --bin agentty-app session_resume_affordance_overlays_without_flex_slot --locked && ./script/check_session_navigator
+    tests: [historical_row_click_is_the_only_resume_affordance, session_resume_affordance_overlays_without_flex_slot]
+    verification: cargo test --bin agentty-app historical_row_click_is_the_only_resume_affordance --locked && cargo test --bin agentty-app session_resume_affordance_overlays_without_flex_slot --locked && ./script/check_session_navigator
     evidence: "2026-08-05: resume affordance overlays the trailing edge with absolute positioning so hidden state does not steal title width; restoring status remains explicit; static gate forbids flex_shrink_0 slot in ResumeAction"
   - id: SESSION-EMPTY-STATE-SURFACE-066
     spec: SESSION-EMPTY-STATE-SURFACE-28

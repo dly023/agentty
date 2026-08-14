@@ -199,11 +199,12 @@ contracts:
       - group_container_replacing_sibling_activation
       - query_or_reorder_splitting_the_visual_group
   - id: SESSION-ROW-ACTION-AFFORDANCE-27
-    rule: Session Navigator row actions use compact icon affordances overlaid on the row's trailing edge. A historical inactive row reveals a resume icon button on hover; a restoring row keeps an explicit restoring status label. The affordance must not reserve a permanent flex column that steals title width when hidden, must never shift row layout, never render as inline prose text, and keep the localized action name in the tooltip.
+    rule: Session Navigator historical rows resume through the canonical row click and must not render a redundant hover triangle or play-button affordance. A restoring row keeps an explicit restoring status label. Row activation remains available through keyboard and context-menu semantics, and removing the obsolete hover decoration must not shift row layout or steal title width.
     forbidden:
       - inline_text_action_label_on_row_hover
       - hover_affordance_changing_row_geometry
       - permanent_flex_slot_stealing_title_width_when_hidden
+      - redundant_resume_hover_triangle_or_play_button
       - removing_the_explicit_restoring_status
   - id: SESSION-EMPTY-STATE-SURFACE-28
     rule: The Session Navigator empty projection renders a hierarchical placeholder surface: one muted state glyph above the localized message. Discovering, scan error, zero sessions, and query no-match each map to a distinct glyph through one pure mapping, so the four states are distinguishable without reading the text.

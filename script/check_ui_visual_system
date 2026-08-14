@@ -59,7 +59,7 @@ rg -q 'content_column_trailing_respects_panel_split_chrome_inset' src/ui/tab_str
 # Row hover affordance is a typed mapping, not inline prose text.
 rg -q 'fn session_row_hover_affordance' src/ui/tab_sidebar.rs
 rg -q 'SessionRowHoverAffordance' src/ui/tab_sidebar.rs
-rg -q 'historical_row_hover_uses_icon_affordance_not_text' src/ui/tab_sidebar.rs
+rg -q 'historical_row_click_is_the_only_resume_affordance' src/ui/tab_sidebar.rs
 if rg -n 'group_hover\("agent-session-row"[^)]*\)[\s\S]{0,200}session\.resume' src/ui/tab_sidebar.rs | rg 'child' >/dev/null; then
   if ! rg -Fq '.tooltip(' src/ui/tab_sidebar.rs >/dev/null; then
     echo '[ui-visual] resume action must be an icon affordance with a tooltip, not hover prose' >&2

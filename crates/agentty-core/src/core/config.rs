@@ -313,7 +313,7 @@ impl ComposerMode {
 }
 
 /// Pure dock policy for INPUT-COMPOSER-SMART-PREFERENCE-05.
-pub fn composer_should_dock(mode: ComposerMode, focused_has_cli_agent: bool) -> bool {
+pub fn composer_should_dock(mode: ComposerMode, _focused_has_cli_agent: bool) -> bool {
     match mode {
         ComposerMode::Always => true,
         // Rich input is useful for ordinary shells too. Auto controls the
