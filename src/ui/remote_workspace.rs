@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use agentty_core::host::remote::RemoteHost;
-use agentty_core::host::{Host as _, HostId};
+use agentty_core::host::HostId;
 use gpui::{Context, PromptLevel, Window};
 use gpui_component::WindowExt as _;
 
@@ -403,9 +403,10 @@ impl AgenttyApp {
                         rows: rows.clone(),
                     },
                 );
-                let host_id = connected.host.id();
+                let host_id = choice.target.host_id();
                 remote_connect::HostLinks::insert(
                     cx,
+                    host_id,
                     connected.host,
                     home.clone(),
                     connected.store_roots,
@@ -848,6 +849,7 @@ struct MachineLink {
     backoff: Backoff,
     next_attempt: Option<Instant>,
     attempting: bool,
+    generation: u64,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -972,12 +974,22 @@ impl RemoteLinks {
         })
     }
 
-    fn begin_attempt(cx: &mut gpui::App, host: HostId) {
+    fn begin_attempt(cx: &mut gpui::App, host: HostId) -> u64 {
+        let generation = cx
+            .default_global::<RemoteLinks>()
+            .machines
+            .get_mut(&host)
+            .map(|link| {
+                link.generation = link.generation.saturating_add(1);
+                link.generation
+            })
+            .unwrap_or(0);
         cx.default_global::<RemoteLinks>()
             .transitions
             .entry(host)
             .or_default()
             .begin_attempt();
+        generation
     }
 
     fn mark_disconnected(cx: &mut gpui::App, host: HostId) {
@@ -1014,6 +1026,7 @@ impl RemoteLinks {
             backoff: Backoff::default(),
             next_attempt: None,
             attempting: false,
+            generation: 0,
         });
         link.backoff.reset();
         link.next_attempt = Some(Instant::now());
@@ -1048,6 +1061,7 @@ impl RemoteLinks {
                 backoff: Backoff::default(),
                 next_attempt: None,
                 attempting: false,
+                generation: 0,
             });
         f(link);
     }
@@ -1239,7 +1253,7 @@ fn client_id_for(cx: &gpui::App, host: HostId, store_key: &str) -> Option<Worksp
 }
 
 fn launch_attempt(cx: &mut gpui::App, host: HostId, target: RemoteTarget) {
-    RemoteLinks::begin_attempt(cx, host);
+    let generation = RemoteLinks::begin_attempt(cx, host);
     let label = target.to_string();
     let header = match remote_connect::control_route(&target, cx) {
         Ok(header) => header,
@@ -1283,7 +1297,7 @@ fn launch_attempt(cx: &mut gpui::App, host: HostId, target: RemoteTarget) {
                 Ok::<_, String>(connected)
             })
             .await;
-        cx.update(|cx| finish_attempt(cx, host, &label, outcome));
+        cx.update(|cx| finish_attempt(cx, host, generation, &label, outcome));
     })
     .detach();
 }
@@ -1291,14 +1305,25 @@ fn launch_attempt(cx: &mut gpui::App, host: HostId, target: RemoteTarget) {
 fn finish_attempt(
     cx: &mut gpui::App,
     host: HostId,
+    generation: u64,
     label: &str,
     outcome: Result<remote_connect::Connected, String>,
 ) {
+    let current_generation = cx
+        .default_global::<RemoteLinks>()
+        .machines
+        .get(&host)
+        .map(|link| link.generation);
+    if !accept_connection_result(current_generation, generation) {
+        log::info!("discarding stale remote connection result for {label}");
+        return;
+    }
     match outcome {
         Ok(connected) => {
             let restarted = server_restarted(cx, host, &connected.host);
             remote_connect::HostLinks::insert(
                 cx,
+                host,
                 connected.host,
                 connected.home,
                 connected.store_roots,
@@ -1338,6 +1363,10 @@ fn finish_attempt(
         }
     }
     cx.refresh_windows();
+}
+
+fn accept_connection_result(current: Option<u64>, result: u64) -> bool {
+    current == Some(result)
 }
 
 fn relink_panes(cx: &mut gpui::App, workspace: WorkspaceId) {
@@ -1693,6 +1722,13 @@ mod tests {
                 "nothing was taken over, so nothing needs the Replace path"
             );
         });
+    }
+
+    #[test]
+    fn stale_remote_connection_result_is_ignored() {
+        assert!(!accept_connection_result(Some(2), 1));
+        assert!(accept_connection_result(Some(2), 2));
+        assert!(!accept_connection_result(None, 2));
     }
 
     #[test]

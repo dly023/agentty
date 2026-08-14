@@ -11,6 +11,14 @@ feedback_policy:
   promotion_rule: Before implementation, promote the feedback into a stable spec contract, milestone item, traceability row, static check, and failing focused test as applicable.
   retention_rule: Never delete feedback silently; declined or superseded entries retain the reason and replacement ID when one exists.
 feedback:
+  - id: FEEDBACK-20260814-025
+    summary: 会话名称显示仍大量退化为“Agent 会话”，但这些会话有 user 消息；名称优先级应为显式别名 > Agent 自带会话命名 > 用户首条消息 > Agent 类型，最后才使用通用兜底，最好附带时间戳。
+    status: captured
+    priority: critical
+    area: session_title_precedence_and_fallback
+    decision: 暂不宣称完成。需要追踪各 provider 的标题解析、首条 user 消息提取、类型名称和 UI 兜底链路，先补充覆盖优先级与无标题会话的定向失败测试，再统一接入 canonical title resolver。
+    next_action: 审计 session title resolver 与各 provider parser，建立显式别名、provider 标题、首条 user 消息、类型名、时间戳的可观察优先级测试。
+
   - id: FEEDBACK-20260814-024
     summary: 反复进入远程环境的问题仍存在，说明当前远程环境进入状态或重复触发路径尚未闭环。
     status: captured

@@ -229,7 +229,12 @@ fn discover_jcode_session_files(host: &dyn Host, request: &DiscoveryRequest) -> 
             continue;
         };
         let first_user_message = header.messages.iter().find_map(|message| {
-            (message.get("role").and_then(serde_json::Value::as_str) == Some("user"))
+            let is_user = message.get("role").and_then(serde_json::Value::as_str) == Some("user");
+            let is_system = message
+                .get("display_role")
+                .and_then(serde_json::Value::as_str)
+                == Some("system");
+            (is_user && !is_system)
                 .then(|| message.get("content"))
                 .flatten()
                 .and_then(jcode_message_text)
@@ -292,6 +297,35 @@ fn jcode_message_text(value: &serde_json::Value) -> Option<String> {
 
 fn is_jcode_internal_system_reminder(text: &str) -> bool {
     text.trim_start().starts_with("<system-reminder>")
+}
+
+#[cfg(test)]
+mod jcode_title_tests {
+    #[test]
+    fn jcode_system_context_does_not_hide_first_user_title() {
+        let system = serde_json::json!({
+            "role": "user",
+            "display_role": "system",
+            "content": [{"type": "text", "text": "<system-reminder>context</system-reminder>"}]
+        });
+        let user = serde_json::json!({
+            "role": "user",
+            "content": [{"type": "text", "text": "真实的首条请求"}]
+        });
+        let messages = vec![system, user];
+        let first = messages.iter().find_map(|message| {
+            let is_user = message.get("role").and_then(serde_json::Value::as_str) == Some("user");
+            let is_system = message
+                .get("display_role")
+                .and_then(serde_json::Value::as_str)
+                == Some("system");
+            (is_user && !is_system)
+                .then(|| message.get("content"))
+                .flatten()
+                .and_then(super::jcode_message_text)
+        });
+        assert_eq!(first.as_deref(), Some("真实的首条请求"));
+    }
 }
 
 #[cfg(not(unix))]

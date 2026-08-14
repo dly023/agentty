@@ -430,11 +430,11 @@ impl HostLinks {
 
     pub fn insert(
         cx: &mut App,
+        id: HostId,
         host: Arc<RemoteHost>,
         home: PathBuf,
         store_roots: Option<agentty_core::agent_runtime::AgentStoreRoots>,
     ) {
-        let id = host.id();
         crate::ui::host_registry::HostRegistry::insert(cx, Arc::clone(&host).into_shared());
         let table = cx.default_global::<HostLinks>();
         table.hosts.insert(id, host);

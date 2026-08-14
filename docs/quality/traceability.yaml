@@ -1,6 +1,20 @@
 version: 1
 updated: 2026-08-03
 entries:
+  - id: REMOTE-CONNECTION-GENERATION-18
+    spec: REMOTE-CONNECTION-GENERATION-18
+    source: [docs/specs/REMOTE_HELPER_SPEC.yaml, src/ui/remote_workspace.rs]
+    static_check: script/check_spec_matrix
+    tests: [stale_remote_connection_result_is_ignored]
+    verification: cargo test --bin agentty-app remote_workspace --locked && ./script/presubmit quick
+    evidence: "2026-08-14: connection attempts now carry a per-host generation so late results cannot replace a newer attempt."
+  - id: SESSION-TITLE-PRECEDENCE-11
+    spec: SESSION-TITLE-PRECEDENCE-11
+    source: [docs/specs/SESSION_NAVIGATOR_SPEC.yaml, crates/agentty-core/src/agent_runtime/service.rs, crates/agentty-core/src/agent_runtime/navigator.rs]
+    static_check: script/check_spec_matrix
+    tests: [jcode_system_context_does_not_hide_first_user_title]
+    verification: cargo test -p agentty-core jcode_system_context_does_not_hide_first_user_title --lib --locked && ./script/presubmit quick
+    evidence: "2026-08-14: Jcode's first message is a user-role system context record; discovery now excludes display_role=system before selecting the first user title."
   - id: SESSION-NAVIGATOR-REFRESH-37
     spec: SESSION-NAVIGATOR-REFRESH-37
     source: [docs/specs/SESSION_NAVIGATOR_SPEC.yaml, src/ui/tab_sidebar.rs, assets/icons/refresh.svg]

@@ -7,6 +7,11 @@ architecture:
   remote_path: control_rpc_to_same_agent_runtime
   exclusions: [byok, model_proxy, chat_backend, new_listening_port, second_daemon]
 contracts:
+  - id: REMOTE-CONNECTION-GENERATION-18
+    rule: Each remote connection attempt owns a monotonically increasing generation. A completion or failure from an older generation is stale, must not replace the current HostLink or change the visible connection state, and must not trigger a second reconnect prompt.
+    forbidden:
+      - stale_connection_result_overwriting_current_host_link
+      - stale_connection_result_triggering_reconnect_ui
   - id: HELPER-CAPABILITY-NEGOTIATION-01
     rule: Client and helper negotiate named capabilities and protocol version before using Agent features; an unavailable capability is explicit and never inferred from build labels. Session discovery may proceed when HelloOk advertises agent-helper, publishes store_roots, or provides a non-empty peer home from which target-owned default store roots are derived; activity and completion still require the agent-helper feature. Deriving roots from peer home is not a GUI-HOME fallback.
   - id: HELPER-SHARED-CORE-02

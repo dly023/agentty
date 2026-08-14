@@ -2,6 +2,11 @@ version: 1
 updated: 2026-08-07
 domain: agent_session_navigator
 contracts:
+  - id: SESSION-TITLE-PRECEDENCE-11
+    rule: A session display title resolves in this order: explicit user alias, meaningful Agent-authored session title, first meaningful user message, Agent type name, then a generic fallback. A Jcode message marked display_role=system, including the initial system-reminder context, is not a user-title candidate.
+    forbidden:
+      - system_reminder_used_as_session_title
+      - generic_agent_session_before_first_user_message
   - id: SESSION-NAVIGATOR-REFRESH-37
     rule: The session navigator refresh control uses the familiar circular refresh asset and keeps the existing refresh-session action and localized tooltip.
     forbidden:
