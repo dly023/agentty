@@ -11,6 +11,18 @@ feedback_policy:
   promotion_rule: Before implementation, promote the feedback into a stable spec contract, milestone item, traceability row, static check, and failing focused test as applicable.
   retention_rule: Never delete feedback silently; declined or superseded entries retain the reason and replacement ID when one exists.
 feedback:
+  - id: FEEDBACK-20260814-023
+    summary: 本地出现两个 Agentty，实际来源是 dist/Agentty.app 残留构建副本与 /Applications/Agentty.app 安装版本同时被 Launch Services 注册。
+    status: captured
+    priority: high
+    area: local_packaging_and_app_registration
+    decision: 打包和安装验收只保留 /Applications/Agentty.app 作为本地可用 GUI。删除 dist/Agentty.app，并注销对应的旧 Launch Services 条目，重新打开安装版本后验证仅有一个 agentty-app GUI 进程。
+    evidence:
+      - dist/Agentty.app 已删除，/Applications/Agentty.app 保留
+      - 旧 dist/dmg-stage/Agentty.app 条目已注销
+      - 重新打开后仅检测到一个 /Applications/Agentty.app/Contents/MacOS/agentty-app 进程
+    next_action: 用户继续进行真实桌面验收；后续打包脚本不得把可启动副本长期留在 dist 根目录。
+
   - id: FEEDBACK-20260814-022
     summary: Deleting every discovered Jcode session failed from the desktop UI.
     status: implemented
