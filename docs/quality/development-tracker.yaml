@@ -13,14 +13,19 @@ feedback_policy:
 feedback:
   - id: FEEDBACK-20260814-015
     summary: When multiple environments exist, right-clicking the dock/tab bar should offer quick actions to open each environment in its own window, with the environment name used as the window title.
-    status: promoted
+    status: implemented
     priority: high
     area: environment_window_context_menu
     decision: Reuse the existing Environment Indicator host list and canonical open_or_focus_environment path. Add the same environment actions to the tab/dock bar context menu, deduplicate by EnvironmentId, and keep current-window authority immutable.
     promoted_to:
       spec: ENV-WINDOW-MENU-16
       traceability: ENV-WINDOW-MENU-16
-    next_action: Implement and verify menu rendering, open-or-focus behavior, title synchronization, and duplicate/closed-environment cases.
+    evidence:
+      - src/ui/tab_strip.rs attaches the canonical environment menu to the tab/dock strip context menu
+      - duplicate EnvironmentId entries are suppressed and labels include endpoint detail when available
+      - src/ui/app.rs derives empty-window titles from the remote environment label and uses Local for local authority
+      - environment_menu_uses_canonical_open_or_focus_path and all 16 tab_strip tests pass
+    next_action: User visual acceptance on a multi-environment desktop window remains open.
   - id: FEEDBACK-20260814-014
     summary: The environment switcher indicator is too sparse when it shows only an alias. It should carry richer target context such as resolved host/IP, user, and remote/local state so users can distinguish similarly named environments.
     status: captured
