@@ -31,18 +31,18 @@ entries:
     evidence: "2026-08-14: latest upstream/main produced broad rename/core conflicts when wholesale merged, so the merge was aborted. The policy now requires local review, selective cherry-pick or native reimplementation, focused verification, and a selected origin/main squash base."
   - id: SESSION-LIVE-CARRIER-TEMPORARY-102
     spec: SESSION-LIVE-CARRIER-TEMPORARY-35
-    source: [docs/specs/SESSION_NAVIGATOR_SPEC.yaml, docs/specs/INPUT_EXPERIENCE_SPEC.yaml, crates/agentty-core/src/agent_runtime/navigator.rs, src/ui/session_navigator.rs, src/ui/composer.rs, src/ui/app.rs]
+    source: [docs/specs/SESSION_NAVIGATOR_SPEC.yaml, docs/specs/INPUT_EXPERIENCE_SPEC.yaml, crates/agentty-core/src/agent_runtime/navigator.rs, crates/agentty-core/src/daemon/pane.rs, src/ui/session_navigator.rs, src/ui/composer.rs, src/ui/app.rs]
     static_check: [script/check_session_navigator, script/check_completion_surface, script/check_ui_visual_system]
-    tests: [temporary_live_carrier_row_is_visible_before_provider_history, temporary_live_carrier_upgrades_in_place_when_history_arrives, activity_bar_toggles_composer_without_mutating_mode, inline_edit_identity_survives_carrier_replacement]
-    verification: cargo test -p agentty-core --lib navigator --locked && cargo test --bin agentty-app composer session_navigator --locked && ./script/presubmit quick
-    evidence: "2026-08-14 promoted from user feedback; red-test evidence pending implementation."
+    tests: [sniff_osc133_command_capture_drives_agent_detection, temporary_live_carrier_row_is_visible_before_provider_history, temporary_live_carrier_upgrades_in_place_when_history_arrives, activity_bar_toggles_composer_without_mutating_mode, inline_edit_identity_survives_carrier_replacement]
+    verification: cargo test -p agentty-core sniff_osc133_command_capture_drives_agent_detection --lib --locked && cargo test --bin agentty-app session_navigator --locked
+    evidence: "2026-08-14 desktop acceptance found Jcode absent from the live carrier path. Shell command mark detection is now enabled on desktop shells and the regression test explicitly covers jcode. Provider history remains fail-closed until a machine-readable stable list contract is available."
   - id: SESSION-REMOTE-SIDEBAR-103
     spec: SESSION-REMOTE-SIDEBAR-36
     source: [docs/specs/SESSION_NAVIGATOR_SPEC.yaml, src/ui/session_navigator.rs, src/ui/remote_workspace.rs, src/ui/app.rs]
     static_check: script/check_session_navigator
     tests: [unavailable_remote_refresh_does_not_poison_link_up_refresh]
-    verification: cargo test --bin agentty-app session_navigator --locked && ./script/presubmit quick
-    evidence: "2026-08-14 promoted from user feedback; red-test evidence pending implementation."
+    verification: cargo test --bin agentty-app remote_workspace --locked && cargo test --bin agentty-app session_navigator --locked
+    evidence: "2026-08-14 desktop acceptance found the existing discovery-completion sidebar mutation too late or ineffective. RemoteLinkUp now opens the left sidebar before starting the refresh; focused remote and navigator tests pass."
   - id: INPUT-COMPOSER-RICH-INPUT-104
     spec: INPUT-COMPOSER-RICH-INPUT-12
     source: [docs/specs/INPUT_EXPERIENCE_SPEC.yaml, src/ui/composer.rs, src/ui/app.rs]

@@ -1624,7 +1624,6 @@ fn apply_signals(st: &mut PaneState, signals: SniffSignals) {
         }
     }
     for shell in signals.shell {
-        #[cfg(windows)]
         if shell_mark_capture_changed(&st.shell, &shell) {
             apply_agent(
                 st,
@@ -2647,6 +2646,13 @@ mod tests {
         assert_eq!(a.shell.last().unwrap().command.as_deref(), Some("codex"));
         let d = s.feed(b"\x1b]133;D;0\x07");
         assert_eq!(d.shell.last().unwrap().command, None);
+
+        let c = s.feed(b"\x1b]133;C;jcode\x07");
+        let shell = c.shell.last().unwrap();
+        assert_eq!(
+            agent_from_shell_mark(shell, &custom),
+            Some(crate::core::cli_agent::CLIAgent::Jcode)
+        );
 
         let c = s.feed(b"\x1b]133;C;echo%20a%0Aecho%20b\x07");
         assert_eq!(

@@ -1438,6 +1438,14 @@ fn refresh_window_agent_sessions(cx: &mut gpui::App, workspace: WorkspaceId) {
         return;
     };
     app.update(cx, |app, cx| {
+        // RemoteLinkUp is the canonical entered-environment transition. Open
+        // the session navigator before discovery completes so an empty or
+        // slow remote scan cannot leave the newly entered environment hidden.
+        app.sidebar_collapsed = false;
+        app.update_config(cx, |cfg| {
+            cfg.tab_bar_position = crate::core::config::TabBarPosition::Left;
+            cfg.sidebar_collapsed = false;
+        });
         app.refresh_session_navigator_for(
             crate::ui::session_navigator::SessionRefreshIntent::RemoteLinkUp,
             cx,

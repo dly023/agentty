@@ -33,18 +33,31 @@ feedback:
     next_action: Reproduce on the desktop binary, identify the dock/tab bar element receiving secondary clicks, move the environment menu there, and retest with multiple environments.
   - id: FEEDBACK-20260814-016
     summary: Desktop acceptance still shows that typing jcode in a new terminal creates neither a temporary session container nor a discovered historical Jcode row in the left navigator.
-    status: captured
+    status: promoted
     priority: critical
     area: jcode_live_carrier_and_history_discovery
     decision: Treat the previous Jcode identity-only implementation as insufficient. Trace the actual terminal process observation, carrier projection, and provider discovery path. Do not advertise Jcode history until a real machine-readable contract exists, but the live temporary carrier must appear on the observed runtime path.
-    next_action: Reproduce with the same desktop binary, inspect foreground-agent polling and remote/local observation boundaries, add a failing acceptance-aligned test, then implement.
+    promoted_to:
+      spec: SESSION-LIVE-CARRIER-TEMPORARY-35
+      traceability: SESSION-LIVE-CARRIER-TEMPORARY-102
+    evidence:
+      - crates/agentty-core/src/daemon/pane.rs now applies OSC 133 shell command detection on desktop shells, not only Windows
+      - sniff_osc133_command_capture_drives_agent_detection explicitly covers jcode and passes
+      - Jcode historical discovery remains blocked by the existing stable-list gate because jcode session management exposes no machine-readable list command
+    next_action: Build and launch a fresh GUI, then retest the exact new-terminal jcode path. Separately design a public Jcode list adapter only if a supported machine-readable interface is confirmed.
   - id: FEEDBACK-20260814-017
     summary: Desktop acceptance still shows that connecting to dnyx226 does not automatically expand the left session navigator.
-    status: captured
+    status: promoted
     priority: critical
     area: remote_session_sidebar_lifecycle
     decision: Existing conditional sidebar mutation is not sufficient. Trace the actual remote attach, workspace adoption, refresh generation, and render lifecycle. The canonical connected transition must force the sidebar open and preserve that state through discovery completion.
-    next_action: Reproduce the dnyx226 attach path, identify the state overwrite or missed callback, add a failing lifecycle test, then fix and retest.
+    promoted_to:
+      spec: SESSION-REMOTE-SIDEBAR-36
+      traceability: SESSION-REMOTE-SIDEBAR-103
+    evidence:
+      - src/ui/remote_workspace.rs now opens the left sidebar and sets left tab-bar position at RemoteLinkUp before discovery starts
+      - remote_workspace tests (26) and session_navigator tests (19) pass
+    next_action: Build and launch a fresh GUI, then retest the exact dnyx226 attach path and verify the sidebar remains open through discovery completion.
   - id: FEEDBACK-20260814-015
     summary: When multiple environments exist, right-clicking the dock/tab bar should offer quick actions to open each environment in its own window, with the environment name used as the window title.
     status: implemented
