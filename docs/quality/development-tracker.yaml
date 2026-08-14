@@ -24,6 +24,7 @@ feedback:
       - provider.rs now accepts canonical Jcode session JSON files as mutation sources and rejects journal/outside-root paths
       - jcode_session_files_are_canonical_mutation_sources passes
       - direct_session_delete_source_removes_only_backing_file passes
+      - Jcode discovery now matches the official 32 newest valid session-card limit
     next_action: Build a fresh GUI and retest deleting a real Jcode session, then verify the row does not reappear after refresh.
 
   - id: FEEDBACK-20260814-021

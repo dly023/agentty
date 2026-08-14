@@ -27,6 +27,8 @@ pub const DEFAULT_LINE_LIMIT: usize = 400;
 /// Only the most recently touched transcripts are parsed; canonicalize would
 /// truncate to `logical_limit` rows sorted by mtime anyway.
 pub const PARSE_CANDIDATE_FACTOR: usize = 4;
+/// Jcode desktop's session switcher exposes its 32 newest valid cards.
+pub const JCODE_SESSION_LIMIT: usize = 32;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DiscoveryRequest {
@@ -154,7 +156,7 @@ fn discover_jcode(host: &dyn Host, request: &DiscoveryRequest) -> DiscoveryOutco
     let Some(sessions) = frame.get("sessions").and_then(|v| v.as_array()) else {
         return DiscoveryOutcome::Failed { message: "jcode API did not return sessions".into() };
     };
-    let rows = sessions.iter().filter_map(|session| {
+    let rows: Vec<AgentSessionRecord> = sessions.iter().filter_map(|session| {
         let id = session.get("session_id")?.as_str()?.to_owned();
         if session
             .get("parent_id")
@@ -179,6 +181,9 @@ fn discover_jcode(host: &dyn Host, request: &DiscoveryRequest) -> DiscoveryOutco
             None,
         ))
     }).collect();
+    let mut rows = rows;
+    rows.sort_by(|a, b| b.updated_at_unix_ms.cmp(&a.updated_at_unix_ms));
+    rows.truncate(JCODE_SESSION_LIMIT);
     DiscoveryOutcome::Complete(rows)
 }
 
@@ -254,6 +259,9 @@ fn discover_jcode_session_files(host: &dyn Host, request: &DiscoveryRequest) -> 
             None,
         ));
     }
+    let mut rows = rows;
+    rows.sort_by(|a, b| b.updated_at_unix_ms.cmp(&a.updated_at_unix_ms));
+    rows.truncate(JCODE_SESSION_LIMIT);
     DiscoveryOutcome::Complete(rows)
 }
 

@@ -37,6 +37,11 @@
   - Agentty：统一 `CLIAgent::replay_flags` 清理旧的 `--resume/-r`，避免重复参数。
   - 已覆盖真实错误：`jcode --resume id --resume id`。
 
+- [x] **官方列表上限与排序**
+  - Jcode 源码：`DEFAULT_SESSION_LIMIT = 32`，按文件修改时间倒序，解析有效 card 后取最新 32 条。
+  - Agentty：`JCODE_SESSION_LIMIT = 32`，Jcode provider rows 按更新时间倒序后截断。
+  - 这项此前遗漏，已在自查中补齐。
+
 - [x] **远程环境 authority**
   - Agentty：使用选定 Host 读取远端 `~/.jcode/sessions`，不把本地 Jcode 会话伪装成远程结果。
 
