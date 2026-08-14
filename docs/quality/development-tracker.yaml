@@ -26,11 +26,17 @@ feedback:
     next_action: Verify the icon visually in the next desktop acceptance run.
   - id: FEEDBACK-20260814-018
     summary: Desktop acceptance shows the dock/tab bar right-click menu does not contain the expected environment window shortcuts.
-    status: captured
+    status: promoted
     priority: critical
     area: environment_window_context_menu
     decision: The previous implementation attached the menu to a tab-strip surface that is not the user-visible dock hit target, so it cannot be considered delivered. Trace the actual dock event surface and attach the menu to the canonical visible dock container, with a failing UI contract for the real right-click target.
-    next_action: Reproduce on the desktop binary, identify the dock/tab bar element receiving secondary clicks, move the environment menu there, and retest with multiple environments.
+    promoted_to:
+      spec: ENV-WINDOW-MENU-16
+      traceability: ENV-WINDOW-MENU-16
+    evidence:
+      - src/ui/tab_sidebar.rs now attaches the environment menu to the visible session dock root
+      - visible_session_dock_owns_environment_context_menu passes
+    next_action: Build and launch a fresh GUI, then retest right-click on the actual visible dock with multiple environments.
   - id: FEEDBACK-20260814-016
     summary: Desktop acceptance still shows that typing jcode in a new terminal creates neither a temporary session container nor a discovered historical Jcode row in the left navigator.
     status: promoted

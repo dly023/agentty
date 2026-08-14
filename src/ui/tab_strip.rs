@@ -427,7 +427,7 @@ impl AgenttyApp {
         )
     }
 
-    fn environment_menu(
+    pub(crate) fn environment_menu(
         mut menu: PopupMenu,
         current_environment: agentty_core::core::environment::EnvironmentId,
         hosts: &[crate::ui::remote_connect::HostChoice],

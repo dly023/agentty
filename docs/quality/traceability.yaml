@@ -10,10 +10,10 @@ entries:
     evidence: "2026-08-14 user requested the standard circular refresh icon for Agent session refresh."
   - id: ENV-WINDOW-MENU-16
     spec: ENV-WINDOW-MENU-16
-    source: [docs/specs/ENVIRONMENT_MODEL_SPEC.yaml, src/ui/tab_strip.rs, src/ui/windows.rs, src/ui/app.rs]
+    source: [docs/specs/ENVIRONMENT_MODEL_SPEC.yaml, src/ui/tab_strip.rs, src/ui/tab_sidebar.rs, src/ui/windows.rs, src/ui/app.rs]
     static_check: [script/check_spec_matrix, script/check_ui_visual_system]
-    tests: [environment_menu_uses_canonical_open_or_focus_path]
-    verification: cargo test --bin agentty-app environment_menu_uses_canonical_open_or_focus_path --locked && cargo test --bin agentty-app tab_strip --locked && ./script/presubmit quick
+    tests: [environment_menu_uses_canonical_open_or_focus_path, visible_session_dock_owns_environment_context_menu]
+    verification: cargo test --bin agentty-app environment_menu_uses_canonical_open_or_focus_path --locked && cargo test --bin agentty-app visible_session_dock_owns_environment_context_menu --locked && ./script/presubmit quick
     evidence: "2026-08-14 user acceptance requested quick open actions for multiple environments from the dock/tab bar, with environment-named windows."
   - id: INPUT-COMPOSER-NATIVE-RICH-AREA-106
     spec: INPUT-COMPOSER-NATIVE-RICH-AREA-13
