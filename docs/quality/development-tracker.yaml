@@ -11,6 +11,54 @@ feedback_policy:
   promotion_rule: Before implementation, promote the feedback into a stable spec contract, milestone item, traceability row, static check, and failing focused test as applicable.
   retention_rule: Never delete feedback silently; declined or superseded entries retain the reason and replacement ID when one exists.
 feedback:
+  - id: FEEDBACK-20260814-004
+    summary: Track upstream continuously but absorb only useful fixes and designs selectively; do not merge upstream wholesale.
+    status: promoted
+    priority: high
+    area: upstream_selective_absorption
+    decision: Establish the repository-level upstream policy in DEVELOPMENT.md. Review upstream locally with focused diffs and tests. Cherry-pick only isolated compatible fixes; reimplement designs through Agentty's SPEC workflow and canonical Environment/Host/runtime primitives. Reject large rename-conflict merges and excluded distribution, update-channel, or system-proxy behavior. Publish the final Agentty delta as one squashed commit relative to the selected origin/main base.
+    evidence:
+      - 2026-08-14: latest upstream/main advanced 38 commits and produced broad rename/core conflicts when merged, so wholesale merging was aborted without changing the final worktree
+      - 2026-08-14: origin/main remained the intentional Agentty base and the final delta was published as one commit 6b3c51d
+      - 2026-08-14: focused Jcode boundary test, Agentty core tests, presubmit quick, and package/remote/static gates passed before push
+    promoted_to:
+      milestone: M0-UPSTREAM/UPSTREAM-001
+    next_action: For each upstream candidate, record the commit, rationale, focused test, and acceptance result before cherry-pick or native reimplementation.
+  - id: FEEDBACK-20260814-003
+    summary: Adapt Agentty to Jcode's multi-agent model by identifying the root/foreground session rather than treating every swarm worker as a peer, and reuse Jcode's native --resume session discovery path. Use the official logo from jcode.sh; background adaptation may need monochrome or container-aware treatment.
+    status: verified
+    priority: high
+    area: jcode_session_discovery_identity_branding
+    decision: Audit complete. Jcode's native picker uses snapshot+journal merge, visible-message filtering, debug/session-root distinctions, and recency ordering. Swarm workers are linked by report_back_to_session_id, while durable user-root candidates use parent_id=null and is_debug=false. Agentty must remain fail-closed until a versioned machine-readable Jcode list contract exists. Use the official jcode.sh logo source with an explicit light/dark and monochrome fallback policy.
+    evidence:
+      - refs/jcode/crates/jcode-tui/src/tui/session_picker/loading.rs implements native snapshot+journal discovery, bounded recency scanning, saved-session inclusion, and newest-first ordering
+      - refs/jcode/src/cli/dispatch.rs resolves --resume by native name/id lookup, external import, or reload-only server deferral; ordinary failures exit with a --resume listing hint
+      - refs/jcode/crates/jcode-base/src/session.rs marks is_debug or parent_id-present sessions internal for presence UIs
+      - refs/jcode/crates/jcode-app-core/src/server/swarm.rs reconstructs worker ancestry from report_back_to_session_id and maintains a coordinator separately
+      - refs/jcode/assets/app-icons/Jcode.icns is the audited official repository asset source under the MIT-licensed reference repository
+    next_action: Keep the existing SESSION-JCODE-STABLE-LIST-GATE-34 fail-closed contract. If Jcode publishes a versioned list API, promote a new spec/matrix row for the adapter and brand asset variants before implementation.
+  - id: FEEDBACK-20260814-002
+    summary: Composer should remain an in-flow bottom split: move the divider upward and let the extra area become the rich input region, rather than opening a separate popup/window.
+    status: promoted
+    priority: high
+    area: composer_layout
+    decision: Keep the canonical terminal-column flex layout. The Composer is rendered directly below body_area and above the Activity Bar, with its top border acting as the moved divider; no popup or extra window path is allowed.
+    promoted_to:
+      spec: INPUT-COMPOSER-DOCK-REFLOW-11
+      milestone: M2-INPUT/INPUT-024
+      traceability: INPUT-COMPOSER-DOCK-REFLOW-101
+    next_action: Preserve and verify in-flow reflow while completing multiline and crash regression checks.
+  - id: FEEDBACK-20260814-001
+    summary: New terminal Codex sessions should appear immediately as temporary left-sidebar tabs, remote attach should expand and populate the navigator, Composer needs stable multiline rich input without crashes, and rename/select-all must respond reliably.
+    status: promoted
+    priority: high
+    area: session_discovery_sidebar_composer_alias
+    decision: Promote into SESSION-LIVE-CARRIER-TEMPORARY-35, SESSION-REMOTE-SIDEBAR-36, and INPUT-COMPOSER-RICH-INPUT-12. Reuse the canonical live-session projection, environment refresh lifecycle, GPUI InputState, and begin_session_alias_edit path rather than adding parallel models.
+    promoted_to:
+      spec: [SESSION-LIVE-CARRIER-TEMPORARY-35, SESSION-REMOTE-SIDEBAR-36, INPUT-COMPOSER-RICH-INPUT-12]
+      milestone: M2-INPUT/M3-SESSION-NAVIGATOR
+      traceability: SESSION-LIVE-CARRIER-TEMPORARY-102
+    next_action: Add focused red contracts for temporary live rows, remote attach expansion, multiline input, and alias editing; implement and verify through quick presubmit.
   - id: FEEDBACK-20260810-014
     summary: Some configured remote hosts connect in Agentty while others do not.
     status: verified

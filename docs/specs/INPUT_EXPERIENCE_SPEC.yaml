@@ -41,6 +41,13 @@ contracts:
       - absolute_composer_over_terminal_cells
       - redundant_composer_header_above_activity_bar
       - composer_input_callback_reacquiring_agentty_app
+  - id: INPUT-COMPOSER-RICH-INPUT-12
+    rule: The expanded Composer is a stable rich multiline input surface. Shift+Enter inserts a newline without submission, Enter submits only when the completion menu is closed, the dock grows within a bounded range and reflows the terminal above it, and input callbacks never synchronously tear down or reacquire the owning App entity during delivery.
+    forbidden:
+      - shift_enter_submitting_composer
+      - single_line_composer_for_multiline_drafts
+      - unbounded_composer_growth
+      - composer_callback_mutating_after_state_teardown
   - id: INPUT-FRAME-ALIGNED-SMOOTH-SCROLL-08
     rule: Discrete wheel scrolls of at least one line may be smoothed when the persisted smooth_scroll preference is enabled. The relative remaining distance advances from GPUI next-frame callbacks, scales decay by elapsed frame time, accumulates successive notches, wakes an idle window when queued, and is cancelled by every other viewport movement. Trackpad gestures, sub-line moves, mouse-reporting, and alternate-scroll remain direct. Stale callbacks and top/bottom clamps terminate without moving the viewport.
     forbidden:

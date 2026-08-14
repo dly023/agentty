@@ -210,4 +210,16 @@ contracts:
     forbidden:
       - bare_text_only_empty_state
       - one_ambiguous_glyph_for_all_empty_states
+  - id: SESSION-LIVE-CARRIER-TEMPORARY-35
+    rule: A detected CLI Agent running in any terminal pane is immediately represented in the active Environment's Session Navigator, even before a provider session id or persisted transcript exists. The row uses a stable durable carrier identity, is explicitly temporary/non-persistent, upgrades in place when provider identity is observed, and disappears when the carrier closes unless a provider history row exists.
+    forbidden:
+      - hiding_detected_agent_until_persisted_session_exists
+      - persisting_temporary_carrier_as_provider_history
+      - replacing_temporary_row_with_duplicate_on_identity_upgrade
+  - id: SESSION-REMOTE-SIDEBAR-36
+    rule: When a remote Environment becomes attached, the Session Navigator switches to that Environment, expands the left sidebar, and refreshes discovery automatically. Remote discovery rows are visible without requiring a manual sidebar toggle and never use local rows as fallback.
+    forbidden:
+      - leaving_remote_discovery_behind_collapsed_sidebar
+      - requiring_manual_refresh_after_remote_attach
+      - showing_local_rows_in_remote_sidebar
 status: in_progress

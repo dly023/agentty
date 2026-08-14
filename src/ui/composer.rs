@@ -258,6 +258,9 @@ impl crate::ui::app::AgenttyApp {
         let initial = self.composer_drafts.get(&target).to_owned();
         let input = cx.new(|cx| {
             InputState::new(window, cx)
+                // Keep this explicit. `auto_grow` is a bounded layout policy,
+                // while multiline is the editing contract for Shift+Enter.
+                .multi_line(true)
                 .auto_grow(2, 8)
                 .submit_on_enter(true)
                 .placeholder(crate::core::i18n::current(cx, "composer.placeholder"))

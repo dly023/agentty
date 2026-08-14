@@ -2,6 +2,12 @@ version: 1
 updated: 2026-08-09
 domain: engineering_quality_gates
 contracts:
+  - id: DEVELOPMENT-UPSTREAM-SELECTIVE-ABSORPTION-01
+    rule: Agentty tracks upstream continuously but does not merge upstream wholesale. Candidate fixes are reviewed locally with focused diffs and tests, then either cherry-picked when isolated and compatible or reimplemented through Agentty's SPEC workflow and canonical primitives. The selected origin/main base remains the publishing base unless an explicit migration is reviewed.
+    forbidden:
+      - wholesale_upstream_merge_after_large_rename_or_architecture_conflict
+      - copying_upstream_design_without_agentty_spec_and_acceptance_test
+      - publishing_against_latest_upstream_without_selected_base_record
   - id: QUALITY-CANONICAL-PRESUBMIT-CI-01
     rule: Required CI runs the repository's canonical quick presubmit entrypoint rather than maintaining a partial parallel list of architecture checks. The quick entrypoint runs every static check and the quality gates' own executable contract tests.
     forbidden:

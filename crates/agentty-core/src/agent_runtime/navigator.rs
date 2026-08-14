@@ -810,6 +810,57 @@ mod tests {
     }
 
     #[test]
+    fn temporary_live_carrier_row_is_visible_before_provider_history() {
+        let mut model = SessionNavigator::default();
+        let temporary = LiveSession {
+            identity: SessionIdentity::Durable("carrier-1".into()),
+            agent: CLIAgent::Codex,
+            session_id: None,
+            title: None,
+            cwd: Some("/repo".into()),
+            launch_argv: vec!["codex".into()],
+            carrier: LiveCarrier {
+                container_id: "carrier-1".into(),
+                tab_id: Some("tab".into()),
+                pane_id: Some(1),
+            },
+            execution: None,
+        };
+        model.refresh(&[], &[temporary]);
+        assert_eq!(model.rows.len(), 1);
+        assert_eq!(model.rows[0].lifecycle, RowLifecycle::Live);
+        assert_eq!(model.rows[0].session_id, None);
+        assert_eq!(model.rows[0].source_path, None);
+    }
+
+    #[test]
+    fn temporary_live_carrier_upgrades_in_place_when_history_arrives() {
+        let mut model = SessionNavigator::default();
+        let temporary = LiveSession {
+            identity: SessionIdentity::Durable("carrier-1".into()),
+            agent: CLIAgent::Codex,
+            session_id: None,
+            title: None,
+            cwd: None,
+            launch_argv: vec![],
+            carrier: LiveCarrier {
+                container_id: "carrier-1".into(),
+                tab_id: None,
+                pane_id: None,
+            },
+            execution: None,
+        };
+        model.refresh(&[], &[temporary]);
+        let row_id = model.rows[0].row_id.clone();
+        let mut upgraded = live("s1", "tab", 1);
+        upgraded.carrier.container_id = "carrier-1".into();
+        model.refresh(&[history("s1")], &[upgraded]);
+        assert_eq!(model.rows.len(), 1);
+        assert_eq!(model.rows[0].row_id, row_id);
+        assert_eq!(model.rows[0].session_id.as_deref(), Some("s1"));
+    }
+
+    #[test]
     fn opaque_row_identity_survives_carrier_replacement() {
         let mut model = SessionNavigator::default();
         model.refresh(&[], &[live("s1", "old", 1)]);

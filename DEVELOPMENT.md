@@ -35,3 +35,13 @@ Read `AGENTS.md`, the relevant `docs/specs/*.yaml`, and `docs/quality/developmen
 - During this development line the repository package version is `0.0.1`.
 - Push validation fails unless `Cargo.toml` and the root entries in `Cargo.lock` report `0.0.1`.
 - Do not automatically increment per commit. Change this policy only through an explicit release/version spec update.
+
+## 5. Upstream tracking policy
+
+- Track `upstream/main` continuously, but do not merge it wholesale into Agentty.
+- Review upstream commits locally with `git show`, focused diffs, and the relevant tests before selecting anything.
+- Absorb only evidence-backed fixes and designs that fit Agentty's Environment, Host, and canonical runtime primitives.
+- Prefer a focused `git cherry-pick` for an isolated compatible fix. For architecture or UI designs, extract behavior, failure semantics, and tests, then implement them natively through the SPEC workflow instead of copying upstream structure.
+- Reject or defer changes that create large rename conflicts, import excluded distribution/update/proxy behavior, or lack a focused acceptance boundary.
+- Before publishing, run the mapped focused tests, `./script/presubmit quick`, and the applicable full gate. Keep the final Agentty delta as one squashed commit relative to the selected `origin/main` base.
+- Never use the latest `upstream/main` as an implicit release base. If upstream has advanced materially, record the selected commit IDs and continue from the existing Agentty base.

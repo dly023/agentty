@@ -418,6 +418,18 @@ impl AgenttyApp {
                     )) => {
                         app.session_history = rows;
                         app.session_scan_error = None;
+                        // Discovery is the content of the left navigation
+                        // surface. A remote attach must not leave it hidden
+                        // behind the user's previous collapsed state.
+                        if crate::core::session::WorkspaceStore::remote_ref(cx, app.workspace)
+                            .is_some()
+                        {
+                            app.sidebar_collapsed = false;
+                            app.update_config(cx, |cfg| {
+                                cfg.tab_bar_position = crate::core::config::TabBarPosition::Left;
+                                cfg.sidebar_collapsed = false;
+                            });
+                        }
                         if let Ok(aliases) = aliases {
                             app.session_user_state = aliases;
                             app.session_user_state_path = Some(path);
@@ -853,7 +865,6 @@ impl AgenttyApp {
         let current = row.display_title("");
         let input = cx.new(|cx| InputState::new(window, cx).default_value(current));
         input.update(cx, |state, cx| state.focus(window, cx));
-        window.dispatch_action(Box::new(gpui_component::input::SelectAll), cx);
         let subscription = cx.subscribe_in(
             &input,
             window,
@@ -871,6 +882,10 @@ impl AgenttyApp {
             input,
             _subscription: subscription,
         });
+        // Dispatch only after the edit entity is installed. GPUI resolves the
+        // action through the focused input, and doing this earlier races the
+        // first render/focus transaction on fast machines.
+        window.dispatch_action(Box::new(gpui_component::input::SelectAll), cx);
         cx.notify();
     }
 
