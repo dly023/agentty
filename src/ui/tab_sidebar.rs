@@ -455,11 +455,6 @@ impl AgenttyApp {
                 }
             });
 
-        let environment_menu_hosts = crate::ui::remote_connect::available_hosts(cx);
-        let environment_menu_current =
-            crate::core::session::WorkspaceStore::environment_id(cx, self.workspace);
-        let environment_menu_app = cx.entity().downgrade();
-
         div()
             .relative()
             .flex_shrink_0()
@@ -468,15 +463,6 @@ impl AgenttyApp {
             .bg(cx.theme().sidebar)
             .border_r_1()
             .border_color(cx.theme().sidebar_border)
-            .context_menu(move |menu, _window, cx| {
-                crate::ui::app::AgenttyApp::environment_menu(
-                    menu,
-                    environment_menu_current.clone(),
-                    &environment_menu_hosts,
-                    &environment_menu_app,
-                    cx,
-                )
-            })
             .child(
                 v_flex()
                     .size_full()
@@ -1706,14 +1692,10 @@ mod tests {
     }
 
     #[test]
-    fn visible_session_dock_owns_environment_context_menu() {
+    fn session_dock_does_not_steal_tab_context_menu() {
         let source = include_str!("tab_sidebar.rs");
         let production = source.split("#[cfg(test)]").next().unwrap_or(source);
-        assert!(
-            production.contains(".context_menu(move |menu, _window, cx|")
-                && production.contains("environment_menu_hosts")
-                && production.contains("environment_menu_current")
-        );
+        assert!(!production.contains("environment_menu_hosts"));
     }
 
     #[test]

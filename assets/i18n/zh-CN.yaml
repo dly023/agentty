@@ -166,7 +166,7 @@ menu.insert_path: 在终端中插入路径
 menu.join_discord: 加入 Discord
 menu.keyboard_shortcuts: 键盘快捷键
 menu.left_sidebar: 左侧边栏
-menu.manage_ssh_envs: 管理 SSH 环境…
+menu.manage_ssh_envs: 管理 SSH 环境
 menu.mark_unread: 标记为未读
 menu.maximize_pane: 最大化窗格
 menu.minimize: 最小化

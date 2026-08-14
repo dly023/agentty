@@ -166,7 +166,7 @@ menu.insert_path: Insert Path in Terminal
 menu.join_discord: Join the Discord
 menu.keyboard_shortcuts: Keyboard Shortcuts
 menu.left_sidebar: Left Sidebar
-menu.manage_ssh_envs: Manage SSH Environments…
+menu.manage_ssh_envs: Manage SSH Environments
 menu.mark_unread: Mark as Unread
 menu.maximize_pane: Maximize Pane
 menu.minimize: Minimize
