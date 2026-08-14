@@ -182,6 +182,8 @@ fn discover_jcode_session_files(host: &dyn Host, request: &DiscoveryRequest) -> 
         working_dir: Option<String>,
         #[serde(default)]
         is_debug: bool,
+        #[serde(default)]
+        messages: Vec<serde_json::Value>,
     }
 
     let root = request.roots.home.join(".jcode/sessions");
@@ -204,7 +206,13 @@ fn discover_jcode_session_files(host: &dyn Host, request: &DiscoveryRequest) -> 
         let Ok(header) = serde_json::from_slice::<JcodeSessionHeader>(&bytes) else {
             continue;
         };
-        if header.parent_id.is_some() || header.is_debug {
+        let has_user_message = header.messages.iter().any(|message| {
+            message.get("role").and_then(serde_json::Value::as_str) == Some("user")
+                && message.get("content").is_some_and(|content| {
+                    !content.to_string().trim_matches('"').trim().is_empty()
+                })
+        });
+        if header.parent_id.is_some() || header.is_debug || !has_user_message {
             continue;
         }
         let title = header

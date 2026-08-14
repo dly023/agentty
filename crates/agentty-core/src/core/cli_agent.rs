@@ -263,7 +263,7 @@ impl CLIAgent {
                 "--from-pr",
                 "--fork-session",
             ],
-            CLIAgent::Gemini | CLIAgent::Cursor => &["--resume", "-r"],
+            CLIAgent::Gemini | CLIAgent::Cursor | CLIAgent::Jcode => &["--resume", "-r"],
             CLIAgent::Copilot => &["--resume", "-r", "--continue", "-c"],
             CLIAgent::OpenCode => &["--session", "-s", "--continue", "-c", "--fork"],
             CLIAgent::Codex => &["--last"],
