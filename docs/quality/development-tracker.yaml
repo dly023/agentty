@@ -11,8 +11,20 @@ feedback_policy:
   promotion_rule: Before implementation, promote the feedback into a stable spec contract, milestone item, traceability row, static check, and failing focused test as applicable.
   retention_rule: Never delete feedback silently; declined or superseded entries retain the reason and replacement ID when one exists.
 feedback:
+  - id: FEEDBACK-20260814-021
+    summary: Do not claim Jcode compatibility from scattered fixes. Produce a source-alignment checklist and verify each session boundary, title rule, resume path, and desktop behavior one by one.
+    status: promoted
+    priority: critical
+    area: jcode_source_alignment_audit
+    decision: Maintain docs/quality/JCODE_SOURCE_ALIGNMENT_CHECKLIST.md as the review artifact. Only mark source semantics verified when the corresponding Agentty code and focused fixture test both exist; keep API fields that cannot prove internal filtering explicitly open.
+    promoted_to:
+      spec: SESSION-JCODE-STABLE-LIST-GATE-34
+      traceability: SESSION-JCODE-STABLE-LIST-GATE-34
+    evidence:
+      - docs/quality/JCODE_SOURCE_ALIGNMENT_CHECKLIST.md records source paths, adopted rules, open checks, and desktop acceptance items.
+    next_action: Add the missing Jcode discovery fixtures and resolve the stable API fallback boundary before claiming full alignment.
   - id: FEEDBACK-20260814-020
-    summary: Default session titles should use the first user message through one shared abstraction, while explicit user renames remain authoritative. Jcode should not have a separate title policy, and its official logo needs a higher-contrast badge plate.
+    summary: Default session titles should use the first user message only when no explicit session name exists. Jcode must hide internal system-reminder-only sessions, and its official logo needs a higher-contrast badge plate.
     status: promoted
     priority: high
     area: session_title_abstraction_and_jcode_branding
