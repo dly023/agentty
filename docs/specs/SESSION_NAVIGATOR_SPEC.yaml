@@ -43,6 +43,7 @@ contracts:
       - publishing_partial_jcode_rows_on_command_or_schema_failure
       - treating_parent_id_null_as_sufficient_user_session_filtering
       - replacing_last_complete_jcode_generation_after_bridge_failure
+      - deleting_jcode_session_through_unvalidated_source_path
   - id: SESSION-ROW-ACTIONS-07
     rule: Every historical session row exposes safe copy actions for session id, typed resume command, cwd, and source path plus a read-only details dialog; absent metadata disables its action instead of inventing a value.
   - id: SESSION-ROW-INFORMATION-HIERARCHY-08

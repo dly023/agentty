@@ -11,6 +11,21 @@ feedback_policy:
   promotion_rule: Before implementation, promote the feedback into a stable spec contract, milestone item, traceability row, static check, and failing focused test as applicable.
   retention_rule: Never delete feedback silently; declined or superseded entries retain the reason and replacement ID when one exists.
 feedback:
+  - id: FEEDBACK-20260814-022
+    summary: Deleting every discovered Jcode session failed from the desktop UI.
+    status: implemented
+    priority: critical
+    area: jcode_session_delete
+    decision: Reuse the same canonical ~/.jcode/sessions/<id>.json source boundary used by discovery. ProviderDescriptor::accepts_source must validate Jcode JSON files and reject journal or outside-root paths before the existing Host delete transaction runs.
+    promoted_to:
+      spec: SESSION-JCODE-STABLE-LIST-GATE-34
+      traceability: SESSION-JCODE-STABLE-LIST-GATE-34
+    evidence:
+      - provider.rs now accepts canonical Jcode session JSON files as mutation sources and rejects journal/outside-root paths
+      - jcode_session_files_are_canonical_mutation_sources passes
+      - direct_session_delete_source_removes_only_backing_file passes
+    next_action: Build a fresh GUI and retest deleting a real Jcode session, then verify the row does not reappear after refresh.
+
   - id: FEEDBACK-20260814-021
     summary: Do not claim Jcode compatibility from scattered fixes. Produce a source-alignment checklist and verify each session boundary, title rule, resume path, and desktop behavior one by one.
     status: promoted

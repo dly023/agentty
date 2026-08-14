@@ -95,6 +95,15 @@ impl ProviderDescriptor {
             ProviderId::Omp => is_omp_session_source(&roots.omp_sessions(), source),
             ProviderId::Grok => is_grok_session_source(&roots.grok_sessions(), source),
             ProviderId::Gemini => is_gemini_session_source(&roots.gemini_tmp(), source),
+            ProviderId::Jcode => {
+                let sessions = roots.home.join(".jcode/sessions");
+                is_descendant(&sessions, source)
+                    && has_extension(source, "json")
+                    && !source
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .is_some_and(|name| name.ends_with(".journal.json"))
+            }
             ProviderId::Cursor => {
                 is_descendant(&roots.cursor_projects(), source)
                     && source
@@ -337,6 +346,21 @@ mod tests {
         }
         assert!(descriptor_for_agent(CLIAgent::Gemini).is_some());
         assert!(PERSISTED_PROVIDER_DESCRIPTORS.len() > 3);
+    }
+
+    #[test]
+    fn jcode_session_files_are_canonical_mutation_sources() {
+        let roots = AgentStoreRoots::for_home("/home/alice".into());
+        let descriptor = descriptor_for_id(ProviderId::Jcode);
+        assert!(descriptor.accepts_source(
+            &roots,
+            &roots.home.join(".jcode/sessions/main.json")
+        ));
+        assert!(!descriptor.accepts_source(
+            &roots,
+            &roots.home.join(".jcode/sessions/main.journal.json")
+        ));
+        assert!(!descriptor.accepts_source(&roots, Path::new("/tmp/main.json")));
     }
 
     #[test]

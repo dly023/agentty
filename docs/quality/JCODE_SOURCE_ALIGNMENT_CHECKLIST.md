@@ -70,6 +70,7 @@
 | system reminder + 真实用户消息 | ☑️ | 会话仍有用户可见内容，标题取真实消息 | 同上 |
 | malformed JSON / 无 id | ⛔ | 不能建立稳定 session identity | Jcode discovery parser fail-closed |
 | API `list_sessions` fallback | ⚠️ | 当前 Jcode bridge 只返回 attached session，不是历史列表 | `jcode-harness-api-server/src/translate.rs` |
+| 删除 `~/.jcode/sessions/<id>.json` | ☑️ | 与发现同一 canonical Host/source 校验 | `ProviderDescriptor::accepts_source` + delete transaction |
 
 ## 当前结论
 
