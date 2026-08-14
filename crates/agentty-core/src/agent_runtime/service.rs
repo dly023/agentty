@@ -101,6 +101,7 @@ fn discover_provider(
         ProviderScanner::OmpJsonl => discover_omp(host, request),
         ProviderScanner::GrokSummaryJson => discover_grok(host, request),
         ProviderScanner::GeminiTmpJsonl => discover_gemini(host, request),
+        ProviderScanner::JcodeHarnessApi => discover_jcode(host, request),
         ProviderScanner::OpenCodeLegacyJson => discover_opencode(host, request, descriptor),
         ProviderScanner::DroidJsonl
         | ProviderScanner::CopilotJsonl
@@ -108,6 +109,70 @@ fn discover_provider(
         | ProviderScanner::CursorJsonl
         | ProviderScanner::AntigravityJsonl => discover_generic_jsonl(host, request, descriptor),
     }
+}
+
+#[cfg(unix)]
+fn discover_jcode(host: &dyn Host, request: &DiscoveryRequest) -> DiscoveryOutcome {
+    use std::io::{BufRead, BufReader, Write};
+    use std::os::unix::net::UnixStream;
+
+    if !host.id().is_local() {
+        return DiscoveryOutcome::SourceMissing {
+            source: "jcode harness API is not available through remote Host yet".into(),
+        };
+    }
+    let socket = request.roots.jcode_api_socket();
+    let Ok(mut stream) = UnixStream::connect(&socket) else {
+        return DiscoveryOutcome::SourceMissing {
+            source: socket.to_string_lossy().into_owned(),
+        };
+    };
+    let _ = stream.set_read_timeout(Some(std::time::Duration::from_millis(500)));
+    let hello = serde_json::json!({
+        "v": 1,
+        "id": 1,
+        "req": "hello",
+        "min_version": 1,
+        "max_version": 1,
+        "client": "agentty/agent-runtime"
+    });
+    let list = serde_json::json!({"v": 1, "id": 2, "req": "list_sessions"});
+    if writeln!(stream, "{hello}").is_err() || writeln!(stream, "{list}").is_err() {
+        return DiscoveryOutcome::Failed { message: "jcode API write failed".into() };
+    }
+    let mut reader = BufReader::new(stream);
+    let mut line = String::new();
+    let _ = reader.read_line(&mut line);
+    line.clear();
+    if reader.read_line(&mut line).is_err() {
+        return DiscoveryOutcome::Failed { message: "jcode API read failed".into() };
+    }
+    let Ok(frame) = serde_json::from_str::<serde_json::Value>(line.trim()) else {
+        return DiscoveryOutcome::Failed { message: "jcode API returned invalid JSON".into() };
+    };
+    let Some(sessions) = frame.get("sessions").and_then(|v| v.as_array()) else {
+        return DiscoveryOutcome::Failed { message: "jcode API did not return sessions".into() };
+    };
+    let rows = sessions.iter().filter_map(|session| {
+        let id = session.get("session_id")?.as_str()?.to_owned();
+        Some(record(
+            CLIAgent::Jcode,
+            "jcode",
+            id,
+            session.get("title").and_then(|v| v.as_str()).map(str::to_owned),
+            session.get("working_dir").and_then(|v| v.as_str()).map(str::to_owned),
+            None,
+            vec![],
+            Some(socket.to_string_lossy().into_owned()),
+            None,
+        ))
+    }).collect();
+    DiscoveryOutcome::Complete(rows)
+}
+
+#[cfg(not(unix))]
+fn discover_jcode(_host: &dyn Host, _request: &DiscoveryRequest) -> DiscoveryOutcome {
+    DiscoveryOutcome::SourceMissing { source: "jcode harness API requires a Unix socket".into() }
 }
 
 fn discover_codex(host: &dyn Host, request: &DiscoveryRequest) -> DiscoveryOutcome {

@@ -21,6 +21,7 @@ pub enum ProviderId {
     Omp,
     Grok,
     Gemini,
+    Jcode,
 }
 
 impl ProviderId {
@@ -37,6 +38,7 @@ impl ProviderId {
             Self::Omp => "omp",
             Self::Grok => "grok",
             Self::Gemini => "gemini",
+            Self::Jcode => "jcode",
         }
     }
 }
@@ -54,6 +56,7 @@ pub enum ProviderScanner {
     OmpJsonl,
     GrokSummaryJson,
     GeminiTmpJsonl,
+    JcodeHarnessApi,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -78,6 +81,7 @@ impl ProviderDescriptor {
             ProviderId::Omp => vec![roots.omp_sessions()],
             ProviderId::Grok => vec![roots.grok_sessions()],
             ProviderId::Gemini => vec![roots.gemini_tmp()],
+            ProviderId::Jcode => vec![roots.jcode_api_socket()],
         }
     }
 
@@ -181,6 +185,12 @@ pub const PERSISTED_PROVIDER_DESCRIPTORS: &[ProviderDescriptor] = &[
         id: ProviderId::Gemini,
         agent: CLIAgent::Gemini,
         scanner: ProviderScanner::GeminiTmpJsonl,
+        can_resume: true,
+    },
+    ProviderDescriptor {
+        id: ProviderId::Jcode,
+        agent: CLIAgent::Jcode,
+        scanner: ProviderScanner::JcodeHarnessApi,
         can_resume: true,
     },
 ];
@@ -303,18 +313,16 @@ mod tests {
     }
 
     #[test]
-    fn jcode_is_not_advertised_without_stable_machine_list_contract() {
+    fn jcode_is_advertised_only_through_stable_harness_api() {
         assert_eq!(
             CLIAgent::from_slug("jcode"),
             Some(CLIAgent::Jcode),
             "runtime CLI identity is needed for temporary live carrier detection"
         );
-        assert!(
-            PERSISTED_PROVIDER_DESCRIPTORS
-                .iter()
-                .all(|descriptor| descriptor.id.slug() != "jcode"),
-            "session discovery must not advertise a private-store Jcode provider"
-        );
+        let descriptor = descriptor_for_agent(CLIAgent::Jcode).expect("Jcode harness API provider");
+        assert_eq!(descriptor.id, ProviderId::Jcode);
+        assert_eq!(descriptor.scanner, ProviderScanner::JcodeHarnessApi);
+        assert!(descriptor.can_resume);
     }
 
     #[test]

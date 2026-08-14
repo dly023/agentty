@@ -55,6 +55,10 @@ impl AgentStoreRoots {
         Self::from_target_environment(home, |name| std::env::var_os(name))
     }
 
+    pub fn jcode_api_socket(&self) -> PathBuf {
+        join(&self.home, ".jcode/jcode-api.sock")
+    }
+
     pub fn codex_sessions(&self) -> PathBuf {
         join(&self.codex_home, "sessions")
     }
