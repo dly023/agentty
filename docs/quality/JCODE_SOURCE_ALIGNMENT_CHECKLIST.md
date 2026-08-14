@@ -58,6 +58,19 @@
   - 点击 resume 是否只产生一次 `--resume`。
   - 远程环境是否读取远程列表并自动展开侧栏。
 
+## 会话发现过滤矩阵
+
+| 输入 | 是否展示 | 原因 | 对齐证据 |
+|---|---:|---|---|
+| `*.json`，有真实用户消息 | ☑️ | 用户主会话 | `jcode_discovery_filters_internal_sessions_and_keeps_real_user_sessions` |
+| `*.journal.json` | ⛔ | Jcode desktop scanner 明确排除 journal | 同上 |
+| `parent_id` 存在 | ⛔ | 子代理/派生内部会话 | 同上 |
+| `is_debug: true` | ⛔ | debug 内部会话 | 同上 |
+| 只有 `<system-reminder>...</system-reminder>` | ⛔ | Jcode internal system reminder | 同上 |
+| system reminder + 真实用户消息 | ☑️ | 会话仍有用户可见内容，标题取真实消息 | 同上 |
+| malformed JSON / 无 id | ⛔ | 不能建立稳定 session identity | Jcode discovery parser fail-closed |
+| API `list_sessions` fallback | ⚠️ | 当前 Jcode bridge 只返回 attached session，不是历史列表 | `jcode-harness-api-server/src/translate.rs` |
+
 ## 当前结论
 
-源码审计已完成主要路径，但“全部对齐”不能只凭静态检查宣称完成。前三项补强验证必须完成后，才能把 Jcode 会话发现标记为 verified。
+会话发现过滤主路径已经逐项对照源码并有 fixture 测试。当前仍明确保留两个边界：API fallback 不是完整历史列表，真实桌面验收仍需用户操作。未完成这两个边界前，不把整体 Jcode 适配标记为 fully verified。
