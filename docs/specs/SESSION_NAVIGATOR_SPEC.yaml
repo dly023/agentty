@@ -37,9 +37,9 @@ contracts:
     forbidden:
       - indefinite_discovering_spinner_after_scan_timeout
   - id: SESSION-JCODE-STABLE-LIST-GATE-34
-    rule: Jcode history discovery uses only the versioned jcode-harness-api ListSessions contract on the selected Environment. The local implementation connects to ~/.jcode/jcode-api.sock, negotiates API major version 1, and publishes complete Sessions replies as resumable rows. Missing bridge, incompatible handshake, malformed reply, timeout, or remote transport without an equivalent bridge preserves the last complete generation and never publishes partial rows. Private ~/.jcode snapshot, journal, imported, backup, filename, count, parent-only, or timestamp heuristics are never a provider boundary. Remote discovery remains unavailable until the same stable API is exposed through the selected remote Host.
+    rule: Jcode history discovery uses Jcode's official session boundary on the selected Environment: the versioned jcode-harness-api ListSessions contract when its bridge is available, otherwise the documented ~/.jcode/sessions/*.json Session schema used by Jcode's own load_session and session search paths. Rows use the persisted id, custom_title/title, working_dir, file mtime, and typed `jcode --resume <id>` argv. Malformed files are skipped without publishing partial records; bridge protocol failures preserve the last complete generation. Private snapshot, journal, imported, backup, filename, count, parent-only, or timestamp heuristics are never used as an identity boundary.
     forbidden:
-      - advertising_jcode_from_private_store_files
+      - advertising_jcode_from_undocumented_jcode_files
       - publishing_partial_jcode_rows_on_command_or_schema_failure
       - treating_parent_id_null_as_sufficient_user_session_filtering
       - replacing_last_complete_jcode_generation_after_bridge_failure

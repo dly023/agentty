@@ -123,9 +123,7 @@ fn discover_jcode(host: &dyn Host, request: &DiscoveryRequest) -> DiscoveryOutco
     }
     let socket = request.roots.jcode_api_socket();
     let Ok(mut stream) = UnixStream::connect(&socket) else {
-        return DiscoveryOutcome::SourceMissing {
-            source: socket.to_string_lossy().into_owned(),
-        };
+        return discover_jcode_session_files(host, request);
     };
     let _ = stream.set_read_timeout(Some(std::time::Duration::from_millis(500)));
     let hello = serde_json::json!({
@@ -167,6 +165,58 @@ fn discover_jcode(host: &dyn Host, request: &DiscoveryRequest) -> DiscoveryOutco
             None,
         ))
     }).collect();
+    DiscoveryOutcome::Complete(rows)
+}
+
+fn discover_jcode_session_files(host: &dyn Host, request: &DiscoveryRequest) -> DiscoveryOutcome {
+    #[derive(serde::Deserialize)]
+    struct JcodeSessionHeader {
+        id: String,
+        #[serde(default)]
+        title: Option<String>,
+        #[serde(default)]
+        custom_title: Option<String>,
+        #[serde(default)]
+        working_dir: Option<String>,
+    }
+
+    let root = request.roots.home.join(".jcode/sessions");
+    let entries = match host.read_dir(&root, Some(&root)) {
+        Ok(entries) => entries,
+        Err(_) => {
+            return DiscoveryOutcome::SourceMissing {
+                source: root.to_string_lossy().into_owned(),
+            };
+        }
+    };
+    let mut rows = Vec::new();
+    for entry in entries.into_iter().filter(|entry| {
+        !entry.is_dir && !entry.is_symlink && entry.name.ends_with(".json")
+    }) {
+        let path = host.join(&root, &entry.name);
+        let Ok(bytes) = host.read_file_prefix(&path, DEFAULT_HEAD_BYTES) else {
+            continue;
+        };
+        let Ok(header) = serde_json::from_slice::<JcodeSessionHeader>(&bytes) else {
+            continue;
+        };
+        let title = header
+            .custom_title
+            .filter(|value| !value.trim().is_empty())
+            .or(header.title)
+            .or_else(|| Some(format!("Jcode session {}", header.id)));
+        rows.push(record(
+            CLIAgent::Jcode,
+            "jcode",
+            header.id,
+            title,
+            header.working_dir,
+            host.stat(&path).ok().and_then(|meta| meta.mtime),
+            vec!["jcode".into(), "--resume".into()],
+            Some(path.to_string_lossy().into_owned()),
+            None,
+        ));
+    }
     DiscoveryOutcome::Complete(rows)
 }
 
