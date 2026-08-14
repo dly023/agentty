@@ -1,6 +1,13 @@
 version: 1
 updated: 2026-08-03
 entries:
+  - id: INPUT-COMPOSER-NATIVE-RICH-AREA-106
+    spec: INPUT-COMPOSER-NATIVE-RICH-AREA-13
+    source: [docs/specs/INPUT_EXPERIENCE_SPEC.yaml, src/ui/composer.rs, crates/agentty-core/src/core/config.rs]
+    static_check: [script/tests/composer_dock_reflow_contract.sh, script/tests/composer_native_rich_area_contract.sh]
+    tests: [composer_auto_mode_is_available_for_plain_terminals]
+    verification: cargo test -p agentty-core composer_auto_mode_is_available_for_plain_terminals --lib --locked && cargo test --bin agentty-app composer --locked && ./script/presubmit quick
+    evidence: "User visual acceptance identified a nested Composer frame and requested rich input availability on newly created terminals."
   - id: UPSTREAM-SELECTIVE-ABSORPTION-105
     spec: DEVELOPMENT-UPSTREAM-SELECTIVE-ABSORPTION-01
     source: [DEVELOPMENT.md, docs/quality/development-tracker.yaml]

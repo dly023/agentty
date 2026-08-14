@@ -316,7 +316,10 @@ impl ComposerMode {
 pub fn composer_should_dock(mode: ComposerMode, focused_has_cli_agent: bool) -> bool {
     match mode {
         ComposerMode::Always => true,
-        ComposerMode::Auto => focused_has_cli_agent,
+        // Rich input is useful for ordinary shells too. Auto controls the
+        // lifecycle without requiring an agent binding before a new terminal
+        // can accept multiline input.
+        ComposerMode::Auto => true,
         ComposerMode::Off => false,
     }
 }
@@ -1094,7 +1097,7 @@ mod tests {
         assert_eq!(cfg.composer_mode, ComposerMode::Always);
         assert!(composer_should_dock(ComposerMode::Always, false));
         assert!(composer_should_dock(ComposerMode::Auto, true));
-        assert!(!composer_should_dock(ComposerMode::Auto, false));
+        assert!(composer_should_dock(ComposerMode::Auto, false));
         assert!(!composer_should_dock(ComposerMode::Off, true));
         assert_eq!(ComposerMode::Auto.next(), ComposerMode::Always);
 

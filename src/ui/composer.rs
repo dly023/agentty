@@ -110,9 +110,14 @@ mod tests {
         assert_eq!(ComposerMode::Always.next(), ComposerMode::Off);
         assert_eq!(ComposerMode::Off.next(), ComposerMode::Auto);
         assert!(composer_should_dock(ComposerMode::Auto, true));
-        assert!(!composer_should_dock(ComposerMode::Auto, false));
+        assert!(composer_should_dock(ComposerMode::Auto, false));
         assert!(composer_should_dock(ComposerMode::Always, false));
         assert!(!composer_should_dock(ComposerMode::Off, true));
+    }
+
+    #[test]
+    fn composer_auto_mode_is_available_for_plain_terminals() {
+        assert!(composer_should_dock(ComposerMode::Auto, false));
     }
 
     #[test]
@@ -660,7 +665,10 @@ impl crate::ui::app::AgenttyApp {
                 .border_t_1()
                 .border_color(cx.theme().border)
                 .children(menu)
-                .child(Input::new(&state.input)),
+                // The dock's top divider is the only Composer frame. The input
+                // control must stay borderless so it reads as one continuous
+                // rich-input area rather than a box inside a box.
+                .child(Input::new(&state.input).appearance(false)),
         )
     }
 }

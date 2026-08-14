@@ -11,6 +11,62 @@ feedback_policy:
   promotion_rule: Before implementation, promote the feedback into a stable spec contract, milestone item, traceability row, static check, and failing focused test as applicable.
   retention_rule: Never delete feedback silently; declined or superseded entries retain the reason and replacement ID when one exists.
 feedback:
+  - id: FEEDBACK-20260814-011
+    summary: The Resume hover triangle/badge is visually noisy and should be removed. Clicking a historical session row should already have automatic resume as the default interaction semantics, without a separate hover affordance.
+    status: captured
+    priority: medium
+    area: session_resume_affordance
+    decision: Keep resume as the canonical click behavior, remove the redundant triangular hover icon, and preserve accessible text/details/context-menu semantics where needed. Add a structural test that the row does not render the obsolete triangle while click activation still routes through the canonical resume path.
+    next_action: Locate the resume hover decoration and its tests, remove only the redundant visual affordance, add the negative/positive interaction contract, and verify row activation plus keyboard behavior.
+  - id: FEEDBACK-20260814-009
+    summary: The requested official Jcode logo was not extracted or wired into Agentty; current agent icon assets contain no Jcode asset, and the previous audit only recorded a source path without shipping a usable light/dark or monochrome variant.
+    status: captured
+    priority: high
+    area: jcode_brand_asset
+    decision: Do not claim Jcode branding is complete. Obtain the official logo from the requested jcode.sh source or the audited upstream asset, add explicit background-safe variants, register them through the canonical asset loader, and add packaging plus visual-resource checks before implementation is marked complete.
+    next_action: Verify the authoritative logo asset and license, add the Jcode asset under assets/icons/agents, wire ui/assets.rs and the provider row/icon path, then add a focused resource and package verification.
+  - id: FEEDBACK-20260814-008
+    summary: Remote environment attach must automatically open the left sidebar and show the complete session list for that remote environment, not merely refresh an internal discovery request.
+    status: captured
+    priority: high
+    area: remote_session_sidebar_lifecycle
+    decision: Treat remote attach, discovery completion, sidebar expansion, environment scoping, empty results, partial results, stale generations, and scan failure as one observable lifecycle. Existing code has a refresh and a conditional sidebar mutation, but this is not yet accepted as an end-to-end user-verified behavior.
+    next_action: Add a failing integration-aligned test for remote attach → refresh → expand → render all rows, including stale/failed/empty discovery cases, then verify with a real reachable remote environment or explicitly record acceptance blocked.
+  - id: FEEDBACK-20260814-007
+    summary: Jcode session discovery is still not implemented in Agentty. The current behavior is only a fail-closed gate, with no Jcode provider scanner, native picker adapter, session rows, or resume binding.
+    status: captured
+    priority: critical
+    area: jcode_session_discovery_resume
+    decision: Keep Jcode undiscoverable until a stable machine-readable upstream list contract or a versioned canonical adapter is available. Do not parse private ~/.jcode snapshots or journals as a substitute. Promote the feature through SPEC → MATRIX → CHECK → failing TEST → IMPLEMENTATION → VERIFY, including root/foreground versus swarm-worker identity and failure/recovery semantics.
+    evidence:
+      - crates/agentty-core/src/agent_runtime/provider.rs only asserts jcode is absent from persisted descriptors
+      - docs/specs/SESSION_NAVIGATOR_SPEC.yaml SESSION-JCODE-STABLE-LIST-GATE-34 explicitly forbids advertising or scanning private Jcode store files
+      - installed jcode --resume remains an interactive picker path and exposes no accepted Agentty machine-readable list boundary
+    next_action: Define the upstream contract and canonical root/worker mapping, then implement provider identity, discovery, row projection, resume, and negative tests without a parallel private-store parser.
+  - id: FEEDBACK-20260814-010
+    summary: Session and tab renaming still needs a separate audit for state-model performance and UI responsiveness. Reliable select-all and commit behavior do not prove that rename edits avoid unnecessary rebuilds, focus churn, stale identity writes, or visible latency.
+    status: captured
+    priority: high
+    area: rename_model_performance_ui
+    decision: Audit tab rename, workspace rename, and session alias rename separately. Preserve stable SessionIdentity/RowId, avoid rebuilding unrelated navigator rows per keystroke, make focus/select-all/Enter/Escape/Blur deterministic, and cover duplicate, blank, stale-row, carrier-replacement, and persistence-failure cases.
+    next_action: Trace all rename state owners and render paths, add representative timing/rebuild and interaction contracts, then implement only through the canonical rename primitives and verify on the correct agentty-app binary.
+  - id: FEEDBACK-20260814-006
+    summary: Jcode recognition and the temporary session-tag container model are still not implemented; the prior work overclaimed completion. Ashide's strict container/session identity model must be audited and used as the reference for the next implementation slice.
+    status: captured
+    priority: critical
+    area: jcode_identity_temporary_session_container
+    decision: Stop presenting Jcode adaptation and temporary carrier behavior as complete. Re-audit the current Agentty source and Ashide fallback assets, define the canonical container/session state machine, then implement recognition, temporary rows, identity upgrade, and failure/recovery tests through the required SPEC → MATRIX → CHECK → TEST → IMPLEMENTATION → VERIFY flow.
+    next_action: Locate the existing Agentty live carrier path and Ashide container/session invariants, write a gap inventory with concrete missing behaviors, and only then start implementation.
+  - id: FEEDBACK-20260814-005
+    summary: The Composer dock's moved divider already creates the intended frame, so the nested input box is visually wrong. Newly created terminals should also expose the bottom rich input for convenient editing.
+    status: promoted
+    priority: high
+    area: composer_native_rich_input
+    decision: Keep the dock top divider as the only frame, render the GPUI input with appearance(false), and make Composer Auto mode available for plain new terminals as well as Agent sessions.
+    promoted_to:
+      spec: INPUT-COMPOSER-NATIVE-RICH-AREA-13
+      traceability: INPUT-COMPOSER-NATIVE-RICH-AREA-106
+    next_action: Run focused Composer/config tests and quick presubmit, then rebuild the correct agentty-app GUI binary for visual acceptance.
   - id: FEEDBACK-20260814-004
     summary: Track upstream continuously but absorb only useful fixes and designs selectively; do not merge upstream wholesale.
     status: promoted

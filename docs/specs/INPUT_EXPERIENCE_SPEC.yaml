@@ -2,6 +2,11 @@ version: 1
 updated: 2026-08-09
 domain: terminal_input_experience
 contracts:
+  - id: INPUT-COMPOSER-NATIVE-RICH-AREA-13
+    rule: The dock top divider is the Composer's only frame. The editable rich-input control is borderless and occupies the dock area directly, with no nested input box. In Auto mode the dock is available for newly created plain terminals as well as Agent sessions.
+    forbidden:
+      - nested_composer_input_border
+      - plain_new_terminal_without_rich_input_surface_in_auto_mode
   - id: INPUT-COMPOSER-OPTIONAL-01
     rule: Native terminal input remains available whenever the composer is visible. The composer never replaces the PTY keyboard path; both may accept input, and focus moves deliberately between them.
     status: verified
