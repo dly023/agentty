@@ -95,7 +95,7 @@ environment.local.detail: Local environment
 environment.local.label: This Mac
 environment.remote.detail: Remote environment
 environment.ssh: SSH
-environment.tooltip: Execution environment — {state}
+environment.tooltip: Execution environment — {state} — {detail}
 file_tree.delete_confirm: Delete "{name}"?
 file_tree.delete_dir_detail: The folder and everything inside it will be deleted.
 file_tree.delete_file_detail: The file will be deleted.
@@ -198,6 +198,7 @@ menu.split_down: Split Down
 menu.split_left: Split Left
 menu.split_right: Split Right
 menu.split_up: Split Up
+menu.move_to_new_window: Move to New Window
 menu.stop_workspace: Stop Workspace…
 menu.tab_bar_position: Tab Bar Position
 menu.this_mac: This Mac

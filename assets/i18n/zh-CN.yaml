@@ -95,7 +95,7 @@ environment.local.detail: 本地环境
 environment.local.label: 本机
 environment.remote.detail: 远程环境
 environment.ssh: SSH
-environment.tooltip: 执行环境——{state}
+environment.tooltip: 执行环境——{state}——{detail}
 file_tree.delete_confirm: 删除 “{name}”？
 file_tree.delete_dir_detail: 该文件夹及其全部内容都将被删除。
 file_tree.delete_file_detail: 该文件将被删除。
@@ -198,6 +198,7 @@ menu.split_down: 向下分屏
 menu.split_left: 向左分屏
 menu.split_right: 向右分屏
 menu.split_up: 向上分屏
+menu.move_to_new_window: 移出到新窗口
 menu.stop_workspace: 停止工作区…
 menu.tab_bar_position: 标签栏位置
 menu.this_mac: 这台 Mac
@@ -415,7 +416,7 @@ session.close_and_delete_confirm_body: "这将关闭实时 Agent 标签，并永
 session.close_and_delete_confirm_title: 关闭并永久删除此会话？
 session.close_confirm_body: "这将关闭 Agentty 中的实时 Agent 标签。磁盘上的提供商历史会保留。\n\nAgent：{agent}\n标题：{title}"
 session.close_confirm_title: 关闭此运行中的会话？
-session.default_name: Agent 会话
+session.default_name: 未命名
 session.delete_confirm_body: "这将永久删除会话记录和全部关联历史。\n\nAgent：{agent}\n标题：{title}\n\n此操作不可撤销。"
 session.delete_confirm_title: 删除此会话？
 session.details_action: 详情
