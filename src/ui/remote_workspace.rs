@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use agentty_core::host::remote::RemoteHost;
 use agentty_core::host::HostId;
+use agentty_core::host::remote::RemoteHost;
 use gpui::{Context, PromptLevel, Window};
 use gpui_component::WindowExt as _;
 
@@ -15,14 +15,16 @@ use crate::ui::app::AgenttyApp;
 use crate::ui::remote_connect::{self, HostChoice, RemoteWorkspaceRow};
 
 pub enum ConnectFlow {
-    Connecting { choice: HostChoice },
+    Connecting { choice: HostChoice, generation: u64 },
     Failed { choice: HostChoice, error: String },
 }
 
 impl ConnectFlow {
     pub fn choice(&self) -> Option<&HostChoice> {
         match self {
-            ConnectFlow::Connecting { choice } | ConnectFlow::Failed { choice, .. } => Some(choice),
+            ConnectFlow::Connecting { choice, .. } | ConnectFlow::Failed { choice, .. } => {
+                Some(choice)
+            }
         }
     }
 }
@@ -322,32 +324,59 @@ impl AgenttyApp {
 
     pub(crate) fn connect_to_host(&mut self, choice: HostChoice, cx: &mut Context<Self>) {
         remote_connect::register(cx);
+        let host = choice.target.host_id();
         let header = match remote_connect::control_route(&choice.target, cx) {
             Ok(header) => header,
             Err(e) => {
+                // Route construction can fail before a coordinator lease is
+                // started. A prior negotiation may nevertheless have left a
+                // dialect mismatch in the shared sink; drain/re-record it so
+                // the canonical Replace Server notice is not lost behind the
+                // generic manual error surface.
+                let recorded_mismatch = recorded_mismatch_for_host(host);
                 self.connect = Some(ConnectFlow::Failed { choice, error: e });
+                if recorded_mismatch {
+                    self.prompt_remote_daemon_mismatch_later(cx);
+                }
                 cx.notify();
                 return;
             }
         };
         let target = choice.target.clone();
         let label = choice.label.clone();
-        cx.default_global::<RemoteLinks>()
-            .suspended
-            .remove(&choice.target.host_id());
+        cx.default_global::<RemoteLinks>().suspended.remove(&host);
+        let generation = match RemoteLinks::begin_manual_attempt(cx, host, target.clone()) {
+            ManualAttempt::Started { generation } => generation,
+            ManualAttempt::InFlight | ManualAttempt::Attached => {
+                // The supervisor (or an already published HostLinks) owns this
+                // host. Do not create a second ConnectFlow/connector.
+                self.connect = None;
+                cx.notify();
+                return;
+            }
+        };
         self.connect = Some(ConnectFlow::Connecting {
             choice: choice.clone(),
+            generation,
         });
         cx.notify();
 
-        remote_connect::clear_install_progress(choice.target.host_id());
-        self.watch_for_install_consent(choice.target.host_id(), cx);
+        remote_connect::clear_install_progress(host);
+        self.watch_for_install_consent(host, cx);
+        let choice_for_result = choice.clone();
         cx.spawn(async move |this, cx| {
             let result = cx
                 .background_executor()
-                .spawn(async move { remote_connect::connect_blocking(&target, header, &label) })
+                .spawn(connect_for_attempt(
+                    target,
+                    header,
+                    label.clone(),
+                    Vec::new(),
+                ))
                 .await;
-            let _ = this.update(cx, |this, cx| this.finish_connect(result, cx));
+            let _ = this.update(cx, |this, cx| {
+                this.finish_connect(result, choice_for_result, host, generation, cx)
+            });
         })
         .detach();
     }
@@ -386,15 +415,52 @@ impl AgenttyApp {
     fn finish_connect(
         &mut self,
         result: Result<remote_connect::Connected, String>,
+        choice: HostChoice,
+        host: HostId,
+        generation: u64,
         cx: &mut Context<Self>,
     ) {
-        let Some(choice) = self.connect.as_ref().and_then(ConnectFlow::choice).cloned() else {
+        let current_generation = cx
+            .default_global::<RemoteLinks>()
+            .machines
+            .get(&host)
+            .map(|link| link.generation);
+        if !accept_connection_result(current_generation, generation) {
+            log::info!("discarding stale manual connection result for {host:?}");
+            // A stale completion may settle only the lease and flow that it
+            // started. `begin_attempt` retags an existing lease when the
+            // supervisor takes over, so this generation check cannot tear
+            // down a newer unbound attempt.
+            let lease_settled = RemoteLinks::finish_manual_attempt(cx, host, generation);
+            let flow_generation = match self.connect.as_ref() {
+                Some(ConnectFlow::Connecting {
+                    choice: active,
+                    generation: flow_generation,
+                }) if active.target == choice.target => Some(*flow_generation),
+                _ => None,
+            };
+            if flow_generation == Some(generation) {
+                self.connect = None;
+                cx.notify();
+            } else if lease_settled {
+                cx.notify();
+            }
             return;
-        };
-        remote_connect::clear_install_progress(choice.target.host_id());
+        }
+        if choice.target.host_id() != host {
+            log::info!("discarding manual result routed to a different host");
+            return;
+        }
+        let flow_matches = matches!(
+            self.connect.as_ref(),
+            Some(ConnectFlow::Connecting {
+                choice: active,
+                generation: flow_generation,
+            }) if *flow_generation == generation && active.target == choice.target
+        );
+        remote_connect::clear_install_progress(host);
         match result {
             Ok(connected) => {
-                let home = connected.home.clone();
                 let rows = connected.rows.clone();
                 self.host_snapshots.insert(
                     choice.target.host_id(),
@@ -403,22 +469,27 @@ impl AgenttyApp {
                         rows: rows.clone(),
                     },
                 );
-                let host_id = choice.target.host_id();
-                remote_connect::HostLinks::insert(
-                    cx,
-                    host_id,
-                    connected.host,
-                    home.clone(),
-                    connected.store_roots,
-                );
-                RemoteLinks::mark_connected(cx, host_id, &choice.label);
-                refresh_host_agent_sessions(cx, host_id);
+                publish_host_link(cx, host, generation, &connected);
+                RemoteLinks::mark_connected(cx, host, &choice.label);
+                refresh_host_agent_sessions(cx, host);
                 self.prompt_remote_daemon_mismatch_later(cx);
-                self.connect = None;
+                if flow_matches {
+                    self.connect = None;
+                }
             }
             Err(error) => {
+                let recorded_mismatch = settle_connection_failure(cx, host, generation, &error);
                 log::warn!("connect to {} failed: {error}", choice.label);
-                self.connect = Some(ConnectFlow::Failed { choice, error });
+                if flow_matches {
+                    self.connect = Some(ConnectFlow::Failed { choice, error });
+                }
+                if recorded_mismatch {
+                    // Route negotiation may have recorded the dialect skew
+                    // before the control handshake failed. Keep the pending
+                    // record and hand it to the canonical Replace Server
+                    // owner instead of exposing only a generic SSH error.
+                    self.prompt_remote_daemon_mismatch_later(cx);
+                }
             }
         }
         cx.notify();
@@ -782,6 +853,40 @@ mod mismatch_notice_tests {
     use super::{clear_remote_mismatch, mismatch_route, queue_remote_mismatch};
     use crate::daemon::install::MismatchedRemoteDaemon;
     use agentty_core::daemon::router::{RouteAction, RouteHeader};
+
+    fn production_body<'a>(source: &'a str, marker: &str) -> &'a str {
+        let from = source
+            .match_indices(marker)
+            .find_map(|(offset, _)| {
+                let line_start = source[..offset]
+                    .rfind('\n')
+                    .map_or(0, |newline| newline + 1);
+                source[line_start..offset]
+                    .trim()
+                    .is_empty()
+                    .then_some(offset)
+            })
+            .unwrap_or_else(|| panic!("missing production source marker {marker:?}"));
+        let open = source[from..]
+            .find('{')
+            .map(|offset| from + offset)
+            .unwrap_or_else(|| panic!("missing opening brace for {marker:?}"));
+        let mut depth = 0usize;
+        for (offset, byte) in source.as_bytes()[open..].iter().enumerate() {
+            match byte {
+                b'{' => depth += 1,
+                b'}' => {
+                    depth = depth.saturating_sub(1);
+                    if depth == 0 {
+                        return &source[from..=open + offset];
+                    }
+                }
+                _ => {}
+            }
+        }
+        panic!("unterminated production function {marker:?}");
+    }
+
     #[test]
     fn remote_mismatch_remains_after_modal_cancel() {
         let mut pending = Vec::new();
@@ -817,6 +922,93 @@ mod mismatch_notice_tests {
             crate::core::i18n::tr(crate::core::i18n::Locale::EnUs, "common.replace_server"),
         );
     }
+
+    #[test]
+    fn manual_route_failure_surfaces_recorded_mismatch() {
+        let source = include_str!("remote_workspace.rs");
+        let body = production_body(source, "fn finish_connect(");
+        assert!(
+            body.contains("Err(error)"),
+            "manual completion must handle route errors"
+        );
+        assert!(
+            body.contains("settle_connection_failure")
+                && body.contains("prompt_remote_daemon_mismatch_later"),
+            "manual route failure must use canonical settlement and hand a recorded mismatch to the Replace prompt"
+        );
+        let settlement = production_body(source, "fn settle_connection_failure(");
+        assert!(
+            settlement.contains("recorded_mismatch_for_host"),
+            "canonical connection settlement must inspect the shared mismatch sink"
+        );
+    }
+
+    #[test]
+    fn supervisor_route_failure_surfaces_recorded_mismatch() {
+        let source = include_str!("remote_workspace.rs");
+        let body = production_body(source, "fn finish_attempt(");
+        assert!(
+            body.contains("Err(e)"),
+            "supervisor completion must handle route errors"
+        );
+        assert!(
+            body.contains("settle_connection_failure")
+                && body.contains("schedule_remote_mismatch_notice_for_host"),
+            "supervisor route failure must use canonical settlement and Replace notice ownership"
+        );
+        let settlement = production_body(source, "fn settle_connection_failure(");
+        assert!(
+            settlement.contains("recorded_mismatch_for_host"),
+            "supervisor settlement must inspect the shared mismatch sink"
+        );
+    }
+
+    #[test]
+    fn known_mismatch_route_failure_stops_automatic_retry() {
+        let source = include_str!("remote_workspace.rs");
+        let pump = production_body(source, "fn pump_tick(");
+        let settlement = production_body(source, "fn settle_connection_failure(");
+        assert!(
+            settlement.contains("LinkState::Failed") && settlement.contains("next_attempt = None"),
+            "a known mismatch must settle the supervisor in a terminal state"
+        );
+        assert!(
+            pump.contains("LinkState::Failed") && pump.contains("continue"),
+            "pump_tick must not turn a known mismatch back into an automatic retry"
+        );
+    }
+
+    #[test]
+    fn manual_route_setup_failure_drains_recorded_mismatch() {
+        let source = include_str!("remote_workspace.rs");
+        let body = production_body(source, "pub(crate) fn connect_to_host(");
+        assert!(
+            body.contains("recorded_mismatch_for_host")
+                && body.contains("prompt_remote_daemon_mismatch_later"),
+            "manual control_route Err must preserve the canonical mismatch prompt"
+        );
+    }
+
+    #[test]
+    fn supervisor_route_setup_failure_uses_terminal_mismatch_settlement() {
+        let source = include_str!("remote_workspace.rs");
+        let body = production_body(source, "fn launch_attempt(");
+        assert!(
+            body.contains("settle_connection_failure")
+                && body.contains("schedule_remote_mismatch_notice_for_host"),
+            "supervisor route setup Err must classify and surface a recorded mismatch"
+        );
+    }
+
+    #[test]
+    fn ordinary_connection_failure_remains_retryable() {
+        let source = include_str!("remote_workspace.rs");
+        let body = production_body(source, "fn settle_connection_failure(");
+        assert!(
+            body.contains("LinkState::Reconnecting") && body.contains("LinkState::Failed"),
+            "only a recorded dialect mismatch may settle Failed; ordinary errors retry"
+        );
+    }
 }
 
 pub(crate) fn pane_workspace_for(
@@ -849,6 +1041,20 @@ struct MachineLink {
     backoff: Backoff,
     next_attempt: Option<Instant>,
     attempting: bool,
+    generation: u64,
+}
+
+/// Result of registering a user-triggered connection request with the same
+/// per-host coordinator used by the automatic supervisor.
+pub(crate) enum ManualAttempt {
+    Started { generation: u64 },
+    InFlight,
+    Attached,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ManualAttemptLease {
+    target: RemoteTarget,
     generation: u64,
 }
 
@@ -896,6 +1102,10 @@ impl ConnectionTransition {
 #[derive(Default)]
 pub(crate) struct RemoteLinks {
     machines: std::collections::HashMap<HostId, MachineLink>,
+    /// Hosts kept alive by a manual switcher/menu connection while no remote
+    /// workspace is bound yet. Without this lease the supervisor would stop
+    /// immediately on an empty WorkspaceStore and drop the in-flight attempt.
+    manual_targets: std::collections::HashMap<HostId, ManualAttemptLease>,
     preempted: std::collections::HashMap<WorkspaceId, String>,
     reclaiming: std::collections::HashSet<WorkspaceId>,
     suspended: std::collections::HashSet<HostId>,
@@ -961,7 +1171,40 @@ impl RemoteLinks {
         if let Some(by) = links.preempted.get(&workspace) {
             return Some(RemoteStatus::Preempted { by: by.clone() });
         }
-        Some(match links.machines.get(&host.host_id()) {
+        Some(Self::status_for_host_with_links(cx, links, host.host_id()))
+    }
+
+    /// Project the one authoritative per-host state for UI surfaces that do
+    /// not own a WorkspaceId (the switcher and environment menu). In-flight
+    /// supervisor/manual attempts must remain visible even before HostLinks is
+    /// published, so `HostLinks == None` is not synonymous with Offline.
+    pub(crate) fn status_for_host(cx: &gpui::App, host: HostId) -> RemoteStatus {
+        let Some(links) = cx.try_global::<RemoteLinks>() else {
+            return if remote_connect::HostLinks::get(cx, host)
+                .is_some_and(|link| link.client().is_connected())
+            {
+                RemoteStatus::Attached
+            } else {
+                RemoteStatus::Disconnected
+            };
+        };
+        Self::status_for_host_with_links(cx, links, host)
+    }
+
+    fn status_for_host_with_links(
+        cx: &gpui::App,
+        links: &RemoteLinks,
+        host: HostId,
+    ) -> RemoteStatus {
+        // A published, live HostLinks is the strongest authority. A stale
+        // Failed/Reconnecting MachineLink may remain for one pump tick after
+        // an external/manual completion, but must not make the switcher flash
+        // an error over an actually attached host.
+        if remote_connect::HostLinks::get(cx, host).is_some_and(|link| link.client().is_connected())
+        {
+            return RemoteStatus::Attached;
+        }
+        match links.machines.get(&host) {
             Some(link) => match &link.state {
                 LinkState::Connecting => RemoteStatus::Connecting,
                 LinkState::Attached => RemoteStatus::Attached,
@@ -971,12 +1214,63 @@ impl RemoteLinks {
                 LinkState::Failed(e) => RemoteStatus::Failed(e.clone()),
             },
             None => RemoteStatus::Disconnected,
-        })
+        }
+    }
+
+    /// Register a switcher/menu connection in the same generation and
+    /// attempting state as supervisor attempts. Returning `InFlight` or
+    /// `Attached` is the idempotent duplicate-click path; no second async
+    /// connector is spawned by the caller.
+    pub(crate) fn begin_manual_attempt(
+        cx: &mut gpui::App,
+        host: HostId,
+        target: RemoteTarget,
+    ) -> ManualAttempt {
+        if remote_connect::HostLinks::get(cx, host).is_some() {
+            return ManualAttempt::Attached;
+        }
+
+        if cx
+            .default_global::<RemoteLinks>()
+            .machines
+            .get(&host)
+            .is_some_and(|link| {
+                link.attempting
+                    || (matches!(link.state, LinkState::Connecting | LinkState::Reconnecting)
+                        && link.next_attempt.is_some())
+            })
+        {
+            return ManualAttempt::InFlight;
+        }
+
+        RemoteLinks::mark(cx, host, |link| {
+            link.state = LinkState::Connecting;
+            link.attempting = false;
+            link.next_attempt = None;
+        });
+        let generation = RemoteLinks::begin_attempt(cx, host);
+        cx.default_global::<RemoteLinks>()
+            .manual_targets
+            .insert(host, ManualAttemptLease { target, generation });
+        RemoteLinks::mark(cx, host, |link| link.attempting = true);
+        RemoteLinks::ensure_running(cx);
+        ManualAttempt::Started { generation }
+    }
+
+    fn finish_manual_attempt(cx: &mut gpui::App, host: HostId, generation: u64) -> bool {
+        let links = cx.default_global::<RemoteLinks>();
+        remove_manual_attempt_if_generation(&mut links.manual_targets, host, generation)
+    }
+
+    fn clear_manual_attempt(cx: &mut gpui::App, host: HostId) {
+        cx.default_global::<RemoteLinks>()
+            .manual_targets
+            .remove(&host);
     }
 
     fn begin_attempt(cx: &mut gpui::App, host: HostId) -> u64 {
-        let generation = cx
-            .default_global::<RemoteLinks>()
+        let links = cx.default_global::<RemoteLinks>();
+        let generation = links
             .machines
             .get_mut(&host)
             .map(|link| {
@@ -984,11 +1278,13 @@ impl RemoteLinks {
                 link.generation
             })
             .unwrap_or(0);
-        cx.default_global::<RemoteLinks>()
-            .transitions
-            .entry(host)
-            .or_default()
-            .begin_attempt();
+        // A supervisor retry can take over a host while a switcher attempt is
+        // still in flight. Retag the lease to the new coordinator generation
+        // so an old manual completion cannot remove the keep-alive lease.
+        if let Some(lease) = links.manual_targets.get_mut(&host) {
+            lease.generation = generation;
+        }
+        links.transitions.entry(host).or_default().begin_attempt();
         generation
     }
 
@@ -1039,6 +1335,7 @@ impl RemoteLinks {
 
     pub(crate) fn disconnect(cx: &mut gpui::App, host: HostId) {
         cx.default_global::<RemoteLinks>().suspended.insert(host);
+        RemoteLinks::clear_manual_attempt(cx, host);
         for (workspace, _) in workspaces_on(cx, host) {
             release_panes(cx, workspace);
             let links = cx.default_global::<RemoteLinks>();
@@ -1106,6 +1403,14 @@ fn pump_tick(cx: &mut gpui::App) -> bool {
                 link.state = LinkState::Attached;
                 link.backoff.reset();
                 link.next_attempt = None;
+                // A manual/supervisor result may have published HostLinks
+                // before this tick observes it. Invalidate that old result so
+                // a late completion cannot replace the live link or suppress
+                // future reconnects behind the attempting guard.
+                if link.attempting {
+                    link.attempting = false;
+                    link.generation = link.generation.saturating_add(1);
+                }
             });
             if became {
                 changed = true;
@@ -1119,7 +1424,19 @@ fn pump_tick(cx: &mut gpui::App) -> bool {
             continue;
         }
 
+        // A known dialect mismatch is an actionable terminal state. Do not
+        // turn it back into the ordinary reconnect loop; Retry/Replace from
+        // the UI explicitly moves it back to Reconnecting/Connecting.
+        let failed = cx
+            .try_global::<RemoteLinks>()
+            .and_then(|links| links.machines.get(&host))
+            .is_some_and(|link| matches!(link.state, LinkState::Failed(_)));
+        if failed {
+            continue;
+        }
+
         if remote_connect::HostLinks::get(cx, host).is_some() {
+            RemoteLinks::mark_disconnected(cx, host);
             remote_connect::HostLinks::remove(cx, host);
             log::info!("lost the control connection to {target}; reconnecting");
         }
@@ -1175,7 +1492,92 @@ fn bound_machines(cx: &gpui::App) -> Vec<(HostId, RemoteTarget)> {
             out.push((id, host.target.clone()));
         }
     }
+    if let Some(links) = cx.try_global::<RemoteLinks>() {
+        append_manual_targets(&mut out, &links.manual_targets);
+    }
     out
+}
+
+fn append_manual_targets(
+    out: &mut Vec<(HostId, RemoteTarget)>,
+    leases: &std::collections::HashMap<HostId, ManualAttemptLease>,
+) {
+    for (host, lease) in leases {
+        if !out.iter().any(|(seen, _)| seen == host) {
+            out.push((*host, lease.target.clone()));
+        }
+    }
+}
+
+fn remove_manual_attempt_if_generation(
+    leases: &mut std::collections::HashMap<HostId, ManualAttemptLease>,
+    host: HostId,
+    generation: u64,
+) -> bool {
+    if leases
+        .get(&host)
+        .is_some_and(|lease| lease.generation == generation)
+    {
+        leases.remove(&host).is_some()
+    } else {
+        false
+    }
+}
+
+/// Inspect the mismatch sink without consuming its pending Replace Server
+/// affordance. Route negotiation records by route-origin key, so resolve the
+/// key back to the per-host identity before deciding whether an attempt's
+/// failure is terminal. The prompt owner later drains the queue normally.
+fn recorded_mismatch_for_host(host: HostId) -> bool {
+    let entries = crate::daemon::install::take_mismatched_remote_daemons();
+    let found = entries
+        .iter()
+        .any(|entry| remote_connect::origin_host(&entry.host) == Some(host));
+    if !entries.is_empty() {
+        crate::daemon::install::record_remote_mismatches(entries);
+    }
+    found
+}
+
+/// Settle any failed connection attempt through one coordinator path. A
+/// recorded dialect mismatch is terminal until the user chooses Replace
+/// Server (or an explicit Retry); ordinary route/transport failures remain
+/// reconnectable and therefore retain the normal Retry affordance.
+fn settle_connection_failure(
+    cx: &mut gpui::App,
+    host: HostId,
+    generation: u64,
+    error: &str,
+) -> bool {
+    let recorded_mismatch = recorded_mismatch_for_host(host);
+    RemoteLinks::mark_disconnected(cx, host);
+    RemoteLinks::finish_manual_attempt(cx, host, generation);
+    RemoteLinks::mark(cx, host, |link| {
+        link.attempting = false;
+        link.state = if recorded_mismatch {
+            LinkState::Failed(error.to_string())
+        } else {
+            LinkState::Reconnecting
+        };
+        link.next_attempt = None;
+    });
+    recorded_mismatch
+}
+
+/// Supervisor completions do not own an `AgenttyApp` entity. Route the
+/// already-recorded mismatch to the window that owns this host so the same
+/// modal/notice and Replace Server action are used as manual connections.
+fn schedule_remote_mismatch_notice_for_host(cx: &mut gpui::App, host: HostId) {
+    for (workspace, weak) in crate::ui::windows::WindowRegistry::open_windows(cx) {
+        if WorkspaceStore::host_of(cx, workspace) != host {
+            continue;
+        }
+        let Some(app) = weak.upgrade() else {
+            continue;
+        };
+        app.update(cx, |app, cx| app.prompt_remote_daemon_mismatch_later(cx));
+        break;
+    }
 }
 
 fn workspaces_on(cx: &gpui::App, host: HostId) -> Vec<(WorkspaceId, String)> {
@@ -1258,11 +1660,10 @@ fn launch_attempt(cx: &mut gpui::App, host: HostId, target: RemoteTarget) {
     let header = match remote_connect::control_route(&target, cx) {
         Ok(header) => header,
         Err(e) => {
-            RemoteLinks::mark(cx, host, |link| {
-                link.state = LinkState::Failed(e);
-                link.next_attempt = None;
-                link.attempting = false;
-            });
+            let recorded_mismatch = settle_connection_failure(cx, host, generation, &e);
+            if recorded_mismatch {
+                schedule_remote_mismatch_notice_for_host(cx, host);
+            }
             cx.refresh_windows();
             return;
         }
@@ -1274,32 +1675,42 @@ fn launch_attempt(cx: &mut gpui::App, host: HostId, target: RemoteTarget) {
 
     RemoteLinks::mark(cx, host, |link| link.attempting = true);
     cx.spawn(async move |cx| {
-        let label_for_task = label.clone();
         let outcome = cx
             .background_executor()
-            .spawn(async move {
-                let connected = remote_connect::connect_blocking(&target, header, &label_for_task)?;
-                for key in &keys {
-                    match connected
-                        .host
-                        .client()
-                        .call(ControlRequest::WorkspaceAttach { id: key.clone() })
-                    {
-                        Ok(ReplyOk::Attached {
-                            took_over_from: Some(who),
-                        }) => {
-                            log::info!("took workspace {key} back from {who}");
-                        }
-                        Ok(_) => {}
-                        Err(e) => log::warn!("could not attach to workspace {key}: {e}"),
-                    }
-                }
-                Ok::<_, String>(connected)
-            })
+            .spawn(connect_for_attempt(target, header, label.clone(), keys))
             .await;
         cx.update(|cx| finish_attempt(cx, host, generation, &label, outcome));
     })
     .detach();
+}
+
+/// Execute one transport attempt for either the supervisor or a manual
+/// switcher action. The coordinator/generation decides who may adopt the
+/// result; this helper is the only place that performs the blocking connect
+/// and optional workspace attaches.
+async fn connect_for_attempt(
+    target: RemoteTarget,
+    header: crate::daemon::router::RouteHeader,
+    label: String,
+    keys: Vec<String>,
+) -> Result<remote_connect::Connected, String> {
+    let connected = remote_connect::connect_blocking(&target, header, &label)?;
+    for key in &keys {
+        match connected
+            .host
+            .client()
+            .call(ControlRequest::WorkspaceAttach { id: key.clone() })
+        {
+            Ok(ReplyOk::Attached {
+                took_over_from: Some(who),
+            }) => {
+                log::info!("took workspace {key} back from {who}");
+            }
+            Ok(_) => {}
+            Err(e) => log::warn!("could not attach to workspace {key}: {e}"),
+        }
+    }
+    Ok(connected)
 }
 
 fn finish_attempt(
@@ -1321,13 +1732,7 @@ fn finish_attempt(
     match outcome {
         Ok(connected) => {
             let restarted = server_restarted(cx, host, &connected.host);
-            remote_connect::HostLinks::insert(
-                cx,
-                host,
-                connected.host,
-                connected.home,
-                connected.store_roots,
-            );
+            publish_host_link(cx, host, generation, &connected);
             for (id, _key) in workspaces_on(cx, host) {
                 let reclaimed = {
                     let links = cx.default_global::<RemoteLinks>();
@@ -1343,26 +1748,43 @@ fn finish_attempt(
                 refresh_window_agent_sessions(cx, id);
                 refresh_window_editor_watch(cx, id);
             }
-            RemoteLinks::mark(cx, host, |link| {
-                link.state = LinkState::Attached;
-                link.backoff.reset();
-                link.next_attempt = None;
-                link.attempting = false;
-            });
             RemoteLinks::mark_connected(cx, host, label);
             log::info!("reconnected to {label}");
         }
         Err(e) => {
-            RemoteLinks::mark_disconnected(cx, host);
+            let recorded_mismatch = settle_connection_failure(cx, host, generation, &e);
             log::warn!("reconnect to {label} failed: {e}");
-            RemoteLinks::mark(cx, host, |link| {
-                link.attempting = false;
-                link.state = LinkState::Reconnecting;
-                link.next_attempt = None;
-            });
+            if recorded_mismatch {
+                schedule_remote_mismatch_notice_for_host(cx, host);
+            }
         }
     }
     cx.refresh_windows();
+}
+
+/// Publish the one canonical HostLinks materialization and settle the
+/// coordinator state. Callers may then perform source-specific hydration or
+/// UI refresh, but no caller may insert a parallel HostLinks record.
+fn publish_host_link(
+    cx: &mut gpui::App,
+    host: HostId,
+    generation: u64,
+    connected: &remote_connect::Connected,
+) {
+    remote_connect::HostLinks::insert(
+        cx,
+        host,
+        Arc::clone(&connected.host),
+        connected.home.clone(),
+        connected.store_roots.clone(),
+    );
+    RemoteLinks::mark(cx, host, |link| {
+        link.state = LinkState::Attached;
+        link.backoff.reset();
+        link.next_attempt = None;
+        link.attempting = false;
+    });
+    RemoteLinks::finish_manual_attempt(cx, host, generation);
 }
 
 fn accept_connection_result(current: Option<u64>, result: u64) -> bool {
@@ -1732,6 +2154,68 @@ mod tests {
     }
 
     #[test]
+    fn stale_manual_completion_does_not_drop_newer_manual_lease() {
+        let host = HostId(17);
+        let target = RemoteTarget::Alias {
+            alias: "newer-attempt".into(),
+        };
+        let mut leases = std::collections::HashMap::from([(
+            host,
+            ManualAttemptLease {
+                target: target.clone(),
+                generation: 2,
+            },
+        )]);
+
+        assert!(
+            !remove_manual_attempt_if_generation(&mut leases, host, 1),
+            "an old completion cannot settle the newer lease"
+        );
+        assert_eq!(leases.get(&host).map(|lease| lease.generation), Some(2));
+        assert_eq!(leases.get(&host).map(|lease| &lease.target), Some(&target));
+    }
+
+    #[test]
+    fn stale_manual_completion_keeps_unbound_supervisor_alive() {
+        let host = HostId(18);
+        let target = RemoteTarget::Alias {
+            alias: "unbound-supervisor".into(),
+        };
+        let mut leases = std::collections::HashMap::from([(
+            host,
+            ManualAttemptLease {
+                target: target.clone(),
+                generation: 4,
+            },
+        )]);
+
+        assert!(!remove_manual_attempt_if_generation(&mut leases, host, 3));
+        let mut bound = Vec::new();
+        append_manual_targets(&mut bound, &leases);
+        assert_eq!(bound, vec![(host, target)]);
+    }
+
+    #[test]
+    fn live_supervisor_observation_clears_attempting_before_reconnect_guard() {
+        // This is intentionally a fail-closed preimplementation contract. A
+        // live HostLink observed by pump_tick must clear `attempting` before
+        // execution can reach the `if attempting { continue; }` guard. Until
+        // the coordinator owns that transition, keep the red evidence explicit
+        // instead of silently treating a stale flag as a valid reconnect state.
+        let source = include_str!("remote_workspace.rs");
+        let live_start = source
+            .find("if live {")
+            .expect("pump_tick live branch must remain explicit");
+        let guard = source
+            .find("if attempting {")
+            .expect("pump_tick attempting guard must remain explicit");
+        assert!(
+            source[live_start..guard].contains("link.attempting = false"),
+            "the live branch must clear attempting before the reconnect guard"
+        );
+    }
+
+    #[test]
     fn the_status_strip_speaks_unless_everything_is_working() {
         assert_eq!(
             RemoteStatus::Attached.strip_message_loc("build-box", crate::core::i18n::Locale::EnUs),
@@ -1776,6 +2260,7 @@ mod tests {
         };
         let flow = ConnectFlow::Connecting {
             choice: choice.clone(),
+            generation: 1,
         };
         assert_eq!(flow.choice(), Some(&choice));
         let flow = ConnectFlow::Failed {

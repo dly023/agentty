@@ -19,6 +19,11 @@ for path in "${required[@]}"; do
 done
 rg -q 'RemoteAgentRuntime::new' src/ui/environment_session.rs
 rg -q 'EnvironmentSessionContext::resolve' src/ui/session_navigator.rs
+rg -q 'session_user_state_path' src/ui/environment_session.rs src/ui/session_navigator.rs
+if rg -n 'SessionUserStateStore::path\(' src/ui/session_navigator.rs; then
+  echo '[session-navigator] Environment-scoped Navigator must consume the target AgentStoreRoots user-state path' >&2
+  exit 1
+fi
 rg -q 'run_invocation\(&invocation, cx\)' src/ui/session_navigator.rs src/ui/app.rs
 rg -q 'navigator_row_id' src/ui/pending_pane.rs src/ui/app.rs src/ui/session_navigator.rs
 rg -q 'agent-session-navigator-list' src/ui/tab_sidebar.rs
@@ -37,7 +42,13 @@ rg -q 'SESSION-GROK-DISCOVERY-31' docs/specs/SESSION_NAVIGATOR_SPEC.yaml
 rg -q 'SESSION-GEMINI-DISCOVERY-32' docs/specs/SESSION_NAVIGATOR_SPEC.yaml
 rg -q 'SESSION-DISCOVERY-TIMEOUT-VISIBLE-33' docs/specs/SESSION_NAVIGATOR_SPEC.yaml
 rg -q 'SESSION-JCODE-STABLE-LIST-GATE-34' docs/specs/SESSION_NAVIGATOR_SPEC.yaml
-rg -q 'jcode_is_not_advertised_without_stable_machine_list_contract' crates/agentty-core/src/agent_runtime/provider.rs
+rg -q 'jcode_uses_documented_session_schema' crates/agentty-core/src/agent_runtime/provider.rs
+rg -q 'jcode_complete_document_mapping_keeps_large_sessions_resumable' crates/agentty-core/src/agent_runtime/service.rs
+rg -q 'jcode_newest_candidate_limit_uses_file_mtime_before_card_timestamps' crates/agentty-core/src/agent_runtime/service.rs
+if awk '/fn discover_jcode_session_files/{p=1} p{print} /fn jcode_message_text/{exit}' crates/agentty-core/src/agent_runtime/service.rs | rg -n 'read_file_prefix'; then
+  echo '[session-navigator] complete Jcode JSON must not be parsed from a truncated prefix' >&2
+  exit 1
+fi
 rg -q 'ProviderId::Grok' crates/agentty-core/src/agent_runtime/provider.rs
 rg -q 'ProviderId::Gemini' crates/agentty-core/src/agent_runtime/provider.rs
 rg -q 'ProviderScanner::GrokSummaryJson' crates/agentty-core/src/agent_runtime/provider.rs crates/agentty-core/src/agent_runtime/service.rs
@@ -90,6 +101,44 @@ rg -q 'candidate\.save\(host, &path\)' src/ui/session_navigator.rs
 rg -q 'begin_session_alias_edit' src/ui/tab_sidebar.rs
 rg -q 'keystroke\.key == "escape"' src/ui/tab_sidebar.rs
 rg -q 'SESSION-TITLE-PRECEDENCE-11' docs/specs/SESSION_NAVIGATOR_SPEC.yaml
+rg -q 'SESSION-TITLE-PARSER-EVIDENCE-42' docs/specs/SESSION_NAVIGATOR_SPEC.yaml
+rg -q 'codex_index_only_empty_record_as_generic_session_row' docs/specs/SESSION_NAVIGATOR_SPEC.yaml
+rg -q 'codex_index_only_empty_record_is_not_published_as_generic_session' crates/agentty-core/src/agent_runtime/service.rs
+rg -q 'generic_jsonl_requires_user_role_for_first_title' crates/agentty-core/src/agent_runtime/service.rs
+rg -q 'claude_array_text_blocks_name_session' crates/agentty-core/src/agent_runtime/parse.rs
+rg -q 'claude_placeholder_user_does_not_block_later_real_prompt' crates/agentty-core/src/agent_runtime/parse.rs
+rg -q 'claude_placeholder_provider_title_does_not_block_meaningful_title' crates/agentty-core/src/agent_runtime/parse.rs
+rg -q 'grok_placeholder_title_does_not_block_meaningful_summary' crates/agentty-core/src/agent_runtime/parse.rs
+rg -q 'resume_post_prompt_replacing_legacy_or_provider_title_seed' docs/specs/SESSION_NAVIGATOR_SPEC.yaml
+rg -q 'resume_legacy_title_seed_survives_post_resume_prompt' src/ui/session_navigator.rs
+rg -q 'resume_provider_only_title_seed_survives_history_gap_and_second_prompt' src/ui/session_navigator.rs
+rg -q 'resume_typed_first_user_seed_remains_write_once_after_second_prompt' src/ui/session_navigator.rs
+rg -q 'resume_both_title_candidates_keep_provider_precedence_after_second_prompt' src/ui/session_navigator.rs
+rg -q 'resume_title_candidates_bridge_legacy_title_into_provider_slot' crates/agentty-core/src/agent_runtime/navigator.rs
+rg -q 'PaneSetProviderTitle' src/ui/tree_sync.rs crates/agentty-core/src/daemon/control.rs crates/agentty-core/src/host/server.rs
+rg -q 'queue_provider_title_updates' src/ui/tree_sync.rs
+rg -q 'seeded_provider_title' src/ui/tree_sync.rs
+rg -q 'pane_provider_titles' src/ui/tree_sync.rs
+rg -q 'an_existing_pane_gets_a_typed_provider_title_request' src/ui/tree_sync.rs
+rg -q 'provider_title_seed_is_persisted_after_pane_materialization_and_only_once' src/ui/tree_sync.rs
+rg -q 'provider_title_requests_precede_first_user_title_requests' src/ui/tree_sync.rs
+rg -q 'no_agent_pane_is_not_optimistically_marked_for_provider_title' src/ui/tree_sync.rs
+rg -q 'prime_mirror_reads_machine_provider_title_before_queueing' src/ui/tree_sync.rs
+rg -q 'replace_hydrate_machine_provider_title_wins' src/ui/tree_sync.rs
+rg -q 'replace_hydrate_machine_missing_provider_title_fails_closed' src/ui/tree_sync.rs
+rg -q 'replace_hydrate_no_agent_does_not_fabricate_provider_title' src/ui/tree_sync.rs
+rg -q 'tab_restructure_clears_removed_pane_identity' src/ui/tree_sync.rs
+rg -q 'agentless_pane_facts_clear_all_title_identity_slots' src/ui/tree_sync.rs
+rg -q 'reused_pane_after_agentless_facts_cannot_queue_provider_title' src/ui/tree_sync.rs
+rg -q 'fn forget_pane_title_state' src/ui/tree_sync.rs
+if rg -n 'merge_hydrated_session_titles|collect_local_provider_title_evidence|LocalProviderTitleEvidence' src/ui/tree_sync.rs; then
+  echo '[session-navigator] Replace hydration must not promote local provider evidence to remote authority' >&2
+  exit 1
+fi
+if ! awk '/fn finish_hydration\(/,/^pub\(crate\) fn on_layout_delta/' src/ui/tree_sync.rs | rg_consume 'adopt_workspace'; then
+  echo '[session-navigator] Replace hydration must retain the canonical adopt_workspace boundary' >&2
+  exit 1
+fi
 rg -q 'pub fn session_display_title' crates/agentty-core/src/agent_runtime/navigator.rs
 rg -q 'session_display_title_prefers_alias_over_title_and_fallback' crates/agentty-core/src/agent_runtime/navigator.rs
 rg -q 'session_display_title_ignores_blank_candidates' crates/agentty-core/src/agent_runtime/navigator.rs
@@ -97,10 +146,13 @@ rg -q 'session_display_title_never_uses_session_id' crates/agentty-core/src/agen
 rg -q 'refresh_blank_title_preserves_last_good_title_and_alias_display' crates/agentty-core/src/agent_runtime/navigator.rs
 rg -q 'refresh_product_placeholder_title_preserves_settled_session_title' crates/agentty-core/src/agent_runtime/navigator.rs
 rg -q 'display_title_stable_across_identical_ui_inputs' crates/agentty-core/src/agent_runtime/navigator.rs
-rg -q 'is_absent_session_title' crates/agentty-core/src/agent_runtime/parse.rs
+rg -q 'is_absent_session_title' crates/agentty-core/src/agent_runtime/title.rs crates/agentty-core/src/agent_runtime/parse.rs
 rg -q 'catch_all_provider_title_yields_to_first_user_message' crates/agentty-core/src/agent_runtime/parse.rs
 rg -q 'catch_all_title_clears_so_first_user_message_can_name_the_row' crates/agentty-core/src/agent_runtime/navigator.rs
-rg -q 'is_non_session_title_placeholder' crates/agentty-core/src/agent_runtime/navigator.rs
+if rg -n 'is_non_session_title_placeholder' crates/agentty-core/src/agent_runtime/navigator.rs; then
+  echo '[session-navigator] placeholder classification must use the canonical title module' >&2
+  exit 1
+fi
 rg -q 'normalize_display_title' crates/agentty-core/src/agent_runtime/navigator.rs
 rg -q 'live_session_rows_omit_tab_and_terminal_titles' src/ui/session_navigator.rs
 rg -Fq 'row.display_title(' src/ui/tab_sidebar.rs
@@ -180,6 +232,10 @@ rg -q 'begin_session_alias_edit_selects_existing_display_title' src/ui/session_n
 rg -q 'close_and_delete_handles_missing_provider_source' src/ui/session_navigator.rs
 rg -q 'first_user_title_candidate' crates/agentty-core/src/agent_runtime/parse.rs crates/agentty-core/src/agent_runtime/mod.rs src/terminal/view.rs
 rg -q 'note_first_user_prompt' src/terminal/view.rs src/ui/composer.rs
+if rg -n 'pub\s+fn\s+deliver_input' src/terminal/view.rs; then
+  echo '[session-navigator] AgentPrompt delivery must stay behind TerminalView::send_agent_prompt' >&2
+  exit 1
+fi
 rg -q 'session_navigator.select\(&row_id\)' src/ui/session_navigator.rs
 rg -q 'activate_selects_row_before_carrier_focus' crates/agentty-core/src/agent_runtime/navigator.rs
 rg -q 'live_session_menu_uses_close_not_provider_delete' src/ui/tab_sidebar.rs
@@ -190,32 +246,98 @@ if awk 'BEGIN{p=1} /^#\[cfg\(test\)\]/{p=0} p' src/ui/session_navigator.rs | rg 
   echo '[session-navigator] session discovery must use EnvironmentSessionContext, not UI is_local branches' >&2
   exit 1
 fi
-if ! rg -n 'fn finish_connect' -A 40 src/ui/remote_workspace.rs | rg_consume 'refresh_host_agent_sessions'; then
+if ! rg -n 'fn finish_connect' -A 80 src/ui/remote_workspace.rs | rg_consume 'refresh_host_agent_sessions'; then
   echo '[session-navigator] finish_connect must refresh Environment sessions on the host' >&2
   exit 1
 fi
-if rg -n 'fn close_live_session_row' -A 80 src/ui/session_navigator.rs | rg_consume 'apply_session_delete_transaction'; then
+if awk '/fn close_live_session_row\(/,/^    pub\(crate\) fn close_and_delete_live_session_row/' src/ui/session_navigator.rs | rg_consume 'apply_session_delete_transaction'; then
   echo '[session-navigator] live Close must not call provider-file delete' >&2
   exit 1
 fi
-if ! rg -n 'fn close_and_delete_live_session_row' -A 200 src/ui/session_navigator.rs | rg_consume 'apply_session_delete_transaction'; then
-  echo '[session-navigator] Close and Delete must call provider-file delete' >&2
+if ! awk '/fn close_and_delete_live_session_row\(/,/^    pub\(crate\) fn delete_session_row/' src/ui/session_navigator.rs | rg_consume 'execute_pending_carrier_action'; then
+  echo '[session-navigator] Close and Delete must route through the typed carrier action' >&2
   exit 1
 fi
-if ! rg -n 'fn close_and_delete_live_session_row' -A 200 src/ui/session_navigator.rs | rg_consume 'apply_session_user_state_delete'; then
-  echo '[session-navigator] Close and Delete must tombstone when no provider source exists' >&2
+if ! awk '/fn start_captured_delete\(/,/^    pub\(crate\) fn close_live_session_row/' src/ui/session_navigator.rs | rg_consume 'apply_session_delete_transaction'; then
+  echo '[session-navigator] typed Close and Delete must call provider-file delete' >&2
   exit 1
 fi
-if ! rg -n 'fn close_and_delete_live_session_row' -A 40 src/ui/session_navigator.rs | rg_consume 'plan_close_and_delete'; then
+if ! awk '/fn start_captured_delete\(/,/^    pub\(crate\) fn close_live_session_row/' src/ui/session_navigator.rs | rg_consume 'apply_session_user_state_delete'; then
+  echo '[session-navigator] typed Close and Delete must tombstone when no provider source exists' >&2
+  exit 1
+fi
+if ! awk '/fn start_captured_delete\(/,/^    pub\(crate\) fn close_live_session_row/' src/ui/session_navigator.rs | rg_consume 'session_navigator_scope_is_current'; then
+  echo '[session-navigator] delayed Close and Delete callbacks must validate the captured Environment scope' >&2
+  exit 1
+fi
+if ! awk '/fn close_and_delete_live_session_row\(/,/^    pub\(crate\) fn delete_session_row/' src/ui/session_navigator.rs | rg_consume 'plan_close_and_delete'; then
   echo '[session-navigator] Close and Delete must capture plan_close_and_delete before carrier close' >&2
+  exit 1
+fi
+rg -q 'SESSION-CARRIER-CLOSE-43' docs/specs/SESSION_NAVIGATOR_SPEC.yaml
+rg -q 'SESSION-CARRIER-CLOSE-117' docs/quality/traceability.yaml
+rg -q 'SESSION-CARRIER-CLOSE-44' docs/specs/SESSION_NAVIGATOR_SPEC.yaml
+rg -q 'SESSION-CARRIER-CLOSE-118' docs/quality/traceability.yaml
+rg -q 'split_navigator_soft_close_targets_only_selected_carrier' src/ui/session_navigator.rs
+rg -q 'split_navigator_close_and_delete_re_resolves_carrier' src/ui/session_navigator.rs
+rg -q 'pub\(crate\) fn close_carrier_pane' src/ui/app.rs
+app_prod=$(awk 'BEGIN{p=1} /^#\[cfg\(test\)\]/{p=0} p' src/ui/app.rs)
+nav_prod=$(awk 'BEGIN{p=1} /^#\[cfg\(test\)\]/{p=0} p' src/ui/session_navigator.rs)
+for required_symbol in \
+  'CarrierCloseToken' \
+  'PendingCarrierAction' \
+  'CarrierCloseOutcome' \
+  'SshCloseKind::Carrier'; do
+  if ! printf '%s\n' "$app_prod" "$nav_prod" | rg_consume "$required_symbol"; then
+    echo "[session-navigator] missing typed carrier-close symbol: $required_symbol" >&2
+    exit 1
+  fi
+done
+for required_test in \
+  carrier_close_token_requires_exact_scope_identity_and_carrier \
+  carrier_close_ssh_warning_covers_multi_leaf_and_sole_leaf \
+  carrier_close_ssh_confirmation_resumes_typed_action \
+  close_and_delete_carries_captured_host_scope_after_rebind \
+  close_and_delete_aborts_when_carrier_token_is_stale; do
+  if ! rg -q "fn $required_test" src/ui/app.rs src/ui/session_navigator.rs; then
+    echo "[session-navigator] missing carrier-close regression: $required_test" >&2
+    exit 1
+  fi
+done
+if ! printf '%s\n' "$app_prod" | awk '/fn close_carrier_pane\(/,/^    fn on_child_exited/' | rg_consume 'CarrierCloseToken|CarrierCloseOutcome'; then
+  echo '[session-navigator] carrier close primitive must consume typed token and outcome' >&2
+  exit 1
+fi
+if ! printf '%s\n' "$app_prod" | awk '/fn close_carrier_pane\(/,/^    fn on_child_exited/' | rg_consume 'leaf_is_warn_ssh'; then
+  echo '[session-navigator] exact carrier close must evaluate the target leaf SSH warning' >&2
+  exit 1
+fi
+if ! printf '%s\n' "$app_prod" | rg -n 'SshCloseKind::Carrier' -A 12 | rg_consume 'pending_carrier_action'; then
+  echo '[session-navigator] SSH confirmation must retain the typed carrier action' >&2
+  exit 1
+fi
+if ! awk '/fn close_live_session_row\(/,/^    pub\(crate\) fn close_and_delete_live_session_row/' src/ui/session_navigator.rs | rg_consume 'execute_pending_carrier_action'; then
+  echo '[session-navigator] soft Close must route through the typed carrier action' >&2
+  exit 1
+fi
+if ! awk '/fn execute_pending_carrier_action\(/,/^    pub\(crate\) fn finish_pending_carrier_action/' src/ui/session_navigator.rs | rg_consume 'close_carrier_pane'; then
+  echo '[session-navigator] typed carrier action must call the exact pane carrier-close primitive' >&2
+  exit 1
+fi
+if awk '/fn close_live_session_row\(/,/^    pub\(crate\) fn close_and_delete_live_session_row/' src/ui/session_navigator.rs | rg -n 'close_tab\(index'; then
+  echo '[session-navigator] split Navigator soft Close must not call close_tab by stale numeric index' >&2
+  exit 1
+fi
+if awk '/fn close_and_delete_live_session_row\(/,/^    pub\(crate\) fn delete_session_row/' src/ui/session_navigator.rs | rg -n 'close_tab\(index'; then
+  echo '[session-navigator] Close and Delete must use pane-scoped carrier close after confirmation' >&2
   exit 1
 fi
 if ! rg -n 'fn begin_session_alias_edit' -A 40 src/ui/session_navigator.rs | rg_consume 'SelectAll'; then
   echo '[session-navigator] alias edit must SelectAll the seeded display title' >&2
   exit 1
 fi
-if ! awk 'BEGIN{p=1} /^#\[cfg\(test\)\]/{p=0} p' src/ui/session_navigator.rs | rg -n 'fn live_session_rows' -A 80 | rg_consume 'live_first_user_title'; then
-  echo '[session-navigator] live_session_rows must project live_first_user_title only' >&2
+if ! awk 'BEGIN{p=1} /^#\[cfg\(test\)\]/{p=0} p' src/ui/session_navigator.rs | rg -n 'fn live_session_rows' -A 80 | rg_consume 'live_title_candidates'; then
+  echo '[session-navigator] live_session_rows must project typed live title candidates' >&2
   exit 1
 fi
 if awk 'BEGIN{p=1} /^#\[cfg\(test\)\]/{p=0} p' src/ui/tab_sidebar.rs | rg -n 'PopupMenuItem::new\("[A-Za-z]'; then
@@ -280,6 +402,9 @@ rg -q 'SESSION-SCHEMA-BOUNDED-DISCOVERY-24' docs/specs/SESSION_NAVIGATOR_SPEC.ya
 rg -q 'SESSION-SIDEBAR-SURFACE-HIERARCHY-25' docs/specs/SESSION_NAVIGATOR_SPEC.yaml
 rg -q 'SESSION-SIDEBAR-ROW-DENSITY-29' docs/specs/SESSION_NAVIGATOR_SPEC.yaml
 rg -q 'SESSION-SPLIT-GROUP-PRESENTATION-26' docs/specs/SESSION_NAVIGATOR_SPEC.yaml
+rg -q 'SESSION-ROW-ACTION-AFFORDANCE-27' docs/specs/SESSION_NAVIGATOR_SPEC.yaml
+rg -q 'historical_row_activation_is_click_only' src/ui/tab_sidebar.rs
+rg -q 'historical_row_pointer_drag_cancels_resume_and_click_release_selects' src/ui/tab_sidebar.rs
 rg -q 'session_sidebar_surface_metrics' src/ui/tab_sidebar.rs
 rg -q 'session_unit_visual_kind' src/ui/tab_sidebar.rs
 rg -q 'session_sidebar_surface_metrics_are_explicit' src/ui/tab_sidebar.rs
@@ -317,6 +442,10 @@ fi
 # Production row body only — exclude the #[cfg(test)] module so assertion
 # strings mentioning forbidden APIs do not trip the gate.
 prod_sidebar=$(awk 'BEGIN{p=1} /^#\[cfg\(test\)\]/{p=0} p' src/ui/tab_sidebar.rs)
+if ! printf '%s\n' "$prod_sidebar" | rg_consume 'if cx\.has_active_drag\(\)'; then
+  echo '[session-navigator] nested row click must reject release while its reorder drag is active' >&2
+  exit 1
+fi
 if printf '%s\n' "$prod_sidebar" | rg -n 'size\(px\(metrics\.icon_size\)\)' -A 2 | rg_consume 'rounded_full'; then
   echo '[session-navigator] provider icons must be rounded rectangles, not circles' >&2
   exit 1
@@ -364,6 +493,23 @@ rg -q 'source_mutation_and_agent_close_trigger_passive_refresh' src/ui/session_n
 rg -q 'SessionRefreshIntent::RemoteLinkUp' src/ui/remote_workspace.rs
 rg -q 'SessionRefreshIntent::AgentCarrierClosed' src/ui/app.rs
 rg -q 'abandon\(' src/ui/session_navigator.rs
+rg -q 'SessionNavigatorScope' src/ui/session_navigator.rs
+rg -q 'bind_scope' src/ui/session_navigator.rs
+rg -q 'accepts_scope' src/ui/session_navigator.rs
+rg -q 'invalidate_session_navigator_scope' src/ui/app.rs src/ui/session_navigator.rs
+rg -q 'session_history_environment' src/ui/app.rs src/ui/session_navigator.rs
+if ! awk '/pub\(crate\) fn invalidate_session_navigator_scope\(/,/^    fn request_session_navigator_refresh/' src/ui/session_navigator.rs | rg_consume 'pending_carrier_action' ; then
+  echo '[session-navigator] scope invalidation must abandon pending carrier actions' >&2
+  exit 1
+fi
+if awk '/fn start_session_navigator_refresh\(/,/^    pub\(crate\) fn rebuild_session_navigator/' src/ui/session_navigator.rs | rg -n 'session_refresh\.accepts\(generation\)'; then
+  echo '[session-navigator] refresh completion must validate the full workspace/host/environment/path scope' >&2
+  exit 1
+fi
+if ! awk '/pub\(crate\) fn switch_workspace\(/,/pub\(crate\) fn adopt_workspace/' src/ui/app.rs | rg_consume 'invalidate_session_navigator_scope'; then
+  echo '[session-navigator] workspace switch must invalidate Navigator scope before rebind' >&2
+  exit 1
+fi
 if rg -n 'set_display_order\(|reorder_rows\([^)]*usize|display_order.*visible.*index' src/ui crates/agentty-core/src; then
   echo '[session-navigator] reorder must persist stable identity, never viewport indices or row-local mutation authority' >&2
   exit 1
@@ -378,9 +524,10 @@ else
   echo '[session-navigator] permanent delete must have a typed plan' >&2
   exit 1
 fi
-rg -q 'provider_title_wins_even_when_it_appears_after_first_user_message' crates/agentty-core/src/agent_runtime/parse.rs
+rg -q 'provider_title_wins_over_first_user_message_when_named' crates/agentty-core/src/agent_runtime/parse.rs
 rg -q 'first_user_message_names_untitled_session' crates/agentty-core/src/agent_runtime/parse.rs
-rg -q 'resolved_title\(\)\.map\(str::to_owned\)' crates/agentty-core/src/agent_runtime/service.rs
+rg -q 'record_with_candidates' crates/agentty-core/src/agent_runtime/service.rs
+rg -q 'metadata\.title_candidates\(\)' crates/agentty-core/src/agent_runtime/service.rs
 if rg -n 'title = metadata.*codex_user_message|title = metadata.*claude_user_message' crates/agentty-core/src/agent_runtime/parse.rs; then
   echo '[session-navigator] User messages must not occupy provider title slots' >&2
   exit 1

@@ -2,7 +2,10 @@ use std::collections::{HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 
-use super::{AgentSessionKey, AgentSessionRecord, ResumeInvocation};
+use super::{
+    AgentSessionKey, AgentSessionRecord, ResumeInvocation, SessionTitleCandidates,
+    is_absent_session_title,
+};
 use crate::core::cli_agent::CLIAgent;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -25,7 +28,11 @@ pub struct LiveSession {
     pub identity: SessionIdentity,
     pub agent: CLIAgent,
     pub session_id: Option<String>,
+    /// Legacy resolved title retained for callers that have not migrated.
     pub title: Option<String>,
+    /// Separate provider and first-user evidence projected from the live
+    /// carrier and any runtime session metadata.
+    pub title_candidates: SessionTitleCandidates,
     pub cwd: Option<String>,
     pub launch_argv: Vec<String>,
     pub carrier: LiveCarrier,
@@ -38,6 +45,18 @@ pub struct LiveCarrier {
     pub tab_id: Option<String>,
     pub pane_id: Option<u64>,
 }
+
+impl LiveSession {
+    pub fn effective_title_candidates(&self) -> SessionTitleCandidates {
+        let mut candidates = SessionTitleCandidates::from_raw(
+            self.title_candidates.provider_title.as_deref(),
+            self.title_candidates.first_user_title.as_deref(),
+        );
+        candidates.merge_legacy_title(self.title.as_deref());
+        candidates
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LiveExecutionState {
     pub state: crate::core::cli_agent::AgentSessionState,
@@ -100,7 +119,11 @@ pub struct NavigatorRow {
     pub identity: SessionIdentity,
     pub agent: CLIAgent,
     pub session_id: Option<String>,
+    /// Legacy resolved title retained for UI/wire compatibility.
     pub title: Option<String>,
+    /// Canonical typed title evidence. `title` is always derived from this
+    /// state after refresh/upsert.
+    pub title_candidates: SessionTitleCandidates,
     pub cwd: Option<String>,
     pub launch_argv: Vec<String>,
     pub source_path: Option<String>,
@@ -138,25 +161,50 @@ pub fn session_display_title(alias: Option<&str>, title: Option<&str>, fallback:
 }
 
 fn non_empty_display_candidate(value: Option<&str>) -> Option<&str> {
-    value.map(str::trim).filter(|value| !value.is_empty())
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty() && !is_absent_session_title(value))
 }
 
 fn normalize_display_title(title: Option<String>) -> Option<String> {
     title.and_then(|value| {
         let trimmed = value.trim();
-        (!is_non_session_title_placeholder(trimmed)).then(|| trimmed.to_owned())
+        (!is_absent_session_title(trimmed)).then(|| trimmed.to_owned())
     })
 }
 
-/// Terminal/tab chrome and catch-all defaults that must never replace a settled
-/// session title. Canonical list lives in [`super::parse::is_absent_session_title`].
-fn is_non_session_title_placeholder(title: &str) -> bool {
-    super::parse::is_absent_session_title(title)
+fn row_has_durable_handoff(row: &NavigatorRow) -> bool {
+    matches!(row.identity, SessionIdentity::Provider(_))
+        || row.source_path.is_some()
+        || row.title_candidates.resolved().is_some()
+        || row.alias.is_some()
+        || row.pinned
 }
 
 impl NavigatorRow {
+    pub fn title_candidates(&self) -> &SessionTitleCandidates {
+        &self.title_candidates
+    }
+
+    /// Return the complete normalized evidence that must cross a resume
+    /// boundary.  Older rows persisted only `title`; bridge that legacy field
+    /// into the provider slot instead of pretending it was a first-user
+    /// observation.
+    pub fn resume_title_candidates(&self) -> SessionTitleCandidates {
+        let mut candidates = SessionTitleCandidates::from_raw(
+            self.title_candidates.provider_title.as_deref(),
+            self.title_candidates.first_user_title.as_deref(),
+        );
+        candidates.merge_legacy_title(self.title.as_deref());
+        candidates
+    }
+
     pub fn display_title(&self, fallback: &str) -> String {
-        session_display_title(self.alias.as_deref(), self.title.as_deref(), fallback)
+        session_display_title(
+            self.alias.as_deref(),
+            self.resume_title_candidates().resolved(),
+            fallback,
+        )
     }
 
     pub fn resume_invocation(&self) -> Option<ResumeInvocation> {
@@ -189,6 +237,7 @@ pub struct DeletePlan {
     pub session_id: Option<String>,
     pub agent: CLIAgent,
     pub title: Option<String>,
+    pub title_candidates: SessionTitleCandidates,
     pub alias: Option<String>,
     pub pinned: bool,
 }
@@ -207,6 +256,12 @@ pub struct SessionNavigator {
     insertion_order: HashMap<NavigatorRowId, (u64, u64)>,
     /// First-seen display_order per RowId, retained across drop/reinsert.
     display_order_by_row: HashMap<NavigatorRowId, u64>,
+    /// Closed carrier snapshots are an in-memory handoff between the pane
+    /// topology mutation and the next provider scan.  They are deliberately
+    /// projections, not a second provider store: a real history row wins as
+    /// soon as discovery returns, while a transient empty scan cannot erase a
+    /// meaningful local label/alias/order from the just-closed carrier.
+    closed_carrier_handoffs: HashMap<NavigatorRowId, NavigatorRow>,
     refresh_generation: u64,
     next_insertion: u64,
     next_row: u64,
@@ -225,10 +280,65 @@ impl SessionNavigator {
         self.rows.iter().find(|row| &row.row_id == row_id)
     }
 
+    /// Detach a live row from its physical carrier without deleting its
+    /// durable session identity.  This is the canonical split-close handoff:
+    /// the row becomes an independently sortable Virtual row and retains all
+    /// user-visible enrichment.  Temporary carrier-only rows with no
+    /// meaningful identity/title/user state intentionally remain temporary
+    /// and may disappear when their carrier closes.
+    pub fn handoff_closed_carrier(
+        &mut self,
+        row_id: &NavigatorRowId,
+        carrier: &LiveCarrier,
+    ) -> bool {
+        let Some(index) = self.rows.iter().position(|row| &row.row_id == row_id) else {
+            return false;
+        };
+        let row = &self.rows[index];
+        if row.carrier.as_ref() != Some(carrier) {
+            return false;
+        }
+        // Even a temporary carrier that has no durable history must release
+        // its physical container mapping before the next pane can reuse it.
+        // The caller may intentionally let that temporary row disappear, but
+        // it must never let a new identity inherit its RowId.
+        self.container_rows.retain(|container_id, mapped_row_id| {
+            container_id != &carrier.container_id && mapped_row_id != row_id
+        });
+        if !row_has_durable_handoff(row) {
+            return false;
+        }
+        let mut snapshot = row.clone();
+        snapshot.lifecycle = RowLifecycle::Virtual;
+        snapshot.carrier = None;
+        snapshot.execution = None;
+        // The physical container is no longer owned by this logical row.
+        // Clear both the exact carrier key and any stale aliases to the RowId
+        // before a later refresh can bind a replacement identity to it.
+        self.closed_carrier_handoffs
+            .insert(row_id.clone(), snapshot.clone());
+        self.rows[index] = snapshot;
+        self.sort_rows();
+        true
+    }
+
     pub fn refresh(&mut self, historical: &[AgentSessionRecord], live: &[LiveSession]) {
         self.refresh_generation = self.refresh_generation.saturating_add(1);
         self.next_insertion = 0;
         let mut seen = HashSet::new();
+        let mut observed = HashSet::new();
+        let handoffs: Vec<NavigatorRow> = self
+            .closed_carrier_handoffs
+            .values()
+            .filter(|row| !self.deleted_identities.contains(&row.identity))
+            .cloned()
+            .collect();
+        for handoff in handoffs {
+            seen.insert(handoff.row_id.clone());
+            if !self.rows.iter().any(|row| row.row_id == handoff.row_id) {
+                self.rows.push(handoff);
+            }
+        }
         for session in historical {
             let identity = SessionIdentity::Provider(session.key.clone());
             if self.deleted_identities.contains(&identity) {
@@ -239,6 +349,7 @@ impl SessionNavigator {
                 .find(|live| live.identity == identity)
                 .and_then(|live| self.container_rows.get(&live.carrier.container_id).cloned())
                 .unwrap_or_else(|| self.row_id_for(identity.clone()));
+            observed.insert(row_id.clone());
             seen.insert(row_id.clone());
             self.upsert(
                 row_id,
@@ -246,6 +357,7 @@ impl SessionNavigator {
                 session.agent,
                 Some(session.key.session_id.clone()),
                 session.title.clone(),
+                session.effective_title_candidates(),
                 session.cwd.clone(),
                 session.launch_argv.clone(),
                 session.source_path.clone(),
@@ -267,6 +379,7 @@ impl SessionNavigator {
                 .unwrap_or_else(|| self.row_id_for(session.identity.clone()));
             self.container_rows
                 .insert(session.carrier.container_id.clone(), row_id.clone());
+            observed.insert(row_id.clone());
             seen.insert(row_id.clone());
             self.upsert(
                 row_id,
@@ -274,6 +387,7 @@ impl SessionNavigator {
                 session.agent,
                 session.session_id.clone(),
                 session.title.clone(),
+                session.effective_title_candidates(),
                 session.cwd.clone(),
                 session.launch_argv.clone(),
                 None,
@@ -284,6 +398,8 @@ impl SessionNavigator {
                 session.execution.clone(),
             );
         }
+        self.closed_carrier_handoffs
+            .retain(|row_id, _| !observed.contains(row_id));
         self.rows
             .retain(|row| seen.contains(&row.row_id) || row.lifecycle == RowLifecycle::Restoring);
         self.sort_rows();
@@ -365,23 +481,46 @@ impl SessionNavigator {
             session_id: row.session_id.clone(),
             agent: row.agent,
             title: row.title.clone(),
+            title_candidates: row.title_candidates.clone(),
             alias: row.alias.clone(),
             pinned: row.pinned,
         }
     }
 
     /// Commit a delete plan: remove the row and register the tombstone.
-    /// Returns false when the row no longer exists (idempotent).
+    ///
+    /// A carrier-close refresh may remove the in-memory row before the Host
+    /// delete callback arrives.  The typed plan is still authoritative in
+    /// that case, so row absence must not skip the tombstone/deleted-identity
+    /// transition.  Return `false` only when this exact row/identity was
+    /// already committed, keeping duplicate callbacks idempotent.
     pub fn commit_delete(&mut self, plan: &DeletePlan) -> bool {
-        let before = self.rows.len();
-        self.rows.retain(|row| &row.row_id != &plan.row_id);
-        if before == self.rows.len() {
+        // A stale callback must never delete a replacement session that has
+        // inherited the old opaque RowId.  Check both the live projection and
+        // a closed-carrier handoff snapshot before mutating any state.
+        let row_id_identity_conflict = self
+            .rows
+            .iter()
+            .chain(self.closed_carrier_handoffs.values())
+            .any(|row| &row.row_id == &plan.row_id && row.identity != plan.identity);
+        let identity_index_conflict = self
+            .identity_rows
+            .iter()
+            .any(|(identity, row_id)| row_id == &plan.row_id && identity != &plan.identity);
+        if row_id_identity_conflict || identity_index_conflict {
             return false;
         }
+        if self.tombstones.contains(&plan.row_id)
+            || self.deleted_identities.contains(&plan.identity)
+        {
+            return false;
+        }
+        self.rows.retain(|row| &row.row_id != &plan.row_id);
         self.tombstones.insert(plan.row_id.clone());
         self.deleted_identities.insert(plan.identity.clone());
         self.identity_rows.retain(|_, id| id != &plan.row_id);
         self.container_rows.retain(|_, id| id != &plan.row_id);
+        self.closed_carrier_handoffs.remove(&plan.row_id);
         self.insertion_order.remove(&plan.row_id);
         self.display_order_by_row.remove(&plan.row_id);
         self.explicit_order.remove(&plan.identity);
@@ -423,6 +562,7 @@ impl SessionNavigator {
             agent: plan.agent,
             session_id: plan.session_id.clone(),
             title: plan.title.clone(),
+            title_candidates: plan.title_candidates.clone(),
             cwd: None,
             launch_argv: Vec::new(),
             lifecycle: RowLifecycle::Virtual,
@@ -456,6 +596,7 @@ impl SessionNavigator {
         self.deleted_identities.insert(identity.clone());
         self.identity_rows.retain(|_, id| id != row_id);
         self.container_rows.retain(|_, id| id != row_id);
+        self.closed_carrier_handoffs.remove(row_id);
         self.insertion_order.remove(row_id);
         self.display_order_by_row.remove(row_id);
         self.explicit_order.remove(&identity);
@@ -693,6 +834,7 @@ impl SessionNavigator {
         agent: CLIAgent,
         session_id: Option<String>,
         title: Option<String>,
+        title_candidates: SessionTitleCandidates,
         cwd: Option<String>,
         launch_argv: Vec<String>,
         source_path: Option<String>,
@@ -704,14 +846,27 @@ impl SessionNavigator {
     ) {
         self.identity_rows.retain(|_, existing| existing != &row_id);
         self.identity_rows.insert(identity.clone(), row_id.clone());
-        let title = normalize_display_title(title);
+        let mut incoming_candidates = SessionTitleCandidates::from_raw(
+            title_candidates.provider_title.as_deref(),
+            title_candidates.first_user_title.as_deref(),
+        );
+        incoming_candidates.merge_legacy_title(title.as_deref());
         if let Some(row) = self.rows.iter_mut().find(|row| row.row_id == row_id) {
             row.identity = identity;
             row.agent = agent;
             row.session_id = session_id;
-            // Missing/blank refresh must not wipe a previously settled meaningful
-            // title; stuck catch-all placeholders are cleared when still absent.
-            row.title = title.or_else(|| normalize_display_title(row.title.clone()));
+            row.title_candidates = SessionTitleCandidates::from_raw(
+                row.title_candidates.provider_title.as_deref(),
+                row.title_candidates.first_user_title.as_deref(),
+            );
+            row.title_candidates.merge(&incoming_candidates);
+            // Missing/blank refresh must not wipe a previously settled
+            // meaningful title; the legacy projection follows the typed state.
+            row.title = row
+                .title_candidates
+                .resolved()
+                .map(str::to_owned)
+                .or_else(|| normalize_display_title(row.title.clone()));
             row.cwd = cwd.or_else(|| row.cwd.clone());
             row.launch_argv = launch_argv;
             row.source_path = source_path.or_else(|| row.source_path.clone());
@@ -749,7 +904,11 @@ impl SessionNavigator {
             identity,
             agent,
             session_id,
-            title,
+            title: incoming_candidates
+                .resolved()
+                .map(str::to_owned)
+                .or_else(|| normalize_display_title(title)),
+            title_candidates: incoming_candidates,
             cwd,
             launch_argv,
             lifecycle,
@@ -777,6 +936,7 @@ mod tests {
             },
             agent: CLIAgent::Codex,
             title: Some(id.into()),
+            title_candidates: SessionTitleCandidates::default(),
             cwd: Some("/repo".into()),
             updated_at_unix_ms: Some(1),
             launch_argv: vec![],
@@ -790,6 +950,7 @@ mod tests {
             agent: CLIAgent::Codex,
             session_id: Some(id.into()),
             title: Some(id.into()),
+            title_candidates: SessionTitleCandidates::default(),
             cwd: Some("/repo".into()),
             launch_argv: vec![],
             carrier: LiveCarrier {
@@ -817,6 +978,7 @@ mod tests {
             agent: CLIAgent::Codex,
             session_id: None,
             title: None,
+            title_candidates: SessionTitleCandidates::default(),
             cwd: Some("/repo".into()),
             launch_argv: vec!["codex".into()],
             carrier: LiveCarrier {
@@ -841,6 +1003,7 @@ mod tests {
             agent: CLIAgent::Codex,
             session_id: None,
             title: None,
+            title_candidates: SessionTitleCandidates::default(),
             cwd: None,
             launch_argv: vec![],
             carrier: LiveCarrier {
@@ -922,6 +1085,174 @@ mod tests {
         model.refresh(&[history("s1")], &[]);
         assert_eq!(model.rows[0].row_id, id);
         assert_eq!(model.rows[0].lifecycle, RowLifecycle::Virtual);
+    }
+
+    #[test]
+    fn closing_one_split_carrier_keeps_history_row_and_breaks_group() {
+        // A split is only a live presentation grouping.  Once one carrier is
+        // closed, its durable provider record remains an independently
+        // addressable Virtual row while the surviving carrier stays Live.
+        let mut model = SessionNavigator::default();
+        model.refresh(
+            &[history("split-a"), history("split-b")],
+            &[
+                live("split-a", "tab-split", 1),
+                live("split-b", "tab-split", 2),
+            ],
+        );
+        let a = model
+            .rows()
+            .iter()
+            .find(|row| row.session_id.as_deref() == Some("split-a"))
+            .expect("split-a row")
+            .row_id
+            .clone();
+        let b = model
+            .rows()
+            .iter()
+            .find(|row| row.session_id.as_deref() == Some("split-b"))
+            .expect("split-b row")
+            .row_id
+            .clone();
+        assert_eq!(model.reorder_units().len(), 1);
+
+        // This is the state after closing only pane A and refreshing the
+        // durable provider source: B remains live, A hands off to history.
+        model.refresh(
+            &[history("split-a"), history("split-b")],
+            &[live("split-b", "tab-split", 2)],
+        );
+
+        let a_row = model.detail_row(&a).expect("closed session remains listed");
+        let b_row = model.detail_row(&b).expect("sibling remains listed");
+        assert_eq!(a_row.lifecycle, RowLifecycle::Virtual);
+        assert!(a_row.carrier.is_none());
+        assert_eq!(a_row.title.as_deref(), Some("split-a"));
+        assert_eq!(b_row.lifecycle, RowLifecycle::Live);
+        assert!(b_row.carrier.is_some());
+        let units = model.reorder_units();
+        assert_eq!(units.len(), 2, "the closed row is no longer grouped with B");
+        assert!(units.iter().all(|unit| unit.row_ids.len() == 1));
+    }
+
+    #[test]
+    fn closed_carrier_handoff_preserves_label_and_survives_scan_gap() {
+        let mut model = SessionNavigator::default();
+        model.refresh(
+            &[history("split-a"), history("split-b")],
+            &[
+                live("split-a", "tab-split", 1),
+                live("split-b", "tab-split", 2),
+            ],
+        );
+        let a = model
+            .rows()
+            .iter()
+            .find(|row| row.session_id.as_deref() == Some("split-a"))
+            .expect("split-a row")
+            .row_id
+            .clone();
+        let carrier = model
+            .detail_row(&a)
+            .and_then(|row| row.carrier.clone())
+            .expect("split-a carrier");
+        let identity = model.detail_row(&a).unwrap().identity.clone();
+        model.project_aliases(&[(identity.clone(), "Keep me".into())]);
+        model.project_pins(std::slice::from_ref(&identity));
+        assert!(model.handoff_closed_carrier(&a, &carrier));
+
+        let row = model.detail_row(&a).expect("handoff row");
+        assert_eq!(row.lifecycle, RowLifecycle::Virtual);
+        assert!(row.carrier.is_none());
+        assert_eq!(row.alias.as_deref(), Some("Keep me"));
+        assert!(row.pinned);
+        assert_eq!(model.reorder_units().len(), 2);
+
+        // A passive provider scan can be empty for one generation; the
+        // closed-carrier projection keeps the meaningful row and identity.
+        model.refresh(&[], &[]);
+        let row = model.detail_row(&a).expect("handoff survives scan gap");
+        assert_eq!(row.title.as_deref(), Some("split-a"));
+        assert_eq!(row.alias.as_deref(), Some("Keep me"));
+        assert!(row.pinned);
+
+        // Once the real source is observed, the projection is consumed and
+        // the normal historical row remains independently addressable.
+        model.refresh(&[history("split-a")], &[]);
+        assert!(model.detail_row(&a).is_some());
+        assert!(model.closed_carrier_handoffs.is_empty());
+    }
+
+    #[test]
+    fn closed_carrier_handoff_clears_container_mapping_before_reuse() {
+        let mut model = SessionNavigator::default();
+        model.refresh(&[history("s1")], &[live("s1", "tab", 1)]);
+        let old_row_id = model.rows[0].row_id.clone();
+        let carrier = model.rows[0].carrier.clone().expect("live carrier");
+        assert_eq!(
+            model.container_rows.get(&carrier.container_id),
+            Some(&old_row_id)
+        );
+
+        assert!(model.handoff_closed_carrier(&old_row_id, &carrier));
+        assert!(
+            !model.container_rows.contains_key(&carrier.container_id),
+            "a closed carrier must not leave a stale container-to-row mapping"
+        );
+
+        // Reuse the exact container for a different provider identity.  The
+        // replacement must receive a fresh RowId while the handed-off row
+        // remains independently addressable.
+        let mut replacement = live("s2", "tab", 2);
+        replacement.carrier.container_id = carrier.container_id.clone();
+        model.refresh(&[], &[replacement]);
+        let new_row = model
+            .rows
+            .iter()
+            .find(|row| row.session_id.as_deref() == Some("s2"))
+            .expect("replacement row");
+        assert_ne!(new_row.row_id, old_row_id);
+        assert_eq!(
+            model
+                .detail_row(&old_row_id)
+                .expect("handoff row remains")
+                .session_id
+                .as_deref(),
+            Some("s1")
+        );
+        assert_eq!(
+            model.container_rows.get(&carrier.container_id),
+            Some(&new_row.row_id)
+        );
+    }
+
+    #[test]
+    fn temporary_carrier_close_releases_container_mapping_without_handoff() {
+        let mut model = SessionNavigator::default();
+        let temporary = LiveSession {
+            identity: SessionIdentity::Durable("temporary-carrier".into()),
+            agent: CLIAgent::Codex,
+            session_id: None,
+            title: None,
+            title_candidates: SessionTitleCandidates::default(),
+            cwd: None,
+            launch_argv: vec!["codex".into()],
+            carrier: LiveCarrier {
+                container_id: "reused-container".into(),
+                tab_id: Some("tab".into()),
+                pane_id: Some(1),
+            },
+            execution: None,
+        };
+        model.refresh(&[], &[temporary.clone()]);
+        let old_row_id = model.rows[0].row_id.clone();
+        assert!(!model.handoff_closed_carrier(&old_row_id, &temporary.carrier));
+        assert!(!model.container_rows.contains_key("reused-container"));
+
+        let mut replacement = live("replacement", "tab", 2);
+        replacement.carrier.container_id = "reused-container".into();
+        model.refresh(&[], &[replacement]);
+        assert_ne!(model.rows[0].row_id, old_row_id);
     }
 
     #[test]
@@ -1082,6 +1413,73 @@ mod tests {
     }
 
     #[test]
+    fn commit_delete_rejects_row_id_identity_mismatch() {
+        let mut model = SessionNavigator::default();
+        model.refresh(&[], &[live("s1", "tab", 1)]);
+        let row_id = model.rows[0].row_id.clone();
+        let plan = model
+            .plan_close_and_delete(&row_id)
+            .expect("live close-and-delete plans");
+
+        // A pane/container can be reused for a different provider identity
+        // while an earlier delete callback is still in flight.  Force that
+        // reuse through the same container mapping so the stale plan keeps
+        // the old RowId but the row now carries s2.
+        let mut replacement = live("s2", "tab", 2);
+        replacement.carrier.container_id = "container-s1".into();
+        model.refresh(&[], &[replacement]);
+        let current_identity = model.rows[0].identity.clone();
+        assert_eq!(model.rows[0].row_id, row_id);
+        assert_ne!(current_identity, plan.identity);
+        let rows_before = model.rows.clone();
+
+        assert!(
+            !model.commit_delete(&plan),
+            "a stale RowId/identity pair must fail closed"
+        );
+        assert_eq!(
+            model.rows, rows_before,
+            "failed commit must not mutate rows"
+        );
+        assert!(model.tombstones.is_empty());
+        assert!(model.deleted_identities.is_empty());
+        assert_eq!(
+            model.container_rows.get("container-s1"),
+            Some(&row_id),
+            "failed commit must not clear the replacement mapping"
+        );
+    }
+
+    #[test]
+    fn commit_delete_rejects_identity_index_replacement_after_row_gap() {
+        let mut model = SessionNavigator::default();
+        model.refresh(&[], &[live("s1", "tab", 1)]);
+        let row_id = model.rows[0].row_id.clone();
+        let plan = model
+            .plan_close_and_delete(&row_id)
+            .expect("live close-and-delete plans");
+
+        // A complete-but-empty refresh can temporarily remove the row while
+        // the identity index still remembers the replacement row identity.
+        model.refresh(&[], &[]);
+        let mut replacement = live("s2", "tab", 2);
+        replacement.carrier.container_id = "container-s1".into();
+        model.refresh(&[], &[replacement]);
+        model.refresh(&[], &[]);
+        assert!(model.rows.is_empty());
+        assert!(
+            model
+                .identity_rows
+                .iter()
+                .any(|(identity, mapped)| mapped == &row_id && identity != &plan.identity)
+        );
+
+        assert!(!model.commit_delete(&plan));
+        assert!(model.tombstones.is_empty());
+        assert!(model.deleted_identities.is_empty());
+    }
+
+    #[test]
     fn rollback_delete_restores_row_on_file_failure() {
         let mut model = SessionNavigator::default();
         model.refresh(&[history("s1")], &[]);
@@ -1141,6 +1539,36 @@ mod tests {
         assert_eq!(plan.session_id.as_deref(), Some("s1"));
         assert_eq!(plan.row_id, live_id);
         assert!(model.plan_delete(&live_id).is_none());
+    }
+
+    #[test]
+    fn close_and_delete_after_carrier_refresh_still_tombstones_identity() {
+        let mut model = SessionNavigator::default();
+        model.refresh(&[], &[live("s1", "t", 1)]);
+        let row_id = model.rows[0].row_id.clone();
+        let plan = model
+            .plan_close_and_delete(&row_id)
+            .expect("live close-and-delete plans");
+
+        // The carrier-close refresh can commit before the Host delete callback
+        // arrives.  The row is then absent even though the typed delete plan
+        // is still valid and must suppress stale history publication.
+        model.refresh(&[], &[]);
+        assert!(model.rows.is_empty());
+
+        assert!(model.commit_delete(&plan));
+        assert!(model.tombstones.contains(&row_id));
+        assert!(model.deleted_identities.contains(&plan.identity));
+
+        model.refresh(&[history("s1")], &[]);
+        assert!(
+            model.rows.is_empty(),
+            "a stale discovery result must not re-publish a committed delete"
+        );
+        assert!(
+            !model.commit_delete(&plan),
+            "the same typed delete commit remains idempotent"
+        );
     }
 
     #[test]
@@ -1519,10 +1947,157 @@ mod tests {
     }
 
     #[test]
+    fn session_display_title_ignores_localized_placeholder_spacing_variants() {
+        assert_eq!(
+            session_display_title(Some("Agent会话"), Some("First request"), "Unnamed"),
+            "First request"
+        );
+        assert_eq!(
+            session_display_title(Some("Agent 会话"), Some("Agent会话"), "Unnamed"),
+            "Unnamed"
+        );
+    }
+
+    #[test]
+    fn resume_title_candidates_bridge_legacy_title_into_provider_slot() {
+        let mut model = SessionNavigator::default();
+        model.refresh(
+            &[AgentSessionRecord {
+                key: AgentSessionKey {
+                    provider: "codex".into(),
+                    session_id: "legacy-resume".into(),
+                },
+                agent: CLIAgent::Codex,
+                title: Some("Original request".into()),
+                title_candidates: SessionTitleCandidates::default(),
+                cwd: None,
+                updated_at_unix_ms: None,
+                launch_argv: vec!["codex".into(), "--resume".into()],
+                source_path: None,
+                created_at_unix_ms: None,
+            }],
+            &[],
+        );
+        let candidates = model.rows()[0].resume_title_candidates();
+        assert_eq!(
+            candidates.provider_title.as_deref(),
+            Some("Original request")
+        );
+        assert_eq!(candidates.first_user_title, None);
+    }
+
+    #[test]
+    fn navigator_title_merge_is_refresh_order_invariant() {
+        let provider = super::super::SessionTitleCandidates::from_raw(Some("Provider title"), None);
+        let first_user =
+            super::super::SessionTitleCandidates::from_raw(None, Some("First request"));
+
+        let mut history_first = super::super::SessionTitleCandidates::default();
+        history_first.merge(&provider);
+        history_first.merge(&first_user);
+        let mut live_first = super::super::SessionTitleCandidates::default();
+        live_first.merge(&first_user);
+        live_first.merge(&provider);
+
+        assert_eq!(history_first.resolved(), Some("Provider title"));
+        assert_eq!(live_first.resolved(), Some("Provider title"));
+    }
+
+    #[test]
+    fn navigator_refresh_merges_typed_titles_regardless_of_source_arrival_order() {
+        let mut history_record = history("s1");
+        history_record.title = None;
+        history_record.title_candidates =
+            super::super::SessionTitleCandidates::from_raw(Some("Provider title"), None);
+        let mut live_session = live("s1", "tab", 1);
+        live_session.title = None;
+        live_session.title_candidates =
+            super::super::SessionTitleCandidates::from_raw(None, Some("First request"));
+
+        let mut history_then_live = SessionNavigator::default();
+        history_then_live.refresh(&[history_record.clone()], &[]);
+        history_then_live.refresh(&[], &[live_session.clone()]);
+
+        let mut live_then_history = SessionNavigator::default();
+        live_then_history.refresh(&[], &[live_session]);
+        live_then_history.refresh(&[history_record], &[]);
+
+        let left = &history_then_live.rows()[0];
+        let right = &live_then_history.rows()[0];
+        assert_eq!(left.title_candidates, right.title_candidates);
+        assert_eq!(left.title, right.title);
+        assert_eq!(left.title.as_deref(), Some("Provider title"));
+        assert_eq!(
+            left.title_candidates.first_user_title.as_deref(),
+            Some("First request")
+        );
+    }
+
+    #[test]
+    fn pending_live_title_survives_provider_ready_and_reconnect() {
+        let mut pending = LiveSession {
+            identity: SessionIdentity::Durable("container-pending".into()),
+            agent: CLIAgent::Codex,
+            session_id: None,
+            title: Some("First request".into()),
+            title_candidates: SessionTitleCandidates::from_raw(None, Some("First request")),
+            cwd: None,
+            launch_argv: vec!["codex".into()],
+            carrier: LiveCarrier {
+                container_id: "container-pending".into(),
+                tab_id: Some("tab-old".into()),
+                pane_id: Some(1),
+            },
+            execution: None,
+        };
+        let mut model = SessionNavigator::default();
+        model.refresh(&[], &[pending.clone()]);
+        let row_id = model.rows()[0].row_id.clone();
+
+        pending.identity = SessionIdentity::Provider(AgentSessionKey {
+            provider: "codex".into(),
+            session_id: "session-ready".into(),
+        });
+        pending.session_id = Some("session-ready".into());
+        pending.title = None;
+        pending.carrier.tab_id = Some("tab-ready".into());
+        pending.carrier.pane_id = Some(2);
+        let mut history = history("session-ready");
+        history.title = None;
+        history.title_candidates = SessionTitleCandidates::from_raw(Some("Provider title"), None);
+        model.refresh(&[history], &[pending.clone()]);
+        assert_eq!(model.rows()[0].row_id, row_id);
+        assert_eq!(model.rows()[0].lifecycle, RowLifecycle::Live);
+        assert_eq!(model.rows()[0].title.as_deref(), Some("Provider title"));
+        assert_eq!(
+            model.rows()[0].title_candidates.first_user_title.as_deref(),
+            Some("First request")
+        );
+
+        pending.carrier.tab_id = Some("tab-reconnected".into());
+        pending.carrier.pane_id = Some(9);
+        model.refresh(&[], &[pending]);
+        assert_eq!(model.rows()[0].row_id, row_id);
+        assert_eq!(
+            model.rows()[0]
+                .carrier
+                .as_ref()
+                .and_then(|carrier| carrier.tab_id.as_deref()),
+            Some("tab-reconnected")
+        );
+        assert_eq!(model.rows()[0].title.as_deref(), Some("Provider title"));
+        assert_eq!(
+            model.rows()[0].title_candidates.first_user_title.as_deref(),
+            Some("First request")
+        );
+    }
+
+    #[test]
     fn session_display_title_never_uses_session_id() {
         let mut model = SessionNavigator::default();
         model.refresh(&[], &[live("019fa76a-6276-7b03-b302-c640686b2033", "t", 1)]);
         model.rows[0].title = None;
+        model.rows[0].title_candidates = SessionTitleCandidates::default();
         let fallback = "Unnamed session";
         let display = model.rows[0].display_title(fallback);
         assert_eq!(display, fallback);
@@ -1537,6 +2112,8 @@ mod tests {
         let mut model = SessionNavigator::default();
         model.refresh(&[], &[live("s1", "t", 1)]);
         model.rows[0].title = Some("Settled title".into());
+        model.rows[0].title_candidates =
+            SessionTitleCandidates::from_raw(Some("Settled title"), None);
         model.project_aliases(&[(model.rows[0].identity.clone(), "Local alias".into())]);
         let before = model.rows[0].display_title("Unnamed");
 

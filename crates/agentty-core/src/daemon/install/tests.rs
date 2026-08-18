@@ -27,6 +27,40 @@ struct FakeFile {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+struct FakeProcess {
+    exe: String,
+    /// `None` models `/proc/<pid>/cmdline` being unreadable.
+    cmdline: Option<Vec<u8>>,
+}
+
+impl FakeProcess {
+    fn daemon(exe: &str) -> Self {
+        let mut cmdline = exe.as_bytes().to_vec();
+        cmdline.extend_from_slice(b"\0--daemon\0");
+        Self {
+            exe: exe.to_string(),
+            cmdline: Some(cmdline),
+        }
+    }
+
+    fn pane(exe: &str) -> Self {
+        let mut cmdline = exe.as_bytes().to_vec();
+        cmdline.extend_from_slice(b"\0--stdio\0--pane\0");
+        Self {
+            exe: exe.to_string(),
+            cmdline: Some(cmdline),
+        }
+    }
+
+    fn unreadable(exe: &str) -> Self {
+        Self {
+            exe: exe.to_string(),
+            cmdline: None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 enum Journal {
     Mkdir(String),
     Put { path: String, len: usize },
@@ -45,6 +79,7 @@ struct FakeRemote {
     put_error: Option<String>,
     daemon_running: Mutex<bool>,
     running_exe: Mutex<Option<String>>,
+    processes: Mutex<Vec<FakeProcess>>,
     launch_works: bool,
     speaks: Mutex<HashMap<String, RemoteProtocol>>,
     installed_speaks: Option<RemoteProtocol>,
@@ -69,6 +104,7 @@ impl FakeRemote {
             put_error: None,
             daemon_running: Mutex::new(false),
             running_exe: Mutex::new(None),
+            processes: Mutex::new(Vec::new()),
             launch_works: true,
             speaks: Mutex::new(HashMap::new()),
             installed_speaks: Some(ours()),
@@ -122,12 +158,47 @@ impl FakeRemote {
                 is_dir: false,
             },
         );
+        self.speaks.lock().unwrap().insert(path.to_string(), ours());
     }
 
     fn serving(self, exe: &str) -> Self {
         *self.daemon_running.lock().unwrap() = true;
         *self.running_exe.lock().unwrap() = Some(exe.to_string());
+        if !exe.is_empty() {
+            self.processes
+                .lock()
+                .unwrap()
+                .push(FakeProcess::daemon(exe));
+        }
         self
+    }
+
+    fn with_pane_before_daemon(self, daemon_exe: &str) -> Self {
+        *self.daemon_running.lock().unwrap() = true;
+        *self.running_exe.lock().unwrap() = Some(daemon_exe.to_string());
+        *self.processes.lock().unwrap() = vec![
+            FakeProcess::pane(daemon_exe),
+            FakeProcess::daemon(daemon_exe),
+        ];
+        self
+    }
+
+    fn with_pane_only(self, exe: &str) -> Self {
+        *self.daemon_running.lock().unwrap() = true;
+        *self.running_exe.lock().unwrap() = None;
+        *self.processes.lock().unwrap() = vec![FakeProcess::pane(exe)];
+        self
+    }
+
+    fn with_unreadable_process(self, exe: &str) -> Self {
+        *self.daemon_running.lock().unwrap() = true;
+        *self.running_exe.lock().unwrap() = None;
+        *self.processes.lock().unwrap() = vec![FakeProcess::unreadable(exe)];
+        self
+    }
+
+    fn processes(&self) -> Vec<FakeProcess> {
+        self.processes.lock().unwrap().clone()
     }
 
     fn journal(&self) -> Vec<Journal> {
@@ -178,21 +249,62 @@ impl RemoteOps for FakeRemote {
             };
         }
         if cmd == RUNNING_EXE_COMMAND {
+            let processes = self.processes.lock().unwrap();
+            if !processes.is_empty() {
+                let exe = processes
+                    .iter()
+                    .find(|process| {
+                        daemon_process_matches(&process.exe, process.cmdline.as_deref())
+                    })
+                    .map(|process| process.exe.clone())
+                    .unwrap_or_default();
+                return ok(&exe);
+            }
             let exe = self.running_exe.lock().unwrap().clone().unwrap_or_default();
             return ok(&exe);
         }
         if cmd == TERMINATE_RUNNING_COMMAND {
+            let mut processes = self.processes.lock().unwrap();
+            if !processes.is_empty() {
+                if let Some(index) = processes.iter().position(|process| {
+                    daemon_process_matches(&process.exe, process.cmdline.as_deref())
+                }) {
+                    processes.remove(index);
+                }
+                let daemon = processes.iter().find(|process| {
+                    daemon_process_matches(&process.exe, process.cmdline.as_deref())
+                });
+                *self.daemon_running.lock().unwrap() = daemon.is_some();
+                *self.running_exe.lock().unwrap() = daemon.map(|process| process.exe.clone());
+                return ok("");
+            }
             *self.daemon_running.lock().unwrap() = false;
             *self.running_exe.lock().unwrap() = None;
             return ok("");
         }
-        if cmd.contains("--stdio --bridge") {
+        if let Some(desired) = cmd.strip_suffix(" --stdio --bridge < /dev/null") {
             let running = *self.daemon_running.lock().unwrap();
+            let running_exe = self.running_exe.lock().unwrap().clone().unwrap_or_default();
+            let desired = desired.trim_matches('\'');
+            let speaks = self.speaks.lock().unwrap();
+            let dialect_matches = if running_exe.is_empty() {
+                // The opaque-daemon fixture models a bridge that works even
+                // though /proc could not identify its executable.
+                running
+            } else {
+                speaks
+                    .get(desired)
+                    .zip(speaks.get(&running_exe))
+                    .is_some_and(|(wanted, active)| wanted.serves(active))
+            };
+            let serving = running && dialect_matches;
             return Ok(ExecOutput {
-                status: Some(if running { 0 } else { 1 }),
+                status: Some(if serving { 0 } else { 1 }),
                 stdout: String::new(),
-                stderr: if running {
+                stderr: if serving {
                     String::new()
+                } else if running {
+                    "control peer speaks a different dialect".into()
                 } else {
                     "no control server".into()
                 },
@@ -205,6 +317,13 @@ impl RemoteOps for FakeRemote {
                 let mut exe = self.running_exe.lock().unwrap();
                 if exe.is_none() {
                     *exe = Some(BINARY.to_string());
+                }
+                let mut processes = self.processes.lock().unwrap();
+                if !processes
+                    .iter()
+                    .any(|process| daemon_process_matches(&process.exe, process.cmdline.as_deref()))
+                {
+                    processes.push(FakeProcess::daemon(BINARY));
                 }
             }
             return ok("");
@@ -340,9 +459,12 @@ fn an_usable_published_server_does_not_require_uname_probe() {
 
     assert!(!report.installed);
     assert!(report.reused.is_none());
-    assert!(!remote.journal().iter().any(|entry| {
-        matches!(entry, Journal::Exec(command) if command == "uname -sm")
-    }));
+    assert!(
+        !remote
+            .journal()
+            .iter()
+            .any(|entry| { matches!(entry, Journal::Exec(command) if command == "uname -sm") })
+    );
 }
 
 struct FakeRelease {
@@ -912,7 +1034,7 @@ fn a_daemon_that_never_answers_is_an_error() {
 }
 
 #[test]
-fn an_older_running_daemon_is_kept_and_reported() {
+fn different_dialect_running_daemon_is_not_mistaken_for_desired_bridge() {
     let (remote, legacy) = FakeRemote::new().with_legacy_install("26.7.4");
     let remote = remote.serving(&legacy).speaking(
         &legacy,
@@ -931,6 +1053,13 @@ fn an_older_running_daemon_is_kept_and_reported() {
 
     assert!(report.installed, "our version is installed alongside it");
     assert!(!report.launched, "but the running daemon is left alone");
+    assert!(
+        !remote
+            .journal()
+            .iter()
+            .any(|entry| *entry == Journal::Launch),
+        "a failed desired-dialect bridge must not launch beside the known old daemon"
+    );
     let mismatch = report.mismatch.expect("the mismatch is reported");
     assert_eq!(mismatch.running_version.as_deref(), Some("26.7.4"));
     assert_eq!(mismatch.wanted_version, VERSION);
@@ -940,6 +1069,115 @@ fn an_older_running_daemon_is_kept_and_reported() {
         queued.iter().any(|m| m.host == "me@mismatch-box:22"),
         "the keep-or-restart prompt has something to raise: {queued:?}"
     );
+}
+
+#[test]
+fn daemon_process_match_requires_standalone_daemon_argv() {
+    let exe = "/home/me/.local/share/agentty/bin/agentty-server-c3p4";
+    let daemon_cmdline = b"/home/me/.local/share/agentty/bin/agentty-server-c3p4\0--daemon\0";
+    let pane_cmdline = b"/home/me/.local/share/agentty/bin/agentty-server-c3p4\0--stdio\0--pane\0";
+    let bridge_cmdline =
+        b"/home/me/.local/share/agentty/bin/agentty-server-c3p4\0--stdio\0--bridge\0";
+
+    assert!(daemon_process_matches(exe, Some(daemon_cmdline)));
+    assert!(!daemon_process_matches(exe, Some(pane_cmdline)));
+    assert!(!daemon_process_matches(exe, Some(bridge_cmdline)));
+    assert!(!daemon_process_matches(exe, Some(b"...\0--daemonized\0")));
+    assert!(
+        !daemon_process_matches(exe, None),
+        "unreadable cmdline is unknown"
+    );
+    assert!(!daemon_process_matches(
+        "/home/me/.local/share/agentty/bin/not-agentty-server-c3p4",
+        Some(daemon_cmdline),
+    ));
+}
+
+#[test]
+fn running_exe_probe_skips_pane_bridge_until_daemon() {
+    let daemon = format!("{BIN_DIR}/agentty-server-26.7.4");
+    let remote = FakeRemote::new().with_pane_before_daemon(&daemon);
+    let release = FakeRelease::new();
+    let user = FakeUser::declining();
+
+    let found = installer(&remote, &release, &user, "me@pane-first-box:22")
+        .running_server_exe()
+        .expect("the real --daemon process follows the pane bridge");
+    assert_eq!(found, daemon);
+}
+
+#[test]
+fn terminate_probe_preserves_pane_bridge_and_kills_only_daemon() {
+    let old_daemon = format!("{BIN_DIR}/agentty-server-26.7.4");
+    let remote = FakeRemote::new()
+        .with_previous_install()
+        .with_pane_before_daemon(&old_daemon);
+    remote.preinstall(BINARY, 0o755);
+    let release = FakeRelease::new();
+    let user = FakeUser::declining();
+
+    installer(&remote, &release, &user, "me@pane-restart-box:22")
+        .restart_daemon()
+        .expect("restart must terminate only the daemon and launch the replacement");
+
+    let processes = remote.processes();
+    assert_eq!(
+        processes
+            .iter()
+            .filter(|process| daemon_process_matches(&process.exe, process.cmdline.as_deref()))
+            .map(|process| process.exe.as_str())
+            .collect::<Vec<_>>(),
+        vec![BINARY],
+        "the old daemon is gone and exactly the replacement remains: {processes:?}"
+    );
+    assert_eq!(
+        processes
+            .iter()
+            .filter(|process| {
+                process.cmdline.as_deref().is_some_and(|cmdline| {
+                    cmdline
+                        .windows(b"--pane".len())
+                        .any(|window| window == &b"--pane"[..])
+                })
+            })
+            .count(),
+        1,
+        "the pane bridge is not signalled or removed: {processes:?}"
+    );
+}
+
+#[test]
+fn no_daemon_process_is_not_reported_or_signalled() {
+    let remote = FakeRemote::new().with_pane_only(BINARY);
+    let release = FakeRelease::new();
+    let user = FakeUser::declining();
+    let pane_installer = installer(&remote, &release, &user, "me@pane-only-box:22");
+
+    assert_eq!(pane_installer.running_server_exe(), None);
+    remote
+        .run(TERMINATE_RUNNING_COMMAND)
+        .expect("a no-match terminate probe remains best-effort");
+    assert_eq!(remote.processes(), vec![FakeProcess::pane(BINARY)]);
+
+    let unreadable = FakeRemote::new().with_unreadable_process(BINARY);
+    let unreadable_installer = installer(&unreadable, &release, &user, "me@unreadable-box:22");
+    assert_eq!(unreadable_installer.running_server_exe(), None);
+    unreadable
+        .run(TERMINATE_RUNNING_COMMAND)
+        .expect("an unreadable cmdline must fail closed");
+    assert_eq!(
+        unreadable.processes(),
+        vec![FakeProcess::unreadable(BINARY)]
+    );
+}
+
+#[test]
+fn running_and_terminate_commands_share_daemon_argv_predicate() {
+    let predicate = r#"case " $cmd " in *" --daemon "*)"#;
+    assert_eq!(RUNNING_EXE_COMMAND.matches(predicate).count(), 1);
+    assert_eq!(TERMINATE_RUNNING_COMMAND.matches(predicate).count(), 1);
+    assert!(RUNNING_EXE_COMMAND.contains(r#"tr '\0' ' '"#));
+    assert!(TERMINATE_RUNNING_COMMAND.contains(r#"tr '\0' ' '"#));
 }
 
 #[test]
@@ -1190,6 +1428,28 @@ fn the_published_path_is_absolute_and_dialect_qualified() {
     assert_eq!(
         report.paths.binary, BINARY,
         "this is the string `ensure_remote_server` hands the transport"
+    );
+}
+
+#[test]
+fn remote_protocol_source_identity_matches_the_daemon_handshake() {
+    assert_eq!(
+        RemoteProtocol::of_this_build().build,
+        crate::daemon::protocol::build_stamp(),
+        "--protocol and the live daemon handshake must identify the same source build"
+    );
+}
+
+#[test]
+fn remote_dialect_marker_matches_the_complete_wire_dialect() {
+    assert_eq!(
+        REMOTE_DIALECT_MARKER,
+        format!(
+            "agentty-remote-dialect:c{}p{}",
+            crate::daemon::control::CONTROL_VERSION,
+            crate::daemon::protocol::PROTOCOL_VERSION,
+        ),
+        "the package-time binary marker must advance with either wire dialect"
     );
 }
 

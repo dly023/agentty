@@ -114,13 +114,13 @@ impl RemoteHost {
     /// field. Never uses the GUI process HOME.
     pub fn store_roots(&self) -> Option<crate::agent_runtime::AgentStoreRoots> {
         if let Some(roots) = self.client.hello().store_roots.clone() {
-            return Some(roots);
+            return Some(roots.with_derived_defaults());
         }
         let home = self.home();
         if home.as_os_str().is_empty() {
             None
         } else {
-            Some(crate::agent_runtime::AgentStoreRoots::for_home(home))
+            Some(crate::agent_runtime::AgentStoreRoots::for_home(home).with_derived_defaults())
         }
     }
 
@@ -681,6 +681,14 @@ mod tests {
         let roots = host.store_roots().expect("home-derived roots");
         assert_eq!(roots.home, PathBuf::from("/home/me"));
         assert_eq!(roots.codex_home, PathBuf::from("/home/me/.codex"));
+        assert_eq!(
+            roots.agentty_config_dir,
+            PathBuf::from("/home/me/.config/agentty")
+        );
+        assert_eq!(
+            roots.opencode_config_dir,
+            PathBuf::from("/home/me/.config/opencode")
+        );
         assert!(
             crate::agent_runtime::adapter::RemoteAgentClient::discovery_available(host.as_ref()),
             "discovery proceeds from home-derived roots without agent-helper"

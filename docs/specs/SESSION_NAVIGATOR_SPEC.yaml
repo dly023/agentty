@@ -1,18 +1,25 @@
 version: 1
-updated: 2026-08-07
+updated: 2026-08-17
 domain: agent_session_navigator
 contracts:
-  - id: SESSION-TITLE-PRECEDENCE-11
-    rule: A session display title resolves in this order: explicit user alias, meaningful Agent-authored session title, first meaningful user message, Agent type name, then a generic fallback. A Jcode message marked display_role=system, including the initial system-reminder context, is not a user-title candidate.
-    forbidden:
-      - system_reminder_used_as_session_title
-      - generic_agent_session_before_first_user_message
   - id: SESSION-NAVIGATOR-REFRESH-37
     rule: The session navigator refresh control uses the familiar circular refresh asset and keeps the existing refresh-session action and localized tooltip.
     forbidden:
       - window_restore_icon_for_session_refresh
   - id: SESSION-ENVIRONMENT-AUTHORITY-01
-    rule: The visible session collection belongs to the active local or remote environment; local history must never appear as remote history.
+    rule: >-
+      The visible session collection belongs to the active local or remote
+      environment; local history must never appear as remote history. A
+      workspace switch invalidates the previous Navigator scope before the new
+      workspace is adopted: committed history, Host-backed user-state context,
+      and in-flight refresh results are all scoped by the tuple
+      (WorkspaceId, HostId, EnvironmentId, session-alias path). A completion
+      from any previous tuple is dropped and cannot publish rows, aliases,
+      pins, ordering, or a scan error into the new workspace.
+    forbidden:
+      - previous_workspace_history_in_new_environment
+      - stale_navigator_refresh_crossing_workspace_scope
+      - alias_mutation_landing_in_a_previous_environment_scope
   - id: SESSION-DISCOVERY-ATOMIC-02
     rule: A provider scan commits a complete generation atomically; parse failure preserves the previous committed generation.
   - id: SESSION-RESUME-ARGV-03
@@ -42,31 +49,97 @@ contracts:
     forbidden:
       - indefinite_discovering_spinner_after_scan_timeout
   - id: SESSION-JCODE-STABLE-LIST-GATE-34
-    rule: Jcode history discovery uses Jcode's official session boundary on the selected Environment: the versioned jcode-harness-api ListSessions contract when its bridge is available, otherwise the documented ~/.jcode/sessions/*.json Session schema used by Jcode's own load_session and session search paths. Rows use the persisted id, custom_title/title, working_dir, file mtime, and typed `jcode --resume <id>` argv. Malformed files are skipped without publishing partial records; bridge protocol failures preserve the last complete generation. Private snapshot, journal, imported, backup, filename, count, parent-only, or timestamp heuristics are never used as an identity boundary.
+    rule: >-
+      Jcode durable history discovery uses only the documented ~/.jcode/sessions/*.json Session schema in the selected Environment. Candidate files are statted and ordered by file mtime newest-first before the bounded candidate set is selected; every selected file is read as complete JSON subject to an explicit maximum file-size bound, never as a 256 KiB or other truncated prefix. A durable row uses the persisted id and working_dir, resolves its title from the first non-blank custom_title, then title, then first real user message, then short_name, resolves updated_at from parsable last_active_at, then updated_at, then file mtime, and carries typed `jcode --resume <id>` argv. Malformed or over-limit files are skipped without publishing partial records, and discovery failure preserves the last complete generation. The audited jcode-harness-api ListSessions call returns only sessions attached by that same connection; Agentty's fresh discovery connection attaches none, so ListSessions is not a usable history source and must not contribute discovery rows. A future API adapter requires a separately promoted versioned schema that proves root/debug, visible-message, and resumable semantics before implementation. Journal, imported, backup, filename, count, parent-only, or timestamp guesses are never used as an identity boundary.
     forbidden:
       - advertising_jcode_from_undocumented_jcode_files
-      - publishing_partial_jcode_rows_on_command_or_schema_failure
+      - publishing_partial_jcode_rows_on_source_or_schema_failure
       - treating_parent_id_null_as_sufficient_user_session_filtering
-      - replacing_last_complete_jcode_generation_after_bridge_failure
+      - replacing_last_complete_jcode_generation_after_discovery_failure
       - deleting_jcode_session_through_unvalidated_source_path
+      - parsing_a_truncated_jcode_json_prefix
+      - selecting_jcode_candidates_before_mtime_ordering
+      - preferring_short_name_over_a_real_user_message
+      - preferring_file_mtime_over_persisted_activity_time
+      - treating_list_sessions_as_complete_durable_history
+      - claiming_list_sessions_proves_internal_message_filtering
+      - publishing_history_rows_from_a_fresh_list_sessions_connection
+      - adding_a_jcode_history_api_without_separate_schema_promotion
   - id: SESSION-ROW-ACTIONS-07
     rule: Every historical session row exposes safe copy actions for session id, typed resume command, cwd, and source path plus a read-only details dialog; absent metadata disables its action instead of inventing a value.
   - id: SESSION-ROW-INFORMATION-HIERARCHY-08
     rule: The canonical provider icon is the row's visible CLI Agent identity, so the subtitle must not repeat the provider slug or display name; it is reserved for session-specific context and renders the cwd when available. Provider identity remains searchable and available in session details.
   - id: SESSION-PERMANENT-DELETE-TRANSACTION-09
-    rule: Permanent session deletion uses a typed plan that captures the source path, environment authority, and logical session key before any mutation; it removes the backing provider file through the selected Host, updates the Navigator in memory atomically, and provides a confirmed rollback path. Delete must require explicit user confirmation. Soft Close for live/restoring rows only closes the carrier tab/pane and keeps provider history — that path must not call apply_session_delete_transaction. Live/restoring rows additionally expose Close and Delete — one confirmation closes the carrier then permanently deletes provider history through a typed plan captured before the carrier closes (plan_close_and_delete). When the live row has no provider backing source yet (Durable identity or missing source_path), Close and Delete still closes the carrier, tombstones the row, and clears Environment user state without inventing a provider file path or reporting a false delete failure. Historical/virtual rows keep the dangerous permanent Delete entry. Tombstone entries prevent the same provider identity from reappearing as a new row within the same generation.
+    rule: Permanent session deletion uses a typed plan that captures the source path, environment authority, and logical session key before any mutation; it removes the backing provider file through the selected Host, updates the Navigator in memory atomically, and provides a confirmed rollback path. Delete must require explicit user confirmation. Soft Close for live/restoring rows only closes the carrier tab/pane and keeps provider history — that path must not call apply_session_delete_transaction. Live/restoring rows additionally expose Close and Delete — one confirmation closes the carrier then permanently deletes provider history through a typed plan captured before the carrier closes (plan_close_and_delete). When the live row has no provider backing source yet (Durable identity or missing source_path), Close and Delete still closes the carrier, tombstones the row, and clears Environment user state without inventing a provider file path or reporting a false delete failure. A successful typed delete commit must register its row tombstone and deleted SessionIdentity even if a carrier-close refresh removed the in-memory row before the Host delete callback arrives; row absence is not permission to re-publish a successfully deleted identity. If the captured RowId is currently occupied by a different SessionIdentity (including a closed-carrier handoff snapshot), commit_delete fails closed without changing rows, container mappings, or tombstones. Historical/virtual rows keep the dangerous permanent Delete entry. Tombstone entries prevent the same provider identity from reappearing as a new row within the same generation.
     forbidden:
       - provider_file_delete_via_soft_close_path
       - silent_no_op_delete_menu_on_live_rows
       - close_and_delete_without_capturing_plan_before_carrier_close
       - close_and_delete_error_toast_when_no_provider_source
+      - delete_plan_crossing_row_identity_replacement
+  - id: SESSION-CARRIER-CLOSE-43
+    rule: >-
+      A live Navigator row is a pane carrier, not an entire split tab. Soft
+      Close resolves the current stable NavigatorRowId again after confirmation
+      and targets the carrier tuple (workspace/environment, tab_id, and pane
+      identity) through one AgenttyApp close_carrier_pane primitive. When the
+      tab has multiple leaves, only that pane is closed and every sibling pane,
+      carrier, SessionIdentity, and user-state label remains intact. A sole
+      leaf may use the existing close_tab path. After a carrier closes, its
+      last meaningful title evidence, source_path, alias, pin, display order,
+      and RowId are handed off to native history or a closed-carrier virtual
+      row; a transient discovery gap must not erase that persisted local
+      session label. The handoff clears every container-to-row mapping for the
+      closed carrier/RowId before refresh may reuse that container, so a new
+      pane identity cannot inherit the closed row. Split siblings are one
+      reorder/visual unit only while
+      their live carriers still share the tab; once a carrier is closed or
+      handed off, remaining and historical rows are independently addressable.
+      Close and Delete captures its typed delete plan before closing the
+      carrier, then alone may remove the provider source and tombstone the row.
+    forbidden:
+      - whole_tab_close_for_a_split_navigator_row
+      - stale_numeric_tab_index_as_carrier_identity
+      - soft_close_deleting_or_tombstoning_provider_history
+      - split_close_dropping_surviving_sibling_carriers
+      - transient_discovery_gap_erasing_a_closed_persisted_label
+      - grouping_a_handed_off_row_with_an_unrelated_live_carrier
+      - close_and_delete_without_a_preclose_typed_plan
+      - closed_carrier_container_mapping_reusing_handoff_row
+      - temporary_carrier_container_mapping_reusing_old_row
+      - stale_identity_index_republishing_an_old_delete_plan
+  - id: SESSION-CARRIER-CLOSE-44
+    rule: >-
+      Carrier Close and Close and Delete are one scoped typed action.  The
+      action captures WorkspaceId, HostId, EnvironmentId, alias/user-state
+      path, NavigatorRowId, SessionIdentity, and the complete LiveCarrier
+      tuple (container_id, tab_id, pane_id) before the confirmation prompt.
+      Confirmation re-resolves and requires every captured field to match;
+      a stale scope, identity, or carrier fails closed without closing a pane
+      or mutating provider/user state.  The exact carrier's SSH warning is
+      evaluated for both multi-leaf and sole-leaf tabs.  A pending warning
+      stores the typed Soft Close or Close and Delete action; confirmation
+      resumes that same action rather than dispatching a numeric tab/pane
+      fallback.  Close and Delete carries the original Host/roots authority
+      through the sole provider delete transaction and starts that transaction
+      only after carrier close succeeds.  A source/delete failure leaves the
+      captured row state and user state recoverable; a scope change or stale
+      callback cannot delete an old plan in the new Environment.
+    forbidden:
+      - carrier_close_reusing_only_row_id_after_confirmation
+      - carrier_close_accepting_a_replaced_tab_or_pane
+      - navigator_carrier_close_bypassing_ssh_warning_on_a_split_leaf
+      - ssh_confirmation_resuming_via_numeric_tab_index
+      - close_and_delete_starting_provider_mutation_before_carrier_close
+      - close_and_delete_using_callback_scope_or_roots_after_rebind
+      - stale_close_callback_deleting_an_old_identity_in_a_new_environment
   - id: SESSION-ALIAS-BUSINESS-MODEL-10
     rule: Session aliases are Environment-scoped user state keyed by stable SessionIdentity. Setting an alias persists to the session config and survives restart. Aliases are normalized (trimmed, non-empty) before storage. Duplicate aliases within the same environment are rejected at commit time. Deleting a session clears its alias state. The inline edit UI is discoverable via double-click on the row title and via a row context-menu action that opens the same begin_session_alias_edit path; edit state is cancelled on Escape without mutating the model. begin_session_alias_edit seeds the editor with the current display title and selects that entire value so one delete/backspace clears it for replacement.
     forbidden:
       - alias_edit_only_via_undiscoverable_double_click
       - alias_edit_caret_at_end_without_selecting_existing_title
   - id: SESSION-TITLE-PRECEDENCE-11
-    rule: Session display name resolves through one pure mapping — session_display_title — shared by the Navigator sidebar row, hover detail title, and global session search document title. Explicit user aliases win. A meaningful provider-authored session name wins when the session itself is named; otherwise the first real User message is the canonical default title across every provider, then the localized unnamed-session fallback. Parsers keep provider titles and User-message candidates in separate fields so provider-specific storage formats do not create different title policy. Catch-all / default-name phrases such as "Agent session", "Agent 会话", "Untitled", "New session", and product placeholders such as "agentty" are treated as absent title candidates so a later or concurrent first User message wins for display and search filtering. Provider identity, agent display name, session id, RowId, viewport index, and tab/pane coordinates are never display-name inputs. Tab labels, terminal OSC/window titles, and cwd basenames used as pane chrome are never LiveSession or refresh title inputs. Live carrier projection may publish only a once-set first-user-message title candidate derived from the first successfully delivered AgentPrompt (via first_user_title_candidate) when the agent has not yet authored a better title — never tab names, OSC titles, or product placeholders. Blank, whitespace-only, and placeholder alias/title candidates are treated as absent. Navigator refresh that supplies a missing, blank, or placeholder title preserves the last non-empty meaningful resolved title for that RowId (placeholder values already stored are cleared when a refresh still has no better candidate). User-state alias projection is never rewritten by layout, focus, hover, filter, or carrier replacement. UI re-renders with unchanged alias and title inputs must produce the identical display string. Codex discovery must accept User turns from both event_msg.user_message and response_item message role=user payloads; injected instruction / environment_context user-role blobs are not User-message title candidates.
+    rule: Session display name resolves through one pure mapping — session_display_title — shared by the Navigator sidebar row, hover detail title, and global session search document title. Explicit user aliases win. A meaningful provider-authored session name wins when the session itself is named; otherwise the first real User message is the canonical default title across every provider, then the localized unnamed-session fallback. Parsers keep provider titles and User-message candidates in separate fields so provider-specific storage formats do not create different title policy. Catch-all / default-name phrases such as "Agent session", "Agent 会话", "Untitled", "New session", and product placeholders such as "agentty" are treated as absent title candidates so a later or concurrent first User message wins for display and search filtering. Provider identity, agent display name, session id, RowId, viewport index, and tab/pane coordinates are never display-name inputs. Tab labels, terminal OSC/window titles, and cwd basenames used as pane chrome are never LiveSession or refresh title inputs. Live carrier projection may publish only a once-set first-user-message title candidate derived from the first successfully delivered AgentPrompt (via first_user_title_candidate) when the agent has not yet authored a better title — never tab names, OSC titles, or product placeholders. Resume of a historical row must carry a normalized stable title seed into the new live binding even when only a legacy title or provider candidate is available; a successful post-resume AgentPrompt must not replace that seed. Blank, whitespace-only, and placeholder alias/title candidates are treated as absent. Navigator refresh that supplies a missing, blank, or placeholder title preserves the last non-empty meaningful resolved title for that RowId (placeholder values already stored are cleared when a refresh still has no better candidate). User-state alias projection is never rewritten by layout, focus, hover, filter, or carrier replacement. UI re-renders with unchanged alias and title inputs must produce the identical display string. Codex discovery must accept User turns from both event_msg.user_message and response_item message role=user payloads; injected instruction / environment_context user-role blobs are not User-message title candidates. A Jcode message marked display_role=system, including the initial system-reminder context, is not a User-message title candidate.
     forbidden:
       - session_id_as_display_title
       - provider_or_agent_name_as_display_title
@@ -78,8 +151,118 @@ contracts:
       - live_resume_projection_publishing_agentty_as_session_title
       - catch_all_default_name_beating_first_user_message
       - overwriting_live_first_user_title_on_later_prompts
+      - resume_post_prompt_replacing_legacy_or_provider_title_seed
       - codex_ignoring_response_item_user_messages
       - injected_agents_md_or_environment_context_as_session_title
+      - system_reminder_used_as_session_title
+      - generic_agent_session_before_first_user_message
+  - id: SESSION-TITLE-CANDIDATES-38
+    rule: >-
+      A discoverable/live session carries one typed title-candidate state with
+      separate provider_title and first_user_title evidence. Provider parsers,
+      live AgentPrompt delivery, persistence restore, and Navigator refresh
+      merge that state through one monotonic resolver; they must not collapse
+      one source into a display string and later overwrite it with another
+      source. The resolver is explicit alias, meaningful provider title, first
+      real User message, then the localized unnamed fallback. A first real
+      AgentPrompt captured at materialization is persisted with the live
+      container binding so a restart cannot regress to a product placeholder;
+      the first meaningful provider observation is stable until an explicitly
+      typed provider-title update is introduced, while blank or placeholder
+      refreshes never erase it. Same-kind merge is write-once for a settled
+      candidate: an incoming provider_title (or first_user_title) observation
+      is evidence-only when that slot already contains a meaningful value and
+      cannot replace it; a conflicting replacement requires the explicit
+      typed provider-title update path. Refresh-order invariance therefore
+      applies to candidate presence and cross-kind precedence, not to an
+      implicit lexical or arrival-order title edit. Resume of a historical row must
+      also carry a normalized stable title seed into the new live binding when
+      the row exposes only its legacy `title` field or a provider_title
+      candidate and has no first_user_title slot. A successfully delivered
+      post-resume AgentPrompt must not be promoted as the row's first title or
+      replace that historical seed; the visible resolved name remains stable
+      until an explicitly typed provider update is merged. Placeholder
+      matching is whitespace-insensitive for localized catch-alls, including
+      both "Agent 会话" and "Agent会话". The machine is the sole authority for
+      provider_title facts after a pane is materialized. It validates workspace
+      ownership and an existing agent identity, normalizes typed updates, and
+      never overwrites an existing meaningful provider fact. A stale typed
+      request whose expected pane identity no longer matches is a no-op/refusal
+      and must trigger a re-pull; it must never attach evidence to a replacement
+      pane. A pane without AgentFacts is not manufactured merely to carry a
+      title. Hydration/prime must read machine facts before any title
+      bookkeeping: meaningful machine provider_title is projected as-is, while
+      a missing/blank provider slot remains absent. Replace hydration must not
+      import a live/local provider title into that empty slot and must not queue
+      PaneSetProviderTitle solely because a local binding carried a candidate.
+      PaneSetProviderTitle is reserved for an explicit typed provider
+      observation/materialization path, never an implicit Replace migration.
+      Machine-tree deltas are identity transitions: TabRestructured removes all
+      title evidence and pane identity for leaves no longer present, and an
+      agent-less PaneFacts update clears the same three mirror slots before any
+      later desired diff. A reused pane number must not authorize
+      PaneSetProviderTitle until fresh AgentFacts establish the replacement
+      identity.
+    forbidden:
+      - title_source_collapsed_before_live_history_merge
+      - realtime_first_user_title_lost_on_session_persistence
+      - placeholder_spacing_variant_beating_first_user_title
+      - refresh_order_changing_the_resolved_session_title
+      - same_kind_merge_rewriting_settled_provider_title
+      - same_kind_merge_rewriting_settled_first_user_title
+      - resume_post_prompt_replacing_legacy_or_provider_title_seed
+      - using_PaneSetFirstUserTitle_for_provider_evidence
+      - provider_migration_without_workspace_ownership
+      - provider_migration_fabricating_agent_facts
+      - provider_migration_overwriting_existing_machine_evidence
+      - stale_provider_migration_crossing_a_pane_identity_replacement
+      - optimistic_provider_title_hiding_machine_authority
+      - replace_hydrate_overwriting_machine_provider_title_with_local
+      - replace_hydrate_injecting_local_provider_title_when_machine_slot_is_empty
+      - replace_hydrate_queueing_local_provider_title_migration
+      - replace_hydrate_migrating_across_identity_mismatch
+      - retaining_pane_identity_after_tab_restructure_removal
+      - retaining_pane_identity_after_agentless_pane_facts
+      - provider_migration_authorized_by_a_reused_pane_number
+  - id: SESSION-CODEX-USER-VISIBILITY-39
+    rule: >-
+      Codex discovery publishes only user-visible, resumable sessions. A
+      transcript whose session_meta marks thread_source=subagent, carries a
+      parent_thread_id for an internal agent path, or contains only injected
+      role=user context is an internal execution artifact and must not become
+      a Navigator history row. A top-level thread_source=user (or an older
+      transcript with no origin marker) remains eligible when it has a real
+      User turn or an explicit provider title. Session id fields and parent
+      links are identity/routing evidence only and never become display-title
+      candidates.
+    forbidden:
+      - internal_subagent_transcript_as_generic_agent_session_row
+      - injected_context_as_codex_first_user_title
+      - parent_thread_id_as_session_display_title
+  - id: SESSION-TITLE-PARSER-EVIDENCE-42
+    rule: >-
+      History parsers publish only title evidence that is attributable to the
+      provider schema. A Codex session_index row is metadata-only: an index
+      record with no meaningful provider title (including a blank or product
+      placeholder) is not published as a generic Navigator row by itself; a
+      matching transcript may still make the identity visible when it carries
+      a real User turn or meaningful provider title. Generic JSONL scanners may
+      derive first-user title evidence only from an explicit role=user record
+      or a provider-defined user-event discriminator (never from assistant,
+      system, tool, or untyped content). Claude user messages accept both the
+      stored string form and arrays of text blocks, ignoring non-text/tool
+      blocks. Provider/title and first-user placeholder values are normalized
+      before fallback selection so a placeholder cannot block a later
+      meaningful candidate. These parser rules feed SessionTitleCandidates;
+      they do not synthesize a persisted generic title.
+    forbidden:
+      - codex_index_only_empty_record_as_generic_session_row
+      - codex_index_placeholder_as_generic_session_row
+      - generic_assistant_or_system_content_as_first_user_title
+      - generic_untyped_content_as_first_user_title
+      - claude_text_block_array_ignored_for_first_user_title
+      - claude_tool_result_as_first_user_title
+      - placeholder_candidate_blocking_later_meaningful_parser_evidence
   - id: AGENT-EXECUTION-STATE-SYSTEM-12
     rule: Session Navigator execution presentation derives from the canonical AgentSessionState owned by the live terminal. Badge precedence is restoring, waiting for user, running, focused live, background live, completed unread, then none for idle or historical rows. State snapshots carry activity_seq and stale snapshots must not replace newer state. Historical rows never display live execution, and waiting messages remain visible and actionable.
   - id: SESSION-HOVER-DETAILS-13
@@ -112,7 +295,32 @@ contracts:
       - reinsert_of_known_row_id_as_new_head_unit
       - renumbering_survivors_on_commit_delete
   - id: SESSION-REFRESH-INTENT-18
-    rule: Session refresh intent is typed, semantic, and Environment-authoritative. Initial target readiness, first successful connect that publishes Host+roots, remote link-up/reconnect, pump transition into Attached, provider source mutation, and closing an Agent carrier request the same Environment-scoped passive scan; explicit user refresh supersedes an older generation. Generic terminal output, focus, resize, layout, and metadata-only projection events never scan provider history. A refresh may become in-flight only after EnvironmentSessionContext resolves the selected Host and store roots; discovery runs through that facade so UI call sites never branch on local vs remote. When HelloOk omits store_roots but publishes a non-empty peer home, RemoteHost derives target-owned default roots from that home (never GUI HOME) so connect success still unlocks discovery against remotes that speak DiscoverAgentSessions without the later Hello field or agent-helper feature. A disconnected remote attempt must release its generation so the link-up passive refresh starts a new scan, and no unavailable remote path may read local roots. Connect success must refresh every open Environment window on that host and must not leave open windows depending only on a raced sidebar paint. When a sidebar paint attempted discovery before Host+roots were ready and recorded session_scan_error, the next paint after EnvironmentSessionContext can resolve must automatically request RemoteLinkUp — discovery must not stay permanently empty after a transient precondition failure.
+    rule: >-
+      Session refresh intent is typed, semantic, and Environment-authoritative.
+      Initial target readiness, first successful connect that publishes Host+roots,
+      remote link-up/reconnect, pump transition into Attached, provider source
+      mutation, and closing an Agent carrier request the same Environment-scoped
+      passive scan; explicit user refresh supersedes an older generation. Every
+      in-flight request carries the full scope tuple (WorkspaceId, HostId,
+      EnvironmentId, session-alias path), and both the generation and tuple
+      must match before a completion can commit. Generic terminal output, focus,
+      resize, layout, and metadata-only projection events never scan provider
+      history. A refresh may become in-flight only after
+      EnvironmentSessionContext resolves the selected Host and store roots;
+      discovery runs through that facade so UI call sites never branch on local
+      vs remote. When HelloOk omits store_roots but publishes a non-empty peer
+      home, RemoteHost derives target-owned default roots from that home (never
+      GUI HOME) so connect success still unlocks discovery against remotes that
+      speak DiscoverAgentSessions without the later Hello field or agent-helper
+      feature. A disconnected remote attempt must release its generation so the
+      link-up passive refresh starts a new scan, and no unavailable remote path
+      may read local roots. Connect success must refresh every open Environment
+      window on that host and must not leave open windows depending only on a
+      raced sidebar paint. When a sidebar paint attempted discovery before
+      Host+roots were ready and recorded session_scan_error, the next paint
+      after EnvironmentSessionContext can resolve must automatically request
+      RemoteLinkUp — discovery must not stay permanently empty after a
+      transient precondition failure.
     forbidden:
       - leaving_refresh_inflight_after_precondition_failure
       - coalescing_the_first_link_up_refresh_behind_an_abandoned_generation
@@ -122,6 +330,7 @@ contracts:
       - scan_error_without_retry_after_host_roots_become_ready
       - requiring_agent_helper_feature_alone_for_session_discovery
       - leaving_remote_discovery_blocked_when_peer_home_is_known
+      - accepting_completion_for_a_different_workspace_host_environment_or_alias_path
   - id: SESSION-ROW-ACTIVATION-30
     rule: Activating a Navigator row always selects it by stable NavigatorRowId before focus or resume side effects, so sidebar selection chrome updates for live and historical rows. Live rows with a resolvable carrier tab focus that tab; a missing carrier keeps the selection and surfaces a visible notice instead of a silent no-op.
     forbidden:
@@ -172,7 +381,8 @@ contracts:
       - following_symlinks_during_provider_discovery
       - publishing_a_silent_subset_after_relevant_budget_exhaustion
   - id: SESSION-SIDEBAR-SURFACE-HIERARCHY-25
-    rule: The Session Navigator sidebar renders one explicit navigation hierarchy: a chrome action row (refresh/collapse) that leaves the macOS traffic-light zone clear, a framed search control with stable height, and one shared horizontal gutter for search, empty states, single-session rows, and split-session groups. Sidebar identity comes from search, rows, and empty states — never from a redundant section title under the window close controls. Row content remains compact, but selection paint, keyboard focus, and hover feedback do not touch the window edge or depend on incidental child padding.
+    rule: >-
+      The Session Navigator sidebar renders one explicit navigation hierarchy: a chrome action row (refresh/collapse) that leaves the macOS traffic-light zone clear, a framed search control with stable height, and one shared horizontal gutter for search, empty states, single-session rows, and split-session groups. Sidebar identity comes from search, rows, and empty states — never from a redundant section title under the window close controls. Row content remains compact, but selection paint, keyboard focus, and hover feedback do not touch the window edge or depend on incidental child padding.
     forbidden:
       - bare_search_input_without_control_surface
       - row_background_touching_sidebar_edge
@@ -209,15 +419,19 @@ contracts:
       - group_container_replacing_sibling_activation
       - query_or_reorder_splitting_the_visual_group
   - id: SESSION-ROW-ACTION-AFFORDANCE-27
-    rule: Session Navigator historical rows resume through the canonical row click and must not render a redundant hover triangle or play-button affordance. A restoring row keeps an explicit restoring status label. Row activation remains available through keyboard and context-menu semantics, and removing the obsolete hover decoration must not shift row layout or steal title width.
+    rule: Session Navigator historical rows resume through a stationary click-release on the canonical row action and must not render a redundant hover triangle or play-button affordance. Pointer-down alone never selects or resumes the row. Movement beyond the toolkit drag threshold transfers the gesture to the enclosing stable-row reorder unit; because the drag wrapper and clickable row are nested, the row click path must reject release while that drag is active so drag release cannot replay resume. A restoring row keeps an explicit restoring status label. Row activation remains available through keyboard and context-menu semantics, and removing the obsolete hover decoration must not shift row layout or steal title width.
     forbidden:
       - inline_text_action_label_on_row_hover
       - hover_affordance_changing_row_geometry
       - permanent_flex_slot_stealing_title_width_when_hidden
       - redundant_resume_hover_triangle_or_play_button
+      - activation_from_mouse_down
+      - mousedown_to_activation_shortcuts_drag_start
+      - drag_release_replays_historical_resume
       - removing_the_explicit_restoring_status
   - id: SESSION-EMPTY-STATE-SURFACE-28
-    rule: The Session Navigator empty projection renders a hierarchical placeholder surface: one muted state glyph above the localized message. Discovering, scan error, zero sessions, and query no-match each map to a distinct glyph through one pure mapping, so the four states are distinguishable without reading the text.
+    rule: >-
+      The Session Navigator empty projection renders a hierarchical placeholder surface: one muted state glyph above the localized message. Discovering, scan error, zero sessions, and query no-match each map to a distinct glyph through one pure mapping, so the four states are distinguishable without reading the text.
     forbidden:
       - bare_text_only_empty_state
       - one_ambiguous_glyph_for_all_empty_states

@@ -1,5 +1,5 @@
 version: 1
-updated: 2026-08-09
+updated: 2026-08-16
 domain: remote_agent_helper
 architecture:
   deployment: extend_existing_agentty_server_control_channel
@@ -12,16 +12,60 @@ contracts:
     forbidden:
       - requiring_uname_before_reusing_a_compatible_published_helper
       - turning_a_reusable_helper_into_a_reconnect_loop_after_transport_attach
+  - id: REMOTE-INSTALL-DAEMON-IDENTITY-22
+    rule: >-
+      Running-build discovery and canonical daemon restart inspect only an
+      agentty-server-* process whose argv contains standalone `--daemon`.
+      Pane bridges (`--stdio --pane` or `--stdio --bridge`), missing or
+      unreadable cmdline, and processes without that argument are not daemon
+      identities. RUNNING_EXE and TERMINATE use one shared predicate; when no
+      process matches, the operation fails closed without signalling a process
+      or inferring a second daemon identity.
+    forbidden:
+      - selecting_an_agentty_server_by_executable_path_without_daemon_argv
+      - terminating_a_stdio_pane_or_bridge_process_during_daemon_restart
+      - treating_missing_or_unreadable_cmdline_as_a_daemon_match
+      - maintaining_distinct_running_and_terminate_process_predicates
+      - publishing_an_unknown_process_as_the_running_daemon
   - id: REMOTE-SSH-REUSE-RETRY-20
-    rule: If remote setup or the first command-channel operation fails on a reused SSH connection, the router marks that connection dead, evicts it from the cache, opens one fresh connection, and retries setup once. A fresh-connection failure is surfaced without an unbounded retry loop.
+    rule: >-
+      If remote setup, opening the first command channel, or submitting its first exec request
+      fails on a reused SSH connection, the router marks that connection dead, evicts it from the
+      cache, opens one fresh connection, and retries the complete setup-and-channel attempt once.
+      The RemoteLink is published only after that attempt succeeds. A fresh-connection failure is
+      surfaced without an unbounded retry loop.
     forbidden:
       - retrying_remote_setup_forever_on_one_dead_cached_connection
       - publishing_remote_link_after_setup_failed
+      - publishing_remote_link_after_the_first_channel_or_exec_failed
+      - opening_a_third_connection_after_the_fresh_attempt_failed
   - id: REMOTE-CONNECTION-GENERATION-18
     rule: Each remote connection attempt owns a monotonically increasing generation. A completion or failure from an older generation is stale, must not replace the current HostLink or change the visible connection state, and must not trigger a second reconnect prompt.
     forbidden:
       - stale_connection_result_overwriting_current_host_link
       - stale_connection_result_triggering_reconnect_ui
+  - id: REMOTE-CONNECTION-ENTRY-21
+    rule: >-
+      RemoteLinks is the single per-host attempt coordinator for both automatic workspace
+      supervision and user-triggered switcher/menu actions. While a supervisor or manual attempt
+      is in flight, every UI surface reports Connecting or Reconnecting from that coordinator;
+      absence of a published HostLink is not enough to report Offline. A repeated click or retry
+      for the same HostId joins the existing attempt and never starts a second connect_blocking
+      operation. Every completion, including the manual path, carries the coordinator generation
+      and may publish or attach only when it is current. If a live HostLink is observed while an
+      attempt flag is still set, the coordinator clears that flag and invalidates the stale
+      completion before the link can later enter the reconnect guard. An unbound manual target
+      lease is scoped to the coordinator generation: when a newer supervisor attempt takes over
+      the host, it retags that lease, and an older completion may release neither the newer lease
+      nor a newer ConnectFlow.
+    forbidden:
+      - deriving_switcher_offline_only_from_hostlinks_absence
+      - starting_parallel_manual_and_supervisor_connect_attempts_for_one_host
+      - allowing_manual_completion_to_bypass_remote_connection_generation
+      - leaving_attempting_set_after_a_live_hostlink_is_observed
+      - stale_manual_or_supervisor_completion_replacing_the_current_hostlink
+      - stale_manual_completion_deleting_a_newer_manual_attempt_lease
+      - stale_manual_completion_clearing_a_newer_connect_flow
   - id: HELPER-CAPABILITY-NEGOTIATION-01
     rule: Client and helper negotiate named capabilities and protocol version before using Agent features; an unavailable capability is explicit and never inferred from build labels. Session discovery may proceed when HelloOk advertises agent-helper, publishes store_roots, or provides a non-empty peer home from which target-owned default store roots are derived; activity and completion still require the agent-helper feature. Deriving roots from peer home is not a GUI-HOME fallback.
   - id: HELPER-SHARED-CORE-02
@@ -33,25 +77,71 @@ contracts:
   - id: HELPER-ACTIVITY-STRUCTURED-05
     rule: Agent activity crosses the helper boundary as typed events with operation and session identity, not terminal-text heuristics alone.
   - id: HELPER-COMPLETION-AUTHORITY-06
-    rule: Completion sources execute in the selected Environment authority; remote failure never reads or publishes local filesystem, repository, history, or process data.
+    rule: >-
+      Completion sources execute in the selected Environment authority; remote failure never
+      reads or publishes local filesystem, repository, history, process data, or the GUI's PATH
+      command directory. The terminal completion reducer has one authority-aware entrypoint:
+      local panes may enumerate the GUI PATH, while remote/WSL panes use only built-in grammar,
+      target-host completion, and target-host filesystem sources. A remote pane must never call
+      the local command enumerator as a hidden supplement.
+    forbidden:
+      - remote_completion_reading_gui_path
+      - invoking_local_complete_command_for_a_remote_pane
+      - publishing_gui_path_commands_as_remote_candidates
   - id: HELPER-CANCELLATION-BACKPRESSURE-07
     rule: Long-running helper operations have operation identity, cancellation, timeout, source limits, and bounded event or candidate delivery.
   - id: HELPER-VERSION-INSTALL-08
     rule: Helper version, protocol, capabilities, instance identity, binary hash, and install outcome are observable through the existing agentty-server lifecycle without a second daemon or listening port.
   - id: HELPER-VERSION-MISMATCH-NOTICE-13
-    rule: A remote agentty-server whose control or protocol dialect does not match the client is never silently replaced. The mismatch is recorded and surfaced with one explicit Replace Server action that remains available until the user replaces or dismisses it; Cancel on a modal prompt must not erase the pending mismatch without a remaining Replace Server path. Every mismatch surface uses the same canonical replace route, never the restart-only route.
+    rule: >-
+      A remote agentty-server whose control or protocol dialect does not match the client is never
+      silently replaced. The mismatch is recorded and surfaced with one explicit Replace Server
+      action that remains available until the user replaces or dismisses it; Cancel on a modal prompt
+      must not erase the pending mismatch without a remaining Replace Server path. Every mismatch
+      surface uses the same canonical replace route, never the restart-only route. If route
+      negotiation records a mismatch before the attempt fails, manual completion, supervisor
+      completion, and route-setup error paths must drain that record through the canonical
+      prompt/notice owner. A known mismatch is terminal for automatic retry until the user
+      explicitly chooses Replace Server or Retry; ordinary network/configuration failures remain
+      retryable and preserve the normal Retry affordance.
     forbidden:
       - silent_auto_replace_of_mismatched_remote_daemon
       - draining_mismatch_queue_with_no_remaining_replace_affordance
       - routing_a_known_dialect_mismatch_through_restart_only
+      - dropping_a_recorded_mismatch_on_manual_or_supervisor_route_failure
+      - automatically_retrying_a_known_dialect_mismatch_after_route_failure
   - id: REMOTE-HELPER-DIALECT-SKEW-14
-    rule: Client and remote helper negotiate the complete request dialect before any typed request is sent. Adding or removing a wire enum variant, request shape, or capability that an older helper cannot deserialize requires advancing the negotiated control dialect. A mismatch fails closed at handshake, keeps remote authority offline, and surfaces exactly one Replace Server action in the affected machine group; generic Retry remains unavailable until replacement succeeds. Replace Server uses the canonical bundled-first verified installer and restarts only after matching bytes are published.
+    rule: >-
+      Client and remote helper negotiate the complete request dialect before any typed request is
+      sent. Adding or removing a wire enum variant, request shape, or capability that an older
+      helper cannot deserialize requires advancing the negotiated control dialect. A mismatch
+      fails closed at handshake, keeps remote authority offline, and surfaces exactly one Replace
+      Server action in the affected machine group; generic Retry remains unavailable until
+      replacement succeeds. Installer readiness must distinguish the desired helper's bridge
+      handshake from the mere existence of any older agentty-server process: a known
+      different-dialect daemon is recorded and left running until the explicit Replace Server
+      action. Replace Server uses the canonical bundled-first verified installer and restarts only
+      after matching bytes are published. Control v10 adds the typed
+      PaneSetProviderTitle request used to migrate provider provenance into
+      an existing machine pane. A v9 helper must be rejected at handshake
+      before that request is serialized; no local filesystem or local machine
+      tree may be used as a fallback for a remote migration. The request is
+      scoped to the owning workspace, carries an optional pane identity
+      precondition, and is write-once at the machine authority; conflicting,
+      stale, blank, placeholder, or agent-less updates do not overwrite
+      persisted facts.
     forbidden:
       - sending_typed_requests_after_incomplete_dialect_negotiation
       - presenting_generic_retry_as_a_fix_for_known_dialect_skew
       - continuing_with_an_old_helper_after_enum_deserialization_failure
+      - treating_any_running_agentty_server_as_a_successful_desired_dialect_bridge
+      - launching_a_second_helper_beside_a_known_different_dialect_daemon
       - downloading_before_checking_the_matching_bundled_musl_helper
       - falling_back_to_local_authority_when_remote_helper_dialect_is_rejected
+      - sending_PaneSetProviderTitle_to_a_v9_or_older_helper
+      - treating_provider_title_migration_as_first_user_evidence
+      - migrating_provider_title_without_machine_identity_authority
+      - falling_back_to_local_machine_facts_after_remote_migration_failure
   - id: WSL-SERVER-LIFECYCLE-PARITY-15
     rule: A WSL Environment is a routed machine authority, so Restart Server is visible and actionable anywhere machine restart is offered, and is handled by the existing WSL installer lifecycle primitive for that distro. Restart capability is modeled separately from SSH transport identity. The UI constructs the same typed RestartServer route used by other machines; the local router dispatches WSL restart through restart_wsl_daemon off the UI thread, never through SSH and never through a shell command assembled by the UI. Replace Server remains unsupported for WSL until a distinct user-observable replacement contract exists.
     forbidden:
@@ -73,10 +163,33 @@ contracts:
       - uploading_wsl_shared_bytes_over_ssh
       - performing_sftp_round_trips_on_the_ui_thread
       - silently_claiming_upload_success_after_a_failed_transfer
+  - id: REMOTE-PATH-REVEAL-18
+    rule: A GUI file reveal action is available only when the selected path is owned by the local filesystem authority. Info-panel cwd actions use TerminalView::paths_are_local, and file-tree context menus use the active Host authority; remote SSH, WSL, and other non-local paths hide the GUI Finder/Open Folder action while retaining copy-path or target-host operations. No remote path is ever passed to gpui::App::reveal_path.
+    forbidden:
+      - revealing_a_remote_cwd_in_the_gui_file_manager
+      - revealing_a_wsl_path_as_a_gui_local_path
+      - deriving_reveal_authority_from_path_shape_or_string_prefix
+      - removing_copy_path_when_gui_reveal_is_unavailable
   - id: HELPER-LOCAL-REMOTE-PARITY-09
     rule: Every helper contract has local and remote parity tests, including explicit negative tests proving that remote failures cannot fall back to local authority.
   - id: HELPER-BUNDLED-INSTALL-10
-    rule: Every distributable desktop client ships both supported static Linux helper architectures, resolves the bundle relative to the running executable, and installs the matching remote architecture without requiring a pre-existing GitHub Release; shipping the helper is explicit install consent, so bundled bytes do not trigger a download approval prompt, while release-downloaded bytes still require approval; an explicit bundle override remains fail-closed while an implicit development lookup may use the verified release-download path when no bundled asset exists.
+    rule: >-
+      Every distributable desktop client ships both supported static Linux helper architectures,
+      resolves the bundle relative to the running executable, and installs the matching remote
+      architecture without requiring a pre-existing GitHub Release. Before creating any package
+      stage or final artifact, the packager proves that both helper binaries carry the same source
+      build identity, complete control/protocol dialect marker, and required provider/request wire
+      vocabulary as the package's native agentty-server; a missing, stale, mixed-source,
+      mixed-dialect, or incomplete-vocabulary helper fails closed. Shipping
+      a verified helper is explicit install consent, so bundled bytes do not trigger a download
+      approval prompt, while release-downloaded bytes still require approval; an explicit bundle
+      override remains fail-closed while an implicit development lookup may use the verified
+      release-download path when no bundled asset exists.
+    forbidden:
+      - packaging_helpers_only_because_expected_filenames_exist
+      - mixing_a_new_desktop_server_with_a_stale_same_version_helper
+      - mixing_helper_architectures_built_from_different_sources_or_dialects
+      - packaging_a_helper_that_omits_required_provider_or_request_vocabulary
   - id: PACKAGE-CLEAN-BEFORE-BUILD-11
     rule: Every desktop packaging entrypoint deletes its own platform-and-architecture stage and final package outputs before creating a new package; cleanup is scoped so one format cannot delete a sibling artifact produced earlier in the same matrix job.
   - id: REMOTE-FIRST-PANE-MATERIALIZATION-12

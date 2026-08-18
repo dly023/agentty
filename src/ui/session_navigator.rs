@@ -3,8 +3,10 @@ use std::path::PathBuf;
 use agentty_core::agent_runtime::{
     DiscoveryOutcome, DiscoveryRequest, LiveCarrier, LiveSession, NavigatorRow, NavigatorRowId,
     OperationId, RestoreOutcome, ScanGeneration, SessionIdentity, SessionNavigator,
-    SessionReorderUnit,
+    SessionReorderUnit, SessionTitleCandidates,
 };
+use agentty_core::core::environment::EnvironmentId;
+use agentty_core::host::HostId;
 use gpui::{AppContext as _, Context, PromptLevel, Window};
 use gpui_component::WindowExt as _;
 use gpui_component::input::InputState;
@@ -12,6 +14,12 @@ use gpui_component::input::InputState;
 use crate::ui::app::{AgenttyApp, Tab, new_terminal};
 use crate::ui::environment_session::EnvironmentSessionContext;
 use crate::ui::pane::{Pane, PaneSlot};
+
+fn live_title_candidates(
+    binding: &agentty_core::core::session::LiveContainerBinding,
+) -> SessionTitleCandidates {
+    binding.title_candidates()
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct SessionSearchDocumentId {
@@ -184,11 +192,52 @@ impl SessionKeyboardCursor {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub(crate) struct SessionRefreshState {
     requested: u64,
     inflight: Option<u64>,
     pending_passive: bool,
+    scope: Option<SessionNavigatorScope>,
+}
+
+/// Immutable authority tuple captured when a Navigator scan starts. A
+/// generation alone is insufficient because a workspace can be rebound while
+/// an older Host operation is still completing.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct SessionNavigatorScope {
+    pub(crate) workspace: crate::core::session::WorkspaceId,
+    pub(crate) host: HostId,
+    pub(crate) environment: EnvironmentId,
+    pub(crate) alias_path: PathBuf,
+}
+
+impl SessionNavigatorScope {
+    pub(crate) fn new(
+        workspace: crate::core::session::WorkspaceId,
+        host: HostId,
+        environment: EnvironmentId,
+        alias_path: PathBuf,
+    ) -> Self {
+        Self {
+            workspace,
+            host,
+            environment,
+            alias_path,
+        }
+    }
+
+    pub(crate) fn matches(
+        &self,
+        workspace: crate::core::session::WorkspaceId,
+        host: HostId,
+        environment: &EnvironmentId,
+        alias_path: &std::path::Path,
+    ) -> bool {
+        self.workspace == workspace
+            && self.host == host
+            && &self.environment == environment
+            && self.alias_path == alias_path
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -228,14 +277,24 @@ impl SessionRefreshState {
         if explicit {
             self.inflight = Some(generation);
             self.pending_passive = false;
+            self.scope = None;
             SessionRefreshRequest::Start(generation)
         } else if self.inflight.is_some() {
             self.pending_passive = true;
             SessionRefreshRequest::Coalesced
         } else {
             self.inflight = Some(generation);
+            self.scope = None;
             SessionRefreshRequest::Start(generation)
         }
+    }
+
+    pub(crate) fn bind_scope(&mut self, generation: u64, scope: SessionNavigatorScope) -> bool {
+        if self.inflight != Some(generation) {
+            return false;
+        }
+        self.scope = Some(scope);
+        true
     }
 
     pub(crate) fn finish(&mut self, generation: u64) -> Option<u64> {
@@ -243,6 +302,7 @@ impl SessionRefreshState {
             return None;
         }
         self.inflight = None;
+        self.scope = None;
         if self.pending_passive {
             self.pending_passive = false;
             self.requested = self.requested.saturating_add(1);
@@ -257,11 +317,26 @@ impl SessionRefreshState {
         self.inflight == Some(generation)
     }
 
+    pub(crate) fn accepts_scope(&self, generation: u64, scope: &SessionNavigatorScope) -> bool {
+        self.inflight == Some(generation) && self.scope.as_ref() == Some(scope)
+    }
+
     pub(crate) fn abandon(&mut self, generation: u64) {
         if self.inflight == Some(generation) {
             self.inflight = None;
             self.pending_passive = false;
+            self.scope = None;
         }
+    }
+
+    /// Invalidate every in-flight completion before a workspace/environment
+    /// rebind. Bumping `requested` ensures a late callback cannot reuse the
+    /// previous generation even if a caller accidentally restarts immediately.
+    pub(crate) fn invalidate(&mut self) {
+        self.requested = self.requested.saturating_add(1);
+        self.inflight = None;
+        self.pending_passive = false;
+        self.scope = None;
     }
 
     pub(crate) fn is_inflight(&self) -> bool {
@@ -312,8 +387,14 @@ fn live_binding_for_resume(
     agent: crate::core::cli_agent::CLIAgent,
     session_id: Option<String>,
     launch_argv: Vec<String>,
+    title_candidates: SessionTitleCandidates,
 ) -> agentty_core::core::session::LiveContainerBinding {
-    agentty_core::core::session::LiveContainerBinding::new(Some(agent), session_id, launch_argv)
+    agentty_core::core::session::LiveContainerBinding::new_with_title_candidates(
+        Some(agent),
+        session_id,
+        launch_argv,
+        title_candidates,
+    )
 }
 
 impl AgenttyApp {
@@ -348,6 +429,58 @@ impl AgenttyApp {
         self.request_session_navigator_refresh(intent, cx);
     }
 
+    fn current_session_navigator_scope(&self, cx: &gpui::App) -> Option<SessionNavigatorScope> {
+        let host = self.spawn_host(cx);
+        let context = EnvironmentSessionContext::resolve(cx, host).ok()?;
+        let environment = crate::core::session::WorkspaceStore::environment_id(cx, self.workspace);
+        let alias_path = context.session_user_state_path();
+        Some(SessionNavigatorScope::new(
+            self.workspace,
+            host,
+            environment,
+            alias_path,
+        ))
+    }
+
+    fn cached_session_navigator_scope(&self, cx: &gpui::App) -> Option<SessionNavigatorScope> {
+        Some(SessionNavigatorScope::new(
+            self.workspace,
+            self.spawn_host(cx),
+            self.session_alias_environment.clone()?,
+            self.session_user_state_path.clone()?,
+        ))
+    }
+
+    pub(crate) fn session_navigator_scope_is_current(
+        &self,
+        scope: &SessionNavigatorScope,
+        cx: &gpui::App,
+    ) -> bool {
+        self.current_session_navigator_scope(cx)
+            .is_some_and(|current| current == *scope)
+    }
+
+    /// Clear every projection and cached Host path before a workspace/window
+    /// rebind. The next workspace starts with an empty Navigator and requests
+    /// a fresh Environment-scoped scan.
+    pub(crate) fn invalidate_session_navigator_scope(&mut self, cx: &mut Context<Self>) {
+        self.session_refresh.invalidate();
+        self.session_history.clear();
+        self.session_history_environment = None;
+        self.session_user_state = Default::default();
+        self.session_user_state_path = None;
+        self.session_store_roots = None;
+        self.session_alias_environment = None;
+        self.session_alias_edit = None;
+        self.pending_carrier_action = None;
+        self.ssh_close_confirm = None;
+        self.session_scan_started = false;
+        self.session_scan_error = None;
+        self.session_navigator = Default::default();
+        self.session_keyboard_cursor.clear();
+        cx.notify();
+    }
+
     fn request_session_navigator_refresh(
         &mut self,
         intent: SessionRefreshIntent,
@@ -377,35 +510,46 @@ impl AgenttyApp {
         self.session_scan_started = true;
         self.session_scan_error = None;
         let environment = crate::core::session::WorkspaceStore::environment_id(cx, self.workspace);
-        let alias_path =
-            agentty_core::agent_runtime::SessionUserStateStore::path(&*context.host, &context.home);
+        let alias_path = context.session_user_state_path();
+        let scope = SessionNavigatorScope::new(
+            self.workspace,
+            host_id,
+            environment.clone(),
+            alias_path.clone(),
+        );
+        if !self.session_refresh.bind_scope(generation, scope.clone()) {
+            return;
+        }
+        let context = context.clone();
         let host = context.host.clone();
         let store_roots = context.store_roots.clone();
         let request = DiscoveryRequest::standard(store_roots.clone());
-        cx.spawn(async move |this, cx| {
-            let result = cx
-                .background_executor()
-                .spawn(async move {
-                    let aliases = agentty_core::agent_runtime::SessionUserStateStore::load(
-                        &*host,
-                        &alias_path,
-                    );
-                    let discovery = context.discover_sessions(
-                        OperationId(generation),
-                        ScanGeneration(generation),
-                        request,
-                    );
-                    Ok::<_, std::io::Error>((
-                        discovery,
-                        aliases,
-                        alias_path,
-                        environment,
-                        store_roots,
-                    ))
-                })
-                .await;
-            let _ = this.update(cx, |app, cx| {
-                if !app.session_refresh.accepts(generation) {
+        let aliases_path = alias_path;
+        let result_environment = environment.clone();
+        crate::ui::host_ops::HostOps::run(
+            host,
+            cx,
+            move |_host| {
+                let aliases =
+                    agentty_core::agent_runtime::SessionUserStateStore::load(_host, &aliases_path);
+                let discovery = context.discover_sessions(
+                    OperationId(generation),
+                    ScanGeneration(generation),
+                    request,
+                );
+                Ok::<_, std::io::Error>((
+                    discovery,
+                    aliases,
+                    aliases_path,
+                    result_environment,
+                    store_roots,
+                ))
+            },
+            move |this, result, cx| {
+                if !this.session_refresh.accepts_scope(generation, &scope)
+                    || !this.session_navigator_scope_is_current(&scope, cx)
+                {
+                    this.session_refresh.abandon(generation);
                     return;
                 }
                 match result {
@@ -416,48 +560,56 @@ impl AgenttyApp {
                         environment,
                         store_roots,
                     )) => {
-                        app.session_history = rows;
-                        app.session_scan_error = None;
+                        this.session_history = rows;
+                        this.session_history_environment = Some(environment.clone());
+                        this.session_scan_error = None;
                         // Discovery is the content of the left navigation
                         // surface. A remote attach must not leave it hidden
                         // behind the user's previous collapsed state.
-                        if crate::core::session::WorkspaceStore::remote_ref(cx, app.workspace)
+                        if crate::core::session::WorkspaceStore::remote_ref(cx, this.workspace)
                             .is_some()
                         {
-                            app.sidebar_collapsed = false;
-                            app.update_config(cx, |cfg| {
+                            this.sidebar_collapsed = false;
+                            this.update_config(cx, |cfg| {
                                 cfg.tab_bar_position = crate::core::config::TabBarPosition::Left;
                                 cfg.sidebar_collapsed = false;
                             });
                         }
                         if let Ok(aliases) = aliases {
-                            app.session_user_state = aliases;
-                            app.session_user_state_path = Some(path);
-                            app.session_store_roots = Some(store_roots);
-                            app.session_alias_environment = Some(environment);
+                            this.session_user_state = aliases;
+                            this.session_user_state_path = Some(path);
+                            this.session_store_roots = Some(store_roots);
+                            this.session_alias_environment = Some(environment);
                         }
                     }
                     Ok((Ok(other), _, _, _, _)) => {
-                        app.session_scan_error = Some(discovery_message(&other, cx));
+                        this.session_scan_error = Some(discovery_message(&other, cx));
                     }
                     Ok((Err(error), _, _, _, _)) | Err(error) => {
-                        app.session_scan_error = Some(scan_error_message(&error, cx));
+                        this.session_scan_error = Some(scan_error_message(&error, cx));
                     }
                 }
-                app.rebuild_session_navigator(cx);
-                if let Some(next) = app.session_refresh.finish(generation) {
-                    app.start_session_navigator_refresh(next, cx);
+                this.rebuild_session_navigator(cx);
+                if let Some(next) = this.session_refresh.finish(generation) {
+                    this.start_session_navigator_refresh(next, cx);
                 }
                 cx.notify();
-            });
-        })
-        .detach();
+            },
+        );
     }
 
     pub(crate) fn rebuild_session_navigator(&mut self, cx: &mut gpui::App) {
         let live = self.live_session_rows(cx);
-        self.session_navigator.refresh(&self.session_history, &live);
         let environment = crate::core::session::WorkspaceStore::environment_id(cx, self.workspace);
+        let history: &[agentty_core::agent_runtime::AgentSessionRecord] =
+            match self.session_history_environment.as_ref() {
+                // Test fixtures and a freshly-created local window may seed the
+                // history projection before the first scan has committed a scope.
+                None => &self.session_history,
+                Some(scoped) if scoped == &environment => &self.session_history,
+                Some(_) => &[],
+            };
+        self.session_navigator.refresh(history, &live);
         let aliases = if self.session_alias_environment.as_ref() == Some(&environment) {
             self.session_user_state
                 .aliases_for_environment(&environment)
@@ -543,39 +695,37 @@ impl AgenttyApp {
         for tab in &self.tabs {
             let tab_id = tab.tree_id.get().to_string();
             for slot in tab.pane.leaves() {
-                let (binding, session, observed_agent, cwd, focused, unread, pane_id, live_title) =
-                    match &slot {
-                        PaneSlot::Ready(terminal) => {
-                            let view = terminal.read(cx);
-                            (
-                                view.live_binding().clone(),
-                                view.agent_session(),
-                                view.agent(),
-                                view.cwd().map(|cwd| cwd.to_string_lossy().into_owned()),
-                                view.is_focused(),
-                                view.agent_result_unread(),
-                                Some(view.pane_id()),
-                                view.live_first_user_title().map(str::to_owned),
-                            )
-                        }
-                        PaneSlot::Connecting(pending) => {
-                            let pending = pending.read(cx);
-                            (
-                                pending.spawn.live_binding.clone(),
-                                None,
-                                pending.spawn.live_binding.agent,
-                                pending
-                                    .spawn
-                                    .working_directory
-                                    .as_ref()
-                                    .map(|cwd| cwd.to_string_lossy().into_owned()),
-                                false,
-                                false,
-                                pending.spawn.restore_pane,
-                                None,
-                            )
-                        }
-                    };
+                let (binding, session, observed_agent, cwd, focused, unread, pane_id) = match &slot
+                {
+                    PaneSlot::Ready(terminal) => {
+                        let view = terminal.read(cx);
+                        (
+                            view.live_binding().clone(),
+                            view.agent_session(),
+                            view.agent(),
+                            view.cwd().map(|cwd| cwd.to_string_lossy().into_owned()),
+                            view.is_focused(),
+                            view.agent_result_unread(),
+                            Some(view.pane_id()),
+                        )
+                    }
+                    PaneSlot::Connecting(pending) => {
+                        let pending = pending.read(cx);
+                        (
+                            pending.spawn.live_binding.clone(),
+                            None,
+                            pending.spawn.live_binding.agent,
+                            pending
+                                .spawn
+                                .working_directory
+                                .as_ref()
+                                .map(|cwd| cwd.to_string_lossy().into_owned()),
+                            false,
+                            false,
+                            pending.spawn.restore_pane,
+                        )
+                    }
+                };
                 let Some(agent) = binding.agent.or(observed_agent) else {
                     continue;
                 };
@@ -600,13 +750,16 @@ impl AgenttyApp {
                             focused,
                             unread,
                         });
+                let title_candidates = live_title_candidates(&binding);
                 rows.push(LiveSession {
                     identity,
                     agent,
                     session_id,
-                    // Only the once-stamped first AgentPrompt excerpt may publish
-                    // here. Tab labels and terminal OSC chrome must never appear.
-                    title: live_title,
+                    // Publish only typed provider/first-user evidence carried
+                    // by the binding. Tab labels and terminal OSC chrome must
+                    // never enter the session-title state.
+                    title: title_candidates.resolved().map(str::to_owned),
+                    title_candidates,
                     cwd,
                     launch_argv: session
                         .and_then(|state| state.launch_argv)
@@ -670,8 +823,12 @@ impl AgenttyApp {
             return;
         }
         let cwd = invocation.cwd.as_ref().map(PathBuf::from);
-        let binding =
-            live_binding_for_resume(row.agent, row.session_id.clone(), row.launch_argv.clone());
+        let binding = live_binding_for_resume(
+            row.agent,
+            row.session_id.clone(),
+            row.launch_argv.clone(),
+            row.resume_title_candidates(),
+        );
         let pane = match new_terminal(
             self.window_workspace(cx),
             Some(self.workspace),
@@ -777,6 +934,9 @@ impl AgenttyApp {
         let Some(host) = self.active_host(cx) else {
             return;
         };
+        let Some(scope) = self.cached_session_navigator_scope(cx) else {
+            return;
+        };
         let mut candidate_store = self.session_user_state.clone();
         candidate_store.replace_display_order(environment, display_orders);
         crate::ui::host_ops::HostOps::run_in(
@@ -785,6 +945,9 @@ impl AgenttyApp {
             cx,
             move |host| candidate_store.save(host, &path).map(|_| candidate_store),
             move |this, result, window, cx| {
+                if !this.session_navigator_scope_is_current(&scope, cx) {
+                    return;
+                }
                 match result {
                     Ok(store) => {
                         this.session_user_state = store;
@@ -912,6 +1075,9 @@ impl AgenttyApp {
         let Some(host) = self.active_host(cx) else {
             return;
         };
+        let Some(scope) = self.cached_session_navigator_scope(cx) else {
+            return;
+        };
         let mut candidate = self.session_user_state.clone();
         if let Err(error) = candidate.set(environment, edit.identity, Some(alias)) {
             window.push_notification(error.to_string(), cx);
@@ -923,6 +1089,9 @@ impl AgenttyApp {
             cx,
             move |host| candidate.save(host, &path).map(|_| candidate),
             move |this, result, window, cx| {
+                if !this.session_navigator_scope_is_current(&scope, cx) {
+                    return;
+                }
                 match result {
                     Ok(candidate) => {
                         this.session_user_state = candidate;
@@ -956,6 +1125,9 @@ impl AgenttyApp {
         let Some(host) = self.active_host(cx) else {
             return;
         };
+        let Some(scope) = self.cached_session_navigator_scope(cx) else {
+            return;
+        };
         let mut candidate = self.session_user_state.clone();
         candidate.set_pin(environment, row.identity, !row.pinned);
         crate::ui::host_ops::HostOps::run_in(
@@ -964,6 +1136,9 @@ impl AgenttyApp {
             cx,
             move |host| candidate.save(host, &path).map(|_| candidate),
             move |this, result, window, cx| {
+                if !this.session_navigator_scope_is_current(&scope, cx) {
+                    return;
+                }
                 match result {
                     Ok(candidate) => {
                         this.session_user_state = candidate;
@@ -1001,6 +1176,10 @@ impl AgenttyApp {
             self.save_session(cx);
             return;
         };
+        let Some(scope) = self.cached_session_navigator_scope(cx) else {
+            self.save_session(cx);
+            return;
+        };
         let from = SessionIdentity::Durable(binding.container_id.clone());
         let to = SessionIdentity::Provider(agentty_core::agent_runtime::AgentSessionKey {
             provider: agent.slug().into(),
@@ -1017,6 +1196,9 @@ impl AgenttyApp {
             cx,
             move |host| candidate.save(host, &path).map(|_| candidate),
             move |this, result, window, cx| {
+                if !this.session_navigator_scope_is_current(&scope, cx) {
+                    return;
+                }
                 match result {
                     Ok(candidate) => {
                         this.session_user_state = candidate;
@@ -1033,6 +1215,250 @@ impl AgenttyApp {
         );
     }
 
+    fn carrier_token_for_row(
+        &self,
+        row: &NavigatorRow,
+        scope: SessionNavigatorScope,
+    ) -> Option<crate::ui::app::CarrierCloseToken> {
+        Some(crate::ui::app::CarrierCloseToken {
+            scope,
+            row_id: row.row_id.clone(),
+            identity: row.identity.clone(),
+            carrier: row.carrier.clone()?,
+        })
+    }
+
+    fn carrier_token_is_current(
+        &self,
+        token: &crate::ui::app::CarrierCloseToken,
+        cx: &gpui::App,
+    ) -> bool {
+        self.session_navigator_scope_is_current(&token.scope, cx)
+            && self
+                .session_navigator
+                .rows()
+                .iter()
+                .find(|row| row.row_id == token.row_id)
+                .is_some_and(|row| {
+                    row.identity == token.identity && row.carrier.as_ref() == Some(&token.carrier)
+                })
+    }
+
+    fn notify_carrier_close_stale(&self, window: &mut Window, cx: &mut Context<Self>) {
+        window.push_notification(
+            crate::core::i18n::current(cx, "session.live_carrier_missing"),
+            cx,
+        );
+    }
+
+    fn execute_pending_carrier_action(
+        &mut self,
+        action: crate::ui::app::PendingCarrierAction,
+        ssh_confirmed: bool,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let token = match &action {
+            crate::ui::app::PendingCarrierAction::SoftClose { token }
+            | crate::ui::app::PendingCarrierAction::CloseAndDelete { token, .. } => token.clone(),
+        };
+        self.rebuild_session_navigator(cx);
+        if !self.carrier_token_is_current(&token, cx) {
+            self.notify_carrier_close_stale(window, cx);
+            return;
+        }
+        match self.close_carrier_pane(&token, window, cx, ssh_confirmed) {
+            crate::ui::app::CarrierCloseOutcome::NeedsSshConfirmation => {
+                self.pending_carrier_action = Some(action);
+                self.ssh_close_confirm = Some(crate::ui::app::SshCloseKind::Carrier);
+                cx.notify();
+            }
+            crate::ui::app::CarrierCloseOutcome::Stale
+            | crate::ui::app::CarrierCloseOutcome::Missing => {
+                self.notify_carrier_close_stale(window, cx);
+            }
+            crate::ui::app::CarrierCloseOutcome::Closed => {
+                let _ = self
+                    .session_navigator
+                    .handoff_closed_carrier(&token.row_id, &token.carrier);
+                self.rebuild_session_navigator(cx);
+                match action {
+                    crate::ui::app::PendingCarrierAction::SoftClose { .. } => {
+                        self.refresh_session_navigator_for(
+                            SessionRefreshIntent::AgentCarrierClosed,
+                            cx,
+                        );
+                    }
+                    crate::ui::app::PendingCarrierAction::CloseAndDelete {
+                        token,
+                        plan,
+                        host,
+                        roots,
+                        alias_path,
+                        environment,
+                        aliases,
+                        source,
+                        ..
+                    } => self.start_captured_delete(
+                        plan,
+                        token.scope,
+                        host,
+                        roots,
+                        alias_path,
+                        environment,
+                        aliases,
+                        source,
+                        window,
+                        cx,
+                    ),
+                }
+            }
+        }
+    }
+
+    pub(crate) fn finish_pending_carrier_action(
+        &mut self,
+        action: crate::ui::app::PendingCarrierAction,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.execute_pending_carrier_action(action, true, window, cx);
+    }
+
+    fn start_captured_delete(
+        &mut self,
+        plan: agentty_core::agent_runtime::DeletePlan,
+        scope: SessionNavigatorScope,
+        host: crate::ui::host_ops::SharedHost,
+        roots: agentty_core::agent_runtime::AgentStoreRoots,
+        alias_path: PathBuf,
+        environment: EnvironmentId,
+        aliases: agentty_core::agent_runtime::SessionUserStateStore,
+        source: Option<agentty_core::agent_runtime::SessionDeleteSource>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let planned_source = match source {
+            Some(source) => Some(source),
+            None => {
+                match agentty_core::agent_runtime::plan_close_and_delete_source(&plan, &roots) {
+                    Ok(source) => source,
+                    Err(error) => {
+                        let context = crate::core::i18n::current(cx, "notify.delete_failed");
+                        crate::ui::host_ops::HostOps::notify_err(window, cx, context, &error);
+                        return;
+                    }
+                }
+            }
+        };
+        let delete_identity = plan.identity.clone();
+        match planned_source {
+            Some(source) => {
+                let alias_path_for_op = alias_path.clone();
+                let environment_for_op = environment.clone();
+                let aliases_for_op = aliases.clone();
+                let plan_for_land = plan.clone();
+                let scope_for_land = scope.clone();
+                crate::ui::host_ops::HostOps::run_in(
+                    host,
+                    window,
+                    cx,
+                    move |host| {
+                        agentty_core::agent_runtime::apply_session_delete_transaction(
+                            host,
+                            &source,
+                            &alias_path_for_op,
+                            &aliases_for_op,
+                            &environment_for_op,
+                            &delete_identity,
+                        )
+                    },
+                    move |this, result, window, cx| {
+                        if !this.session_navigator_scope_is_current(&scope_for_land, cx) {
+                            return;
+                        }
+                        match result {
+                            Ok(updated_aliases) => {
+                                this.session_user_state = updated_aliases;
+                                this.session_navigator.commit_delete(&plan_for_land);
+                                this.session_history.retain(|record| {
+                                    record.key.provider != plan_for_land.agent.slug()
+                                        || plan_for_land.session_id.as_deref()
+                                            != Some(record.key.session_id.as_str())
+                                });
+                                this.save_session(cx);
+                                this.rebuild_session_navigator(cx);
+                                this.refresh_session_navigator_for(
+                                    SessionRefreshIntent::ProviderSourceMutation,
+                                    cx,
+                                );
+                            }
+                            Err(error) => {
+                                let context =
+                                    crate::core::i18n::current(cx, "notify.delete_failed");
+                                crate::ui::host_ops::HostOps::notify_err(
+                                    window, cx, context, &error,
+                                );
+                            }
+                        }
+                        cx.notify();
+                    },
+                );
+            }
+            None => {
+                let alias_path_for_op = alias_path.clone();
+                let environment_for_op = environment.clone();
+                let aliases_for_op = aliases.clone();
+                let plan_for_land = plan.clone();
+                let scope_for_land = scope;
+                crate::ui::host_ops::HostOps::run_in(
+                    host,
+                    window,
+                    cx,
+                    move |host| {
+                        agentty_core::agent_runtime::apply_session_user_state_delete(
+                            host,
+                            &alias_path_for_op,
+                            &aliases_for_op,
+                            &environment_for_op,
+                            &delete_identity,
+                        )
+                    },
+                    move |this, result, window, cx| {
+                        if !this.session_navigator_scope_is_current(&scope_for_land, cx) {
+                            return;
+                        }
+                        match result {
+                            Ok(updated_aliases) => {
+                                this.session_user_state = updated_aliases;
+                                this.session_navigator.commit_delete(&plan_for_land);
+                                this.session_history.retain(|record| {
+                                    record.key.provider != plan_for_land.agent.slug()
+                                        || plan_for_land.session_id.as_deref()
+                                            != Some(record.key.session_id.as_str())
+                                });
+                                this.save_session(cx);
+                                this.rebuild_session_navigator(cx);
+                                this.refresh_session_navigator_for(
+                                    SessionRefreshIntent::ProviderSourceMutation,
+                                    cx,
+                                );
+                            }
+                            Err(error) => {
+                                let context =
+                                    crate::core::i18n::current(cx, "notify.delete_failed");
+                                crate::ui::host_ops::HostOps::notify_err(
+                                    window, cx, context, &error,
+                                );
+                            }
+                        }
+                        cx.notify();
+                    },
+                );
+            }
+        }
+    }
+
     pub(crate) fn close_live_session_row(
         &mut self,
         row_id: NavigatorRowId,
@@ -1040,13 +1466,13 @@ impl AgenttyApp {
         cx: &mut Context<Self>,
     ) {
         self.rebuild_session_navigator(cx);
-        let row = self
+        let Some(row) = self
             .session_navigator
             .rows()
             .iter()
             .find(|row| row.row_id == row_id)
-            .cloned();
-        let Some(row) = row else {
+            .cloned()
+        else {
             return;
         };
         if row.lifecycle != agentty_core::agent_runtime::RowLifecycle::Live
@@ -1054,6 +1480,12 @@ impl AgenttyApp {
         {
             return;
         }
+        let Some(scope) = self.current_session_navigator_scope(cx) else {
+            return;
+        };
+        let Some(token) = self.carrier_token_for_row(&row, scope) else {
+            return;
+        };
         let _ = self.session_navigator.select(&row_id);
         let title = row.display_title(crate::core::i18n::current(cx, "session.default_name"));
         let agent = row.agent.display_name().to_string();
@@ -1072,42 +1504,17 @@ impl AgenttyApp {
             ],
             cx,
         );
-        let tab_index = row.carrier.as_ref().and_then(|carrier| {
-            self.tabs
-                .iter()
-                .position(|tab| Some(tab.tree_id.get().to_string()) == carrier.tab_id)
-        });
         cx.spawn_in(window, async move |this, cx| {
             let confirmed = answer.await;
             let _ = this.update_in(cx, |this, window, cx| {
-                if confirmed != Ok(1) {
-                    return;
-                }
-                this.rebuild_session_navigator(cx);
-                let Some(index) =
-                    tab_index
-                        .filter(|&index| index < this.tabs.len())
-                        .or_else(|| {
-                            this.session_navigator
-                                .rows()
-                                .iter()
-                                .find(|row| row.row_id == row_id)
-                                .and_then(|row| row.carrier.as_ref())
-                                .and_then(|carrier| {
-                                    this.tabs.iter().position(|tab| {
-                                        Some(tab.tree_id.get().to_string()) == carrier.tab_id
-                                    })
-                                })
-                        })
-                else {
-                    window.push_notification(
-                        crate::core::i18n::current(cx, "session.live_carrier_missing"),
+                if confirmed == Ok(1) {
+                    this.execute_pending_carrier_action(
+                        crate::ui::app::PendingCarrierAction::SoftClose { token },
+                        false,
+                        window,
                         cx,
                     );
-                    return;
-                };
-                this.close_tab(index, window, cx);
-                this.refresh_session_navigator_for(SessionRefreshIntent::AgentCarrierClosed, cx);
+                }
             });
         })
         .detach();
@@ -1120,18 +1527,40 @@ impl AgenttyApp {
         cx: &mut Context<Self>,
     ) {
         self.rebuild_session_navigator(cx);
-        let row = self
+        let Some(row) = self
             .session_navigator
             .rows()
             .iter()
             .find(|row| row.row_id == row_id)
-            .cloned();
-        let Some(row) = row else {
+            .cloned()
+        else {
             return;
         };
         let Some(plan) = self.session_navigator.plan_close_and_delete(&row_id) else {
             return;
         };
+        let Some(scope) = self.current_session_navigator_scope(cx) else {
+            return;
+        };
+        let Some(token) = self.carrier_token_for_row(&row, scope.clone()) else {
+            return;
+        };
+        let Ok(context) = EnvironmentSessionContext::resolve(cx, scope.host) else {
+            return;
+        };
+        let alias_path = context.session_user_state_path();
+        let source = match agentty_core::agent_runtime::plan_close_and_delete_source(
+            &plan,
+            &context.store_roots,
+        ) {
+            Ok(source) => source,
+            Err(error) => {
+                let context = crate::core::i18n::current(cx, "notify.delete_failed");
+                crate::ui::host_ops::HostOps::notify_err(window, cx, context, &error);
+                return;
+            }
+        };
+        let aliases = self.session_user_state.clone();
         let _ = self.session_navigator.select(&row_id);
         let title = row.display_title(crate::core::i18n::current(cx, "session.default_name"));
         let agent = plan.agent.display_name().to_string();
@@ -1150,167 +1579,21 @@ impl AgenttyApp {
             ],
             cx,
         );
-        let tab_index = row.carrier.as_ref().and_then(|carrier| {
-            self.tabs
-                .iter()
-                .position(|tab| Some(tab.tree_id.get().to_string()) == carrier.tab_id)
-        });
+        let action = crate::ui::app::PendingCarrierAction::CloseAndDelete {
+            token,
+            plan,
+            host: context.host,
+            roots: context.store_roots,
+            alias_path,
+            environment: scope.environment,
+            aliases,
+            source,
+        };
         cx.spawn_in(window, async move |this, cx| {
             let confirmed = answer.await;
             let _ = this.update_in(cx, |this, window, cx| {
-                if confirmed != Ok(1) {
-                    return;
-                }
-                this.rebuild_session_navigator(cx);
-                // Carrier may already be gone; still proceed to provider delete.
-                if let Some(index) =
-                    tab_index
-                        .filter(|&index| index < this.tabs.len())
-                        .or_else(|| {
-                            this.session_navigator
-                                .rows()
-                                .iter()
-                                .find(|row| row.row_id == row_id)
-                                .and_then(|row| row.carrier.as_ref())
-                                .and_then(|carrier| {
-                                    this.tabs.iter().position(|tab| {
-                                        Some(tab.tree_id.get().to_string()) == carrier.tab_id
-                                    })
-                                })
-                        })
-                {
-                    this.close_tab(index, window, cx);
-                    this.refresh_session_navigator_for(
-                        SessionRefreshIntent::AgentCarrierClosed,
-                        cx,
-                    );
-                }
-                let delete_identity = plan.identity.clone();
-                let planned_source = match this.session_store_roots.as_ref() {
-                    Some(roots) => {
-                        match agentty_core::agent_runtime::plan_close_and_delete_source(
-                            &plan, roots,
-                        ) {
-                            Ok(source) => source,
-                            Err(error) => {
-                                let context =
-                                    crate::core::i18n::current(cx, "notify.delete_failed");
-                                crate::ui::host_ops::HostOps::notify_err(
-                                    window, cx, context, &error,
-                                );
-                                return;
-                            }
-                        }
-                    }
-                    None if plan.source_path.is_some() => {
-                        let context = crate::core::i18n::current(cx, "notify.delete_failed");
-                        crate::ui::host_ops::HostOps::notify_err(
-                            window,
-                            cx,
-                            context,
-                            &std::io::Error::new(
-                                std::io::ErrorKind::NotFound,
-                                "session store roots unavailable",
-                            ),
-                        );
-                        return;
-                    }
-                    None => None,
-                };
-                let Some(host) = this.active_host(cx) else {
-                    return;
-                };
-                let Some(environment) = this.session_alias_environment.clone() else {
-                    return;
-                };
-                let Some(alias_path) = this.session_user_state_path.clone() else {
-                    return;
-                };
-                let aliases = this.session_user_state.clone();
-                match planned_source {
-                    Some(source) => {
-                        crate::ui::host_ops::HostOps::run_in(
-                            host,
-                            window,
-                            cx,
-                            move |host| {
-                                agentty_core::agent_runtime::apply_session_delete_transaction(
-                                    host,
-                                    &source,
-                                    &alias_path,
-                                    &aliases,
-                                    &environment,
-                                    &delete_identity,
-                                )
-                            },
-                            move |this, result, window, cx| {
-                                match result {
-                                    Ok(aliases) => {
-                                        this.session_user_state = aliases;
-                                        this.session_navigator.commit_delete(&plan);
-                                        this.session_history.retain(|record| {
-                                            record.key.provider != plan.agent.slug()
-                                                || plan.session_id.as_deref()
-                                                    != Some(record.key.session_id.as_str())
-                                        });
-                                        this.save_session(cx);
-                                        this.rebuild_session_navigator(cx);
-                                        this.refresh_session_navigator_for(
-                                            SessionRefreshIntent::ProviderSourceMutation,
-                                            cx,
-                                        );
-                                    }
-                                    Err(error) => {
-                                        let context =
-                                            crate::core::i18n::current(cx, "notify.delete_failed");
-                                        crate::ui::host_ops::HostOps::notify_err(
-                                            window, cx, context, &error,
-                                        );
-                                    }
-                                }
-                                cx.notify();
-                            },
-                        );
-                    }
-                    None => {
-                        crate::ui::host_ops::HostOps::run_in(
-                            host,
-                            window,
-                            cx,
-                            move |host| {
-                                agentty_core::agent_runtime::apply_session_user_state_delete(
-                                    host,
-                                    &alias_path,
-                                    &aliases,
-                                    &environment,
-                                    &delete_identity,
-                                )
-                            },
-                            move |this, result, window, cx| {
-                                match result {
-                                    Ok(aliases) => {
-                                        this.session_user_state = aliases;
-                                        this.session_navigator.commit_delete(&plan);
-                                        this.session_history.retain(|record| {
-                                            record.key.provider != plan.agent.slug()
-                                                || plan.session_id.as_deref()
-                                                    != Some(record.key.session_id.as_str())
-                                        });
-                                        this.save_session(cx);
-                                        this.rebuild_session_navigator(cx);
-                                    }
-                                    Err(error) => {
-                                        let context =
-                                            crate::core::i18n::current(cx, "notify.delete_failed");
-                                        crate::ui::host_ops::HostOps::notify_err(
-                                            window, cx, context, &error,
-                                        );
-                                    }
-                                }
-                                cx.notify();
-                            },
-                        );
-                    }
+                if confirmed == Ok(1) {
+                    this.execute_pending_carrier_action(action, false, window, cx);
                 }
             });
         })
@@ -1534,12 +1817,91 @@ mod refresh_tests {
             SessionRefreshRequest::Start(2)
         );
     }
+
+    #[test]
+    fn refresh_scope_requires_workspace_host_environment_and_alias_path() {
+        let workspace = crate::core::session::WorkspaceId::new();
+        let host = HostId(41);
+        let environment = EnvironmentId::local();
+        let path = std::path::PathBuf::from("/target/.config/agentty/session-aliases.json");
+        let scope = SessionNavigatorScope::new(workspace, host, environment.clone(), path.clone());
+        assert!(scope.matches(workspace, host, &environment, &path));
+        assert!(!scope.matches(
+            crate::core::session::WorkspaceId::new(),
+            host,
+            &environment,
+            &path,
+        ));
+        assert!(!scope.matches(workspace, HostId(42), &environment, &path,));
+        assert!(!scope.matches(
+            workspace,
+            host,
+            &"other".parse::<EnvironmentId>().unwrap(),
+            &path,
+        ));
+        assert!(!scope.matches(
+            workspace,
+            host,
+            &environment,
+            std::path::Path::new("/other/session-aliases.json"),
+        ));
+    }
+
+    #[test]
+    fn navigator_scope_rejects_stale_completion_after_workspace_switch() {
+        let workspace_a = crate::core::session::WorkspaceId::new();
+        let workspace_b = crate::core::session::WorkspaceId::new();
+        let scope_a = SessionNavigatorScope::new(
+            workspace_a,
+            HostId(41),
+            EnvironmentId::local(),
+            "/a/.config/agentty/session-aliases.json".into(),
+        );
+        let scope_b = SessionNavigatorScope::new(
+            workspace_b,
+            HostId(42),
+            "remote-b".parse::<EnvironmentId>().unwrap(),
+            "/b/.config/agentty/session-aliases.json".into(),
+        );
+        let mut state = SessionRefreshState::default();
+        assert_eq!(state.request(false), SessionRefreshRequest::Start(1));
+        assert!(state.bind_scope(1, scope_a.clone()));
+        assert!(state.accepts_scope(1, &scope_a));
+
+        // This models switch_workspace: the old completion may still return,
+        // but its generation and scope are both invalidated before B starts.
+        state.invalidate();
+        assert!(!state.accepts_scope(1, &scope_a));
+        assert_eq!(state.request(false), SessionRefreshRequest::Start(3));
+        assert!(state.bind_scope(3, scope_b.clone()));
+        assert!(!state.accepts_scope(3, &scope_a));
+        assert!(state.accepts_scope(3, &scope_b));
+    }
+
+    #[test]
+    fn session_history_is_cleared_when_workspace_scope_changes() {
+        let source = include_str!("app.rs");
+        let switch = source
+            .split("pub(crate) fn switch_workspace(")
+            .nth(1)
+            .and_then(|tail| tail.split("pub(crate) fn adopt_workspace(").next())
+            .expect("switch_workspace body");
+        assert!(
+            switch.contains("invalidate_session_navigator_scope"),
+            "workspace switch must invalidate Navigator state before rebind"
+        );
+        assert!(
+            switch.contains("refresh_session_navigator_for")
+                && switch.contains("InitialTargetReady"),
+            "new workspace must request a fresh initial scan"
+        );
+    }
 }
 
 #[cfg(test)]
 mod session_keyboard_cursor_tests {
     use super::SessionKeyboardCursor;
-    use agentty_core::agent_runtime::NavigatorRowId;
+    use agentty_core::agent_runtime::{NavigatorRowId, SessionTitleCandidates};
 
     fn row(id: &str) -> NavigatorRowId {
         let mut navigator = agentty_core::agent_runtime::SessionNavigator::default();
@@ -1551,6 +1913,7 @@ mod session_keyboard_cursor_tests {
                 },
                 agent: crate::core::cli_agent::CLIAgent::Codex,
                 title: None,
+                title_candidates: Default::default(),
                 cwd: None,
                 updated_at_unix_ms: None,
                 launch_argv: Vec::new(),
@@ -1586,6 +1949,7 @@ mod session_keyboard_cursor_tests {
                 },
                 agent: crate::core::cli_agent::CLIAgent::Codex,
                 title: None,
+                title_candidates: Default::default(),
                 cwd: None,
                 updated_at_unix_ms: None,
                 launch_argv: Vec::new(),
@@ -1615,10 +1979,151 @@ mod session_keyboard_cursor_tests {
             crate::core::cli_agent::CLIAgent::Codex,
             Some("session-1".into()),
             vec!["codex".into(), "resume".into(), "session-1".into()],
+            SessionTitleCandidates::from_raw(None, Some("Draw a fox")),
         );
         assert!(binding.agent.is_some());
         assert_eq!(binding.session_id.as_deref(), Some("session-1"));
         assert!(!binding.container_id.is_empty());
+        assert_eq!(binding.first_user_title(), Some("Draw a fox"));
+    }
+}
+
+#[cfg(test)]
+mod resume_title_seed_tests {
+    use super::{live_binding_for_resume, live_title_candidates};
+    use agentty_core::agent_runtime::{
+        AgentSessionKey, AgentSessionRecord, LiveCarrier, LiveSession, NavigatorRow,
+        SessionIdentity, SessionNavigator, SessionTitleCandidates,
+    };
+    use agentty_core::core::session::LiveContainerBinding;
+
+    fn row(id: &str, title: Option<&str>, candidates: SessionTitleCandidates) -> NavigatorRow {
+        let mut navigator = SessionNavigator::default();
+        navigator.refresh(
+            &[AgentSessionRecord {
+                key: AgentSessionKey {
+                    provider: "codex".into(),
+                    session_id: id.into(),
+                },
+                agent: crate::core::cli_agent::CLIAgent::Codex,
+                title: title.map(str::to_owned),
+                title_candidates: candidates,
+                cwd: Some("/work".into()),
+                updated_at_unix_ms: Some(1),
+                launch_argv: vec!["codex".into(), "--resume".into()],
+                source_path: None,
+                created_at_unix_ms: None,
+            }],
+            &[],
+        );
+        navigator
+            .rows()
+            .first()
+            .cloned()
+            .expect("resume row is discoverable")
+    }
+
+    fn resumed_binding(row: &NavigatorRow) -> LiveContainerBinding {
+        live_binding_for_resume(
+            row.agent,
+            row.session_id.clone(),
+            row.launch_argv.clone(),
+            row.resume_title_candidates(),
+        )
+    }
+
+    fn live_after_prompt(mut binding: LiveContainerBinding, prompt: &str) -> LiveSession {
+        let _ = binding.observe_first_user_title(prompt);
+        let candidates = live_title_candidates(&binding);
+        LiveSession {
+            identity: SessionIdentity::Durable(binding.container_id.clone()),
+            agent: binding.agent.expect("resume binding carries agent"),
+            session_id: None,
+            title: candidates.resolved().map(str::to_owned),
+            title_candidates: candidates,
+            cwd: None,
+            launch_argv: binding.launch_argv.clone(),
+            carrier: LiveCarrier {
+                container_id: binding.container_id,
+                tab_id: Some("resume-tab".into()),
+                pane_id: Some(7),
+            },
+            execution: None,
+        }
+    }
+
+    fn title_after_history_gap(row: &NavigatorRow, prompt: &str) -> String {
+        let live = live_after_prompt(resumed_binding(row), prompt);
+        let mut navigator = SessionNavigator::default();
+        navigator.refresh(&[], &[live]);
+        navigator.rows()[0].display_title("Unnamed")
+    }
+
+    #[test]
+    fn resume_legacy_title_seed_survives_post_resume_prompt() {
+        let row = row(
+            "legacy-resume",
+            Some("Original request"),
+            SessionTitleCandidates::default(),
+        );
+        let mut binding = resumed_binding(&row);
+
+        // Model a successful post-resume Composer delivery.  It must not be
+        // mistaken for the historical session's first user message merely
+        // because the old record had only `title` on disk.
+        assert!(
+            !binding.observe_first_user_title("Second request"),
+            "resume must seed the stable legacy title before a new prompt"
+        );
+        assert_eq!(
+            binding.provider_title(),
+            Some("Original request"),
+            "a post-resume prompt must not rename a legacy-title session"
+        );
+        assert_eq!(
+            binding.first_user_title(),
+            None,
+            "legacy title must remain provider/unknown evidence, not fake first-user evidence"
+        );
+    }
+
+    #[test]
+    fn resume_provider_only_title_seed_survives_history_gap_and_second_prompt() {
+        let row = row(
+            "provider-resume",
+            Some("Provider title"),
+            SessionTitleCandidates::from_raw(Some("Provider title"), None),
+        );
+        assert_eq!(
+            title_after_history_gap(&row, "Second request"),
+            "Provider title"
+        );
+    }
+
+    #[test]
+    fn resume_typed_first_user_seed_remains_write_once_after_second_prompt() {
+        let row = row(
+            "first-user-resume",
+            Some("First request"),
+            SessionTitleCandidates::from_raw(None, Some("First request")),
+        );
+        assert_eq!(
+            title_after_history_gap(&row, "Second request"),
+            "First request"
+        );
+    }
+
+    #[test]
+    fn resume_both_title_candidates_keep_provider_precedence_after_second_prompt() {
+        let row = row(
+            "both-resume",
+            Some("Provider title"),
+            SessionTitleCandidates::from_raw(Some("Provider title"), Some("First request")),
+        );
+        assert_eq!(
+            title_after_history_gap(&row, "Second request"),
+            "Provider title"
+        );
     }
 }
 
@@ -1638,6 +2143,7 @@ mod session_viewport_projection_tests {
             },
             agent: crate::core::cli_agent::CLIAgent::Codex,
             title: Some(title.into()),
+            title_candidates: Default::default(),
             cwd: None,
             updated_at_unix_ms: None,
             launch_argv: Vec::new(),
@@ -1652,6 +2158,7 @@ mod session_viewport_projection_tests {
             agent: crate::core::cli_agent::CLIAgent::Codex,
             session_id: None,
             title: Some(title.into()),
+            title_candidates: Default::default(),
             cwd: None,
             launch_argv: vec!["codex".into()],
             carrier: LiveCarrier {
@@ -1759,8 +2266,8 @@ mod session_search_identity_tests {
             .nth(1)
             .expect("live_session_rows present");
         assert!(
-            block.contains("live_first_user_title") && block.contains("title: live_title"),
-            "live projection may publish only the once-stamped first-user title"
+            block.contains("live_title_candidates") && block.contains("title_candidates"),
+            "live projection may publish only typed first-user title candidates"
         );
         assert!(
             !block.contains("tab.name")
@@ -1789,13 +2296,125 @@ mod session_search_identity_tests {
         let source = include_str!("session_navigator.rs");
         let prod = source.split("#[cfg(test)]").next().unwrap_or(source);
         let block = prod
-            .split("fn close_and_delete_live_session_row")
+            .split("fn start_captured_delete(")
             .nth(1)
-            .expect("close_and_delete_live_session_row present");
+            .expect("start_captured_delete present");
         assert!(
             block.contains("plan_close_and_delete_source")
                 && block.contains("apply_session_user_state_delete"),
             "Close and Delete must tombstone without a false failure when no provider source exists"
+        );
+    }
+
+    #[test]
+    fn split_navigator_soft_close_targets_only_selected_carrier() {
+        let source = include_str!("session_navigator.rs");
+        let prod = source.split("#[cfg(test)]").next().unwrap_or(source);
+        let block = prod
+            .split("fn close_live_session_row")
+            .nth(1)
+            .expect("close_live_session_row present");
+        assert!(
+            block.contains("execute_pending_carrier_action"),
+            "soft Close must route through the typed pane-carrier action"
+        );
+        assert!(
+            !block.contains("close_tab(index"),
+            "soft Close must not close an entire split tab through a stale index"
+        );
+        assert!(
+            block.contains("rebuild_session_navigator"),
+            "soft Close must re-resolve the stable row/carrier after confirmation"
+        );
+    }
+
+    #[test]
+    fn split_navigator_close_and_delete_re_resolves_carrier() {
+        let source = include_str!("session_navigator.rs");
+        let prod = source.split("#[cfg(test)]").next().unwrap_or(source);
+        let block = prod
+            .split("fn close_and_delete_live_session_row")
+            .nth(1)
+            .expect("close_and_delete_live_session_row present");
+        assert!(
+            block.contains("execute_pending_carrier_action"),
+            "Close and Delete must route through the typed pane-carrier action"
+        );
+        assert!(
+            !block.contains("let tab_index"),
+            "carrier identity must be re-resolved after confirmation, not captured as a numeric tab index"
+        );
+        assert!(
+            block.contains("plan_close_and_delete"),
+            "Close and Delete must capture its typed delete plan before closing"
+        );
+    }
+
+    #[test]
+    fn close_and_delete_carries_captured_host_scope_after_rebind() {
+        let source = include_str!("session_navigator.rs");
+        let prod = source.split("#[cfg(test)]").next().unwrap_or(source);
+        let block = prod
+            .split("fn close_and_delete_live_session_row")
+            .nth(1)
+            .expect("close_and_delete_live_session_row present");
+        assert!(
+            block.contains("SessionNavigatorScope") || block.contains("scope"),
+            "Close and Delete must capture an immutable Navigator scope before prompting"
+        );
+        assert!(
+            block.contains("PendingCarrierAction") || block.contains("CarrierCloseToken"),
+            "Close and Delete must carry a typed pending action through SSH confirmation"
+        );
+        assert!(
+            block.contains("session_store_roots") && block.contains("session_user_state_path"),
+            "the original Host-backed roots and alias path must be captured, not resolved after rebind"
+        );
+        let delete = prod
+            .split("fn start_captured_delete(")
+            .nth(1)
+            .expect("start_captured_delete present");
+        assert!(
+            delete.contains("session_navigator_scope_is_current"),
+            "a delayed delete callback must not mutate a newly rebound Environment"
+        );
+    }
+
+    #[test]
+    fn close_and_delete_aborts_when_carrier_token_is_stale() {
+        let source = include_str!("session_navigator.rs");
+        let prod = source.split("#[cfg(test)]").next().unwrap_or(source);
+        let block = prod
+            .split("fn close_and_delete_live_session_row")
+            .nth(1)
+            .expect("close_and_delete_live_session_row present");
+        assert!(
+            block.contains("carrier") && block.contains("identity"),
+            "Close and Delete must inspect the current carrier and identity"
+        );
+        assert!(
+            block.contains("stale")
+                || block.contains("expected_carrier")
+                || block.contains("carrier_token_for_row")
+                || block.contains("CarrierCloseToken"),
+            "a replaced carrier must fail closed instead of deleting the captured plan"
+        );
+        assert!(
+            block.contains("execute_pending_carrier_action"),
+            "the guarded path must defer mutation until the token is revalidated"
+        );
+        let action = prod
+            .split("fn execute_pending_carrier_action(")
+            .nth(1)
+            .and_then(|tail| {
+                tail.split("\n    pub(crate) fn finish_pending_carrier_action")
+                    .next()
+            })
+            .expect("execute_pending_carrier_action present");
+        assert!(
+            action.contains("carrier_token_is_current")
+                && action.contains("handoff_closed_carrier"),
+            "the typed action must fail closed before the canonical mutation and hand off only after close"
         );
     }
 
@@ -1810,6 +2429,7 @@ mod session_search_identity_tests {
                 },
                 agent: crate::core::cli_agent::CLIAgent::Codex,
                 title: None,
+                title_candidates: Default::default(),
                 cwd: None,
                 updated_at_unix_ms: None,
                 launch_argv: Vec::new(),
@@ -1825,5 +2445,24 @@ mod session_search_identity_tests {
 
         assert_ne!(local, remote);
         assert_eq!(local.environment().as_str(), "local");
+    }
+}
+
+#[cfg(test)]
+mod session_live_title_tests {
+    use super::live_title_candidates;
+    use agentty_core::agent_runtime::SessionTitleCandidates;
+    use agentty_core::core::session::LiveContainerBinding;
+
+    #[test]
+    fn pending_connecting_projects_binding_first_user_title() {
+        let mut binding = LiveContainerBinding::default();
+        assert!(binding.observe_first_user_title("Draw a fox"));
+        let candidates = live_title_candidates(&binding);
+        assert_eq!(
+            candidates,
+            SessionTitleCandidates::from_raw(None, Some("Draw a fox"))
+        );
+        assert_eq!(candidates.resolved(), Some("Draw a fox"));
     }
 }

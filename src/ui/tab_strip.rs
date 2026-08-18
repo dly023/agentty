@@ -1,9 +1,10 @@
 use crate::core::i18n::ResolveLocale as _;
 use gpui::{
     Animation, AnimationExt as _, AnyElement, App, Axis, Bounds, Context, FontWeight, MouseButton,
-    MouseDownEvent, Pixels, SharedString, Window, canvas, deferred, div, ease_out_quint,
-    linear_color_stop, linear_gradient, prelude::*, px,
+    Pixels, SharedString, Window, canvas, deferred, div, ease_out_quint, linear_color_stop,
+    linear_gradient, prelude::*, px,
 };
+use gpui_component::InteractiveElementExt as _;
 use gpui_component::button::{Button, ButtonCustomVariant, ButtonVariants as _};
 use gpui_component::input::Input;
 use gpui_component::menu::{ContextMenuExt as _, DropdownMenu as _, PopupMenu, PopupMenuItem};
@@ -21,7 +22,7 @@ use crate::ui::app::{
     AgenttyApp, TILE_GLYPH, TILE_GLYPH_LINE, TILE_SIZE, Tab, tile_trailing_inset,
 };
 use crate::ui::hints::tab_badge_label;
-use crate::ui::reorder::{self, Reorder, Surface};
+use crate::ui::reorder::{self, Reorder, Surface, TabDragHitZone, TabDragIntent};
 
 pub(crate) const REORDER_SLIDE_MS: u64 = 140;
 const CHIP_GAP: f32 = 6.;
@@ -31,6 +32,36 @@ pub(crate) const CHIP_MIN_NATURAL: f32 = 100.;
 pub(crate) const CHIP_MIN_FLOOR: f32 = 72.;
 /// Width reserved for each overflow affordance chip.
 pub(crate) const OVERFLOW_CHIP_W: f32 = 40.;
+
+/// Maps the insertion slot returned after lifting the source out of the list
+/// back to the original target slot. Drag intent must carry the stable TabId,
+/// but this pure mapping keeps preview/reorder geometry from aliasing B→C as
+/// source==target when the source appeared first.
+pub(crate) fn target_after_removal(source: usize, insertion: usize, len: usize) -> Option<usize> {
+    if source >= len || insertion >= len.saturating_sub(1) {
+        return None;
+    }
+    let target = if insertion >= source {
+        insertion + 1
+    } else {
+        insertion
+    };
+    (target < len && target != source).then_some(target)
+}
+
+/// Builds the adjacent order for a body drag released over a concrete target
+/// chip. The target index is from the original list; removing the source first
+/// and inserting at that original slot yields the expected order in either
+/// direction (B→C = A,C,B; C→A = C,A,B).
+pub(crate) fn order_for_hover(source: usize, target: usize, len: usize) -> Option<Vec<usize>> {
+    if source >= len || target >= len || source == target {
+        return None;
+    }
+    let mut order: Vec<usize> = (0..len).collect();
+    let dragged = order.remove(source);
+    order.insert(target.min(order.len()), dragged);
+    Some(order)
+}
 
 /// The rendered chip window when tabs exceed strip capacity
 /// (UI-TAB-OVERFLOW-05). The window always contains the active tab and
@@ -180,9 +211,18 @@ fn short_title(raw: &str) -> String {
 }
 
 #[derive(Clone)]
-pub(crate) struct DragTab;
+pub(crate) struct DragTabIcon;
 
-impl Render for DragTab {
+impl Render for DragTabIcon {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct DragTabBody;
+
+impl Render for DragTabBody {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
         div()
     }
@@ -427,6 +467,18 @@ impl AgenttyApp {
         )
     }
 
+    /// Stable production selector for an environment menu row. The selector
+    /// is an observability/accessibility hook only; the menu action still
+    /// routes through the canonical open-or-focus primitive below.
+    fn environment_menu_target_selector(target: &crate::core::session::RemoteTarget) -> String {
+        match target {
+            crate::core::session::RemoteTarget::Profile { id } => {
+                format!("ENVIRONMENT_MENU_TARGET_PROFILE_{id}")
+            }
+            _ => format!("ENVIRONMENT_MENU_TARGET_{}", target.connection_key()),
+        }
+    }
+
     pub(crate) fn environment_menu(
         mut menu: PopupMenu,
         current_environment: agentty_core::core::environment::EnvironmentId,
@@ -454,7 +506,19 @@ impl AgenttyApp {
             } else {
                 format!("{}  ·  {}", host.label, host.detail)
             };
-            menu = menu.item(PopupMenuItem::new(label).disabled(selected).on_click({
+            let selector = Self::environment_menu_target_selector(&target);
+            let item = PopupMenuItem::element({
+                let selector = selector.clone();
+                let label = label.clone();
+                move |_window, _cx| {
+                    let selector = selector.clone();
+                    div()
+                        .w_full()
+                        .debug_selector(move || selector.clone())
+                        .child(label.clone())
+                }
+            });
+            menu = menu.item(item.disabled(selected).on_click({
                 let target = target.clone();
                 move |_, _window, cx| {
                     crate::ui::windows::open_or_focus_environment(cx, Some(target.clone()), None);
@@ -480,47 +544,64 @@ impl AgenttyApp {
     }
 
     pub(crate) fn environment_indicator(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+        let hosts = crate::ui::remote_connect::available_hosts(cx);
         let (label, state, dot, icon) = self.environment_indicator_label(cx);
+        let remote = crate::core::session::WorkspaceStore::remote_ref(cx, self.workspace);
+        let detail = remote
+            .as_ref()
+            .map(|remote| crate::ui::remote_connect::detail_for_target(&remote.target, &hosts))
+            .unwrap_or_else(|| {
+                crate::core::i18n::current(cx, "environment.local.detail").to_string()
+            });
         let current_environment =
             crate::core::session::WorkspaceStore::environment_id(cx, self.workspace);
-        let hosts = crate::ui::remote_connect::available_hosts(cx);
         let app_for_menu = cx.entity().downgrade();
-        Button::new("tabstrip-environment-indicator")
+        div()
+            .debug_selector(|| "ENVIRONMENT_MENU_TRIGGER".into())
             .child(
-                h_flex()
-                    .items_center()
-                    .gap_1()
+                Button::new("tabstrip-environment-indicator")
                     .child(
-                        gpui::svg()
-                            .path(icon)
-                            .flex_shrink_0()
-                            .size(px(13.))
-                            .text_color(cx.theme().muted_foreground),
+                        h_flex()
+                            .items_center()
+                            .gap_1()
+                            .child(
+                                gpui::svg()
+                                    .path(icon)
+                                    .flex_shrink_0()
+                                    .size(px(13.))
+                                    .text_color(cx.theme().muted_foreground),
+                            )
+                            .child(
+                                div()
+                                    .flex_shrink_0()
+                                    .size(px(7.))
+                                    .rounded_full()
+                                    .bg(gpui::rgb(dot)),
+                            )
+                            .child(div().max_w(px(140.)).truncate().text_xs().child(label))
+                            .child(
+                                Icon::new(IconName::ChevronDown)
+                                    .size(px(10.))
+                                    .text_color(cx.theme().muted_foreground),
+                            ),
                     )
-                    .child(
-                        div()
-                            .flex_shrink_0()
-                            .size(px(7.))
-                            .rounded_full()
-                            .bg(gpui::rgb(dot)),
-                    )
-                    .child(div().max_w(px(140.)).truncate().text_xs().child(label))
-                    .child(
-                        Icon::new(IconName::ChevronDown)
-                            .size(px(10.))
-                            .text_color(cx.theme().muted_foreground),
-                    ),
+                    .custom(chrome_tile_variant(cx))
+                    .rounded_lg()
+                    .tooltip(crate::core::i18n::current_format(
+                        cx,
+                        "environment.tooltip",
+                        &[("state", &state), ("detail", &detail)],
+                    ))
+                    .dropdown_menu(move |menu, _window, cx| {
+                        Self::environment_menu(
+                            menu,
+                            current_environment.clone(),
+                            &hosts,
+                            &app_for_menu,
+                            cx,
+                        )
+                    }),
             )
-            .custom(chrome_tile_variant(cx))
-            .rounded_lg()
-            .tooltip(crate::core::i18n::current_format(
-                cx,
-                "environment.tooltip",
-                &[("state", &state)],
-            ))
-            .dropdown_menu(move |menu, _window, cx| {
-                Self::environment_menu(menu, current_environment.clone(), &hosts, &app_for_menu, cx)
-            })
     }
 
     pub(crate) fn window_chrome(
@@ -900,6 +981,17 @@ impl AgenttyApp {
                         });
                     }
                 }),
+            )
+            .item(
+                PopupMenuItem::new(crate::core::i18n::current(cx, "menu.move_to_new_window"))
+                    .on_click({
+                        let app = app.clone();
+                        move |_, window, cx| {
+                            let _ = app.update(cx, |this, cx| {
+                                this.move_tab_to_new_window(index, window, cx);
+                            });
+                        }
+                    }),
             );
 
         menu = menu.separator().item(
@@ -1015,8 +1107,39 @@ impl AgenttyApp {
         );
         let display: Vec<usize> = match &preview {
             Some(p) => {
-                reorder::set_pending(&self.reorder, &Surface::Strip, p.order.clone());
-                p.order.clone()
+                // A Merge is valid only while the pointer is over a concrete
+                // target chip.  Geometry can still produce an insertion slot
+                // in a gap (or outside the strip), but that slot must never
+                // synthesize a merge target.  Convert the hovered original
+                // index through the one removal-mapping helper so source
+                // before/after target cannot alias.
+                let target_tab = p.hovered.and_then(|hovered| {
+                    let insertion = if hovered >= p.from {
+                        hovered.saturating_sub(1)
+                    } else {
+                        hovered
+                    };
+                    target_after_removal(p.from, insertion, self.tabs.len())
+                        .filter(|mapped| *mapped == hovered)
+                        .and_then(|index| self.tabs.get(index))
+                        .map(|tab| tab.tree_id.get())
+                });
+                let tab_intent = self.reorder.borrow().as_ref().and_then(|r| r.tab_intent);
+                let order = match (tab_intent, p.hovered) {
+                    (Some(TabDragIntent::Reorder), Some(target)) => {
+                        order_for_hover(p.from, target, self.tabs.len())
+                            .unwrap_or_else(|| p.order.clone())
+                    }
+                    _ => p.order.clone(),
+                };
+                reorder::set_tab_pending(
+                    &self.reorder,
+                    &Surface::Strip,
+                    order.clone(),
+                    p.target,
+                    target_tab,
+                );
+                order
             }
             None => (0..self.tabs.len()).collect(),
         };
@@ -1041,13 +1164,10 @@ impl AgenttyApp {
                     .text_xs()
                     .text_color(cx.theme().muted_foreground)
                     .hover(|s| s.bg(cx.theme().muted))
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(move |this, _: &MouseDownEvent, window, cx| {
-                            cx.stop_propagation();
-                            this.activate(target, window, cx);
-                        }),
-                    )
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        cx.stop_propagation();
+                        this.activate(target, window, cx);
+                    }))
                     .child(
                         Icon::new(IconName::ChevronLeft)
                             .size(px(10.))
@@ -1099,24 +1219,84 @@ impl AgenttyApp {
                     .into_any_element(),
             };
 
-            let chip = h_flex()
-                .id(("tab-chip", i))
-                .on_drag(DragTab, {
+            let source_tab_id = tab.tree_id.get();
+            let icon_region = h_flex()
+                .id(("tab-icon-drag", i))
+                .debug_selector(move || format!("TAB_CHIP_{i}_ICON"))
+                .on_drag(DragTabIcon, {
                     let state = self.reorder.clone();
                     let slots = slots.clone();
                     move |_drag, grab, _window, cx| {
                         cx.stop_propagation();
-                        *state.borrow_mut() = Some(Reorder::new(
+                        *state.borrow_mut() = Some(Reorder::new_tab(
                             Surface::Strip,
                             i,
                             slots.borrow().clone(),
                             Axis::Horizontal,
                             px(CHIP_GAP),
                             grab,
+                            source_tab_id,
+                            TabDragIntent::Merge,
+                            TabDragHitZone::Icon,
                         ));
-                        cx.new(|_| DragTab)
+                        cx.new(|_| DragTabIcon)
                     }
                 })
+                .flex_shrink_0()
+                .items_center()
+                .justify_center()
+                .size(px(20.))
+                .text_xs()
+                .text_color(cx.theme().muted_foreground)
+                .when_some(ssh_dot, |region, rgb| {
+                    region.child(
+                        div()
+                            .flex_shrink_0()
+                            .size(px(6.))
+                            .rounded_full()
+                            .bg(gpui::rgb(rgb)),
+                    )
+                })
+                .when_some(agent, |region, agent| {
+                    region.child(self.tab_avatar(
+                        Some(agent),
+                        agent_status,
+                        agent_unread,
+                        None,
+                        18.,
+                        cx,
+                    ))
+                })
+                .child("⋮");
+            let body_region = div()
+                .id(("tab-body-drag", i))
+                .debug_selector(move || format!("TAB_CHIP_{i}_BODY"))
+                .on_drag(DragTabBody, {
+                    let state = self.reorder.clone();
+                    let slots = slots.clone();
+                    move |_drag, grab, _window, cx| {
+                        cx.stop_propagation();
+                        *state.borrow_mut() = Some(Reorder::new_tab(
+                            Surface::Strip,
+                            i,
+                            slots.borrow().clone(),
+                            Axis::Horizontal,
+                            px(CHIP_GAP),
+                            grab,
+                            source_tab_id,
+                            TabDragIntent::Reorder,
+                            TabDragHitZone::Body,
+                        ));
+                        cx.new(|_| DragTabBody)
+                    }
+                })
+                .flex_1()
+                .min_w_0()
+                .child(label_region);
+
+            let chip = h_flex()
+                .id(("tab-chip", i))
+                .debug_selector(move || format!("TAB_CHIP_{i}"))
                 .occlude()
                 .group(SharedString::from(format!("tab-chip-{i}")))
                 .cursor_pointer()
@@ -1167,37 +1347,15 @@ impl AgenttyApp {
                             .bg(cx.theme().accent),
                     )
                 })
-                .on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(move |this, ev: &MouseDownEvent, window, cx| {
-                        cx.stop_propagation();
-                        if ev.click_count >= 2 {
-                            window.titlebar_double_click();
-                        } else {
-                            this.activate(i, window, cx);
-                        }
-                    }),
-                )
-                .when_some(ssh_dot, |c, rgb| {
-                    c.child(
-                        div()
-                            .flex_shrink_0()
-                            .size(px(6.))
-                            .rounded_full()
-                            .bg(gpui::rgb(rgb)),
-                    )
+                .on_double_click(|_, window, _| {
+                    window.titlebar_double_click();
                 })
-                .when_some(agent, |chip, agent| {
-                    chip.child(self.tab_avatar(
-                        Some(agent),
-                        agent_status,
-                        agent_unread,
-                        None,
-                        18.,
-                        cx,
-                    ))
-                })
-                .child(label_region)
+                .on_click(cx.listener(move |this, _, window, cx| {
+                    cx.stop_propagation();
+                    this.activate(i, window, cx);
+                }))
+                .child(icon_region)
+                .child(body_region)
                 .when(show_badges && i < 9, |chip| {
                     chip.child(
                         div()
@@ -1294,13 +1452,10 @@ impl AgenttyApp {
                     .text_xs()
                     .text_color(cx.theme().muted_foreground)
                     .hover(|s| s.bg(cx.theme().muted))
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(move |this, _: &MouseDownEvent, window, cx| {
-                            cx.stop_propagation();
-                            this.activate(target, window, cx);
-                        }),
-                    )
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        cx.stop_propagation();
+                        this.activate(target, window, cx);
+                    }))
                     .child(format!("{hidden}"))
                     .child(
                         Icon::new(IconName::ChevronRight)
@@ -1574,6 +1729,29 @@ mod tests {
     }
 
     #[test]
+    fn environment_indicator_tooltip_uses_resolved_endpoint_context() {
+        let target = crate::core::session::RemoteTarget::Alias {
+            alias: "build".into(),
+        };
+        let hosts = vec![crate::ui::remote_connect::HostChoice {
+            target: target.clone(),
+            label: "build".into(),
+            detail: "deploy@10.0.0.8:2222".into(),
+        }];
+        assert_eq!(
+            crate::ui::remote_connect::detail_for_target(&target, &hosts),
+            "deploy@10.0.0.8:2222"
+        );
+        let missing = crate::core::session::RemoteTarget::Alias {
+            alias: "missing".into(),
+        };
+        assert_eq!(
+            crate::ui::remote_connect::detail_for_target(&missing, &hosts),
+            "missing"
+        );
+    }
+
+    #[test]
     fn titlebar_chrome_places_palette_on_content_bar_and_settings_direct() {
         assert_eq!(
             titlebar_chrome_anchor("environment"),
@@ -1663,6 +1841,592 @@ mod tests {
     }
 
     #[test]
+    fn window_session_split_menu_routes_to_canonical_split_primitive() {
+        let source = include_str!("tab_strip.rs");
+        let prod = source.split("#[cfg(test)]").next().unwrap_or(source);
+        assert!(
+            prod.contains("menu.split_right") && prod.contains("menu.split_down"),
+            "session context menu must expose both canonical split directions"
+        );
+        assert!(
+            prod.contains("this.split(Axis::Horizontal, window, cx)")
+                && prod.contains("this.split(Axis::Vertical, window, cx)"),
+            "split menu actions must route through AgenttyApp::split"
+        );
+        assert!(
+            !prod.contains("split_leaf") && !prod.contains("PaneNode::Split"),
+            "tab UI must not construct a parallel split tree"
+        );
+        assert!(
+            prod.contains("menu.move_to_new_window")
+                && prod.contains("this.move_tab_to_new_window(index, window, cx)"),
+            "tab context menu should expose and route the move-to-new-window action"
+        );
+    }
+
+    #[cfg(unix)]
+    fn top_tab_strip(visual: &mut gpui::VisualTestContext) {
+        visual.update(|_, cx| {
+            let mut config = cx.global::<crate::core::config::Config>().clone();
+            config.tab_bar_position = crate::core::config::TabBarPosition::Top;
+            config.cursor_blink = false;
+            cx.set_global(config);
+        });
+    }
+
+    #[cfg(unix)]
+    fn install_quiet_tabs(
+        app: &gpui::Entity<AgenttyApp>,
+        visual: &mut gpui::VisualTestContext,
+        pane_ids: &[u64],
+        names: &[&str],
+    ) -> Vec<gpui::EntityId> {
+        assert_eq!(pane_ids.len(), names.len());
+        app.update_in(visual, |app, window, cx| {
+            let mut tabs = Vec::new();
+            let mut entities = Vec::new();
+            for (&pane_id, &name) in pane_ids.iter().zip(names) {
+                let (view, _stream) = crate::terminal::view::quiet_test_pane(pane_id, window, cx);
+                entities.push(view.entity_id());
+                let mut tab = Tab::new(crate::ui::pane::Pane::leaf(
+                    crate::ui::pane::PaneSlot::Ready(view),
+                ));
+                tab.name = Some(name.to_string());
+                tabs.push(tab);
+            }
+            app.tabs = tabs;
+            app.active = 0;
+            app.focus_active(window, cx);
+            cx.notify();
+            entities
+        })
+    }
+
+    #[cfg(unix)]
+    fn selector_center(
+        visual: &mut gpui::VisualTestContext,
+        selector: &'static str,
+    ) -> gpui::Point<Pixels> {
+        let bounds = visual
+            .debug_bounds(selector)
+            .unwrap_or_else(|| panic!("production selector {selector} must be rendered"));
+        gpui::point(
+            bounds.origin.x + bounds.size.width / 2.,
+            bounds.origin.y + bounds.size.height / 2.,
+        )
+    }
+
+    #[cfg(unix)]
+    fn drag_selectors(
+        visual: &mut gpui::VisualTestContext,
+        source: &'static str,
+        target: &'static str,
+    ) {
+        let source_point = selector_center(visual, source);
+        let target_point = selector_center(visual, target);
+        let threshold_point = gpui::point(source_point.x - px(16.), source_point.y);
+        visual.simulate_mouse_move(source_point, None, gpui::Modifiers::none());
+        visual.simulate_mouse_down(source_point, MouseButton::Left, gpui::Modifiers::none());
+        visual.simulate_mouse_move(
+            threshold_point,
+            Some(MouseButton::Left),
+            gpui::Modifiers::none(),
+        );
+        visual.run_until_parked();
+        visual.simulate_mouse_move(
+            target_point,
+            Some(MouseButton::Left),
+            gpui::Modifiers::none(),
+        );
+        visual.simulate_mouse_up(target_point, MouseButton::Left, gpui::Modifiers::none());
+        visual.run_until_parked();
+    }
+
+    #[cfg(unix)]
+    #[gpui::test]
+    fn tab_strip_icon_drag_splits_single_pane_target_and_source(cx: &mut gpui::TestAppContext) {
+        let (app, mut visual) = crate::ui::app::test_window::harness(cx);
+        top_tab_strip(&mut visual);
+        install_quiet_tabs(&app, &mut visual, &[51, 52], &["target", "source"]);
+        visual.run_until_parked();
+
+        drag_selectors(&mut visual, "TAB_CHIP_1_ICON", "TAB_CHIP_0_ICON");
+
+        app.update_in(&mut visual, |app, _, _| {
+            assert_eq!(
+                app.tabs.len(),
+                1,
+                "a valid 1+1 icon merge removes one top-level tab"
+            );
+            assert_eq!(app.tabs[0].pane.leaves().len(), 2);
+        });
+    }
+
+    #[cfg(unix)]
+    #[gpui::test]
+    fn tab_strip_body_drag_reorders_source_before_target_and_persists(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let (app, mut visual) = crate::ui::app::test_window::harness(cx);
+        top_tab_strip(&mut visual);
+        install_quiet_tabs(&app, &mut visual, &[61, 62, 63], &["A", "B", "C"]);
+        visual.run_until_parked();
+
+        drag_selectors(&mut visual, "TAB_CHIP_1_BODY", "TAB_CHIP_2_BODY");
+
+        app.update_in(&mut visual, |app, _window, cx| {
+            let names = app
+                .tabs
+                .iter()
+                .map(|tab| tab.name.clone().unwrap_or_default())
+                .collect::<Vec<_>>();
+            assert_eq!(names, vec!["A", "C", "B"]);
+            let (desired, _, held) = crate::ui::tree_sync::desired_tabs(app, cx);
+            assert!(held.is_empty(), "all terminal tabs must remain persistable");
+            assert_eq!(
+                desired
+                    .iter()
+                    .map(|tab| tab.name.clone().unwrap_or_default())
+                    .collect::<Vec<_>>(),
+                names,
+                "reorder commits through the canonical persisted desired order"
+            );
+        });
+    }
+
+    #[cfg(unix)]
+    #[gpui::test]
+    fn tab_strip_body_drag_reorders_source_after_target_and_persists(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let (app, mut visual) = crate::ui::app::test_window::harness(cx);
+        top_tab_strip(&mut visual);
+        install_quiet_tabs(&app, &mut visual, &[71, 72, 73], &["A", "B", "C"]);
+        visual.run_until_parked();
+
+        drag_selectors(&mut visual, "TAB_CHIP_2_BODY", "TAB_CHIP_0_BODY");
+
+        app.update_in(&mut visual, |app, _window, cx| {
+            let names = app
+                .tabs
+                .iter()
+                .map(|tab| tab.name.clone().unwrap_or_default())
+                .collect::<Vec<_>>();
+            assert_eq!(names, vec!["C", "A", "B"]);
+            let (desired, _, _) = crate::ui::tree_sync::desired_tabs(app, cx);
+            assert_eq!(desired.len(), 3, "reorder does not merge or drop a tab");
+        });
+    }
+
+    #[cfg(unix)]
+    #[gpui::test]
+    fn tab_strip_icon_drag_rejects_multi_pane_merge_without_tree_mutation(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let (app, mut visual) = crate::ui::app::test_window::harness(cx);
+        top_tab_strip(&mut visual);
+        app.update_in(&mut visual, |app, window, cx| {
+            let (target_a, _a) = crate::terminal::view::quiet_test_pane(81, window, cx);
+            let (target_b, _b) = crate::terminal::view::quiet_test_pane(82, window, cx);
+            let (source, _s) = crate::terminal::view::quiet_test_pane(83, window, cx);
+            let mut target = Tab::new(crate::ui::pane::Pane::split_node(
+                Axis::Horizontal,
+                0.5,
+                crate::ui::pane::Pane::leaf(crate::ui::pane::PaneSlot::Ready(target_a)),
+                crate::ui::pane::Pane::leaf(crate::ui::pane::PaneSlot::Ready(target_b)),
+            ));
+            target.name = Some("target-split".into());
+            let mut source = Tab::new(crate::ui::pane::Pane::leaf(
+                crate::ui::pane::PaneSlot::Ready(source),
+            ));
+            source.name = Some("source".into());
+            app.tabs = vec![target, source];
+            app.active = 0;
+            app.focus_active(window, cx);
+            cx.notify();
+        });
+        visual.run_until_parked();
+
+        drag_selectors(&mut visual, "TAB_CHIP_1_ICON", "TAB_CHIP_0_ICON");
+
+        app.update_in(&mut visual, |app, _, _| {
+            assert_eq!(
+                app.tabs.len(),
+                2,
+                "over-capacity merge leaves both tabs intact"
+            );
+            assert_eq!(app.tabs[0].pane.leaves().len(), 2);
+            assert_eq!(app.tabs[1].pane.leaves().len(), 1);
+        });
+    }
+
+    #[cfg(unix)]
+    #[gpui::test]
+    fn tab_strip_body_drag_source_before_target_maps_original_identity(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let (app, mut visual) = crate::ui::app::test_window::harness(cx);
+        top_tab_strip(&mut visual);
+        install_quiet_tabs(&app, &mut visual, &[91, 92, 93], &["A", "B", "C"]);
+        visual.run_until_parked();
+
+        drag_selectors(&mut visual, "TAB_CHIP_1_BODY", "TAB_CHIP_2_BODY");
+
+        app.update_in(&mut visual, |app, _, _| {
+            assert_eq!(
+                app.tabs
+                    .iter()
+                    .map(|tab| tab.name.clone().unwrap_or_default())
+                    .collect::<Vec<_>>(),
+                vec!["A", "C", "B"],
+                "B→C must map the original target identity after source removal"
+            );
+            assert!(app.tabs.iter().all(|tab| tab.pane.leaves().len() == 1));
+        });
+    }
+
+    #[cfg(unix)]
+    #[gpui::test]
+    fn tab_strip_pointer_drag_does_not_cross_environment_window_boundary(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let (app, mut visual) = crate::ui::app::test_window::harness(cx);
+        top_tab_strip(&mut visual);
+        install_quiet_tabs(&app, &mut visual, &[101, 102], &["source", "target"]);
+        visual.run_until_parked();
+
+        let source = selector_center(&mut visual, "TAB_CHIP_0_ICON");
+        let outside = gpui::point(px(-100.), px(-100.));
+        visual.simulate_mouse_move(source, None, gpui::Modifiers::none());
+        visual.simulate_mouse_down(source, MouseButton::Left, gpui::Modifiers::none());
+        visual.simulate_mouse_move(outside, Some(MouseButton::Left), gpui::Modifiers::none());
+        visual.simulate_mouse_up(outside, MouseButton::Left, gpui::Modifiers::none());
+        visual.run_until_parked();
+        app.update_in(&mut visual, |app, _, _| {
+            assert_eq!(
+                app.tabs.len(),
+                2,
+                "dragging outside the strip cannot detach a tab"
+            );
+        });
+    }
+
+    #[test]
+    fn tab_strip_drag_updates_split_right_intent() {
+        let source = include_str!("tab_strip.rs");
+        let prod = source.split("#[cfg(test)]").next().unwrap_or(source);
+        assert!(
+            prod.contains("TabDragIntent::Merge")
+                && prod.contains("TabDragIntent::Reorder")
+                && prod.contains("set_tab_pending")
+                && prod.contains("TabDragHitZone::Icon")
+                && prod.contains("TabDragHitZone::Body"),
+            "tab strip drag should route through typed icon/body intents"
+        );
+    }
+
+    #[cfg(unix)]
+    #[gpui::test]
+    fn tab_strip_icon_drag_inactive_source_preserves_target_tree(cx: &mut gpui::TestAppContext) {
+        use crate::terminal::view::quiet_test_pane;
+        use crate::ui::pane::{Pane, PaneSlot};
+
+        let (app, mut visual) = crate::ui::app::test_window::harness(cx);
+        visual.update(|_, cx| {
+            let mut config = cx.global::<crate::core::config::Config>().clone();
+            config.tab_bar_position = crate::core::config::TabBarPosition::Top;
+            config.cursor_blink = false;
+            cx.set_global(config);
+        });
+        let (target_id, source_id, target_tree_id, source_tree_id, _streams) =
+            app.update_in(&mut visual, |app, window, cx| {
+                let (target, target_stream) = quiet_test_pane(41, window, cx);
+                let (source, source_stream) = quiet_test_pane(42, window, cx);
+                let target_id = target.entity_id();
+                let source_id = source.entity_id();
+                let mut target_tab = Tab::new(Pane::leaf(PaneSlot::Ready(target)));
+                target_tab.name = Some("drop target".into());
+                let mut source_tab = Tab::new(Pane::leaf(PaneSlot::Ready(source)));
+                source_tab.name = Some("inactive source".into());
+                let target_tree_id = target_tab.tree_id.get();
+                let source_tree_id = source_tab.tree_id.get();
+                app.tabs = vec![target_tab, source_tab];
+                app.active = 0;
+                app.focus_active(window, cx);
+                cx.notify();
+                (
+                    target_id,
+                    source_id,
+                    target_tree_id,
+                    source_tree_id,
+                    (target_stream, source_stream),
+                )
+            });
+        visual.run_until_parked();
+        app.update_in(&mut visual, |app, window, cx| {
+            let target = app.tabs[0]
+                .pane
+                .first_leaf()
+                .expect("target tab owns one terminal");
+            let source = app.tabs[1]
+                .pane
+                .first_leaf()
+                .expect("source tab owns one terminal");
+            assert!(
+                target.contains_focused(window, cx),
+                "the active target owns focus before dragging"
+            );
+            assert!(
+                !source.contains_focused(window, cx),
+                "the inactive source must not be pre-focused before the drag"
+            );
+        });
+
+        let target = visual
+            .debug_bounds("TAB_CHIP_0_ICON")
+            .expect("production target chip must render");
+        let source = visual
+            .debug_bounds("TAB_CHIP_1_ICON")
+            .expect("production source chip must render");
+        let source_point = gpui::point(
+            source.origin.x + source.size.width / 2.,
+            source.origin.y + source.size.height / 2.,
+        );
+        let threshold_point = gpui::point(source_point.x - px(16.), source_point.y);
+        let target_point = gpui::point(
+            target.origin.x + target.size.width / 2.,
+            target.origin.y + target.size.height / 2.,
+        );
+
+        visual.simulate_mouse_move(source_point, None, gpui::Modifiers::none());
+        visual.simulate_mouse_down(source_point, MouseButton::Left, gpui::Modifiers::none());
+        assert_eq!(
+            app.update_in(&mut visual, |app, _, _| (app.active, app.tabs.len())),
+            (0, 2),
+            "pointer-down must neither activate nor remove the inactive source"
+        );
+        visual.simulate_mouse_move(
+            threshold_point,
+            Some(MouseButton::Left),
+            gpui::Modifiers::none(),
+        );
+        visual.run_until_parked();
+        assert!(
+            visual.update(|_, cx| cx.has_active_drag()),
+            "movement beyond the toolkit threshold starts the production chip drag"
+        );
+        assert_eq!(
+            app.update_in(&mut visual, |app, _, _| (app.active, app.tabs.len())),
+            (0, 2),
+            "arming the drag must not activate or detach the inactive source"
+        );
+        visual.simulate_mouse_move(
+            target_point,
+            Some(MouseButton::Left),
+            gpui::Modifiers::none(),
+        );
+        visual.run_until_parked();
+        assert_eq!(
+            app.update_in(&mut visual, |app, _, _| (app.active, app.tabs.len())),
+            (0, 2),
+            "hovering the drop target keeps the operation pending until pointer-up"
+        );
+        visual.simulate_mouse_up(target_point, MouseButton::Left, gpui::Modifiers::none());
+        visual.run_until_parked();
+
+        app.update_in(&mut visual, |app, window, cx| {
+            assert_eq!(
+                app.tabs.len(),
+                1,
+                "drop commits one canonical top-level tab"
+            );
+            assert_eq!(app.active, 0);
+            let tab = &app.tabs[0];
+            assert_eq!(tab.name.as_deref(), Some("drop target"));
+            assert_eq!(
+                tab.tree_id.get(),
+                target_tree_id,
+                "the target canonical tree identity survives the drop"
+            );
+            assert_ne!(
+                tab.tree_id.get(),
+                source_tree_id,
+                "the source must not replace the target tree"
+            );
+            match &tab.pane {
+                Pane::Split { axis, .. } => assert_eq!(
+                    *axis,
+                    Axis::Horizontal,
+                    "drop uses the canonical right-split axis"
+                ),
+                _ => panic!("the target leaf must become one canonical split tree"),
+            }
+            let pane_leaves = tab.pane.leaves();
+            let leaves = pane_leaves
+                .iter()
+                .map(|leaf| leaf.entity_id())
+                .collect::<Vec<_>>();
+            assert_eq!(
+                leaves,
+                vec![target_id, source_id],
+                "the exact target stays left and the exact source moves right without respawn"
+            );
+            assert!(
+                pane_leaves[1].contains_focused(window, cx),
+                "the moved source leaf receives focus after canonical split commit"
+            );
+            let (desired, active, held) = crate::ui::tree_sync::desired_tabs(app, cx);
+            assert_eq!(desired.len(), 1, "one canonical desired tree is persisted");
+            assert_eq!(desired[0].id, target_tree_id);
+            assert_eq!(active, Some(target_tree_id));
+            assert!(
+                held.is_empty(),
+                "no parallel or unmaterialized tree is held"
+            );
+            match &desired[0].root {
+                crate::ui::tree_sync::DesiredNode::Split { axis, ratio, a, b } => {
+                    assert_eq!(*axis, agentty_core::core::machine::Axis::Horizontal);
+                    assert_eq!(*ratio, 0.5);
+                    assert!(matches!(
+                        &**a,
+                        crate::ui::tree_sync::DesiredNode::Leaf { pane: 41, .. }
+                    ));
+                    assert!(matches!(
+                        &**b,
+                        crate::ui::tree_sync::DesiredNode::Leaf { pane: 42, .. }
+                    ));
+                }
+                _ => panic!("persisted target tree must contain the canonical right split"),
+            }
+        });
+    }
+
+    #[test]
+    fn tab_strip_activation_is_click_only() {
+        let source = include_str!("tab_strip.rs");
+        let prod = source.split("#[cfg(test)]").next().unwrap_or(source);
+        let mut cursor = 0usize;
+        while let Some(offset) = prod[cursor..].find("on_mouse_down(") {
+            let start = cursor + offset;
+            let open_offset = prod[start..]
+                .find('(')
+                .unwrap_or_else(|| panic!("expected opening paren for on_mouse_down at {start}"));
+            let mut depth = 0i32;
+            let mut end = None;
+            for (idx, ch) in prod[start + open_offset..].char_indices() {
+                match ch {
+                    '(' => depth += 1,
+                    ')' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            end = Some(start + open_offset + idx + 1);
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            let end = end.unwrap_or_else(|| {
+                panic!("could not parse on_mouse_down call ending for production slice at {start}")
+            });
+            let chunk = &prod[start..end];
+            assert!(
+                !chunk.contains("activate("),
+                "activation must be click-driven for tab-strip chips and labels; chunk: {chunk}",
+            );
+            cursor = end;
+        }
+
+        assert!(
+            prod.contains("this.activate(i, window, cx);"),
+            "tab strip should still have explicit click activation path for chips"
+        );
+        assert!(
+            prod.contains("on_click(cx.listener(move |this, _, window, cx|"),
+            "tab strip activation path should remain explicit"
+        );
+    }
+
+    #[gpui::test]
+    fn inactive_tab_pointer_drag_cancels_activation_and_click_release_activates(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let (app, mut visual) = crate::ui::app::test_window::harness(cx);
+        visual.update(|_, cx| {
+            let mut config = cx.global::<crate::core::config::Config>().clone();
+            config.tab_bar_position = crate::core::config::TabBarPosition::Top;
+            cx.set_global(config);
+        });
+        app.update_in(&mut visual, |app, _window, cx| {
+            let mut first = Tab::new(crate::ui::pane::Pane::Empty);
+            first.name = Some("active".into());
+            let mut second = Tab::new(crate::ui::pane::Pane::Empty);
+            second.name = Some("inactive".into());
+            app.tabs = vec![first, second];
+            app.active = 0;
+            cx.notify();
+        });
+        visual.run_until_parked();
+
+        let inactive = visual
+            .debug_bounds("TAB_CHIP_1")
+            .expect("inactive production tab chip must render");
+        let press = gpui::point(
+            inactive.origin.x + inactive.size.width / 2.,
+            inactive.origin.y + inactive.size.height / 2.,
+        );
+        let dragged = gpui::point(press.x + px(16.), press.y);
+
+        visual.simulate_mouse_move(press, None, gpui::Modifiers::none());
+        visual.simulate_mouse_down(press, MouseButton::Left, gpui::Modifiers::none());
+        assert_eq!(
+            app.update_in(&mut visual, |app, _, _| app.active),
+            0,
+            "pointer-down alone must not activate an inactive tab"
+        );
+        visual.simulate_mouse_move(dragged, Some(MouseButton::Left), gpui::Modifiers::none());
+        visual.run_until_parked();
+        assert!(
+            visual.update(|_, cx| cx.has_active_drag()),
+            "movement beyond GPUI's drag threshold must enter the drag path"
+        );
+        assert_eq!(
+            app.update_in(&mut visual, |app, _, _| app.active),
+            0,
+            "starting a drag from an inactive tab must not activate it"
+        );
+        visual.simulate_mouse_up(dragged, MouseButton::Left, gpui::Modifiers::none());
+        visual.run_until_parked();
+        assert_eq!(
+            app.update_in(&mut visual, |app, _, _| app.active),
+            0,
+            "releasing a completed drag must not replay tab activation"
+        );
+
+        let inactive = visual
+            .debug_bounds("TAB_CHIP_1")
+            .expect("inactive production tab chip must remain rendered");
+        let click = gpui::point(
+            inactive.origin.x + inactive.size.width / 2.,
+            inactive.origin.y + inactive.size.height / 2.,
+        );
+        visual.simulate_mouse_move(click, None, gpui::Modifiers::none());
+        visual.simulate_mouse_down(click, MouseButton::Left, gpui::Modifiers::none());
+        assert_eq!(
+            app.update_in(&mut visual, |app, _, _| app.active),
+            0,
+            "a click still waits for release before activation"
+        );
+        visual.simulate_mouse_up(click, MouseButton::Left, gpui::Modifiers::none());
+        visual.run_until_parked();
+        assert_eq!(
+            app.update_in(&mut visual, |app, _, _| app.active),
+            1,
+            "a stationary click-release must activate the inactive tab"
+        );
+    }
+
+    #[test]
     fn tab_chip_hierarchy_elevates_active_tab_with_indicator() {
         let active = tab_chip_hierarchy(true);
         assert!(active.elevated, "active tab must be an elevated surface");
@@ -1677,6 +2441,22 @@ mod tests {
             "inactive tabs never show the accent indicator"
         );
     }
+
+    #[test]
+    fn tab_drag_target_after_removal_maps_source_before_and_after_target() {
+        assert_eq!(target_after_removal(1, 1, 3), Some(2));
+        assert_eq!(target_after_removal(2, 0, 3), Some(0));
+        assert_eq!(target_after_removal(1, 0, 3), Some(0));
+        assert_eq!(target_after_removal(0, 2, 3), None);
+    }
+
+    #[test]
+    fn tab_drag_order_for_target_preserves_original_target_identity() {
+        assert_eq!(order_for_hover(2, 0, 3), Some(vec![2, 0, 1]));
+        assert_eq!(order_for_hover(1, 2, 3), Some(vec![0, 2, 1]));
+        assert_eq!(order_for_hover(1, 1, 3), None);
+    }
+
     #[test]
     fn tab_chip_window_compresses_before_overflowing() {
         // Wide enough for every chip at the natural minimum: no overflow.

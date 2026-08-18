@@ -14,4 +14,12 @@ for package in agentty agentty-core agentty-server agentty-cli; do
     END { exit (!found || bad) }
   ' Cargo.lock || { echo "[version] Cargo.lock local package $package must be $expected" >&2; exit 1; }
 done
+rg -q 'fn source_tree_fingerprint' crates/agentty-core/build.rs || {
+  echo '[version] build identity must include the exact remote-server source closure' >&2
+  exit 1
+}
+rg -q '../agentty-server/src' crates/agentty-core/build.rs || {
+  echo '[version] build identity must include agentty-server sources, not core alone' >&2
+  exit 1
+}
 echo "version policy checks passed ($expected)"

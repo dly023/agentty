@@ -59,8 +59,7 @@ impl MachineMirrors {
                 let mirrors = cx.default_global::<Self>();
                 mirrors.pulling.retain(|h| *h != host);
                 if let Some(machine) = pulled {
-                    mirrors.machines.insert(host, *machine);
-                    cx.refresh_windows();
+                    Self::install(cx, host, *machine);
                 }
             });
         })
@@ -68,6 +67,15 @@ impl MachineMirrors {
     }
 
     pub fn install(cx: &mut App, host: HostId, machine: Machine) {
+        let occupied: Vec<WorkspaceId> = machine
+            .workspaces
+            .iter()
+            .filter(|workspace| !workspace.tabs.is_empty())
+            .map(|workspace| workspace.id)
+            .collect();
+        crate::core::session::WorkspaceStore::recover_unassigned_machine_workspaces(
+            cx, host, &occupied,
+        );
         cx.default_global::<Self>().machines.insert(host, machine);
         cx.refresh_windows();
     }

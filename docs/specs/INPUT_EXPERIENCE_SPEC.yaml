@@ -1,5 +1,5 @@
 version: 1
-updated: 2026-08-09
+updated: 2026-08-16
 domain: terminal_input_experience
 contracts:
   - id: INPUT-COMPOSER-NATIVE-RICH-AREA-13
@@ -20,12 +20,12 @@ contracts:
     rule: Smart completion prioritizes local deterministic grammar, signatures, filesystem, generators, history, and repository context before optional prediction.
     status: verified
   - id: INPUT-COMPOSER-SMART-PREFERENCE-05
-    rule: Composer visibility is governed by one persisted preference composer_mode with three values — auto, always, off — default auto. Auto docks a compact ~2-line composer when the focused pane owns a CLI Agent identity (live_binding.agent or runtime agent_session) and hides it for plain shells. Always docks for every focused pane. Off keeps the composer closed; the user opens it by cycling to Auto or Always. ToggleComposer cycles auto → always → off → auto, writes config.json, and immediately applies the new mode. A docked composer uses a bottom-anchored surface with at least two visible lines; Shift+Enter inserts a newline and Enter submits. Drafts remain isolated per PaneIdentity across mode and focus changes. Native terminal input stays available whenever the composer is visible.
+    rule: Composer visibility is governed by one persisted preference composer_mode with three values — auto, always, off — default auto. In the current native-rich-input model, Auto automatically docks a compact ~2-line composer for every focused terminal, including a newly created plain shell; it does not wait for CLI Agent identity. Always is the explicit enabled preference and also docks for every pane. Off keeps the composer closed; the user opens it by cycling to Auto or Always. ToggleComposer cycles auto → always → off → auto, writes config.json, and immediately applies the new mode. A pane-scoped Activity Bar override may collapse or restore the dock without mutating that preference. Drafts remain isolated per PaneIdentity across mode and focus changes, and native terminal input stays available whenever the composer is visible.
     forbidden:
       - always_on_composer_with_no_persisted_mode
       - hiding_terminal_input_while_composer_visible
       - cycling_mode_without_persisting_preference
-      - auto_mode_showing_for_plain_shell_without_agent
+      - auto_mode_hiding_new_plain_terminal
   - id: INPUT-COMPLETION-EDITOR-SURFACE-06
     rule: Smart completion attaches to the focused editable surface — the docked composer Input when it holds focus, otherwise the terminal local-edit line. One session/generation/menu path drives Tab, arrows, Escape, and accept. Accept mutates only that surface's buffer and never auto-submits, never writes the PTY, and never dual-writes composer and terminal buffers. Composer Enter remains a separate submit path that runs only when the completion menu is closed or accept policy leaves no pending selection. Focus ownership is exclusive for Tab.
     forbidden:
@@ -34,11 +34,13 @@ contracts:
       - auto_submit_or_pty_write_on_completion_accept
       - dual_tab_handlers_writing_both_buffers
   - id: INPUT-COMPOSER-ACTIVITY-BAR-07
-    rule: On an Agent pane, the always-visible Agent Activity Bar is the compact Composer handle. Clicking the bar toggles the focused PaneIdentity between expanded and collapsed Composer states without changing the persisted composer_mode preference. Collapse preserves that pane's draft and returns focus to the terminal; expand restores the pane-isolated draft and focuses the Composer input. The activity summary and trust presentation remain visible in both states, and the trailing direction affordance communicates the next action.
+    rule: On an Agent pane, the always-visible production Agent Activity Bar is the compact Composer handle. A stationary primary-button click-release on that rendered bar toggles only the focused PaneIdentity without changing the persisted composer_mode preference. Collapse snapshots the exact draft before dropping the Composer state and returns focus to the same terminal. A second click recreates the Composer, restores the exact pane-isolated draft, and focuses its Input. The activity summary and trust presentation remain visible in both states, and the trailing direction affordance communicates the next action.
     forbidden:
       - activity_bar_without_composer_toggle_on_agent_panes
       - changing_persisted_composer_mode_when_collapsing_the_dock
       - discarding_the_draft_when_collapsing_from_the_activity_bar
+      - collapse_leaving_focus_on_dropped_composer_input
+      - expand_without_restoring_composer_focus
       - hiding_the_activity_summary_together_with_the_composer
   - id: INPUT-COMPOSER-DOCK-REFLOW-11
     rule: The expanded Composer is a compact in-flow dock below the terminal viewport and above the Agent Activity Bar. Opening or growing it reduces the terminal viewport so the terminal's bottom content remains visible above the dock; it never absolutely overlays terminal cells. The dock avoids a redundant title/mode header because the persistent Activity Bar owns status and the expand/collapse affordance. Input subscriptions mutate AgenttyApp through the callback's existing entity lease and never reacquire the same entity during GPUI effect delivery.
@@ -47,12 +49,16 @@ contracts:
       - redundant_composer_header_above_activity_bar
       - composer_input_callback_reacquiring_agentty_app
   - id: INPUT-COMPOSER-RICH-INPUT-12
-    rule: The expanded Composer is a stable rich multiline input surface. Shift+Enter inserts a newline without submission, Enter submits only when the completion menu is closed, the dock grows within a bounded range and reflows the terminal above it, and input callbacks never synchronously tear down or reacquire the owning App entity during delivery.
+    rule: The expanded Composer is a stable rich multiline input surface. Shift+Enter inserts exactly one newline without submission. Enter with a visible completion selection accepts that selection into the draft without PTY delivery; Enter with the completion menu closed submits the draft through the canonical delivery path. The editable area starts at two rows, grows with its content, and clamps at eight rows while the in-flow dock reflows the terminal above it. Each Input callback subscription is owned by the exact Composer state that created it, is cancelled before that state can be replaced, uses the callback's existing App entity lease, and cannot submit or mutate a newer Composer after teardown.
     forbidden:
       - shift_enter_submitting_composer
+      - completion_accept_writing_to_pty
+      - closed_completion_menu_swallowing_submit
       - single_line_composer_for_multiline_drafts
       - unbounded_composer_growth
+      - detached_composer_input_subscription_outliving_its_state
       - composer_callback_mutating_after_state_teardown
+      - composer_input_callback_reacquiring_or_synchronously_tearing_down_agentty_app
   - id: INPUT-FRAME-ALIGNED-SMOOTH-SCROLL-08
     rule: Discrete wheel scrolls of at least one line may be smoothed when the persisted smooth_scroll preference is enabled. The relative remaining distance advances from GPUI next-frame callbacks, scales decay by elapsed frame time, accumulates successive notches, wakes an idle window when queued, and is cancelled by every other viewport movement. Trackpad gestures, sub-line moves, mouse-reporting, and alternate-scroll remain direct. Stale callbacks and top/bottom clamps terminate without moving the viewport.
     forbidden:
@@ -61,6 +67,14 @@ contracts:
       - smoothing_mouse_reporting_or_alternate_scroll_events
       - stale_animation_callbacks_moving_a_cancelled_viewport
       - absolute_scroll_targets_that_fight_new_terminal_output
+  - id: INPUT-TERMINAL-JUMP-TO-BOTTOM-14
+    rule: When the terminal viewport is in scrollback (grid.display_offset() > 0), the production terminal surface renders one low-distraction floating jump-to-bottom control. The control is absent at the live bottom (display_offset() == 0). Click-release invokes the existing TerminalView::jump_to_prompt primitive, so pending scroll animation and selection are cleared by the same canonical path, and the terminal input focus and prompt buffer remain unchanged. The affordance owns no parallel scroll target or viewport state.
+    forbidden:
+      - jump_to_bottom_button_missing_when_scrolled
+      - jump_to_bottom_button_visible_at_bottom
+      - jump_to_bottom_handler_bypassing_jump_to_prompt
+      - jump_to_bottom_click_stealing_terminal_focus
+      - parallel_terminal_scroll_state
   - id: INPUT-FISH-HISTORY-AUTHORITY-09
     rule: Command history includes fish_history from the selected Environment authority. Local discovery honors non-empty XDG_DATA_HOME before the HOME fallback; remote fetches retain each source file name so the canonical parser can distinguish fish from bash and zsh. Fish records are parsed with fish escaping semantics rather than YAML, punctuation remains literal, timestamps are retained, malformed records are skipped, and multiline commands are excluded while downstream editing remains single-line.
     forbidden:

@@ -58,6 +58,10 @@ Agentty 是轻量、终端优先的 Agent 工作台。所有架构级行为修�
 - 业务逻辑不应直接依赖真实 I/O，用假数据在测试里也应该能跑。
 - 更换 backend 不能影响业务逻辑。
 - 每个 app 绝不能调用自己的 HTTP endpoint。
+- 对 managed remote Environment，目标 Host/daemon 是远端 machine tree、pane facts、provider 数据、会话用户状态、hooks 与其他 target-owned 状态的唯一事实源。
+- GUI 本地文件和内存镜像只能保存明确标注的客户端状态、缓存或待提交意图；它们不得在 hydrate、reconnect、refresh 或 source 失败时被隐式提升为远端事实，也不得用本地同名数据伪造远端成功。
+- 任何本地到远端的持久化都必须经过唯一的 HostOps/ControlRequest 正本，并带 workspace/pane/session 等身份与 ownership 前置条件；远端拒绝、身份未知或结果过期时必须 fail closed。
+- 远端事实缺失表示“未知/没有”，不表示可以从本地候选补齐；只有显式 typed provider/user 事件或带身份的结构化 seed 才能产生远端写入。
 
 ### 以能力复用为荣，以复制重造为耻
 
@@ -83,6 +87,7 @@ Agentty 是轻量、终端优先的 Agent 工作台。所有架构级行为修�
 ### 以架构简洁为荣，以过度防御为耻
 
 - 避免编写过度防御和无依据的兜底代码。
+
 ### 以规范驱动为荣，以先写代码为耻
 
 - 架构、产品和用户可观察行为变更必须依次完成 `SPEC → tracker → matrix → static CHECK → failing TEST → IMPLEMENTATION → VERIFY`。

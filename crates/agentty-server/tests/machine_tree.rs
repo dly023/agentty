@@ -6,7 +6,10 @@ use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use agentty_core::core::machine::{Axis, LayoutDelta, MACHINE_FILE, PaneNode, PaneSeed};
+use agentty_core::core::cli_agent::CLIAgent;
+use agentty_core::core::machine::{
+    AgentFacts, Axis, LayoutDelta, MACHINE_FILE, PaneNode, PaneSeed, PaneTitleIdentity,
+};
 use agentty_core::daemon::control::{
     ControlClient, ControlEvent, ControlHello, ControlRequest, LinkShutdown, ReplyOk, WorkspaceId,
     feature,
@@ -196,6 +199,83 @@ fn the_tree_is_built_by_operations_and_lives_in_the_servers_file() {
         })
         .unwrap_err();
     assert_eq!(missing.kind(), io::ErrorKind::NotFound);
+}
+
+#[test]
+fn provider_title_request_persists_and_notifies_once() {
+    let dir = data_dir();
+    let client = connect(dir.path(), "provider-title");
+    let ws = match client
+        .control
+        .call(ControlRequest::WorkspaceCreate {
+            name: None,
+            workspace: None,
+        })
+        .unwrap()
+    {
+        ReplyOk::WorkspaceTree(ws) => *ws,
+        other => panic!("{other:?}"),
+    };
+    let identity = PaneTitleIdentity {
+        agent: CLIAgent::Codex,
+        container_id: Some("container-provider".into()),
+        session_id: Some("session-provider".into()),
+    };
+    client
+        .control
+        .call(ControlRequest::TabCreate {
+            workspace: ws.id,
+            at: None,
+            pane: PaneSeed {
+                pane: 42,
+                cwd: Some("/work".into()),
+                ssh_spec: None,
+                agent: Some(AgentFacts {
+                    agent: CLIAgent::Codex,
+                    container_id: identity.container_id.clone(),
+                    session_id: identity.session_id.clone(),
+                    launch_argv: Some(vec!["codex".into()]),
+                    status: None,
+                    provider_title: None,
+                    first_user_title: None,
+                }),
+            },
+            tab: None,
+        })
+        .expect("seed an agent-bearing pane");
+
+    client
+        .control
+        .call(ControlRequest::PaneSetProviderTitle {
+            workspace: ws.id,
+            pane: 42,
+            title: "  Historical rollout  ".into(),
+            expected_identity: Some(identity.clone()),
+        })
+        .expect("persist provider evidence");
+    client
+        .control
+        .call(ControlRequest::PaneSetProviderTitle {
+            workspace: ws.id,
+            pane: 42,
+            title: "A later refresh".into(),
+            expected_identity: Some(identity),
+        })
+        .expect("a write-once retry is a successful no-op");
+
+    let machine = match client.control.call(ControlRequest::MachineGet).unwrap() {
+        ReplyOk::MachineTree(machine) => *machine,
+        other => panic!("{other:?}"),
+    };
+    assert_eq!(
+        machine
+            .panes
+            .iter()
+            .find(|pane| pane.id == 42)
+            .and_then(|pane| pane.agent.as_ref())
+            .and_then(|agent| agent.provider_title.as_deref()),
+        Some("Historical rollout")
+    );
 }
 
 #[test]

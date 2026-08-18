@@ -21,6 +21,8 @@ $Stage = "dist/$Name"
 # inputs. A failed package run must not leave older artifacts looking current.
 Remove-Item -Recurse -Force $Stage -ErrorAction SilentlyContinue
 Remove-Item -Force "dist/$Name.zip", "dist/$Name-setup.exe" -ErrorAction SilentlyContinue
+bash script/check_bundled_remote_helpers "target/$Target/release/agentty-server.exe" bundled-server
+if ($LASTEXITCODE -ne 0) { throw "bundled remote helper verification exited with $LASTEXITCODE" }
 New-Item -ItemType Directory -Force -Path $Stage | Out-Null
 
 Copy-Item "target/$Target/release/agentty-app.exe" "$Stage/agentty-app.exe"

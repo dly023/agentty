@@ -207,6 +207,7 @@ mod tests {
                     _ => CLIAgent::Codex,
                 },
                 title: Some("Delete me".into()),
+                title_candidates: Default::default(),
                 cwd: None,
                 updated_at_unix_ms: None,
                 launch_argv: Vec::new(),
@@ -334,6 +335,7 @@ mod tests {
                 agent: CLIAgent::Codex,
                 session_id: None,
                 title: None,
+                title_candidates: Default::default(),
                 cwd: None,
                 launch_argv: Vec::new(),
                 carrier: crate::agent_runtime::LiveCarrier {
@@ -361,6 +363,7 @@ mod tests {
                 },
                 agent: CLIAgent::Codex,
                 title: None,
+                title_candidates: Default::default(),
                 cwd: None,
                 updated_at_unix_ms: None,
                 launch_argv: Vec::new(),
@@ -375,6 +378,7 @@ mod tests {
                 agent: CLIAgent::Codex,
                 session_id: Some("s-new".into()),
                 title: None,
+                title_candidates: Default::default(),
                 cwd: None,
                 launch_argv: Vec::new(),
                 carrier: crate::agent_runtime::LiveCarrier {

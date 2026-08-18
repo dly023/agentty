@@ -1,5 +1,5 @@
 version: 1
-updated: 2026-08-05
+updated: 2026-08-16
 domain: ui_visual_system
 contracts:
   - id: UI-NOTICE-SURFACE-01
@@ -24,7 +24,8 @@ contracts:
       - per_callsite_hand_rolled_keycap_chrome
       - chord_geometry_defined_outside_the_shared_metrics
   - id: UI-WELCOME-SURFACE-04
-    rule: The home welcome page presents one explicit hierarchy: the logo block, an optional localized tagline, the status notice, and one framed shortcut section whose rows pair a localized action label with kbd chips. Key hints never render as bare text, and the section geometry comes from one pure metrics mapping.
+    rule: >-
+      The home welcome page presents one explicit hierarchy: the logo block, an optional localized tagline, the status notice, and one framed shortcut section whose rows pair a localized action label with kbd chips. Key hints never render as bare text, and the section geometry comes from one pure metrics mapping.
     forbidden:
       - bare_text_key_hints_on_the_welcome_page
       - unframed_shortcut_list_touching_window_chrome

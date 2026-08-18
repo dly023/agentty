@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+parse=crates/agentty-core/src/agent_runtime/parse.rs
+service=crates/agentty-core/src/agent_runtime/service.rs
+spec=docs/specs/SESSION_NAVIGATOR_SPEC.yaml
+matrix=docs/quality/traceability.yaml
+
+for path in "$parse" "$service" "$spec" "$matrix"; do
+  [[ -f "$path" ]] || { echo "[codex-visibility] missing $path" >&2; exit 1; }
+done
+
+rg -q 'enum SessionVisibility' "$parse"
+rg -q 'fn codex_origin_is_internal' "$parse"
+rg -q 'codex_origin_is_internal\(value\)' "$parse"
+rg -q 'metadata\.is_user_visible\(\)' "$service"
+rg -q 'internal_ids' "$service"
+rg -q 'rows\.retain\(' "$service"
+rg -q 'codex_subagent_transcript_is_not_a_user_history_row' "$service"
+rg -q 'codex_top_level_user_transcript_remains_discoverable' "$service"
+rg -q 'codex_injected_context_is_not_a_first_user_title' "$service"
+rg -q 'codex_subagent_transcript_is_marked_internal' "$parse"
+rg -q 'codex_top_level_user_transcript_remains_visible' "$parse"
+rg -q 'codex_injected_context_is_not_a_first_user_title' "$parse"
+rg -q 'SESSION-CODEX-USER-VISIBILITY-39' "$spec"
+rg -q 'SESSION-CODEX-USER-VISIBILITY-041' "$matrix"
+
+echo "codex session visibility checks passed"

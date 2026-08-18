@@ -1,0 +1,14 @@
+version: 1
+updated: 2026-08-15
+domain: local_gui_acceptance
+contracts:
+  - id: PRODUCT-LOCAL-GUI-ACCEPTANCE-05
+    rule: Local desktop acceptance identifies the real agentty-app GUI binary separately from the headless agentty CLI and migration-only daemon entrypoint, cleans only scoped stale package artifacts, and hands off an exact launch artifact or command. Automated checks may prove identity and launch readiness, while OS-level click/input and screen capture remain explicit user or permission dependent outcomes.
+    display:
+      - exact_agentty_app_artifact
+      - scoped_package_cleanup
+      - reproducible_launch_handoff
+    forbidden:
+      - claiming_cli_execution_is_gui_acceptance
+      - launching_migration_only_daemon_as_desktop_acceptance
+      - deleting_unrelated_platform_artifacts

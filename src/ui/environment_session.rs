@@ -21,7 +21,6 @@ use crate::ui::host_registry::HostRegistry;
 #[derive(Clone)]
 pub(crate) struct EnvironmentSessionContext {
     pub host: SharedHost,
-    pub home: PathBuf,
     pub store_roots: AgentStoreRoots,
     /// Present only for remote Environments; never a local fallback.
     remote: Option<Arc<RemoteHost>>,
@@ -47,7 +46,7 @@ impl EnvironmentSessionError {
 }
 
 impl EnvironmentSessionContext {
-    /// Resolve Host, home, and store roots for the Environment's HostId.
+    /// Resolve Host and target-owned store roots for the Environment's HostId.
     /// Remote never falls back to the local host or GUI HOME.
     pub(crate) fn resolve(cx: &App, host_id: HostId) -> Result<Self, EnvironmentSessionError> {
         let host =
@@ -59,24 +58,32 @@ impl EnvironmentSessionContext {
             let store_roots = AgentStoreRoots::for_current_process(&home);
             Ok(Self {
                 host,
-                home,
                 store_roots,
                 remote: None,
             })
         } else {
             let remote = crate::ui::remote_connect::HostLinks::get(cx, host_id)
                 .ok_or(EnvironmentSessionError::HostUnavailable)?;
-            let home = crate::ui::remote_connect::HostLinks::home(cx, host_id)
+            let _home = crate::ui::remote_connect::HostLinks::home(cx, host_id)
                 .ok_or(EnvironmentSessionError::HomeUnavailable)?;
             let store_roots = crate::ui::remote_connect::HostLinks::store_roots(cx, host_id)
                 .ok_or(EnvironmentSessionError::StoreRootsUnavailable)?;
             Ok(Self {
                 host,
-                home,
                 store_roots,
                 remote: Some(remote),
             })
         }
+    }
+
+    /// Canonical target-owned alias/pin/order path. Keeping this on the
+    /// Environment facade prevents remote callers from rebuilding `$HOME` or
+    /// `.config` independently of the HelloOk roots snapshot.
+    pub(crate) fn session_user_state_path(&self) -> PathBuf {
+        agentty_core::agent_runtime::SessionUserStateStore::path_from_roots(
+            &*self.host,
+            &self.store_roots,
+        )
     }
 
     /// Run discovery on the resolved Environment Host. Safe off the UI thread.
@@ -112,6 +119,22 @@ mod tests {
         assert_eq!(
             EnvironmentSessionError::StoreRootsUnavailable.message(),
             "remote agentty-server did not publish its Agent store roots"
+        );
+    }
+
+    #[test]
+    fn environment_session_context_uses_snapshot_for_user_state_path() {
+        let host = agentty_core::host::local::LocalHost::new();
+        let mut roots = AgentStoreRoots::for_home(PathBuf::from("/target/home"));
+        roots.agentty_config_dir = PathBuf::from("/target/custom-agentty");
+        let context = EnvironmentSessionContext {
+            host,
+            store_roots: roots,
+            remote: None,
+        };
+        assert_eq!(
+            context.session_user_state_path(),
+            PathBuf::from("/target/custom-agentty/session-aliases.json")
         );
     }
 }

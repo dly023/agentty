@@ -155,6 +155,7 @@ impl AgenttyApp {
         Some(
             h_flex()
                 .id("agent-activity-composer-toggle")
+                .debug_selector(|| "AGENT_ACTIVITY_COMPOSER_TOGGLE".into())
                 .flex_shrink_0()
                 .min_h(px(34.))
                 .px_3()

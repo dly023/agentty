@@ -356,7 +356,7 @@ impl AgenttyApp {
     fn render_panel_info(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let title = self.panel_title("Info", None, None, window, cx);
         let mut rows: Vec<(&'static str, String)> = Vec::new();
-        let mut cwd_for_actions: Option<PathBuf> = None;
+        let mut cwd_for_actions: Option<(PathBuf, bool)> = None;
         let mut pane_id: Option<u64> = None;
         let mut forwards_pane: Option<u64> = None;
 
@@ -364,13 +364,14 @@ impl AgenttyApp {
             if let Some(leaf) = tab.detail_pane(window, cx) {
                 let view = leaf.read(cx);
                 pane_id = Some(view.pane_id);
+                let local_paths = view.paths_are_local();
                 if let Some(cwd) = view
                     .git_status_cwd()
                     .map(|p| p.to_path_buf())
                     .or_else(|| view.cwd())
                 {
                     rows.push(("cwd", compact_path(&cwd)));
-                    cwd_for_actions = Some(cwd);
+                    cwd_for_actions = Some((cwd, local_paths));
                 }
                 let shell = match view.shell_spec().map(|s| s.program.clone()) {
                     Some(program) => crate::core::shells::default_shell_name(Some(&program)),
@@ -452,8 +453,8 @@ impl AgenttyApp {
         let inner = v_flex()
             .child(self.panel_subtitle("Session", false, None, cx))
             .child(list)
-            .when_some(cwd_for_actions, |this, cwd| {
-                this.child(self.cwd_actions(cwd, cx))
+            .when_some(cwd_for_actions, |this, (cwd, local_paths)| {
+                this.child(self.cwd_actions(cwd, local_paths, cx))
             })
             .children(self.procs_section(pane_id, cx))
             .children(self.ports_section(pane_id, cx))
@@ -462,27 +463,29 @@ impl AgenttyApp {
         self.panel_scroll(inner, title)
     }
 
-    fn cwd_actions(&self, cwd: PathBuf, cx: &mut Context<Self>) -> AnyElement {
+    fn cwd_actions(&self, cwd: PathBuf, local_paths: bool, cx: &mut Context<Self>) -> AnyElement {
         let reveal_label = reveal_label();
         h_flex()
             .gap(px(2.))
             .px(px(tile_trailing_inset_sm()))
             .pt(px(6.))
-            .child(
-                crate::ui::tab_strip::chrome_tile_sized(
-                    Button::new("panel-info-reveal").icon(Icon::new(IconName::FolderOpen)),
-                    TILE_SIZE_SM,
-                    TILE_GLYPH_SM,
-                    false,
-                    cx,
+            .when(gui_reveal_allowed(local_paths), |this| {
+                this.child(
+                    crate::ui::tab_strip::chrome_tile_sized(
+                        Button::new("panel-info-reveal").icon(Icon::new(IconName::FolderOpen)),
+                        TILE_SIZE_SM,
+                        TILE_GLYPH_SM,
+                        false,
+                        cx,
+                    )
+                    .rounded_md()
+                    .tooltip(reveal_label)
+                    .on_click({
+                        let cwd = cwd.clone();
+                        move |_, _window, cx| cx.reveal_path(&cwd)
+                    }),
                 )
-                .rounded_md()
-                .tooltip(reveal_label)
-                .on_click({
-                    let cwd = cwd.clone();
-                    move |_, _window, cx| cx.reveal_path(&cwd)
-                }),
-            )
+            })
             .child(
                 crate::ui::tab_strip::chrome_tile_sized(
                     Button::new("panel-info-copy-path").icon(Icon::new(IconName::Copy)),
@@ -1199,6 +1202,11 @@ pub fn reveal_label() -> &'static str {
     }
 }
 
+/// GUI file managers can only reveal paths owned by this machine.
+pub(crate) fn gui_reveal_allowed(local_paths: bool) -> bool {
+    local_paths
+}
+
 fn agent_status_label(status: crate::core::cli_agent::AgentStatus) -> &'static str {
     use crate::core::cli_agent::AgentStatus::*;
     match status {
@@ -1218,5 +1226,25 @@ fn compact_path(path: &std::path::Path) -> String {
     match std::env::var("HOME") {
         Ok(home) if !home.is_empty() && s.starts_with(&home) => s.replacen(&home, "~", 1),
         _ => s,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn remote_info_hides_gui_reveal_action() {
+        let source = include_str!("right_panel.rs");
+        let actions = source
+            .split("fn cwd_actions(")
+            .nth(1)
+            .expect("Info cwd actions remain a production function");
+        assert!(
+            actions.contains("gui_reveal_allowed(local_paths)"),
+            "Info reveal must be guarded by local path authority"
+        );
+        assert!(
+            actions.contains("cx.reveal_path(&cwd)"),
+            "local Info reveal remains available"
+        );
     }
 }

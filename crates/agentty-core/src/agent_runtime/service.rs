@@ -1,4 +1,4 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -10,13 +10,14 @@ use super::parse::{
     claude_transcript_metadata, codex_index_metadata, codex_transcript_metadata,
     gemini_first_user_excerpt, gemini_header_metadata, gemini_updated_at_unix_ms,
     grok_summary_metadata, grok_summary_updated_at_unix_ms, omp_transcript_metadata,
-    first_user_title_candidate, parse_jsonl_strict,
+    parse_iso8601_millis, parse_jsonl_strict,
 };
 use super::provider::{
     PERSISTED_PROVIDER_DESCRIPTORS, ProviderDescriptor, ProviderId, ProviderScanner,
     descriptor_for_id,
 };
 use super::stores::AgentStoreRoots;
+use super::title::{SessionTitleCandidates, first_user_title_candidate, is_absent_session_title};
 
 pub const DEFAULT_LOGICAL_LIMIT: usize = 40;
 pub const DEFAULT_PHYSICAL_SOURCE_LIMIT: usize = 2_000;
@@ -29,6 +30,10 @@ pub const DEFAULT_LINE_LIMIT: usize = 400;
 pub const PARSE_CANDIDATE_FACTOR: usize = 4;
 /// Jcode desktop's session switcher exposes its 32 newest valid cards.
 pub const JCODE_SESSION_LIMIT: usize = 32;
+/// Jcode stores a complete JSON document, not head-addressable JSONL. Keep the
+/// read bounded while allowing real long-running transcripts (26 MiB has been
+/// observed in desktop acceptance) to use the same schema as Jcode itself.
+pub const JCODE_SESSION_MAX_BYTES: u64 = 64 * 1024 * 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DiscoveryRequest {
@@ -59,7 +64,6 @@ impl DiscoveryRequest {
             physical_source_limit: DEFAULT_PHYSICAL_SOURCE_LIMIT,
         }
     }
-
 }
 
 pub fn discover(host: &dyn Host, request: &DiscoveryRequest) -> DiscoveryOutcome {
@@ -104,7 +108,7 @@ fn discover_provider(
         ProviderScanner::OmpJsonl => discover_omp(host, request),
         ProviderScanner::GrokSummaryJson => discover_grok(host, request),
         ProviderScanner::GeminiTmpJsonl => discover_gemini(host, request),
-        ProviderScanner::JcodeHarnessApi => discover_jcode(host, request),
+        ProviderScanner::JcodeSessionJson => discover_jcode(host, request),
         ProviderScanner::OpenCodeLegacyJson => discover_opencode(host, request, descriptor),
         ProviderScanner::DroidJsonl
         | ProviderScanner::CopilotJsonl
@@ -114,84 +118,8 @@ fn discover_provider(
     }
 }
 
-#[cfg(unix)]
 fn discover_jcode(host: &dyn Host, request: &DiscoveryRequest) -> DiscoveryOutcome {
-    use std::io::{BufRead, BufReader, Write};
-    use std::os::unix::net::UnixStream;
-
-    let file_result = discover_jcode_session_files(host, request);
-    if matches!(&file_result, DiscoveryOutcome::Complete(rows) if !rows.is_empty()) {
-        return file_result;
-    }
-    if !host.id().is_local() {
-        return file_result;
-    }
-    let socket = request.roots.jcode_api_socket();
-    let Ok(mut stream) = UnixStream::connect(&socket) else {
-        return discover_jcode_session_files(host, request);
-    };
-    let _ = stream.set_read_timeout(Some(std::time::Duration::from_millis(500)));
-    let hello = serde_json::json!({
-        "v": 1,
-        "id": 1,
-        "req": "hello",
-        "min_version": 1,
-        "max_version": 1,
-        "client": "agentty/agent-runtime"
-    });
-    let list = serde_json::json!({"v": 1, "id": 2, "req": "list_sessions"});
-    if writeln!(stream, "{hello}").is_err() || writeln!(stream, "{list}").is_err() {
-        return DiscoveryOutcome::Failed { message: "jcode API write failed".into() };
-    }
-    let mut reader = BufReader::new(stream);
-    let mut line = String::new();
-    let _ = reader.read_line(&mut line);
-    line.clear();
-    if reader.read_line(&mut line).is_err() {
-        return DiscoveryOutcome::Failed { message: "jcode API read failed".into() };
-    }
-    let Ok(frame) = serde_json::from_str::<serde_json::Value>(line.trim()) else {
-        return DiscoveryOutcome::Failed { message: "jcode API returned invalid JSON".into() };
-    };
-    let Some(sessions) = frame.get("sessions").and_then(|v| v.as_array()) else {
-        return DiscoveryOutcome::Failed { message: "jcode API did not return sessions".into() };
-    };
-    let rows: Vec<AgentSessionRecord> = sessions.iter().filter_map(|session| {
-        let id = session.get("session_id")?.as_str()?.to_owned();
-        if session
-            .get("parent_id")
-            .and_then(serde_json::Value::as_str)
-            .is_some()
-            || session
-                .get("is_debug")
-                .and_then(serde_json::Value::as_bool)
-                == Some(true)
-        {
-            return None;
-        }
-        Some(record(
-            CLIAgent::Jcode,
-            "jcode",
-            id,
-            session.get("title").and_then(|v| v.as_str()).map(str::to_owned),
-            session.get("working_dir").and_then(|v| v.as_str()).map(str::to_owned),
-            None,
-            vec![],
-            Some(socket.to_string_lossy().into_owned()),
-            None,
-        ))
-    }).collect();
-    let mut rows = rows;
-    rows.sort_by(|a, b| b.updated_at_unix_ms.cmp(&a.updated_at_unix_ms));
-    rows.truncate(JCODE_SESSION_LIMIT);
-    if rows.is_empty() {
-        // A live Jcode API may legitimately answer with an empty or filtered
-        // list while the durable session files still contain history. Do not
-        // publish an empty API result over the canonical file fallback.
-        file_result
-    } else {
-        DiscoveryOutcome::Complete(rows)
-    }
+    discover_jcode_session_files(host, request)
 }
 
 fn discover_jcode_session_files(host: &dyn Host, request: &DiscoveryRequest) -> DiscoveryOutcome {
@@ -205,14 +133,26 @@ fn discover_jcode_session_files(host: &dyn Host, request: &DiscoveryRequest) -> 
         #[serde(default)]
         custom_title: Option<String>,
         #[serde(default)]
+        short_name: Option<String>,
+        #[serde(default)]
         working_dir: Option<String>,
+        #[serde(default)]
+        last_active_at: Option<String>,
+        #[serde(default)]
+        updated_at: Option<String>,
         #[serde(default)]
         is_debug: bool,
         #[serde(default)]
         messages: Vec<serde_json::Value>,
     }
 
-    let root = request.roots.home.join(".jcode/sessions");
+    struct Candidate {
+        path: PathBuf,
+        len: u64,
+        mtime: Option<MTime>,
+    }
+
+    let root = request.roots.jcode_sessions();
     let entries = match host.read_dir(&root, Some(&root)) {
         Ok(entries) => entries,
         Err(_) => {
@@ -221,59 +161,112 @@ fn discover_jcode_session_files(host: &dyn Host, request: &DiscoveryRequest) -> 
             };
         }
     };
+    let entries = entries
+        .into_iter()
+        .filter(|entry| {
+            !entry.is_dir
+                && !entry.is_symlink
+                && entry.name.ends_with(".json")
+                && !entry.name.ends_with(".journal.json")
+        })
+        .collect::<Vec<_>>();
+    if entries.len() > request.physical_source_limit {
+        return DiscoveryOutcome::SourceLimitExceeded {
+            source: root.to_string_lossy().into_owned(),
+            limit: request.physical_source_limit as u64,
+        };
+    }
+    let mut candidates = entries
+        .into_iter()
+        .filter_map(|entry| {
+            let path = host.join(&root, &entry.name);
+            let meta = host.stat(&path).ok()?;
+            Some(Candidate {
+                path,
+                len: meta.len,
+                mtime: meta.mtime,
+            })
+        })
+        .collect::<Vec<_>>();
+    candidates.sort_by(|a, b| {
+        b.mtime
+            .cmp(&a.mtime)
+            .then_with(|| a.path.as_os_str().cmp(b.path.as_os_str()))
+    });
+
     let mut rows = Vec::new();
-    for entry in entries.into_iter().filter(|entry| {
-        !entry.is_dir
-            && !entry.is_symlink
-            && entry.name.ends_with(".json")
-            && !entry.name.ends_with(".journal.json")
-    }) {
-        let path = host.join(&root, &entry.name);
-        let Ok(bytes) = host.read_file_prefix(&path, DEFAULT_HEAD_BYTES) else {
+    for candidate in candidates {
+        if rows.len() >= JCODE_SESSION_LIMIT {
+            break;
+        }
+        if candidate.len > JCODE_SESSION_MAX_BYTES {
+            continue;
+        }
+        let Ok(bytes) = host.read_file(&candidate.path, JCODE_SESSION_MAX_BYTES) else {
             continue;
         };
         let Ok(header) = serde_json::from_slice::<JcodeSessionHeader>(&bytes) else {
             continue;
         };
-        let first_user_message = header.messages.iter().find_map(|message| {
+        let mut has_real_user_message = false;
+        let mut first_user_message = None;
+        for message in &header.messages {
             let is_user = message.get("role").and_then(serde_json::Value::as_str) == Some("user");
             let is_system = message
                 .get("display_role")
                 .and_then(serde_json::Value::as_str)
                 == Some("system");
-            (is_user && !is_system)
+            let text = (is_user && !is_system)
                 .then(|| message.get("content"))
                 .flatten()
                 .and_then(jcode_message_text)
-                .filter(|text| !is_jcode_internal_system_reminder(text))
-                .and_then(|text| first_user_title_candidate(&text))
-        });
-        let has_user_message = first_user_message.is_some();
-        if header.parent_id.is_some() || header.is_debug || !has_user_message {
+                .filter(|text| !text.trim().is_empty() && !is_jcode_internal_system_reminder(text));
+            if let Some(text) = text {
+                has_real_user_message = true;
+                if first_user_message.is_none() {
+                    first_user_message = first_user_title_candidate(&text);
+                }
+            }
+        }
+        if header.parent_id.is_some() || header.is_debug || !has_real_user_message {
             continue;
         }
-        let title = header
+        let provider_title = header
             .custom_title
-            .filter(|value| !value.trim().is_empty())
-            .or(header.title)
-            .or(first_user_message)
-            .or_else(|| Some(format!("Jcode session {}", header.id)));
+            .as_deref()
+            .and_then(first_user_title_candidate)
+            .or_else(|| header.title.as_deref().and_then(first_user_title_candidate))
+            .or_else(|| {
+                header
+                    .short_name
+                    .as_deref()
+                    .and_then(first_user_title_candidate)
+            });
+        let candidates = SessionTitleCandidates::from_raw(
+            provider_title.as_deref(),
+            first_user_message.as_deref(),
+        );
         let resume_id = header.id.clone();
-        rows.push(record(
+        let mut row = record_with_candidates(
             CLIAgent::Jcode,
             "jcode",
             header.id,
-            title,
+            candidates,
             header.working_dir,
-            host.stat(&path).ok().and_then(|meta| meta.mtime),
+            candidate.mtime,
             vec!["jcode".into(), "--resume".into(), resume_id],
-            Some(path.to_string_lossy().into_owned()),
+            Some(candidate.path.to_string_lossy().into_owned()),
             None,
-        ));
+        );
+        row.updated_at_unix_ms = header
+            .last_active_at
+            .as_deref()
+            .and_then(parse_iso8601_millis)
+            .or_else(|| header.updated_at.as_deref().and_then(parse_iso8601_millis))
+            .or(row.updated_at_unix_ms);
+        rows.push(row);
     }
-    let mut rows = rows;
     rows.sort_by(|a, b| b.updated_at_unix_ms.cmp(&a.updated_at_unix_ms));
-    rows.truncate(JCODE_SESSION_LIMIT);
     DiscoveryOutcome::Complete(rows)
 }
 
@@ -285,9 +278,9 @@ fn jcode_message_text(value: &serde_json::Value) -> Option<String> {
                 .iter()
                 .filter_map(|part| match part {
                     serde_json::Value::String(text) => Some(text.as_str()),
-                    serde_json::Value::Object(object) => object
-                        .get("text")
-                        .and_then(serde_json::Value::as_str),
+                    serde_json::Value::Object(object) => {
+                        object.get("text").and_then(serde_json::Value::as_str)
+                    }
                     _ => None,
                 })
                 .collect::<Vec<_>>()
@@ -335,15 +328,12 @@ mod jcode_title_tests {
     }
 }
 
-#[cfg(not(unix))]
-fn discover_jcode(_host: &dyn Host, _request: &DiscoveryRequest) -> DiscoveryOutcome {
-    DiscoveryOutcome::SourceMissing { source: "jcode harness API requires a Unix socket".into() }
-}
-
 fn discover_codex(host: &dyn Host, request: &DiscoveryRequest) -> DiscoveryOutcome {
     let index = request.roots.codex_index();
     let sessions = request.roots.codex_sessions();
+    let mut index_rows = Vec::new();
     let mut rows = Vec::new();
+    let mut internal_ids = HashSet::new();
     let mut found_source = false;
 
     if host.exists(&index) {
@@ -357,15 +347,27 @@ fn discover_codex(host: &dyn Host, request: &DiscoveryRequest) -> DiscoveryOutco
             Ok(values) => {
                 for value in values {
                     if let Some(metadata) = codex_index_metadata(&value) {
-                        let resolved_title = metadata.resolved_title().map(str::to_owned);
+                        let visible = metadata.is_user_visible();
                         let id = metadata
                             .session_id
+                            .clone()
                             .expect("Codex index parser returned identity");
-                        rows.push(record(
+                        if !visible {
+                            internal_ids.insert(id.clone());
+                        }
+                        let candidates = metadata.title_candidates();
+                        if visible && candidates.resolved().is_none() {
+                            // The Codex index is an identity/activity hint, not
+                            // a complete history source. An empty row would
+                            // otherwise surface as the localized generic title
+                            // when no transcript is available.
+                            continue;
+                        }
+                        index_rows.push(record_with_candidates(
                             CLIAgent::Codex,
                             "codex",
                             id,
-                            resolved_title,
+                            candidates,
                             metadata.cwd,
                             None,
                             vec![],
@@ -398,19 +400,27 @@ fn discover_codex(host: &dyn Host, request: &DiscoveryRequest) -> DiscoveryOutco
                         Err(e) => return failed(&file.path, e),
                     };
                 let metadata = codex_transcript_metadata(&values);
-                let resolved_title = metadata.resolved_title().map(str::to_owned);
-                if let Some(id) = metadata.session_id {
-                    rows.push(record(
-                        CLIAgent::Codex,
-                        "codex",
-                        id,
-                        resolved_title,
-                        metadata.cwd,
-                        file.mtime,
-                        vec![],
-                        Some(file.path.to_string_lossy().into_owned()),
-                        metadata.created_at_unix_ms,
-                    ));
+                let visible = metadata.is_user_visible();
+                if let Some(id) = metadata.session_id.clone() {
+                    if visible {
+                        let candidates = metadata.title_candidates();
+                        rows.push(record_with_candidates(
+                            CLIAgent::Codex,
+                            "codex",
+                            id,
+                            candidates,
+                            metadata.cwd,
+                            file.mtime,
+                            vec![],
+                            Some(file.path.to_string_lossy().into_owned()),
+                            metadata.created_at_unix_ms,
+                        ));
+                    } else {
+                        // A transcript marker is stronger than an index row:
+                        // suppress the same identity from both sources so an
+                        // internal child cannot leak through the index.
+                        internal_ids.insert(id);
+                    }
                 }
             }
         }
@@ -424,6 +434,13 @@ fn discover_codex(host: &dyn Host, request: &DiscoveryRequest) -> DiscoveryOutco
         }
         Err(CollectError::Io(e)) => return failed(&sessions, e),
     }
+
+    rows.extend(
+        index_rows
+            .into_iter()
+            .filter(|row| !internal_ids.contains(&row.key.session_id)),
+    );
+    rows.retain(|row| !internal_ids.contains(&row.key.session_id));
 
     if found_source {
         DiscoveryOutcome::Complete(rows)
@@ -466,13 +483,13 @@ fn discover_claude(host: &dyn Host, request: &DiscoveryRequest) -> DiscoveryOutc
             Err(e) => return failed(&file.path, e),
         };
         let metadata = claude_transcript_metadata(&values);
-        let resolved_title = metadata.resolved_title().map(str::to_owned);
+        let candidates = metadata.title_candidates();
         if let Some(id) = metadata.session_id {
-            rows.push(record(
+            rows.push(record_with_candidates(
                 CLIAgent::Claude,
                 "claude",
                 id,
-                resolved_title,
+                candidates,
                 metadata.cwd,
                 file.mtime,
                 vec![],
@@ -514,7 +531,7 @@ fn discover_omp(host: &dyn Host, request: &DiscoveryRequest) -> DiscoveryOutcome
             Err(error) => return failed(&file.path, error),
         };
         let metadata = omp_transcript_metadata(&values);
-        let resolved_title = metadata.resolved_title().map(str::to_owned);
+        let candidates = metadata.title_candidates();
         let Some(id) = metadata.session_id else {
             continue;
         };
@@ -532,11 +549,11 @@ fn discover_omp(host: &dyn Host, request: &DiscoveryRequest) -> DiscoveryOutcome
                 ),
             );
         }
-        rows.push(record(
+        rows.push(record_with_candidates(
             CLIAgent::Omp,
             "omp",
             id,
-            resolved_title,
+            candidates,
             metadata.cwd,
             file.mtime,
             vec![],
@@ -602,11 +619,12 @@ fn discover_grok(host: &dyn Host, request: &DiscoveryRequest) -> DiscoveryOutcom
                 ),
             );
         }
-        let mut row = record(
+        let candidates = metadata.title_candidates();
+        let mut row = record_with_candidates(
             CLIAgent::Grok,
             "grok",
             id.to_owned(),
-            metadata.resolved_title().map(str::to_owned),
+            candidates,
             metadata.cwd,
             file.mtime,
             vec![],
@@ -661,12 +679,13 @@ fn discover_gemini(host: &dyn Host, request: &DiscoveryRequest) -> DiscoveryOutc
             continue;
         };
         let cwd = gemini_project_root(host, &file.path);
-        let title = gemini_first_user_excerpt(&values);
-        let mut row = record(
+        let first_user = gemini_first_user_excerpt(&values);
+        let candidates = SessionTitleCandidates::from_raw(None, first_user.as_deref());
+        let mut row = record_with_candidates(
             CLIAgent::Gemini,
             "gemini",
             id,
-            title,
+            candidates,
             cwd,
             file.mtime,
             vec![],
@@ -745,16 +764,16 @@ fn discover_generic_jsonl(
             Ok(values) => values,
             Err(error) => return failed(&file.path, error),
         };
-        let Some((session_id, title, cwd)) =
+        let Some((session_id, title_candidates, cwd)) =
             generic_jsonl_metadata(descriptor.id, &file.path, &values)
         else {
             continue;
         };
-        rows.push(record(
+        rows.push(record_with_candidates(
             descriptor.agent,
             descriptor.id.slug(),
             session_id,
-            title,
+            title_candidates,
             cwd,
             file.mtime,
             Vec::new(),
@@ -833,9 +852,10 @@ fn generic_jsonl_metadata(
     provider: ProviderId,
     path: &Path,
     values: &[serde_json::Value],
-) -> Option<(String, Option<String>, Option<String>)> {
+) -> Option<(String, SessionTitleCandidates, Option<String>)> {
     let mut session_id = None;
-    let mut title = None;
+    let mut provider_title = None;
+    let mut first_user_title = None;
     let mut cwd = None;
     for value in values {
         session_id = session_id.or_else(|| {
@@ -854,18 +874,13 @@ fn generic_jsonl_metadata(
                 .into_iter()
                 .find_map(|path| string_at(value, path).map(str::to_owned))
         });
-        title = title.or_else(|| {
-            [
-                &["title"][..],
-                &["data", "title"][..],
-                &["data", "content"][..],
-                &["message", "content"][..],
-                &["message", "text"][..],
-                &["content"][..],
-            ]
-            .into_iter()
-            .find_map(|path| string_at(value, path).and_then(excerpt))
-        });
+        if provider_title.is_none() {
+            provider_title = generic_provider_title(value);
+        }
+        if first_user_title.is_none() {
+            first_user_title = generic_user_message_text(provider, value)
+                .and_then(|text| first_user_title_candidate(&text));
+        }
     }
     if provider == ProviderId::Antigravity && session_id.is_none() {
         session_id = path
@@ -875,7 +890,115 @@ fn generic_jsonl_metadata(
             .and_then(Path::file_name)
             .map(|name| name.to_string_lossy().into_owned());
     }
-    Some((session_id?, title, cwd))
+    let candidates =
+        SessionTitleCandidates::from_raw(provider_title.as_deref(), first_user_title.as_deref());
+    Some((session_id?, candidates, cwd))
+}
+
+fn generic_provider_title(value: &serde_json::Value) -> Option<String> {
+    [
+        &["title"][..],
+        &["data", "title"][..],
+        &["session", "title"][..],
+    ]
+    .into_iter()
+    .find_map(|path| {
+        let text = string_at(value, path)?;
+        let candidate = excerpt(text)?;
+        (!is_absent_session_title(&candidate)).then_some(candidate)
+    })
+}
+
+fn generic_user_message_text(provider: ProviderId, value: &serde_json::Value) -> Option<String> {
+    let role = [
+        &["role"][..],
+        &["data", "role"][..],
+        &["message", "role"][..],
+    ]
+    .into_iter()
+    .find_map(|path| string_at(value, path));
+    let explicit_user_event = role.is_none() && generic_user_event(provider, value);
+    if !role.is_some_and(|role| role.eq_ignore_ascii_case("user")) && !explicit_user_event {
+        return None;
+    }
+    [
+        &["content"][..],
+        &["data", "content"][..],
+        &["message", "content"][..],
+        &["message", "text"][..],
+        &["text"][..],
+        &["data", "text"][..],
+    ]
+    .into_iter()
+    .find_map(|path| string_or_text_at(value, path))
+}
+
+fn generic_user_event(provider: ProviderId, value: &serde_json::Value) -> bool {
+    let kind = string_at(value, &["type"])
+        .or_else(|| string_at(value, &["event"]))
+        .unwrap_or("");
+    match provider {
+        // Copilot's durable event schema calls this `user.message` and does
+        // not duplicate a role field; it is still an explicit user event.
+        ProviderId::Copilot => kind.eq_ignore_ascii_case("user.message"),
+        // Antigravity's transcript uses USER_INPUT plus USER_EXPLICIT source.
+        ProviderId::Antigravity => {
+            kind.eq_ignore_ascii_case("user_input")
+                || string_at(value, &["source"])
+                    .is_some_and(|source| source.eq_ignore_ascii_case("user_explicit"))
+        }
+        _ => false,
+    }
+}
+
+fn string_or_text_at(value: &serde_json::Value, path: &[&str]) -> Option<String> {
+    generic_content_text(value_at(value, path)?)
+}
+
+fn value_at<'a>(value: &'a serde_json::Value, path: &[&str]) -> Option<&'a serde_json::Value> {
+    let mut current = value;
+    for key in path {
+        current = current.get(*key)?;
+    }
+    Some(current)
+}
+
+fn generic_content_text(value: &serde_json::Value) -> Option<String> {
+    match value {
+        serde_json::Value::String(text) => (!text.trim().is_empty()).then(|| text.to_owned()),
+        serde_json::Value::Array(parts) => {
+            let mut texts = Vec::new();
+            for part in parts {
+                match part {
+                    serde_json::Value::String(text) if !text.trim().is_empty() => {
+                        texts.push(text.trim().to_owned());
+                    }
+                    serde_json::Value::Object(object) => {
+                        let kind = object.get("type").and_then(serde_json::Value::as_str);
+                        if kind.is_some_and(|kind| {
+                            !matches!(kind, "text" | "input_text" | "output_text")
+                        }) {
+                            continue;
+                        }
+                        if let Some(text) = object
+                            .get("text")
+                            .and_then(serde_json::Value::as_str)
+                            .filter(|text| !text.trim().is_empty())
+                        {
+                            texts.push(text.trim().to_owned());
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            (!texts.is_empty()).then(|| texts.join("\n"))
+        }
+        serde_json::Value::Object(object) => object
+            .get("text")
+            .or_else(|| object.get("content"))
+            .and_then(generic_content_text),
+        _ => None,
+    }
 }
 
 fn string_at<'a>(value: &'a serde_json::Value, path: &[&str]) -> Option<&'a str> {
@@ -909,6 +1032,31 @@ fn record(
     source_path: Option<String>,
     created_at_unix_ms: Option<u64>,
 ) -> AgentSessionRecord {
+    record_with_candidates(
+        agent,
+        provider,
+        session_id,
+        SessionTitleCandidates::from_raw(title.as_deref(), None),
+        cwd,
+        mtime,
+        launch_argv,
+        source_path,
+        created_at_unix_ms,
+    )
+}
+
+fn record_with_candidates(
+    agent: CLIAgent,
+    provider: &str,
+    session_id: String,
+    title_candidates: SessionTitleCandidates,
+    cwd: Option<String>,
+    mtime: Option<MTime>,
+    launch_argv: Vec<String>,
+    source_path: Option<String>,
+    created_at_unix_ms: Option<u64>,
+) -> AgentSessionRecord {
+    let title = title_candidates.resolved().map(str::to_owned);
     AgentSessionRecord {
         key: AgentSessionKey {
             provider: provider.into(),
@@ -916,6 +1064,7 @@ fn record(
         },
         agent,
         title,
+        title_candidates,
         cwd,
         updated_at_unix_ms: mtime.and_then(mtime_ms),
         launch_argv,
@@ -1281,12 +1430,21 @@ fn collect_files(
 }
 
 fn canonicalize(rows: Vec<AgentSessionRecord>, logical_limit: usize) -> Vec<AgentSessionRecord> {
-    let mut unique = HashMap::new();
+    let mut unique: HashMap<AgentSessionKey, AgentSessionRecord> = HashMap::new();
     for row in rows {
-        let replace = unique.get(&row.key).is_none_or(|old: &AgentSessionRecord| {
-            row.updated_at_unix_ms >= old.updated_at_unix_ms
-        });
-        if replace {
+        if let Some(old) = unique.get_mut(&row.key) {
+            // Merge typed title evidence deterministically while ordinary
+            // metadata follows the newest source row. Capture the evidence
+            // before the freshness winner replaces `old`.
+            let candidates = old.merged_title_evidence_with(&row);
+            if row.updated_at_unix_ms >= old.updated_at_unix_ms {
+                *old = row;
+            }
+            old.set_title_evidence(candidates);
+        } else {
+            let mut row = row;
+            let candidates = row.effective_title_candidates();
+            row.set_title_evidence(candidates);
             unique.insert(row.key.clone(), row);
         }
     }
@@ -1309,6 +1467,86 @@ mod tests {
 
     fn roots(path: &Path) -> AgentStoreRoots {
         AgentStoreRoots::for_home(path.to_path_buf())
+    }
+
+    #[test]
+    fn canonicalize_merges_index_and_transcript_title_evidence() {
+        let key = AgentSessionKey {
+            provider: "codex".into(),
+            session_id: "same".into(),
+        };
+        let newer = AgentSessionRecord {
+            key: key.clone(),
+            agent: CLIAgent::Codex,
+            title: Some("Provider title".into()),
+            title_candidates: SessionTitleCandidates::from_raw(Some("Provider title"), None),
+            cwd: None,
+            updated_at_unix_ms: Some(20),
+            launch_argv: Vec::new(),
+            source_path: None,
+            created_at_unix_ms: None,
+        };
+        let older = AgentSessionRecord {
+            key,
+            agent: CLIAgent::Codex,
+            title: Some("First request".into()),
+            title_candidates: SessionTitleCandidates::from_raw(None, Some("First request")),
+            cwd: None,
+            updated_at_unix_ms: Some(10),
+            launch_argv: Vec::new(),
+            source_path: None,
+            created_at_unix_ms: None,
+        };
+        let rows = canonicalize(vec![newer, older], 10);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(
+            rows[0].title_candidates.provider_title.as_deref(),
+            Some("Provider title")
+        );
+        assert_eq!(
+            rows[0].title_candidates.first_user_title.as_deref(),
+            Some("First request")
+        );
+    }
+
+    #[test]
+    fn canonicalize_keeps_deterministic_provider_title_but_newest_metadata() {
+        let key = AgentSessionKey {
+            provider: "codex".into(),
+            session_id: "same-provider-conflict".into(),
+        };
+        let first = AgentSessionRecord {
+            key: key.clone(),
+            agent: CLIAgent::Codex,
+            title: Some("Provider A".into()),
+            title_candidates: SessionTitleCandidates::from_raw(Some("Provider A"), None),
+            cwd: Some("/first".into()),
+            updated_at_unix_ms: Some(10),
+            launch_argv: Vec::new(),
+            source_path: None,
+            created_at_unix_ms: None,
+        };
+        let newer = AgentSessionRecord {
+            key,
+            agent: CLIAgent::Codex,
+            title: Some("Provider B".into()),
+            title_candidates: SessionTitleCandidates::from_raw(Some("Provider B"), None),
+            cwd: Some("/newer".into()),
+            updated_at_unix_ms: Some(20),
+            launch_argv: Vec::new(),
+            source_path: None,
+            created_at_unix_ms: None,
+        };
+
+        let rows = canonicalize(vec![first, newer], 10);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].updated_at_unix_ms, Some(20));
+        assert_eq!(rows[0].cwd.as_deref(), Some("/newer"));
+        assert_eq!(
+            rows[0].title_candidates.provider_title.as_deref(),
+            Some("Provider A")
+        );
+        assert_eq!(rows[0].title.as_deref(), Some("Provider A"));
     }
 
     #[test]
@@ -1402,10 +1640,112 @@ mod tests {
         assert_eq!(ids.len(), 2);
         assert!(ids.contains(&"main"));
         assert!(ids.contains(&"mixed"));
-        assert!(!ids.iter().any(|id| ["reminder-only", "child", "debug", "journal"].contains(id)));
+        assert!(
+            !ids.iter()
+                .any(|id| ["reminder-only", "child", "debug", "journal"].contains(id))
+        );
         assert_eq!(
-            rows.iter().find(|row| row.key.session_id == "mixed").and_then(|row| row.title.as_deref()),
+            rows.iter()
+                .find(|row| row.key.session_id == "mixed")
+                .and_then(|row| row.title.as_deref()),
             Some("Keep this session")
+        );
+    }
+
+    #[test]
+    fn jcode_complete_document_mapping_keeps_large_sessions_resumable() {
+        let temp = tempfile::tempdir().unwrap();
+        let roots = roots(temp.path());
+        let sessions = roots.home.join(".jcode/sessions");
+        fs::create_dir_all(&sessions).unwrap();
+        let oversized_tail = "x".repeat(DEFAULT_HEAD_BYTES as usize + 1_024);
+        fs::write(
+            sessions.join("large.json"),
+            serde_json::to_vec(&serde_json::json!({
+                "id": "large-main",
+                "short_name": "macaque",
+                "working_dir": "/work/large",
+                "last_active_at": "2026-08-06T06:04:28.862Z",
+                "updated_at": "2026-08-07T12:00:00.000Z",
+                "messages": [
+                    {"role":"user","display_role":"system","content":"<system-reminder>bootstrap</system-reminder>"},
+                    {"role":"user","content":"agentty"},
+                    {"role":"assistant","content": oversized_tail}
+                ]
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+
+        let DiscoveryOutcome::Complete(rows) = discover(
+            &*LocalHost::new(),
+            &DiscoveryRequest {
+                providers: vec![ProviderId::Jcode],
+                ..DiscoveryRequest::standard(roots)
+            },
+        ) else {
+            panic!("a complete large Jcode document should be discoverable");
+        };
+        assert_eq!(rows.len(), 1);
+        let row = &rows[0];
+        assert_eq!(row.key.session_id, "large-main");
+        assert_eq!(
+            row.title.as_deref(),
+            Some("macaque"),
+            "a real placeholder-shaped User turn keeps the row but yields title fallback"
+        );
+        assert_eq!(row.cwd.as_deref(), Some("/work/large"));
+        assert_eq!(row.updated_at_unix_ms, Some(1_785_996_268_862));
+        assert_eq!(
+            row.launch_argv,
+            ["jcode", "--resume", "large-main"],
+            "every durable Jcode row owns one typed resume invocation"
+        );
+    }
+
+    #[test]
+    fn jcode_newest_candidate_limit_uses_file_mtime_before_card_timestamps() {
+        let temp = tempfile::tempdir().unwrap();
+        let roots = roots(temp.path());
+        let sessions = roots.home.join(".jcode/sessions");
+        fs::create_dir_all(&sessions).unwrap();
+        for index in 0..=JCODE_SESSION_LIMIT {
+            let path = sessions.join(format!("session-{index:02}.json"));
+            fs::write(
+                &path,
+                serde_json::to_vec(&serde_json::json!({
+                    "id": format!("session-{index:02}"),
+                    "short_name": format!("short-{index:02}"),
+                    "last_active_at": if index == 0 {
+                        "2099-01-01T00:00:00.000Z"
+                    } else {
+                        "2026-08-06T06:04:28.862Z"
+                    },
+                    "messages": [{"role":"user","content": format!("request {index}")}]
+                }))
+                .unwrap(),
+            )
+            .unwrap();
+            filetime::set_file_mtime(
+                &path,
+                filetime::FileTime::from_unix_time(1_000 + index as i64, 0),
+            )
+            .unwrap();
+        }
+
+        let DiscoveryOutcome::Complete(rows) = discover(
+            &*LocalHost::new(),
+            &DiscoveryRequest {
+                providers: vec![ProviderId::Jcode],
+                ..DiscoveryRequest::standard(roots)
+            },
+        ) else {
+            panic!("Jcode candidate selection should complete");
+        };
+        assert_eq!(rows.len(), JCODE_SESSION_LIMIT);
+        assert!(
+            rows.iter().all(|row| row.key.session_id != "session-00"),
+            "the oldest file cannot displace a newer candidate using an embedded timestamp"
         );
     }
 
@@ -1718,6 +2058,155 @@ mod tests {
         );
     }
 
+    #[test]
+    fn codex_subagent_transcript_is_not_a_user_history_row() {
+        let temp = tempfile::tempdir().unwrap();
+        let roots = roots(temp.path());
+        fs::create_dir_all(roots.codex_sessions()).unwrap();
+        fs::write(
+            roots.codex_sessions().join("child.jsonl"),
+            r###"{"type":"session_meta","payload":{"id":"01a0065b-122b-7e13-bc86-de099e0945ce","thread_source":"subagent","parent_thread_id":"01a005eb-5fc3-7781-9458-2f7625d0d729"}}
+{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<recommended_plugins>\n..."}]}}
+"###,
+        )
+        .unwrap();
+        fs::write(
+            roots.codex_sessions().join("root.jsonl"),
+            r###"{"type":"session_meta","payload":{"id":"01a000ec-0388-74e0-8bd5-73ad68b9e321","thread_source":"user"}}
+{"type":"event_msg","payload":{"type":"user_message","message":"真实的顶层请求"}}
+"###,
+        )
+        .unwrap();
+
+        let DiscoveryOutcome::Complete(rows) = discover(
+            &*LocalHost::new(),
+            &DiscoveryRequest {
+                providers: vec![ProviderId::Codex],
+                ..DiscoveryRequest::standard(roots)
+            },
+        ) else {
+            panic!("Codex visibility filtering should complete");
+        };
+        assert_eq!(rows.len(), 1);
+        assert_eq!(
+            rows[0].key.session_id,
+            "01a000ec-0388-74e0-8bd5-73ad68b9e321"
+        );
+        assert_eq!(rows[0].title.as_deref(), Some("真实的顶层请求"));
+    }
+
+    #[test]
+    fn codex_top_level_user_transcript_remains_discoverable() {
+        let temp = tempfile::tempdir().unwrap();
+        let roots = roots(temp.path());
+        fs::create_dir_all(roots.codex_sessions()).unwrap();
+        fs::write(
+            roots.codex_sessions().join("root.jsonl"),
+            r###"{"type":"session_meta","payload":{"id":"01a000ec-0388-74e0-8bd5-73ad68b9e321","thread_source":"user"}}
+{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"# AGENTS.md instructions\n..."}]}}
+{"type":"event_msg","payload":{"type":"user_message","message":"继续处理 Codex 发现"}}
+"###,
+        )
+        .unwrap();
+
+        let DiscoveryOutcome::Complete(rows) = discover(
+            &*LocalHost::new(),
+            &DiscoveryRequest {
+                providers: vec![ProviderId::Codex],
+                ..DiscoveryRequest::standard(roots)
+            },
+        ) else {
+            panic!("top-level Codex transcript should complete");
+        };
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].title.as_deref(), Some("继续处理 Codex 发现"));
+    }
+
+    #[test]
+    fn codex_injected_context_is_not_a_first_user_title() {
+        let temp = tempfile::tempdir().unwrap();
+        let roots = roots(temp.path());
+        fs::create_dir_all(roots.codex_sessions()).unwrap();
+        fs::write(
+            roots.codex_sessions().join("injected-only.jsonl"),
+            r###"{"type":"session_meta","payload":{"id":"019fa76a-6276-7b03-b302-c640686b2033","thread_source":"user"}}
+{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<recommended_plugins>\n..."},{"type":"input_text","text":"# AGENTS.md instructions\n..."},{"type":"input_text","text":"<environment_context>\n..."},{"type":"input_text","text":"<codex_internal_context source=goal>\n..."}]}}
+"###,
+        )
+        .unwrap();
+
+        let DiscoveryOutcome::Complete(rows) = discover(
+            &*LocalHost::new(),
+            &DiscoveryRequest {
+                providers: vec![ProviderId::Codex],
+                ..DiscoveryRequest::standard(roots)
+            },
+        ) else {
+            panic!("injected-only Codex transcript should complete with no rows");
+        };
+        assert!(
+            rows.is_empty(),
+            "harness context must not become a history row"
+        );
+    }
+
+    #[test]
+    fn codex_index_only_empty_record_is_not_published_as_generic_session() {
+        let temp = tempfile::tempdir().unwrap();
+        let roots = roots(temp.path());
+        let index = roots.codex_index();
+        fs::create_dir_all(index.parent().unwrap()).unwrap();
+        fs::write(
+            &index,
+            r#"{"id":"019fa76a-6276-7b03-b302-c640686b2033","title":""}
+"#,
+        )
+        .unwrap();
+
+        let DiscoveryOutcome::Complete(rows) = discover(
+            &*LocalHost::new(),
+            &DiscoveryRequest {
+                providers: vec![ProviderId::Codex],
+                ..DiscoveryRequest::standard(roots)
+            },
+        ) else {
+            panic!("an empty Codex index should complete without publishing a row");
+        };
+        assert!(
+            rows.is_empty(),
+            "index-only empty metadata must not fall through to the generic Navigator title"
+        );
+    }
+
+    #[test]
+    fn generic_jsonl_requires_user_role_for_first_title() {
+        let path = Path::new("/tmp/generic-session.jsonl");
+        let values = vec![
+            serde_json::json!({
+                "sessionId": "generic-role",
+                "role": "assistant",
+                "content": "assistant output must not name the session"
+            }),
+            serde_json::json!({
+                "role": "system",
+                "content": "system setup must not name the session"
+            }),
+            serde_json::json!({
+                "role": "user",
+                "content": "the real generic request"
+            }),
+        ];
+        let (session_id, candidates, cwd) =
+            generic_jsonl_metadata(ProviderId::Pi, path, &values).unwrap();
+        assert_eq!(session_id, "generic-role");
+        assert_eq!(cwd, None);
+        assert_eq!(candidates.provider_title, None);
+        assert_eq!(
+            candidates.first_user_title.as_deref(),
+            Some("the real generic request")
+        );
+    }
+
     /// End-to-end proof against a real machine's agent stores. Opt-in via
     /// AGENTTY_E2E_HOME so CI stays hermetic; the test asserts the discovery
     /// pipeline (roots -> scan -> parse -> canonicalize) produces rows from
@@ -1730,6 +2219,7 @@ mod tests {
             return;
         };
         let roots = AgentStoreRoots::for_home(PathBuf::from(home));
+        let jcode_roots = roots.clone();
         let outcome = discover(&*LocalHost::new(), &DiscoveryRequest::standard(roots));
         match &outcome {
             DiscoveryOutcome::Complete(rows) => {
@@ -1757,6 +2247,26 @@ mod tests {
                         rows.iter().any(|row| row.key.provider == "omp"),
                         "real Omp store exists but discovery produced no Omp rows"
                     );
+                }
+                if jcode_roots.jcode_sessions().is_dir() {
+                    let jcode = discover(
+                        &*LocalHost::new(),
+                        &DiscoveryRequest {
+                            providers: vec![ProviderId::Jcode],
+                            ..DiscoveryRequest::standard(jcode_roots)
+                        },
+                    );
+                    let DiscoveryOutcome::Complete(jcode_rows) = jcode else {
+                        panic!("real Jcode store must complete independently: {jcode:?}");
+                    };
+                    assert!(
+                        !jcode_rows.is_empty(),
+                        "real Jcode store exists but its documented scanner produced no rows"
+                    );
+                    assert!(jcode_rows.iter().all(|row| {
+                        row.launch_argv == ["jcode", "--resume", row.key.session_id.as_str()]
+                    }));
+                    eprintln!("e2e Jcode discovery rows: {}", jcode_rows.len());
                 }
             }
             DiscoveryOutcome::SourceMissing { source } => {
@@ -1905,7 +2415,8 @@ mod tests {
         let source = roots.codex_sessions().join("custom.jsonl");
         fs::write(
             &source,
-            r#"{"type":"session_meta","payload":{"id":"019fa76a-6276-7b03-b302-c640686b2033","cwd":"/custom"}}
+            r#"{"type":"session_meta","payload":{"id":"019fa76a-6276-7b03-b302-c640686b2033","cwd":"/custom","thread_source":"user"}}
+{"type":"event_msg","payload":{"type":"user_message","message":"Custom root session"}}
 "#,
         )
         .unwrap();
@@ -1927,6 +2438,7 @@ mod tests {
                 },
                 agent: CLIAgent::Codex,
                 title: None,
+                title_candidates: Default::default(),
                 cwd: None,
                 updated_at_unix_ms: None,
                 launch_argv: Vec::new(),

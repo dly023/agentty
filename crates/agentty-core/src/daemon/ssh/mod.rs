@@ -64,6 +64,66 @@ impl ConnectionKey {
 
 type ConnSlot = Arc<tokio::sync::Mutex<Weak<SshConnection>>>;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RemoteLinkAttemptPhase {
+    Setup,
+    OpenSessionChannel,
+    Exec,
+}
+
+#[derive(Debug)]
+struct RemoteLinkAttemptError {
+    phase: RemoteLinkAttemptPhase,
+    source: anyhow::Error,
+}
+
+impl RemoteLinkAttemptError {
+    fn new(phase: RemoteLinkAttemptPhase, source: impl Into<anyhow::Error>) -> Self {
+        Self {
+            phase,
+            source: source.into(),
+        }
+    }
+}
+
+impl std::fmt::Display for RemoteLinkAttemptError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.source.fmt(f)
+    }
+}
+
+impl std::error::Error for RemoteLinkAttemptError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        Some(self.source.as_ref())
+    }
+}
+
+async fn retry_reused_remote_link_once<C, T, Open, OpenFuture, Attempt, AttemptFuture, Retire>(
+    mut open: Open,
+    mut attempt: Attempt,
+    mut retire: Retire,
+) -> anyhow::Result<(T, C)>
+where
+    C: Clone,
+    Open: FnMut() -> OpenFuture,
+    OpenFuture: Future<Output = anyhow::Result<(C, bool)>>,
+    Attempt: FnMut(C) -> AttemptFuture,
+    AttemptFuture: Future<Output = Result<T, RemoteLinkAttemptError>>,
+    Retire: FnMut(&C, &RemoteLinkAttemptError),
+{
+    let (conn, reused) = open().await?;
+    match attempt(conn.clone()).await {
+        Ok(link) => Ok((link, conn)),
+        Err(first) if reused => {
+            retire(&conn, &first);
+            let (fresh, _) = open().await?;
+            let link = attempt(fresh.clone()).await?;
+            Ok((link, fresh))
+        }
+        Err(first) => Err(first.into()),
+    }
+}
+
 pub struct SshManager {
     runtime: tokio::runtime::Runtime,
     conns: Mutex<HashMap<ConnectionKey, ConnSlot>>,
@@ -279,33 +339,36 @@ impl SshManager {
         setup: &RouteSetup,
         server_command: Option<&str>,
     ) -> anyhow::Result<(RemoteLink, Arc<SshConnection>)> {
-        let (mut conn, reused) = self.open_connection(spec, &setup.broker).await?;
-
-        let installed = {
-            let install_conn = conn.clone();
-            setup
-                .blocking(move || crate::daemon::install::ensure_remote_server(&install_conn))
-                .await?
-        };
-        let installed = match installed {
-            Ok(path) => path,
-            Err(first_error) if reused => {
+        retry_reused_remote_link_once(
+            || self.open_connection(spec, &setup.broker),
+            |conn| self.open_remote_link_on_connection(conn, setup, server_command),
+            |conn, first_error| {
                 log::info!(
-                    "reused ssh connection to {}:{} failed remote setup ({first_error}); reconnecting",
+                    "reused ssh connection to {}:{} failed the first {:?} operation \
+                     ({first_error}); evicting it and retrying once on a fresh connection",
                     spec.host,
-                    spec.port
+                    spec.port,
+                    first_error.phase,
                 );
                 conn.mark_dead();
                 self.evict_connection(conn.key());
-                let (fresh, _) = self.open_connection(spec, &setup.broker).await?;
-                conn = fresh;
-                let install_conn = conn.clone();
-                setup
-                    .blocking(move || crate::daemon::install::ensure_remote_server(&install_conn))
-                    .await??
-            }
-            Err(first_error) => return Err(first_error.into()),
-        };
+            },
+        )
+        .await
+    }
+
+    async fn open_remote_link_on_connection(
+        &self,
+        conn: Arc<SshConnection>,
+        setup: &RouteSetup,
+        server_command: Option<&str>,
+    ) -> Result<RemoteLink, RemoteLinkAttemptError> {
+        let install_conn = conn.clone();
+        let installed = setup
+            .blocking(move || crate::daemon::install::ensure_remote_server(&install_conn))
+            .await
+            .map_err(|error| RemoteLinkAttemptError::new(RemoteLinkAttemptPhase::Setup, error))?
+            .map_err(|error| RemoteLinkAttemptError::new(RemoteLinkAttemptPhase::Setup, error))?;
 
         let base = match server_command {
             Some(explicit) => explicit.to_string(),
@@ -332,7 +395,7 @@ impl SshManager {
 
         if let RemoteEntry::StreamLocal { socket } = &entry {
             match conn.open_direct_streamlocal(socket).await {
-                Ok(channel) => return Ok((RemoteLink::stream_local(channel), conn)),
+                Ok(channel) => return Ok(RemoteLink::stream_local(channel)),
                 Err(e) => {
                     log::info!(
                         "ssh {:?}: direct-streamlocal to {socket} refused ({e}); \
@@ -345,15 +408,22 @@ impl SshManager {
             }
         }
 
-        let channel = conn
-            .open_session_channel()
-            .await
-            .map_err(|e| anyhow::anyhow!("open remote workspace channel failed: {e}"))?;
+        let channel = conn.open_session_channel().await.map_err(|error| {
+            RemoteLinkAttemptError::new(
+                RemoteLinkAttemptPhase::OpenSessionChannel,
+                anyhow::anyhow!("open remote workspace channel failed: {error}"),
+            )
+        })?;
         channel
             .exec(false, command.as_bytes())
             .await
-            .map_err(|e| anyhow::anyhow!("exec `{command}` on the remote failed: {e}"))?;
-        Ok((RemoteLink::session_exec(channel), conn))
+            .map_err(|error| {
+                RemoteLinkAttemptError::new(
+                    RemoteLinkAttemptPhase::Exec,
+                    anyhow::anyhow!("exec `{command}` on the remote failed: {error}"),
+                )
+            })?;
+        Ok(RemoteLink::session_exec(channel))
     }
 
     pub async fn restart_remote_server(
@@ -745,6 +815,116 @@ mod tests {
             "a link whose slot is momentarily held is busy, not down — calling it \
              down makes `agentty -m <machine>` refuse to route over a live connection"
         );
+    }
+
+    fn run_reused_retry_scenario(
+        first_failure: Option<RemoteLinkAttemptPhase>,
+        fresh_failure: Option<RemoteLinkAttemptPhase>,
+    ) -> (anyhow::Result<(u8, u8)>, Vec<u8>, Vec<u8>, usize) {
+        use std::collections::VecDeque;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .expect("build retry test runtime");
+        let next_connection = Arc::new(AtomicUsize::new(1));
+        let opened = Arc::new(Mutex::new(Vec::new()));
+        let retired = Arc::new(Mutex::new(Vec::new()));
+        let failures = Arc::new(Mutex::new(VecDeque::from([first_failure, fresh_failure])));
+        let published = Arc::new(AtomicUsize::new(0));
+
+        let result = runtime.block_on(retry_reused_remote_link_once(
+            {
+                let next_connection = next_connection.clone();
+                let opened = opened.clone();
+                move || {
+                    let id = next_connection.fetch_add(1, Ordering::SeqCst) as u8;
+                    opened.lock().unwrap().push(id);
+                    async move { Ok::<_, anyhow::Error>((id, id == 1)) }
+                }
+            },
+            {
+                let failures = failures.clone();
+                let published = published.clone();
+                move |connection| {
+                    let failure = failures.lock().unwrap().pop_front().flatten();
+                    let published = published.clone();
+                    async move {
+                        match failure {
+                            Some(phase) => Err(RemoteLinkAttemptError::new(
+                                phase,
+                                anyhow::anyhow!("scripted {phase:?} failure on {connection}"),
+                            )),
+                            None => {
+                                published.fetch_add(1, Ordering::SeqCst);
+                                Ok(connection)
+                            }
+                        }
+                    }
+                }
+            },
+            {
+                let retired = retired.clone();
+                move |connection, _| retired.lock().unwrap().push(*connection)
+            },
+        ));
+
+        let opened = opened.lock().unwrap().clone();
+        let retired = retired.lock().unwrap().clone();
+        let published = published.load(Ordering::SeqCst);
+        (result, opened, retired, published)
+    }
+
+    #[test]
+    fn reused_setup_failure_evicts_and_retries_once_on_a_fresh_connection() {
+        let (result, opened, retired, published) =
+            run_reused_retry_scenario(Some(RemoteLinkAttemptPhase::Setup), None);
+        assert_eq!(result.unwrap(), (2, 2));
+        assert_eq!(opened, vec![1, 2]);
+        assert_eq!(retired, vec![1]);
+        assert_eq!(published, 1);
+    }
+
+    #[test]
+    fn reused_open_session_channel_failure_retries_once_on_a_fresh_connection() {
+        let (result, opened, retired, published) =
+            run_reused_retry_scenario(Some(RemoteLinkAttemptPhase::OpenSessionChannel), None);
+        assert_eq!(result.unwrap(), (2, 2));
+        assert_eq!(opened, vec![1, 2]);
+        assert_eq!(retired, vec![1]);
+        assert_eq!(published, 1);
+    }
+
+    #[test]
+    fn reused_first_exec_failure_retries_once_on_a_fresh_connection() {
+        let (result, opened, retired, published) =
+            run_reused_retry_scenario(Some(RemoteLinkAttemptPhase::Exec), None);
+        assert_eq!(result.unwrap(), (2, 2));
+        assert_eq!(opened, vec![1, 2]);
+        assert_eq!(retired, vec![1]);
+        assert_eq!(published, 1);
+    }
+
+    #[test]
+    fn fresh_attempt_failure_is_returned_without_a_third_connection() {
+        let (result, opened, retired, published) = run_reused_retry_scenario(
+            Some(RemoteLinkAttemptPhase::OpenSessionChannel),
+            Some(RemoteLinkAttemptPhase::Exec),
+        );
+        assert!(result.is_err());
+        assert_eq!(opened, vec![1, 2], "fresh failure must not loop");
+        assert_eq!(retired, vec![1]);
+        assert_eq!(published, 0);
+    }
+
+    #[test]
+    fn failed_reused_and_fresh_attempts_never_publish_a_remote_link() {
+        let (result, _, _, published) = run_reused_retry_scenario(
+            Some(RemoteLinkAttemptPhase::Exec),
+            Some(RemoteLinkAttemptPhase::OpenSessionChannel),
+        );
+        assert!(result.is_err());
+        assert_eq!(published, 0);
     }
 
     #[test]

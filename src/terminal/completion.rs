@@ -3,6 +3,7 @@ use std::path::{Path, PathBuf};
 
 use super::signature::{self, Arg, CmdNode, Signature};
 
+#[derive(Debug)]
 struct WordCand {
     text: String,
     kind: CandidateKind,
@@ -46,6 +47,14 @@ impl Candidate {
     }
 }
 
+/// Identifies the environment that owns completion's filesystem and command
+/// sources. Remote panes must never inherit the GUI process' PATH.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompletionAuthority {
+    Local,
+    Remote,
+}
+
 #[derive(Debug)]
 pub struct Completion {
     pub candidates: Vec<Candidate>,
@@ -82,6 +91,19 @@ fn current_command(chars: &[char], word_start: usize) -> Option<String> {
 }
 
 pub fn complete(line: &str, cursor: usize, cwd: Option<&Path>) -> Option<Completion> {
+    complete_with_authority(line, cursor, cwd, CompletionAuthority::Local)
+}
+
+pub fn complete_with_authority(
+    line: &str,
+    cursor: usize,
+    cwd: Option<&Path>,
+    authority: CompletionAuthority,
+) -> Option<Completion> {
+    let cwd = match authority {
+        CompletionAuthority::Local => cwd,
+        CompletionAuthority::Remote => None,
+    };
     let chars: Vec<char> = line.chars().collect();
     let cursor = cursor.min(chars.len());
 
@@ -93,13 +115,17 @@ pub fn complete(line: &str, cursor: usize, cwd: Option<&Path>) -> Option<Complet
 
     let is_command = chars[..word_start].iter().all(|c| c.is_whitespace());
     let (word_cands, pending) = if is_command && !word.contains('/') {
-        (complete_command(&word), Vec::new())
+        (complete_command(&word, authority), Vec::new())
     } else {
         match complete_signature(&chars, word_start, &word, cwd) {
             Some(sig) => (sig.cands, sig.pending),
-            None => match cwd {
-                None => (Vec::new(), Vec::new()),
-                Some(cwd) => {
+            None => match (authority, cwd) {
+                // A remote cwd is a target-host path. It is completed by the
+                // Host/SFTP source, never by this local filesystem walker.
+                (CompletionAuthority::Remote, _) | (CompletionAuthority::Local, None) => {
+                    (Vec::new(), Vec::new())
+                }
+                (CompletionAuthority::Local, Some(cwd)) => {
                     let dirs_only = current_command(&chars, word_start)
                         .is_some_and(|c| DIR_ONLY_COMMANDS.contains(&c.as_str()));
                     (complete_path(&word, cwd, dirs_only), Vec::new())
@@ -129,32 +155,51 @@ pub fn complete(line: &str, cursor: usize, cwd: Option<&Path>) -> Option<Complet
     }
 }
 
-fn complete_command(word: &str) -> Vec<WordCand> {
+fn complete_command(word: &str, authority: CompletionAuthority) -> Vec<WordCand> {
     if word.is_empty() {
         return Vec::new();
     }
+    let paths = match authority {
+        CompletionAuthority::Local => std::env::var_os("PATH")
+            .map(|path| std::env::split_paths(&path).collect::<Vec<_>>())
+            .unwrap_or_default(),
+        CompletionAuthority::Remote => Vec::new(),
+    };
+    complete_command_from_paths(word, authority, &paths)
+}
+
+fn complete_command_from_paths(
+    word: &str,
+    authority: CompletionAuthority,
+    paths: &[PathBuf],
+) -> Vec<WordCand> {
     let mut set = BTreeSet::new();
     for b in BUILTINS {
         if b.starts_with(word) {
             set.insert((*b).to_string());
         }
     }
-    if let Some(path) = std::env::var_os("PATH") {
-        for dir in std::env::split_paths(&path) {
-            let Ok(rd) = std::fs::read_dir(&dir) else {
-                continue;
-            };
-            for entry in rd.flatten() {
-                let name = entry.file_name().to_string_lossy().into_owned();
-                if name.starts_with(word) {
-                    set.insert(name);
-                    if set.len() >= MAX_CANDIDATES {
-                        break;
-                    }
+    if authority == CompletionAuthority::Remote {
+        return command_words(set);
+    }
+    for dir in paths {
+        let Ok(rd) = std::fs::read_dir(dir) else {
+            continue;
+        };
+        for entry in rd.flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if name.starts_with(word) {
+                set.insert(name);
+                if set.len() >= MAX_CANDIDATES {
+                    break;
                 }
             }
         }
     }
+    command_words(set)
+}
+
+fn command_words(set: BTreeSet<String>) -> Vec<WordCand> {
     let mut out: Vec<String> = set.into_iter().take(MAX_CANDIDATES).collect();
     sort_by_closeness(&mut out);
     out.into_iter()
@@ -964,6 +1009,30 @@ mod tests {
 
         let c = complete("ech", 3, None).expect("command completion needs no cwd");
         assert!(c.candidates.iter().any(|c| c.text == "echo"));
+    }
+
+    #[test]
+    fn remote_completion_never_enumerates_gui_path() {
+        let dir = temp_tree("remote-path-command", &[("agentty-local-only", false)]);
+        let paths = vec![dir];
+
+        let local =
+            complete_command_from_paths("agentty-local", CompletionAuthority::Local, &paths);
+        assert!(
+            local
+                .iter()
+                .any(|candidate| candidate.text == "agentty-local-only"),
+            "local authority should enumerate its PATH: {local:?}"
+        );
+
+        let remote =
+            complete_command_from_paths("agentty-local", CompletionAuthority::Remote, &paths);
+        assert!(
+            remote
+                .iter()
+                .all(|candidate| candidate.text != "agentty-local-only"),
+            "remote authority must ignore GUI PATH entries: {remote:?}"
+        );
     }
 
     #[test]

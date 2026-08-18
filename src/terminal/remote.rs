@@ -658,10 +658,11 @@ impl RemoteTerminal {
                         match msg {
                             DaemonMsg::Size(ws) => {
                                 flush_batch!();
-                                term.lock().resize(TermSize::new(
-                                    ws.cols as usize,
-                                    ws.rows as usize,
-                                ));
+                                let mut term = term.lock();
+                                Self::resize_term_preserving_viewport(
+                                    &mut *term,
+                                    TermSize::new(ws.cols as usize, ws.rows as usize),
+                                );
                                 proxy.send_event(AlacEvent::Wakeup);
                             }
                             DaemonMsg::Snapshot(bytes) => {
@@ -920,6 +921,42 @@ impl RemoteTerminal {
             )
     }
 
+    /// Resize a terminal without turning a geometry change into an implicit
+    /// user action. `Term::resize` may reflow rows and, when columns change,
+    /// deliberately clears its selection; a split must not inherit either side
+    /// effect. Both the local request path and the daemon's echoed `Size`
+    /// frame call this one boundary.
+    fn resize_term_preserving_viewport(term: &mut Term<EventProxy>, size: TermSize) {
+        use alacritty_terminal::grid::{Dimensions as _, Scroll};
+
+        let before_offset = term.grid().display_offset();
+        let before_selection = term.selection.clone();
+        term.resize(size);
+
+        // Reflow can move the viewport or clamp the available history. Preserve
+        // the user's absolute offset where possible, otherwise fail closed at
+        // the nearest valid history boundary (never jump to an arbitrary bottom).
+        let current_offset = term.grid().display_offset();
+        let target_offset = before_offset.min(term.grid().history_size());
+        if current_offset != target_offset {
+            let delta = if target_offset >= current_offset {
+                (target_offset - current_offset).min(i32::MAX as usize) as i32
+            } else {
+                -((current_offset - target_offset).min(i32::MAX as usize) as i32)
+            };
+            term.scroll_display(Scroll::Delta(delta));
+        }
+
+        // `Selection::to_range` clamps columns/lines against the new grid.
+        // Keep a valid selection (including one whose columns were reflowed),
+        // but drop a range that no longer exists after history truncation.
+        if let Some(selection) = before_selection
+            && selection.to_range(term).is_some()
+        {
+            term.selection = Some(selection);
+        }
+    }
+
     pub fn resize(&mut self, size: TermSize, cell_w: u16, cell_h: u16) {
         let echoed = self.resize_echoed();
         // The cell size has to be part of the early-out, not just cols/rows: it
@@ -939,7 +976,8 @@ impl RemoteTerminal {
         self.size = size;
         self.synced_cell = cell;
         if !echoed {
-            self.term.lock().resize(size);
+            let mut term = self.term.lock();
+            Self::resize_term_preserving_viewport(&mut *term, size);
         }
 
         let win = win_size(size, cell_w, cell_h);
@@ -2804,6 +2842,78 @@ mod tests {
     }
 
     #[test]
+    fn resize_echo_preserves_scrollback_viewport_and_selection() {
+        crate::core::config::pin_test_config_dir();
+        use alacritty_terminal::grid::{Dimensions as _, Scroll};
+        use alacritty_terminal::index::{Column, Line, Point, Side};
+        use alacritty_terminal::selection::{Selection, SelectionType};
+        use alacritty_terminal::vte::ansi::Processor;
+
+        let (client_side, mut daemon_side) = UnixStream::pair().unwrap();
+        let mut term = RemoteTerminal::from_stream(client_side, TermSize::new(80, 24)).unwrap();
+        {
+            let mut parser: Processor = Default::default();
+            let mut grid = term.term.lock();
+            let line = b"0123456789012345678901234567890123456789\r\n";
+            parser.advance(&mut *grid, &line.repeat(60));
+            grid.scroll_display(Scroll::Delta(10));
+            let mut selection = Selection::new(
+                SelectionType::Simple,
+                Point::new(Line(-10), Column(1)),
+                Side::Left,
+            );
+            selection.update(Point::new(Line(-9), Column(12)), Side::Right);
+            grid.selection = Some(selection);
+        }
+        let (before_offset, before_selection) = {
+            let grid = term.term.lock();
+            (grid.grid().display_offset(), grid.selection.clone())
+        };
+        assert_eq!(before_offset, 10);
+        assert!(before_selection.is_some());
+
+        term.force_resize_echo = true;
+        term.resize(TermSize::new(120, 30), 8, 17);
+        assert!(matches!(
+            ClientMsg::read(&mut daemon_side).unwrap(),
+            ClientMsg::Resize(ws) if ws.cols == 120 && ws.rows == 30
+        ));
+        DaemonMsg::Size(WinSize {
+            cols: 120,
+            rows: 30,
+            cell_w: 8,
+            cell_h: 17,
+        })
+        .encode(&mut daemon_side)
+        .unwrap();
+        daemon_side.flush().unwrap();
+
+        let mut after = None;
+        for _ in 0..200 {
+            let snapshot = {
+                let grid = term.term.lock();
+                (
+                    grid.columns(),
+                    grid.screen_lines(),
+                    grid.grid().display_offset(),
+                    grid.selection.clone(),
+                )
+            };
+            if snapshot.0 == 120 && snapshot.1 == 30 {
+                after = Some((snapshot.2, snapshot.3));
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        let (after_offset, after_selection) = after.expect("echoed size did not reflow the grid");
+        assert_eq!(
+            (after_offset, after_selection),
+            (before_offset, before_selection),
+            "daemon Size must preserve the old pane viewport and selection too"
+        );
+    }
+
+    #[test]
     fn live_size_frame_reflows_without_waiting_for_snapshot() {
         crate::core::config::pin_test_config_dir();
         use alacritty_terminal::grid::Dimensions as _;
@@ -2920,6 +3030,8 @@ mod tests {
     #[test]
     fn agent_session_follows_daemon_status_reports() {
         use crate::core::cli_agent::{AgentSessionState, AgentStatus};
+
+        crate::core::config::pin_test_config_dir();
 
         let (client_side, mut daemon_side) = UnixStream::pair().unwrap();
         let term = RemoteTerminal::from_stream(client_side, TermSize::new(80, 24)).unwrap();

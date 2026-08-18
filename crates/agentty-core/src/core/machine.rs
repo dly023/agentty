@@ -288,6 +288,55 @@ pub struct AgentFacts {
     pub launch_argv: Option<Vec<String>>,
     #[serde(default)]
     pub status: Option<crate::core::cli_agent::AgentStatus>,
+    /// Provider-authored (or legacy historical) title evidence carried by a
+    /// pane's durable binding.  This is deliberately separate from the
+    /// write-once first-user excerpt below so a resumed prompt cannot be
+    /// mistaken for the historical session name.  The field is additive:
+    /// older machine files/helpers omit it and deserialize as `None`.
+    #[serde(default)]
+    pub provider_title: Option<String>,
+    /// Once-only first real AgentPrompt excerpt projected by the client.
+    /// Older machine files/helpers omit this field and deserialize as `None`.
+    #[serde(default)]
+    pub first_user_title: Option<String>,
+}
+
+/// Stable identity precondition for a typed provider-title migration.
+///
+/// A provider title is historical evidence, not a new prompt.  The request
+/// therefore carries the identity observed by the client which discovered
+/// it.  The machine authority compares every identity component known by the
+/// caller before writing; an omitted request (`None`) is the explicit opt-out
+/// for callers that do not have identity evidence.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PaneTitleIdentity {
+    pub agent: CLIAgent,
+    #[serde(default)]
+    pub container_id: Option<String>,
+    #[serde(default)]
+    pub session_id: Option<String>,
+}
+
+impl PaneTitleIdentity {
+    pub fn from_facts(facts: &AgentFacts) -> Self {
+        Self {
+            agent: facts.agent,
+            container_id: facts.container_id.clone(),
+            session_id: facts.session_id.clone(),
+        }
+    }
+
+    pub fn matches(&self, facts: &AgentFacts) -> bool {
+        self.agent == facts.agent
+            && self
+                .container_id
+                .as_ref()
+                .is_none_or(|expected| facts.container_id.as_ref() == Some(expected))
+            && self
+                .session_id
+                .as_ref()
+                .is_none_or(|expected| facts.session_id.as_ref() == Some(expected))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -674,6 +723,91 @@ impl MachineStore {
         })
     }
 
+    pub fn tab_transfer(
+        &self,
+        from_workspace: WorkspaceId,
+        tab: TabId,
+        to_workspace: WorkspaceId,
+        to: usize,
+        origin: Option<SubscriberId>,
+    ) -> io::Result<Vec<u64>> {
+        self.tab_transfer_with(from_workspace, tab, to_workspace, to, origin, |_| {})
+    }
+
+    pub fn tab_transfer_with(
+        &self,
+        from_workspace: WorkspaceId,
+        tab: TabId,
+        to_workspace: WorkspaceId,
+        to: usize,
+        origin: Option<SubscriberId>,
+        before_notify: impl FnOnce(&[u64]),
+    ) -> io::Result<Vec<u64>> {
+        if from_workspace == to_workspace {
+            return Err(refuse("tab transfer requires two distinct workspaces"));
+        }
+        self.mutate_with_hook(
+            origin,
+            Persist::Now,
+            |m| {
+                let from = m
+                    .workspaces
+                    .iter()
+                    .position(|workspace| workspace.id == from_workspace)
+                    .ok_or_else(|| {
+                        not_found(format!("no workspace {from_workspace} on this machine"))
+                    })?;
+                let tab_index = m.workspaces[from]
+                    .tabs
+                    .iter()
+                    .position(|candidate| candidate.id == tab)
+                    .ok_or_else(|| {
+                        not_found(format!("workspace {from_workspace} has no tab {tab}"))
+                    })?;
+                let destination_exists = m
+                    .workspaces
+                    .iter()
+                    .any(|workspace| workspace.id == to_workspace);
+                if !destination_exists && m.workspaces.len() >= MAX_WORKSPACES {
+                    return Err(refuse(format!(
+                        "this machine already holds {MAX_WORKSPACES} workspaces"
+                    )));
+                }
+
+                let moved = m.workspaces[from].tabs.remove(tab_index);
+                let panes = moved.root.pane_ids();
+                let mut deltas = vec![(from_workspace, LayoutDelta::TabClosed { tab })];
+                if let Some(active) = heal_active_tab(&mut m.workspaces[from], tab_index) {
+                    deltas.push((
+                        from_workspace,
+                        LayoutDelta::ActiveTabChanged { tab: active },
+                    ));
+                }
+
+                if !destination_exists {
+                    let workspace = Workspace {
+                        id: to_workspace,
+                        ..Workspace::default()
+                    };
+                    m.workspaces.push(workspace.clone());
+                    deltas.push((to_workspace, LayoutDelta::WorkspaceCreated { workspace }));
+                }
+                let destination = m
+                    .workspaces
+                    .iter_mut()
+                    .find(|workspace| workspace.id == to_workspace)
+                    .expect("validated or created destination workspace");
+                let to = to.min(destination.tabs.len());
+                destination.tabs.insert(to, moved.clone());
+                destination.active_tab = Some(tab);
+                deltas.push((to_workspace, LayoutDelta::TabCreated { at: to, tab: moved }));
+                deltas.push((to_workspace, LayoutDelta::ActiveTabChanged { tab }));
+                Ok((panes, deltas))
+            },
+            |panes| before_notify(panes),
+        )
+    }
+
     pub fn tab_set_group(
         &self,
         workspace: WorkspaceId,
@@ -927,6 +1061,130 @@ impl MachineStore {
         }
     }
 
+    /// Persist the first real AgentPrompt excerpt for a pane without allowing
+    /// a later refresh (or a stale client) to overwrite the write-once value.
+    /// The update is scoped to the owning workspace so a client cannot stamp a
+    /// pane id that merely happens to exist on another workspace.
+    pub fn pane_set_first_user_title(
+        &self,
+        workspace: WorkspaceId,
+        pane: u64,
+        title: String,
+        origin: Option<SubscriberId>,
+    ) -> io::Result<()> {
+        let Some(title) = crate::agent_runtime::normalize_title_candidate(&title) else {
+            return Ok(());
+        };
+        self.mutate(origin, |m| {
+            let owns_pane = m
+                .workspaces
+                .iter()
+                .find(|candidate| candidate.id == workspace)
+                .ok_or_else(|| not_found(format!("no workspace {workspace} on this machine")))?
+                .tabs
+                .iter()
+                .any(|tab| tab.root.contains(pane));
+            if !owns_pane {
+                return Err(not_found(format!(
+                    "workspace {workspace} has no pane {pane}"
+                )));
+            }
+            let record = m
+                .panes
+                .iter_mut()
+                .find(|record| record.id == pane)
+                .ok_or_else(|| not_found(format!("machine has no pane {pane}")))?;
+            {
+                let Some(agent) = record.agent.as_mut() else {
+                    return Ok(((), Vec::new()));
+                };
+                if agent.first_user_title.is_some() {
+                    return Ok(((), Vec::new()));
+                }
+                agent.first_user_title = Some(title.clone());
+            }
+            // The mutable agent borrow ended above; now take the notification
+            // snapshot without aliasing that borrow.
+            let record = record.clone();
+            Ok((
+                (),
+                vec![(workspace, LayoutDelta::PaneFacts { pane: record })],
+            ))
+        })
+    }
+
+    /// Persist provider-authored (or legacy historical) title evidence for a
+    /// pane.  This is deliberately a separate wire primitive from
+    /// `pane_set_first_user_title`: provider evidence must never be disguised
+    /// as a prompt, and it must be guarded by the pane identity observed by
+    /// the caller when one is available.
+    pub fn pane_set_provider_title(
+        &self,
+        workspace: WorkspaceId,
+        pane: u64,
+        title: String,
+        expected_identity: Option<PaneTitleIdentity>,
+        origin: Option<SubscriberId>,
+    ) -> io::Result<()> {
+        let Some(title) = crate::agent_runtime::normalize_title_candidate(&title) else {
+            return Ok(());
+        };
+        self.mutate(origin, |m| {
+            let owns_pane = m
+                .workspaces
+                .iter()
+                .find(|candidate| candidate.id == workspace)
+                .ok_or_else(|| not_found(format!("no workspace {workspace} on this machine")))?
+                .tabs
+                .iter()
+                .any(|tab| tab.root.contains(pane));
+            if !owns_pane {
+                return Err(not_found(format!(
+                    "workspace {workspace} has no pane {pane}"
+                )));
+            }
+
+            let record = m
+                .panes
+                .iter_mut()
+                .find(|record| record.id == pane)
+                .ok_or_else(|| not_found(format!("machine has no pane {pane}")))?;
+            let Some(agent) = record.agent.as_mut() else {
+                // A title request must not create an agent fact for a bare
+                // pane.  Returning an input error also prevents tree-sync
+                // callers from treating a no-agent no-op as durable success.
+                return Err(refuse(format!(
+                    "pane {pane} has no agent identity for provider title"
+                )));
+            };
+            if let Some(expected) = expected_identity.as_ref()
+                && !expected.matches(agent)
+            {
+                return Err(refuse(format!(
+                    "pane {pane} identity changed before provider title migration"
+                )));
+            }
+
+            // Old machine snapshots could contain the product placeholder or
+            // whitespace in this typed slot.  Normalize it before applying a
+            // real provider value so stale placeholder evidence cannot block
+            // the first valid migration.
+            agent.provider_title = agent
+                .provider_title
+                .as_deref()
+                .and_then(crate::agent_runtime::normalize_title_candidate);
+            if agent.provider_title.is_some() {
+                return Ok(((), Vec::new()));
+            }
+            agent.provider_title = Some(title.clone());
+            let record = record.clone();
+            Ok((
+                (),
+                vec![(workspace, LayoutDelta::PaneFacts { pane: record })],
+            ))
+        })
+    }
+
     pub fn attach(&self, workspace: WorkspaceId, who: Attachment) -> Option<Attachment> {
         let mut m = self.locked();
         let ws = m.workspaces.iter_mut().find(|w| w.id == workspace)?;
@@ -991,6 +1249,16 @@ impl MachineStore {
         persist: Persist,
         op: impl FnOnce(&mut Machine) -> io::Result<(T, Vec<(WorkspaceId, LayoutDelta)>)>,
     ) -> io::Result<T> {
+        self.mutate_with_hook(origin, persist, op, |_| {})
+    }
+
+    fn mutate_with_hook<T>(
+        &self,
+        origin: Option<SubscriberId>,
+        persist: Persist,
+        op: impl FnOnce(&mut Machine) -> io::Result<(T, Vec<(WorkspaceId, LayoutDelta)>)>,
+        before_notify: impl FnOnce(&T),
+    ) -> io::Result<T> {
         let _order = self.notify_order.lock().unwrap_or_else(|e| e.into_inner());
         let deltas;
         let value;
@@ -1016,6 +1284,7 @@ impl MachineStore {
                 }
             }
         }
+        before_notify(&value);
         if !deltas.is_empty() {
             self.notify_all(&deltas, origin);
         }
@@ -1289,6 +1558,225 @@ mod tests {
             .tab_create(ws.id, None, seed(1, "/work"), None, None)
             .unwrap();
         (store, dir, ws.id, tab)
+    }
+
+    #[test]
+    fn pane_first_user_title_is_normalized_write_once_and_notified() {
+        use crate::core::cli_agent::CLIAgent;
+
+        let (store, _dir) = store();
+        let ws = store.workspace_create(None, None, None).unwrap();
+        let mut pane = seed(1, "/work");
+        pane.agent = Some(AgentFacts {
+            agent: CLIAgent::Codex,
+            container_id: Some("container-1".into()),
+            session_id: Some("session-1".into()),
+            launch_argv: Some(vec!["codex".into()]),
+            status: None,
+            provider_title: None,
+            first_user_title: None,
+        });
+        store
+            .tab_create(ws.id, None, pane, None, None)
+            .expect("the pane seed is valid");
+        let (_subscription, heard) = recorded(&store);
+
+        store
+            .pane_set_first_user_title(ws.id, 1, "  Draw a fox  ".into(), None)
+            .unwrap();
+        assert_eq!(
+            store
+                .pane(1)
+                .unwrap()
+                .agent
+                .unwrap()
+                .first_user_title
+                .as_deref(),
+            Some("Draw a fox")
+        );
+        assert!(matches!(
+            heard.lock().unwrap().as_slice(),
+            [(_, LayoutDelta::PaneFacts { pane })]
+                if pane.id == 1
+                    && pane.agent.as_ref().and_then(|agent| agent.first_user_title.as_deref())
+                        == Some("Draw a fox")
+        ));
+
+        heard.lock().unwrap().clear();
+        store
+            .pane_set_first_user_title(ws.id, 1, "A later prompt".into(), None)
+            .unwrap();
+        assert_eq!(
+            store
+                .pane(1)
+                .unwrap()
+                .agent
+                .unwrap()
+                .first_user_title
+                .as_deref(),
+            Some("Draw a fox"),
+            "a stale/later prompt cannot overwrite the first candidate"
+        );
+        assert!(
+            heard.lock().unwrap().is_empty(),
+            "write-once no-op is silent"
+        );
+    }
+
+    #[test]
+    fn pane_provider_title_is_normalized_write_once_identity_scoped_and_notified() {
+        use crate::core::cli_agent::CLIAgent;
+
+        let (store, _dir) = store();
+        let ws = store.workspace_create(None, None, None).unwrap();
+        let mut pane = seed(1, "/work");
+        pane.agent = Some(AgentFacts {
+            agent: CLIAgent::Codex,
+            container_id: Some("container-1".into()),
+            session_id: Some("session-1".into()),
+            launch_argv: Some(vec!["codex".into()]),
+            status: None,
+            provider_title: Some(" Agent  会话 ".into()),
+            first_user_title: None,
+        });
+        store.tab_create(ws.id, None, pane, None, None).unwrap();
+        let (_subscription, heard) = recorded(&store);
+        let identity =
+            PaneTitleIdentity::from_facts(store.pane(1).unwrap().agent.as_ref().unwrap());
+
+        store
+            .pane_set_provider_title(
+                ws.id,
+                1,
+                "  Historical rollout  ".into(),
+                Some(identity.clone()),
+                None,
+            )
+            .unwrap();
+        assert_eq!(
+            store
+                .pane(1)
+                .unwrap()
+                .agent
+                .as_ref()
+                .unwrap()
+                .provider_title
+                .as_deref(),
+            Some("Historical rollout")
+        );
+        assert!(matches!(
+            heard.lock().unwrap().as_slice(),
+            [(_, LayoutDelta::PaneFacts { pane })]
+                if pane.id == 1
+                    && pane.agent.as_ref().and_then(|agent| agent.provider_title.as_deref())
+                        == Some("Historical rollout")
+        ));
+
+        heard.lock().unwrap().clear();
+        store
+            .pane_set_provider_title(ws.id, 1, "A stale refresh".into(), Some(identity), None)
+            .unwrap();
+        assert_eq!(
+            store
+                .pane(1)
+                .unwrap()
+                .agent
+                .as_ref()
+                .unwrap()
+                .provider_title
+                .as_deref(),
+            Some("Historical rollout"),
+            "a meaningful machine provider fact is write-once"
+        );
+        assert!(heard.lock().unwrap().is_empty(), "a stale write is silent");
+    }
+
+    #[test]
+    fn pane_provider_title_rejects_stale_identity_without_mutation() {
+        use crate::core::cli_agent::CLIAgent;
+
+        let (store, _dir) = store();
+        let ws = store.workspace_create(None, None, None).unwrap();
+        let mut pane = seed(1, "/work");
+        pane.agent = Some(AgentFacts {
+            agent: CLIAgent::Codex,
+            container_id: Some("current-container".into()),
+            session_id: Some("current-session".into()),
+            launch_argv: Some(vec!["codex".into()]),
+            status: None,
+            provider_title: None,
+            first_user_title: None,
+        });
+        store.tab_create(ws.id, None, pane, None, None).unwrap();
+        let stale = PaneTitleIdentity {
+            agent: CLIAgent::Codex,
+            container_id: Some("old-container".into()),
+            session_id: Some("old-session".into()),
+        };
+        let error = store
+            .pane_set_provider_title(ws.id, 1, "Wrong pane".into(), Some(stale), None)
+            .expect_err("a stale pane identity must fail closed");
+        assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+        assert_eq!(
+            store
+                .pane(1)
+                .unwrap()
+                .agent
+                .as_ref()
+                .unwrap()
+                .provider_title,
+            None
+        );
+    }
+
+    #[test]
+    fn pane_provider_title_does_not_fabricate_agent_facts() {
+        let (store, _dir) = store();
+        let ws = store.workspace_create(None, None, None).unwrap();
+        store
+            .tab_create(ws.id, None, seed(1, "/work"), None, None)
+            .unwrap();
+        let error = store
+            .pane_set_provider_title(ws.id, 1, "Provider title".into(), None, None)
+            .expect_err("a title cannot create an agent identity");
+        assert_eq!(error.kind(), io::ErrorKind::InvalidInput);
+        assert!(store.pane(1).unwrap().agent.is_none());
+    }
+
+    #[test]
+    fn agent_facts_provider_title_is_additive_and_round_trips() {
+        let facts = AgentFacts {
+            agent: CLIAgent::Codex,
+            container_id: Some("container-provider".into()),
+            session_id: Some("session-provider".into()),
+            launch_argv: Some(vec!["codex".into(), "--resume".into()]),
+            status: None,
+            provider_title: Some("Historical rollout".into()),
+            first_user_title: Some("First request".into()),
+        };
+        let encoded = serde_json::to_value(&facts).expect("facts encode");
+        assert_eq!(
+            encoded
+                .get("provider_title")
+                .and_then(|value| value.as_str()),
+            Some("Historical rollout")
+        );
+        let decoded: AgentFacts = serde_json::from_value(encoded).expect("facts decode");
+        assert_eq!(decoded, facts);
+
+        // A pre-provider machine snapshot remains valid and defaults the new
+        // evidence slot without changing the legacy first-user field.
+        let legacy: AgentFacts = serde_json::from_value(serde_json::json!({
+            "agent": "Codex",
+            "container_id": "legacy",
+            "session_id": "legacy-session",
+            "launch_argv": ["codex"],
+            "status": null,
+            "first_user_title": "Legacy request"
+        }))
+        .expect("legacy facts decode");
+        assert_eq!(legacy.provider_title, None);
+        assert_eq!(legacy.first_user_title.as_deref(), Some("Legacy request"));
     }
 
     fn recorded(
@@ -1575,6 +2063,86 @@ mod tests {
             1,
             "losing the last tab needs no ActiveTabChanged: no tabs, no active tab"
         );
+    }
+
+    #[test]
+    fn tab_transfer_moves_tree_without_orphaning_panes() {
+        let (store, dir, source, tab) = store_with_tab();
+        store
+            .pane_split(
+                source,
+                1,
+                Axis::Horizontal,
+                0.5,
+                seed(2, "/work/right"),
+                false,
+                None,
+            )
+            .unwrap();
+        let destination = WorkspaceId::new();
+
+        let moved = store
+            .tab_transfer(source, tab.id, destination, 0, None)
+            .unwrap();
+
+        assert_eq!(moved, vec![1, 2]);
+        assert!(store.workspace(source).unwrap().tabs.is_empty());
+        let destination_tree = store.workspace(destination).unwrap();
+        assert_eq!(destination_tree.tabs.len(), 1);
+        assert_eq!(destination_tree.tabs[0].id, tab.id);
+        assert_eq!(destination_tree.tabs[0].root.pane_ids(), vec![1, 2]);
+        assert_eq!(destination_tree.active_tab, Some(tab.id));
+        assert!(store.pane(1).is_some());
+        assert!(store.pane(2).is_some());
+
+        let reopened = MachineStore::open(dir.path().join(MACHINE_FILE));
+        assert!(reopened.workspace(source).unwrap().tabs.is_empty());
+        assert_eq!(
+            reopened.workspace(destination).unwrap().tabs[0].id,
+            tab.id,
+            "the transfer must be one persisted structural commit"
+        );
+    }
+
+    #[test]
+    fn tab_transfer_failure_preserves_source_tree() {
+        let (store, _dir, source, _tab) = store_with_tab();
+        let before = store.machine();
+        let destination = WorkspaceId::new();
+
+        let error = store
+            .tab_transfer(source, TabId::new(), destination, 0, None)
+            .expect_err("a missing source tab must fail");
+
+        assert_eq!(error.kind(), io::ErrorKind::NotFound);
+        assert_eq!(
+            store.machine(),
+            before,
+            "failure may not half-create the target"
+        );
+        assert!(store.workspace(destination).is_err());
+    }
+
+    #[test]
+    fn tab_transfer_rebinds_owner_before_layout_notification() {
+        let (store, _dir, source, tab) = store_with_tab();
+        let destination = WorkspaceId::new();
+        let order = Arc::new(Mutex::new(Vec::new()));
+        let notified = Arc::clone(&order);
+        let _subscription = store.subscribe(Arc::new(move |_, _| {
+            notified.lock().unwrap().push("notify");
+        }));
+        let committed = Arc::clone(&order);
+
+        store
+            .tab_transfer_with(source, tab.id, destination, 0, None, move |_| {
+                committed.lock().unwrap().push("owner");
+            })
+            .unwrap();
+
+        let order = order.lock().unwrap();
+        assert_eq!(order.first().copied(), Some("owner"), "{order:?}");
+        assert!(order[1..].iter().all(|event| *event == "notify"));
     }
 
     #[test]

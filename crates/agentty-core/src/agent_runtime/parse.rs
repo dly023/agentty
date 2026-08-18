@@ -1,5 +1,17 @@
 use serde_json::Value;
 
+use super::title::{
+    SessionTitleCandidates, first_user_title_candidate, is_absent_session_title,
+    resolve_title_candidates,
+};
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SessionVisibility {
+    #[default]
+    UserVisible,
+    Internal,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct SessionMetadata {
     pub session_id: Option<String>,
@@ -7,46 +19,21 @@ pub struct SessionMetadata {
     pub title: Option<String>,
     pub first_user_message: Option<String>,
     pub created_at_unix_ms: Option<u64>,
+    pub visibility: SessionVisibility,
 }
 
 impl SessionMetadata {
     pub fn resolved_title(&self) -> Option<&str> {
-        meaningful_title(self.title.as_deref())
-            .or_else(|| meaningful_title(self.first_user_message.as_deref()))
+        resolve_title_candidates(self.title.as_deref(), self.first_user_message.as_deref())
     }
-}
 
-/// Titles that must not beat a first User message or stick as the sole name.
-pub fn is_absent_session_title(title: &str) -> bool {
-    let trimmed = title.trim();
-    if trimmed.is_empty() {
-        return true;
+    pub fn title_candidates(&self) -> SessionTitleCandidates {
+        SessionTitleCandidates::from_raw(self.title.as_deref(), self.first_user_message.as_deref())
     }
-    let lower = trimmed.to_ascii_lowercase();
-    matches!(trimmed, "Agent 会话" | "新会话" | "未命名会话" | "未命名")
-        || matches!(
-            lower.as_str(),
-            "agent session"
-                | "agentty"
-                | "untitled"
-                | "new session"
-                | "unnamed"
-                | "unnamed session"
-        )
-        || lower.starts_with("agentty —")
-        || lower.starts_with("agentty -")
-}
 
-fn meaningful_title(value: Option<&str>) -> Option<&str> {
-    value
-        .map(str::trim)
-        .filter(|value| !is_absent_session_title(value))
-}
-
-/// First-line excerpt suitable as a live/history display title candidate.
-/// Returns None for blank or catch-all placeholder prompts.
-pub fn first_user_title_candidate(text: &str) -> Option<String> {
-    excerpt(text).filter(|value| !is_absent_session_title(value))
+    pub fn is_user_visible(&self) -> bool {
+        self.visibility == SessionVisibility::UserVisible
+    }
 }
 
 pub fn parse_jsonl_strict(bytes: &[u8], physical_line_limit: usize) -> Result<Vec<Value>, String> {
@@ -98,6 +85,9 @@ pub fn codex_index_metadata(value: &Value) -> Option<SessionMetadata> {
         title: title(value),
         first_user_message: None,
         created_at_unix_ms: None,
+        visibility: codex_origin_is_internal(value)
+            .then_some(SessionVisibility::Internal)
+            .unwrap_or_default(),
     })
 }
 
@@ -119,13 +109,41 @@ pub fn codex_transcript_metadata(values: &[Value]) -> SessionMetadata {
         created_at_unix_ms: None,
         ..Default::default()
     };
+    let mut has_internal_origin = false;
+    let mut has_real_user_message = false;
     for value in values {
+        has_internal_origin |= codex_origin_is_internal(value);
         metadata.cwd = metadata.cwd.or_else(|| cwd(value));
-        metadata.title = metadata.title.or_else(|| title(value));
-        metadata.first_user_message = metadata
-            .first_user_message
-            .or_else(|| codex_user_message(value));
+        if let Some(candidate) = title(value) {
+            let replace_title = metadata
+                .title
+                .as_deref()
+                .is_none_or(is_absent_session_title);
+            if replace_title {
+                metadata.title = Some(candidate);
+            }
+        }
+        if let Some(message) = codex_user_message(value) {
+            has_real_user_message = true;
+            let replace_first_user = metadata
+                .first_user_message
+                .as_deref()
+                .is_none_or(|current| first_user_title_candidate(current).is_none());
+            if replace_first_user {
+                metadata.first_user_message = Some(message);
+            }
+        }
     }
+    let has_meaningful_provider_title = metadata
+        .title
+        .as_deref()
+        .is_some_and(|title| !is_absent_session_title(title));
+    metadata.visibility =
+        if has_internal_origin || (!has_real_user_message && !has_meaningful_provider_title) {
+            SessionVisibility::Internal
+        } else {
+            SessionVisibility::UserVisible
+        };
     metadata
 }
 
@@ -136,13 +154,24 @@ pub fn claude_transcript_metadata(values: &[Value]) -> SessionMetadata {
             metadata.session_id = string(value, "sessionId").map(str::to_string);
         }
         metadata.cwd = metadata.cwd.or_else(|| cwd(value));
-        metadata.title = metadata
+        if metadata
             .title
-            .or_else(|| string(value, "aiTitle").and_then(excerpt))
-            .or_else(|| title(value));
-        metadata.first_user_message = metadata
+            .as_deref()
+            .is_none_or(is_absent_session_title)
+        {
+            if let Some(candidate) = claude_provider_title(value) {
+                metadata.title = Some(candidate);
+            }
+        }
+        if metadata
             .first_user_message
-            .or_else(|| claude_user_message(value));
+            .as_deref()
+            .is_none_or(|current| first_user_title_candidate(current).is_none())
+        {
+            if let Some(message) = claude_user_message(value) {
+                metadata.first_user_message = Some(message);
+            }
+        }
     }
     metadata
 }
@@ -168,6 +197,7 @@ pub fn omp_transcript_metadata(values: &[Value]) -> SessionMetadata {
         title: title_slot.or_else(|| title(header)),
         created_at_unix_ms: string(header, "timestamp").and_then(parse_iso8601_millis),
         first_user_message: None,
+        visibility: SessionVisibility::UserVisible,
     }
 }
 
@@ -183,18 +213,24 @@ pub fn grok_summary_metadata(value: &Value) -> SessionMetadata {
         .and_then(|info| string(info, "cwd"))
         .or_else(|| string(value, "cwd"))
         .map(str::to_string);
-    let title = first(&[
+    let title = [
         string(value, "generated_title"),
         string(value, "session_summary"),
         string(value, "title"),
-    ])
-    .and_then(|text| excerpt(&text));
+    ]
+    .into_iter()
+    .flatten()
+    .find_map(|text| {
+        let candidate = excerpt(text)?;
+        (!is_absent_session_title(&candidate)).then_some(candidate)
+    });
     SessionMetadata {
         session_id,
         cwd,
         title,
         first_user_message: None,
         created_at_unix_ms: string(value, "created_at").and_then(parse_iso8601_millis),
+        visibility: SessionVisibility::UserVisible,
     }
 }
 
@@ -212,6 +248,7 @@ pub fn gemini_header_metadata(value: &Value) -> SessionMetadata {
         title: None,
         first_user_message: None,
         created_at_unix_ms: string(value, "startTime").and_then(parse_iso8601_millis),
+        visibility: SessionVisibility::UserVisible,
     }
 }
 
@@ -278,7 +315,7 @@ fn is_gemini_session_context(text: &str) -> bool {
         || trimmed.contains("This is the Gemini CLI. We are setting up the context")
 }
 
-fn parse_iso8601_millis(timestamp: &str) -> Option<u64> {
+pub(super) fn parse_iso8601_millis(timestamp: &str) -> Option<u64> {
     let bytes = timestamp.as_bytes();
     if bytes.len() < 20 || bytes.get(4) != Some(&b'-') || bytes.get(7) != Some(&b'-') {
         return None;
@@ -373,6 +410,82 @@ fn title(value: &Value) -> Option<String> {
     .and_then(|s| excerpt(&s))
 }
 
+fn claude_provider_title(value: &Value) -> Option<String> {
+    [
+        string(value, "aiTitle"),
+        string(value, "title"),
+        nested(value, &["turn_context", "title"]),
+        nested(value, &["payload", "title"]),
+        nested(value, &["metadata", "title"]),
+    ]
+    .into_iter()
+    .flatten()
+    .find_map(|text| {
+        let candidate = excerpt(text)?;
+        (!is_absent_session_title(&candidate)).then_some(candidate)
+    })
+}
+
+/// Codex writes origin metadata in `session_meta.payload`, while older and
+/// index-shaped records may put the same fields at the top level.  These
+/// markers are identity/routing evidence, not title candidates.  A subagent
+/// marker is authoritative even if the transcript later contains role=user
+/// messages generated by the harness.
+fn codex_origin_is_internal(value: &Value) -> bool {
+    let thread_source = [
+        string(value, "thread_source"),
+        nested(value, &["payload", "thread_source"]),
+    ]
+    .into_iter()
+    .flatten()
+    .any(|source| {
+        source.eq_ignore_ascii_case("subagent") || source.eq_ignore_ascii_case("internal")
+    });
+    if thread_source {
+        return true;
+    }
+
+    let parent_link = [
+        string(value, "parent_thread_id"),
+        string(value, "forked_from_id"),
+        nested(value, &["payload", "parent_thread_id"]),
+        nested(value, &["payload", "forked_from_id"]),
+        nested(
+            value,
+            &[
+                "payload",
+                "source",
+                "subagent",
+                "thread_spawn",
+                "parent_thread_id",
+            ],
+        ),
+        nested(
+            value,
+            &["source", "subagent", "thread_spawn", "parent_thread_id"],
+        ),
+    ]
+    .into_iter()
+    .flatten()
+    .any(|parent| !parent.trim().is_empty());
+    if parent_link {
+        return true;
+    }
+
+    // Some Codex builds omit parent_thread_id but retain the structured
+    // subagent spawn envelope.  Presence of that object is sufficient to
+    // classify the transcript as an internal execution artifact.
+    [
+        value.pointer("/payload/source/subagent/thread_spawn"),
+        value.pointer("/source/subagent/thread_spawn"),
+        value.pointer("/payload/source/subagent"),
+        value.pointer("/source/subagent"),
+    ]
+    .into_iter()
+    .flatten()
+    .any(Value::is_object)
+}
+
 fn codex_user_message(value: &Value) -> Option<String> {
     let raw = if string(value, "type") == Some("event_msg")
         && nested(value, &["payload", "type"]) == Some("user_message")
@@ -403,7 +516,9 @@ fn codex_response_item_user_text(value: &Value) -> Option<String> {
             Some("input_text") | Some("text") | Some("output_text")
         ) {
             if let Some(text) = string(part, "text") {
-                texts.push(text);
+                if !is_injected_codex_user_payload(text) {
+                    texts.push(text);
+                }
             }
         }
     }
@@ -421,14 +536,53 @@ fn is_injected_codex_user_payload(text: &str) -> bool {
     trimmed.starts_with("# AGENTS.md instructions")
         || trimmed.starts_with("<INSTRUCTIONS>")
         || trimmed.starts_with("<environment_context>")
+        || trimmed.starts_with("<recommended_plugins>")
+        || trimmed.starts_with("<codex_internal_context")
+        || trimmed.starts_with("<system-reminder>")
         || trimmed.contains("\n<INSTRUCTIONS>")
 }
 
 fn claude_user_message(value: &Value) -> Option<String> {
-    (string(value, "type") == Some("user"))
-        .then(|| nested(value, &["message", "content"]))
-        .flatten()
-        .and_then(excerpt)
+    if string(value, "type") != Some("user") {
+        return None;
+    }
+    let content = value
+        .pointer("/message/content")
+        .or_else(|| value.get("content"))?;
+    claude_content_text(content).and_then(|text| excerpt(&text))
+}
+
+fn claude_content_text(value: &Value) -> Option<String> {
+    match value {
+        Value::String(text) => (!text.trim().is_empty()).then(|| text.to_owned()),
+        Value::Array(parts) => {
+            let mut texts = Vec::new();
+            for part in parts {
+                let Value::Object(object) = part else {
+                    continue;
+                };
+                let kind = object.get("type").and_then(Value::as_str);
+                if kind.is_some_and(|kind| kind != "text") {
+                    continue;
+                }
+                if let Some(text) = object.get("text").and_then(Value::as_str) {
+                    if !text.trim().is_empty()
+                        && excerpt(text)
+                            .is_some_and(|candidate| !is_absent_session_title(&candidate))
+                    {
+                        texts.push(text.trim());
+                    }
+                }
+            }
+            (!texts.is_empty()).then(|| texts.join("\n"))
+        }
+        Value::Object(object) => object
+            .get("text")
+            .and_then(Value::as_str)
+            .filter(|text| !text.trim().is_empty())
+            .map(str::to_owned),
+        _ => None,
+    }
 }
 
 fn excerpt(text: &str) -> Option<String> {
@@ -573,5 +727,219 @@ mod tests {
     fn provider_identity_is_never_a_session_alias() {
         let metadata = SessionMetadata::default();
         assert_eq!(metadata.resolved_title(), None);
+    }
+
+    #[test]
+    fn codex_subagent_transcript_is_marked_internal() {
+        let values = vec![
+            serde_json::json!({
+                "type": "session_meta",
+                "payload": {
+                    "id": "01a0065b-122b-7e13-bc86-de099e0945ce",
+                    "session_id": "01a000ec-0388-74e0-8bd5-73ad68b9e321",
+                    "thread_source": "subagent",
+                    "parent_thread_id": "01a005eb-5fc3-7781-9458-2f7625d0d729"
+                }
+            }),
+            serde_json::json!({
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "user",
+                    "content": [{"type": "input_text", "text": "<recommended_plugins>\n..."}]
+                }
+            }),
+        ];
+        let metadata = codex_transcript_metadata(&values);
+        assert_eq!(metadata.visibility, SessionVisibility::Internal);
+        assert!(!metadata.is_user_visible());
+    }
+
+    #[test]
+    fn codex_nested_subagent_spawn_is_marked_internal() {
+        let values = vec![serde_json::json!({
+            "type": "session_meta",
+            "payload": {
+                "id": "01a0065b-122b-7e13-bc86-de099e0945ce",
+                "source": {
+                    "subagent": {
+                        "thread_spawn": {
+                            "parent_thread_id": "01a005eb-5fc3-7781-9458-2f7625d0d729"
+                        }
+                    }
+                }
+            }
+        })];
+        assert_eq!(
+            codex_transcript_metadata(&values).visibility,
+            SessionVisibility::Internal
+        );
+    }
+
+    #[test]
+    fn codex_top_level_user_transcript_remains_visible() {
+        let values = vec![
+            serde_json::json!({
+                "type": "session_meta",
+                "payload": {
+                    "id": "01a000ec-0388-74e0-8bd5-73ad68b9e321",
+                    "thread_source": "user"
+                }
+            }),
+            serde_json::json!({
+                "type": "event_msg",
+                "payload": {"type": "user_message", "message": "继续修复发现链"}
+            }),
+        ];
+        let metadata = codex_transcript_metadata(&values);
+        assert_eq!(metadata.visibility, SessionVisibility::UserVisible);
+        assert_eq!(metadata.resolved_title(), Some("继续修复发现链"));
+    }
+
+    #[test]
+    fn codex_injected_context_is_not_a_first_user_title() {
+        let values = vec![
+            serde_json::json!({
+                "type": "session_meta",
+                "payload": {
+                    "id": "01a000ec-0388-74e0-8bd5-73ad68b9e321",
+                    "thread_source": "user"
+                }
+            }),
+            serde_json::json!({
+                "type": "response_item",
+                "payload": {
+                    "type": "message",
+                    "role": "user",
+                    "content": [
+                        {"type": "input_text", "text": "<recommended_plugins>\n..."},
+                        {"type": "input_text", "text": "# AGENTS.md instructions\n..."},
+                        {"type": "input_text", "text": "<environment_context>\n..."},
+                        {"type": "input_text", "text": "<codex_internal_context source=\"goal\">\n..."}
+                    ]
+                }
+            }),
+        ];
+        let metadata = codex_transcript_metadata(&values);
+        assert_eq!(metadata.first_user_message, None);
+        assert_eq!(metadata.resolved_title(), None);
+        assert_eq!(metadata.visibility, SessionVisibility::Internal);
+    }
+
+    #[test]
+    fn codex_explicit_provider_title_keeps_markerless_transcript_visible() {
+        let values = vec![
+            serde_json::json!({
+                "type": "session_meta",
+                "payload": {"id": "019fa76a-6276-7b03-b302-c640686b2033"}
+            }),
+            serde_json::json!({"type": "response_item", "title": "Named rollout"}),
+        ];
+        let metadata = codex_transcript_metadata(&values);
+        assert_eq!(metadata.visibility, SessionVisibility::UserVisible);
+        assert_eq!(metadata.resolved_title(), Some("Named rollout"));
+    }
+
+    #[test]
+    fn codex_later_meaningful_title_replaces_placeholder_title() {
+        let values = vec![
+            serde_json::json!({"type": "response_item", "title": "Agent 会话"}),
+            serde_json::json!({"type": "response_item", "title": "Named rollout"}),
+        ];
+        let metadata = codex_transcript_metadata(&values);
+        assert_eq!(metadata.resolved_title(), Some("Named rollout"));
+        assert_eq!(metadata.visibility, SessionVisibility::UserVisible);
+    }
+
+    #[test]
+    fn codex_later_real_user_replaces_placeholder_prompt() {
+        let values = vec![
+            serde_json::json!({
+                "type": "event_msg",
+                "payload": {"type": "user_message", "message": "Agent 会话"}
+            }),
+            serde_json::json!({
+                "type": "event_msg",
+                "payload": {"type": "user_message", "message": "真实的后续请求"}
+            }),
+        ];
+        let metadata = codex_transcript_metadata(&values);
+        assert_eq!(
+            metadata.first_user_message.as_deref(),
+            Some("真实的后续请求")
+        );
+        assert_eq!(metadata.resolved_title(), Some("真实的后续请求"));
+    }
+
+    #[test]
+    fn claude_array_text_blocks_name_session() {
+        let values = vec![serde_json::json!({
+            "type": "user",
+            "sessionId": "claude-array",
+            "message": {
+                "content": [
+                    {"type": "tool_result", "content": "internal tool output"},
+                    {"type": "text", "text": "Review the array parser"},
+                    {"type": "image", "source": {"media_type": "image/png"}}
+                ]
+            }
+        })];
+        let metadata = claude_transcript_metadata(&values);
+        assert_eq!(
+            metadata.first_user_message.as_deref(),
+            Some("Review the array parser")
+        );
+        assert_eq!(metadata.resolved_title(), Some("Review the array parser"));
+    }
+
+    #[test]
+    fn claude_placeholder_user_does_not_block_later_real_prompt() {
+        let values = vec![
+            serde_json::json!({
+                "type": "user",
+                "sessionId": "claude-placeholder-user",
+                "message": {"content": "Agent 会话"}
+            }),
+            serde_json::json!({
+                "type": "user",
+                "message": {"content": [{"type": "text", "text": "真实 Claude 请求"}]}
+            }),
+        ];
+        let metadata = claude_transcript_metadata(&values);
+        assert_eq!(metadata.resolved_title(), Some("真实 Claude 请求"));
+        assert_eq!(
+            metadata.first_user_message.as_deref(),
+            Some("真实 Claude 请求")
+        );
+    }
+
+    #[test]
+    fn claude_placeholder_provider_title_does_not_block_meaningful_title() {
+        let values = vec![
+            serde_json::json!({
+                "type": "assistant",
+                "sessionId": "claude-placeholder-provider",
+                "aiTitle": "Agent session"
+            }),
+            serde_json::json!({
+                "type": "assistant",
+                "title": "Investigate Claude parser"
+            }),
+        ];
+        let metadata = claude_transcript_metadata(&values);
+        assert_eq!(metadata.resolved_title(), Some("Investigate Claude parser"));
+    }
+
+    #[test]
+    fn grok_placeholder_title_does_not_block_meaningful_summary() {
+        let metadata = grok_summary_metadata(&serde_json::json!({
+            "info": {"id": "grok-placeholder"},
+            "generated_title": "Agent session",
+            "session_summary": "Investigate the remote reconnect"
+        }));
+        assert_eq!(
+            metadata.resolved_title(),
+            Some("Investigate the remote reconnect")
+        );
     }
 }

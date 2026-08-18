@@ -1,19 +1,58 @@
-version: 1
-updated: 2026-08-14
+version: 2
+updated: 2026-08-16
 domain: cross_window_session_layout
 contracts:
   - id: WINDOW-SESSION-MULTI-01
     rule: An application window may contain multiple independent sessions. Session identity and provider authority remain unchanged when sessions share a window.
   - id: WINDOW-SESSION-DROP-SPLIT-RIGHT-02
-    rule: Dropping a session tab onto another tab in a window places the dragged session as the target session's right-hand split by calling the existing horizontal split primitive.
+    status: superseded
+    superseded_by: WINDOW-SESSION-DRAG-SEMANTICS-08
+    rule: Historical split-drop contract retained for evidence only. It described a whole-chip drag before hit-zone semantics were specified; the current production authority is WINDOW-SESSION-DRAG-SEMANTICS-08, where only the icon/grip zone emits the bounded 1+1 Merge intent and the body emits Reorder.
     forbidden:
       - replacing_the_target_session
       - creating_a_parallel_split_tree
+      - activating_the_inactive_source_before_drop
+      - removing_the_source_tab_before_split_commit
+      - respawning_source_or_target_panes_for_drop
   - id: WINDOW-SESSION-SPLIT-MENU-03
     rule: The session context menu exposes the existing right and down split actions and routes both through the canonical split primitive.
   - id: WINDOW-SESSION-DETACH-04
-    rule: The session context menu exposes Move to New Window. The action removes the session from the current window and creates one new window containing it, or rolls back without losing the session if window creation fails.
+    rule: The session context menu exposes Move to New Window. The action first creates an empty peer window in the same Environment, then atomically transfers the existing Tab and pane tree between daemon workspaces. The source UI is not mutated before the machine accepts the transfer. Window creation or transfer failure keeps the source session and live panes unchanged and removes only the empty destination window.
+    forbidden:
+      - serializing_the_tab_then_spawning_replacement_panes
+      - removing_the_source_tab_before_transfer_commit
+      - changing_environment_authority_during_detach
   - id: WINDOW-SESSION-PERSISTENCE-05
     rule: Window ownership, split layout, tab order, and window geometry persist atomically. Restart restores the last complete committed layout; incomplete writes never replace it.
   - id: WINDOW-SESSION-RECOVERY-06
     rule: If a persisted window or session is missing during restore, the session remains discoverable in an unassigned group and no unrelated session is deleted.
+  - id: WINDOW-SESSION-STRIP-ACTION-07
+    rule: Session strip tab chips activate a session only after a stationary primary-button click-release (`on_click`); pointer-down alone never activates an inactive session. Movement beyond the toolkit drag threshold transfers the same press to the chip's drag wrapper, consumes the pending click, and release after that drag must not replay activation even when the pointer remains over the chip. Double-click remains a separate titlebar action when configured.
+    forbidden:
+      - on_mouse_down_resumes_tab_chip
+      - drag_initiated_via_activation_path
+      - activating_before_click_release
+      - drag_release_replays_tab_activation
+  - id: WINDOW-SESSION-DRAG-SEMANTICS-08
+    rule: A tab drag carries one typed `TabDragIntent` and one `TabDragHitZone` from pointer-down through release. `TabDragHitZone::Icon` produces `TabDragIntent::Merge` and may split the source into the target's right side only when source and target are distinct tabs in the same Environment, both contain exactly one pane, and the target is not already split (1+1 only); 1+2, 2+1, and 2+2 are rejected fail-closed with both canonical trees unchanged. `TabDragHitZone::Body` produces `TabDragIntent::Reorder` and only changes tab order through the existing apply_tab_order/save_session path. Reorder target indices are interpreted after removing the source and are mapped back to the original target identity through one `target_after_removal` helper before any merge decision, so source-before-target and source-after-target cannot become a false source==target no-op. A cancelled or invalid drop leaves source, target, focus, and persisted order unchanged. Explicit Split commands remain the route for additional pane depth.
+    hit_zones:
+      - icon_merge
+      - body_reorder
+    forbidden:
+      - one_whole_chip_drag_zone_for_both_intents
+      - source_before_target_index_aliasing
+      - implicit_merge_of_a_multi_pane_tab
+      - mutating_the_tree_before_capacity_validation
+      - split_and_tab_close_non_atomic_commit
+      - parallel_tab_order_or_split_persistence
+  - id: WINDOW-SESSION-VIEWPORT-PRESERVATION-09
+    rule: A SplitRight transition (macOS Command+D) changes the geometry of the existing pane without changing its user-visible terminal state. The old pane's canonical grid `display_offset` and terminal selection range are captured before the resize and remain equal after the split; the new sibling owns an independent initial viewport. The contract is enforced at the TerminalView/RemoteTerminal resize boundary and is exercised end-to-end only through the existing keymap `SplitRight` → `AgenttyApp::run_command(CommandKind::SplitRight)` → `split(Axis::Horizontal)` path. App-level acceptance must observe the original Ready leaf still present, a single right sibling, and the normalized Pane geometry (left half/right half); a test-only direct `Pane::split_node` does not satisfy this contract.
+    acceptance:
+      app_split_dispatch_and_geometry: command_d_split_right_gpui_preserves_old_pane_viewport_selection_and_geometry
+      terminal_resize_boundary: command_d_split_geometry_preserves_existing_pane_viewport_and_selection
+      echoed_remote_resize_boundary: resize_echo_preserves_scrollback_viewport_and_selection
+    forbidden:
+      - auto_scrolling_the_old_pane_to_bottom_during_split
+      - clearing_or_rebasing_the_old_pane_selection_on_column_resize
+      - deriving_old_pane_viewport_from_the_new_sibling_state
+      - proving_only_the_pane_tree_without_display_offset_and_selection_evidence

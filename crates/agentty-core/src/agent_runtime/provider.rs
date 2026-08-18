@@ -56,7 +56,7 @@ pub enum ProviderScanner {
     OmpJsonl,
     GrokSummaryJson,
     GeminiTmpJsonl,
-    JcodeHarnessApi,
+    JcodeSessionJson,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -81,7 +81,7 @@ impl ProviderDescriptor {
             ProviderId::Omp => vec![roots.omp_sessions()],
             ProviderId::Grok => vec![roots.grok_sessions()],
             ProviderId::Gemini => vec![roots.gemini_tmp()],
-            ProviderId::Jcode => vec![roots.jcode_api_socket()],
+            ProviderId::Jcode => vec![roots.jcode_sessions()],
         }
     }
 
@@ -96,7 +96,7 @@ impl ProviderDescriptor {
             ProviderId::Grok => is_grok_session_source(&roots.grok_sessions(), source),
             ProviderId::Gemini => is_gemini_session_source(&roots.gemini_tmp(), source),
             ProviderId::Jcode => {
-                let sessions = roots.home.join(".jcode/sessions");
+                let sessions = roots.jcode_sessions();
                 is_descendant(&sessions, source)
                     && has_extension(source, "json")
                     && !source
@@ -199,7 +199,7 @@ pub const PERSISTED_PROVIDER_DESCRIPTORS: &[ProviderDescriptor] = &[
     ProviderDescriptor {
         id: ProviderId::Jcode,
         agent: CLIAgent::Jcode,
-        scanner: ProviderScanner::JcodeHarnessApi,
+        scanner: ProviderScanner::JcodeSessionJson,
         can_resume: true,
     },
 ];
@@ -322,16 +322,18 @@ mod tests {
     }
 
     #[test]
-    fn jcode_is_advertised_only_through_stable_harness_api() {
+    fn jcode_uses_documented_session_schema() {
         assert_eq!(
             CLIAgent::from_slug("jcode"),
             Some(CLIAgent::Jcode),
             "runtime CLI identity is needed for temporary live carrier detection"
         );
-        let descriptor = descriptor_for_agent(CLIAgent::Jcode).expect("Jcode harness API provider");
+        let descriptor = descriptor_for_agent(CLIAgent::Jcode).expect("Jcode documented provider");
         assert_eq!(descriptor.id, ProviderId::Jcode);
-        assert_eq!(descriptor.scanner, ProviderScanner::JcodeHarnessApi);
+        assert_eq!(descriptor.scanner, ProviderScanner::JcodeSessionJson);
         assert!(descriptor.can_resume);
+        let roots = AgentStoreRoots::for_home("/home/alice".into());
+        assert!(descriptor.accepts_source(&roots, &roots.jcode_sessions().join("main.json")));
     }
 
     #[test]
@@ -352,10 +354,7 @@ mod tests {
     fn jcode_session_files_are_canonical_mutation_sources() {
         let roots = AgentStoreRoots::for_home("/home/alice".into());
         let descriptor = descriptor_for_id(ProviderId::Jcode);
-        assert!(descriptor.accepts_source(
-            &roots,
-            &roots.home.join(".jcode/sessions/main.json")
-        ));
+        assert!(descriptor.accepts_source(&roots, &roots.home.join(".jcode/sessions/main.json")));
         assert!(!descriptor.accepts_source(
             &roots,
             &roots.home.join(".jcode/sessions/main.journal.json")

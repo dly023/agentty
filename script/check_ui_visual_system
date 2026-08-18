@@ -258,9 +258,12 @@ fi
 rg -q 'INPUT-COMPOSER-ACTIVITY-BAR-07' docs/specs/INPUT_EXPERIENCE_SPEC.yaml
 rg -q 'fn toggle_composer_from_activity_bar' src/ui/composer.rs
 rg -q 'activity_bar_toggles_composer_without_mutating_mode' src/ui/composer.rs
+rg -q 'composer_activity_bar_click_round_trips_draft_and_focus' src/ui/composer.rs
+rg -q 'AGENT_ACTIVITY_COMPOSER_TOGGLE' src/ui/activity_bar.rs
 rg -q 'composer.toggle.expand' src/ui/activity_bar.rs assets/i18n/en-US.yaml assets/i18n/zh-CN.yaml
 rg -q 'composer.toggle.collapse' src/ui/activity_bar.rs assets/i18n/en-US.yaml assets/i18n/zh-CN.yaml
 rg -q 'toggle_composer_from_activity_bar' src/ui/activity_bar.rs
 bash script/tests/composer_dock_reflow_contract.sh
+bash script/tests/composer_native_rich_area_contract.sh
 
 echo "ui visual system checks passed"

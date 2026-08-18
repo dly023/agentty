@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+# The GUI and the headless CLI are intentionally separate launch surfaces. A
+# local acceptance run must hand the user an agentty-app artifact, never the
+# default `agentty` CLI package or the migration-only daemon entrypoint.
+rg -q '^default-run = "agentty-app"$' Cargo.toml
+rg -q '^name = "agentty-app"$' Cargo.toml
+[[ -f crates/agentty-cli/Cargo.toml ]] && rg -q '^name = "agentty-cli"$' crates/agentty-cli/Cargo.toml
+
+# Packaging must use the same exact GUI binary and scoped stale-artifact
+# cleanup contract that the desktop acceptance workflow hands off.
+rg -q 'cp "target/\$\{TARGET\}/release/agentty-app"' .github/scripts/bundle-macos.sh .github/scripts/bundle-linux.sh .github/scripts/bundle-appimage.sh
+rg -q 'APP="dist/Agentty.app"' .github/scripts/bundle-macos.sh
+rg -q 'rm -rf "\$APP" "dist/dmg-stage"' .github/scripts/bundle-macos.sh
+rg -q 'rm -rf "\$APP"$' .github/scripts/bundle-macos.sh
+
+gui_artifact=''
+if [[ -x dist/Agentty.app/Contents/MacOS/agentty-app ]]; then
+  gui_artifact='dist/Agentty.app/Contents/MacOS/agentty-app'
+elif [[ -x target/debug/agentty-app ]]; then
+  gui_artifact='target/debug/agentty-app'
+fi
+
+if [[ -n "$gui_artifact" ]]; then
+  [[ "$(basename "$gui_artifact")" == agentty-app ]] || {
+    echo '[local-gui] resolved artifact is not agentty-app' >&2
+    exit 1
+  }
+  echo "local GUI acceptance artifact: $gui_artifact"
+  echo "launch manually for OS-level click/input acceptance: $gui_artifact"
+else
+  echo 'local GUI acceptance identity and packaging checks passed (build agentty-app before launch)'
+fi

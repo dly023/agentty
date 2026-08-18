@@ -13,6 +13,26 @@ pub struct WorkspaceStore {
 
 impl gpui::Global for WorkspaceStore {}
 
+fn select_remote_environment_window(
+    views: &EnvironmentWindows,
+    environment: &agentty_core::core::environment::EnvironmentId,
+    remote_workspace: WorkspaceId,
+) -> Option<WorkspaceId> {
+    let exact = views
+        .windows
+        .iter()
+        .filter(|window| &window.environment.id == environment)
+        .filter(|window| window.remote_workspace == Some(remote_workspace))
+        .max_by_key(|window| (window.open, window.last_active))
+        .map(|window| window.workspace);
+
+    exact.or_else(|| {
+        views
+            .latest_environment(environment)
+            .map(|window| window.workspace)
+    })
+}
+
 impl WorkspaceStore {
     pub fn init(cx: &mut gpui::App) {
         let views = EnvironmentWindows::load().unwrap_or_default();
@@ -94,31 +114,25 @@ impl WorkspaceStore {
         });
     }
 
-    pub fn restore_one(cx: &mut gpui::App) -> Option<WorkspaceId> {
-        let store = Self::try_store(cx)?;
-        let keep = store.views.workspace_to_restore()?;
-        let reattaching = store
-            .views
-            .get_workspace(keep)
-            .is_some_and(|view| !view.open);
-        let mut detached = 0usize;
-        for view in &mut store.views.windows {
-            if view.open && view.workspace != keep {
-                view.open = false;
-                detached += 1;
+    pub fn restore_all(cx: &mut gpui::App) -> Vec<WorkspaceId> {
+        let Some(store) = Self::try_store(cx) else {
+            return Vec::new();
+        };
+        let restore = store.views.workspaces_to_restore();
+        if restore.is_empty() {
+            return Vec::new();
+        }
+        for workspace in &restore {
+            if let Some(window) = store.views.get_workspace_mut(*workspace) {
+                window.open = true;
             }
         }
-        store.views.active = store
-            .views
-            .get_workspace(keep)
-            .map(|view| view.environment.id.clone());
+        store.views.active = restore
+            .last()
+            .and_then(|workspace| store.views.get_workspace(*workspace))
+            .map(|window| window.environment.id.clone());
         store.views.save();
-        if reattaching {
-            log::info!("launch: no window was open at quit; reattaching the last one closed");
-        } else if detached > 0 {
-            log::info!("launch: restoring 1 workspace, left {detached} detached");
-        }
-        Some(keep)
+        restore
     }
 
     pub fn close_window(cx: &mut gpui::App, id: WorkspaceId) {
@@ -182,8 +196,70 @@ impl WorkspaceStore {
         environment: &agentty_core::core::environment::EnvironmentId,
     ) -> Option<WorkspaceId> {
         Self::all(cx)
-            .get_environment(environment)
+            .latest_environment(environment)
             .map(|view| view.workspace)
+    }
+
+    pub fn claim_peer(cx: &mut gpui::App, source: WorkspaceId) -> Option<WorkspaceId> {
+        let peer = Self::all(cx).get_workspace(source)?.peer();
+        let workspace = peer.workspace;
+        let environment = peer.environment.id.clone();
+        let store = Self::try_store(cx)?;
+        store.views.windows.push(peer);
+        store.views.active = Some(environment);
+        store.views.save();
+        Some(workspace)
+    }
+
+    pub fn recover_unassigned_machine_workspaces(
+        cx: &mut gpui::App,
+        host: HostId,
+        machine_workspaces: &[WorkspaceId],
+    ) -> Vec<WorkspaceId> {
+        let claimed: std::collections::HashSet<WorkspaceId> = Self::all(cx)
+            .windows
+            .iter()
+            .filter(|window| window.host_id() == host)
+            .map(|window| window.remote_workspace.unwrap_or(window.workspace))
+            .collect();
+        let template = Self::all(cx)
+            .windows
+            .iter()
+            .filter(|window| window.host_id() == host)
+            .max_by_key(|window| window.last_active)
+            .cloned();
+        if !host.is_local() && template.is_none() {
+            return Vec::new();
+        }
+        let missing: Vec<_> = machine_workspaces
+            .iter()
+            .copied()
+            .filter(|workspace| !claimed.contains(workspace))
+            .collect();
+        if missing.is_empty() {
+            return Vec::new();
+        }
+        let Some(store) = Self::try_store(cx) else {
+            return Vec::new();
+        };
+        let mut recovered = Vec::with_capacity(missing.len());
+        for machine_workspace in missing {
+            let mut window = match &template {
+                Some(template) => template.peer(),
+                None => EnvironmentWindow::default(),
+            };
+            if host.is_local() {
+                window.workspace = machine_workspace;
+                window.remote_workspace = None;
+            } else {
+                window.remote_workspace = Some(machine_workspace);
+            }
+            window.open = false;
+            recovered.push(window.workspace);
+            store.views.windows.push(window);
+        }
+        store.views.save();
+        recovered
     }
 
     pub fn machine_is_connected(cx: &mut gpui::App, id: WorkspaceId) -> bool {
@@ -198,10 +274,7 @@ impl WorkspaceStore {
             return WorkspaceId::new();
         };
         let environment = agentty_core::core::environment::EnvironmentId::for_remote(&host.target);
-        let existing = store
-            .views
-            .get_environment(&environment)
-            .map(|w| w.workspace);
+        let existing = select_remote_environment_window(&store.views, &environment, host.workspace);
         let id = match existing {
             Some(id) => id,
             None => {
@@ -231,7 +304,20 @@ pub(crate) fn crosses_machines(previous: HostId, current: HostId) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use agentty_core::core::session::{WindowView, WindowViews};
+    use agentty_core::core::session::{
+        EnvironmentWindow, EnvironmentWindows, WindowView, WindowViews,
+    };
+
+    fn install_environment_views(cx: &mut gpui::App, windows: Vec<EnvironmentWindow>) {
+        crate::core::config::pin_test_config_dir();
+        cx.set_global(WorkspaceStore {
+            views: EnvironmentWindows {
+                version: EnvironmentWindows::VERSION,
+                windows,
+                active: None,
+            },
+        });
+    }
 
     #[test]
     fn a_window_binds_to_exactly_one_machine() {
@@ -288,5 +374,160 @@ mod tests {
         assert_ne!(a.host_id(), c.host_id());
         assert_eq!(local.host_id(), HostId::LOCAL);
         assert_ne!(a.host_id(), HostId::LOCAL);
+    }
+
+    #[gpui::test]
+    fn window_restore_keeps_all_open_peer_windows(cx: &mut gpui::TestAppContext) {
+        cx.update(|cx| {
+            WorkspaceStore::install_for_test(cx, WindowViews::default());
+            let first = WorkspaceStore::claim(cx, None);
+            let second = WorkspaceStore::claim_peer(cx, first).expect("peer window");
+
+            let restored = WorkspaceStore::restore_all(cx);
+
+            assert_eq!(restored.len(), 2);
+            assert!(restored.contains(&first));
+            assert!(restored.contains(&second));
+            assert!(
+                restored.iter().all(|workspace| WorkspaceStore::all(cx)
+                    .get_workspace(*workspace)
+                    .is_some_and(|window| window.open)),
+                "launch may not silently detach one of the persisted peer windows"
+            );
+        });
+    }
+
+    #[gpui::test]
+    fn missing_window_record_recovers_unassigned_machine_workspace_without_deletion(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        cx.update(|cx| {
+            WorkspaceStore::install_for_test(cx, WindowViews::default());
+            let first = WorkspaceId::new();
+            let second = WorkspaceId::new();
+
+            let recovered = WorkspaceStore::recover_unassigned_machine_workspaces(
+                cx,
+                HostId::LOCAL,
+                &[first, second],
+            );
+
+            assert_eq!(recovered.len(), 2);
+            assert_eq!(WorkspaceStore::all(cx).windows.len(), 2);
+            assert!(
+                WorkspaceStore::all(cx)
+                    .windows
+                    .iter()
+                    .all(|window| !window.open),
+                "recovery keeps unassigned sessions discoverable without opening surprise windows"
+            );
+            assert!(WorkspaceStore::all(cx).get_workspace(first).is_some());
+            assert!(WorkspaceStore::all(cx).get_workspace(second).is_some());
+
+            assert!(
+                WorkspaceStore::recover_unassigned_machine_workspaces(
+                    cx,
+                    HostId::LOCAL,
+                    &[first, second],
+                )
+                .is_empty(),
+                "reconciliation must be idempotent"
+            );
+            assert_eq!(WorkspaceStore::all(cx).windows.len(), 2);
+        });
+    }
+
+    #[gpui::test]
+    fn claim_remote_prefers_exact_remote_workspace_peer(cx: &mut gpui::TestAppContext) {
+        cx.update(|cx| {
+            let target = RemoteTarget::Alias {
+                alias: "build".into(),
+            };
+            let requested_remote_workspace = WorkspaceId::new();
+            let mut first =
+                EnvironmentWindow::remote(target.clone(), WorkspaceId::new(), WorkspaceId::new());
+            first.open = true;
+            first.last_active = 100;
+            let mut exact = EnvironmentWindow::remote(
+                target.clone(),
+                WorkspaceId::new(),
+                requested_remote_workspace,
+            );
+            exact.open = false;
+            exact.last_active = 1;
+            let exact_window = exact.workspace;
+            install_environment_views(cx, vec![first, exact]);
+
+            let claimed = WorkspaceStore::claim_remote(
+                cx,
+                RemoteRef::new(target, requested_remote_workspace),
+            );
+
+            assert_eq!(claimed, exact_window);
+            assert_eq!(
+                WorkspaceStore::remote_ref(cx, claimed)
+                    .expect("exact peer remains remote")
+                    .workspace,
+                requested_remote_workspace
+            );
+            assert_eq!(WorkspaceStore::all(cx).windows.len(), 2);
+        });
+    }
+
+    #[gpui::test]
+    fn claim_remote_falls_back_to_latest_open_peer(cx: &mut gpui::TestAppContext) {
+        cx.update(|cx| {
+            let target = RemoteTarget::Alias {
+                alias: "build".into(),
+            };
+            let mut older_open =
+                EnvironmentWindow::remote(target.clone(), WorkspaceId::new(), WorkspaceId::new());
+            older_open.open = true;
+            older_open.last_active = 10;
+            let mut latest_open =
+                EnvironmentWindow::remote(target.clone(), WorkspaceId::new(), WorkspaceId::new());
+            latest_open.open = true;
+            latest_open.last_active = 20;
+            let mut newer_closed =
+                EnvironmentWindow::remote(target.clone(), WorkspaceId::new(), WorkspaceId::new());
+            newer_closed.open = false;
+            newer_closed.last_active = 100;
+            let expected = latest_open.workspace;
+            install_environment_views(cx, vec![older_open, latest_open, newer_closed]);
+
+            let claimed =
+                WorkspaceStore::claim_remote(cx, RemoteRef::new(target, WorkspaceId::new()));
+
+            assert_eq!(claimed, expected);
+            assert_eq!(WorkspaceStore::all(cx).windows.len(), 3);
+        });
+    }
+
+    #[gpui::test]
+    fn claim_remote_allocates_only_when_environment_has_no_peer(cx: &mut gpui::TestAppContext) {
+        cx.update(|cx| {
+            install_environment_views(cx, Vec::new());
+            let target = RemoteTarget::Alias {
+                alias: "new-host".into(),
+            };
+            let requested_remote_workspace = WorkspaceId::new();
+
+            let claimed = WorkspaceStore::claim_remote(
+                cx,
+                RemoteRef::new(target.clone(), requested_remote_workspace),
+            );
+
+            assert_eq!(WorkspaceStore::all(cx).windows.len(), 1);
+            assert_eq!(
+                WorkspaceStore::remote_ref(cx, claimed)
+                    .expect("new claim is remote")
+                    .workspace,
+                requested_remote_workspace
+            );
+            assert_eq!(
+                WorkspaceStore::environment_id(cx, claimed),
+                agentty_core::core::environment::EnvironmentId::for_remote(&target)
+            );
+        });
     }
 }

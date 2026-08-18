@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+python3 - <<'PY'
+from pathlib import Path
+import re
+import sys
+
+spec = Path("docs/specs/WINDOW_SESSION_LAYOUT_SPEC.yaml").read_text(encoding="utf-8")
+env_spec = Path("docs/specs/ENVIRONMENT_MODEL_SPEC.yaml").read_text(encoding="utf-8")
+matrix = Path("docs/quality/traceability.yaml").read_text(encoding="utf-8")
+strip = Path("src/ui/tab_strip.rs").read_text(encoding="utf-8")
+app = Path("src/ui/app.rs").read_text(encoding="utf-8")
+sync = Path("src/ui/tree_sync.rs").read_text(encoding="utf-8")
+
+def require(haystack: str, needle: str, label: str) -> None:
+    if needle not in haystack:
+        print(f"[tab-drag] missing {label}: {needle}", file=sys.stderr)
+        raise SystemExit(1)
+
+require(spec, "WINDOW-SESSION-DRAG-SEMANTICS-08", "drag semantics spec")
+require(env_spec, "ENV-WINDOW-DRAG-BOUNDARY-18", "window boundary spec")
+require(matrix, "WINDOW-SESSION-DRAG-SEMANTICS-109", "drag semantics matrix row")
+require(matrix, "ENV-WINDOW-DRAG-BOUNDARY-110", "window boundary matrix row")
+
+test_names = [
+    "tab_strip_icon_drag_splits_single_pane_target_and_source",
+    "tab_strip_body_drag_reorders_source_before_target_and_persists",
+    "tab_strip_body_drag_reorders_source_after_target_and_persists",
+    "tab_strip_icon_drag_rejects_multi_pane_merge_without_tree_mutation",
+    "tab_strip_body_drag_source_before_target_maps_original_identity",
+    "tab_strip_icon_drag_inactive_source_preserves_target_tree",
+    "tab_strip_pointer_drag_does_not_cross_environment_window_boundary",
+    "tab_drag_merge_tree_diff_emits_one_pane_move_not_split_and_tab_close",
+]
+for name in test_names:
+    require(strip + sync, f"fn {name}", f"focused red test {name}")
+
+production = strip.split("#[cfg(test)]", 1)[0]
+require(production, '"TAB_CHIP_{i}_ICON"', "icon hit selector")
+require(production, '"TAB_CHIP_{i}_BODY"', "body hit selector")
+for token in (
+    "TabDragIntent::Merge",
+    "TabDragIntent::Reorder",
+    "TabDragHitZone::Icon",
+    "TabDragHitZone::Body",
+    "target_after_removal",
+):
+    require(production, token, "typed drag intent/index primitive")
+
+split_region = app.split("fn apply_tab_strip_split_right(", 1)
+if len(split_region) != 2:
+    print("[tab-drag] canonical split materializer is missing", file=sys.stderr)
+    raise SystemExit(1)
+split_body = split_region[1].split("pub(crate) fn move_tab_to_new_window(", 1)[0]
+if split_body.count("terminals().len()") < 2:
+    print("[tab-drag] merge must validate both source and target pane cardinality", file=sys.stderr)
+    raise SystemExit(1)
+if "tabs.remove(source)" in split_body and split_body.find("tabs.remove(source)") < split_body.find("split_leaf("):
+    print("[tab-drag] source tab may be removed only after canonical split commit", file=sys.stderr)
+    raise SystemExit(1)
+
+# A pointer drag must never call the cross-window transfer primitive. The only
+# allowed transfer remains the explicit Move-to-New-Window command boundary.
+if "transfer_tab_to_workspace" in production:
+    print("[tab-drag] tab-strip pointer path must not call transfer_tab_to_workspace", file=sys.stderr)
+    raise SystemExit(1)
+require(app, "move_tab_to_new_window", "explicit detach action")
+require(sync, "ControlRequest::PaneMove", "canonical PaneMove request path")
+if "ControlRequest::PaneSplit" not in sync:
+    print("[tab-drag] tree sync must retain explicit split support", file=sys.stderr)
+    raise SystemExit(1)
+
+print("tab drag semantics checks passed")
+PY

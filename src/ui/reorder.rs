@@ -2,15 +2,37 @@ use gpui::{Axis, Bounds, Pixels, Point, px};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
+use agentty_core::core::machine::TabId;
+
 pub(crate) type ReorderState = Rc<RefCell<Option<Reorder>>>;
+
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub(crate) enum ReorderIntent {
+    Reorder,
+    Tab(TabDragIntent),
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum TabDragIntent {
+    Merge,
+    Reorder,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum TabDragHitZone {
+    Icon,
+    Body,
+}
 
 #[derive(Clone)]
 pub(crate) struct Preview {
     pub(crate) order: Vec<usize>,
     pub(crate) from: usize,
+    pub(crate) target: usize,
     pub(crate) generation: usize,
     pub(crate) offsets: Vec<Pixels>,
     pub(crate) held: Pixels,
+    pub(crate) hovered: Option<usize>,
 }
 
 pub(crate) fn preview(
@@ -26,17 +48,70 @@ pub(crate) fn preview(
     Some(Preview {
         order: r.order(target),
         from: r.from,
+        target,
         generation,
         offsets: (0..len)
             .map(|slot| r.flip_offset(slot, prev, target))
             .collect(),
         held: r.held_offset(pointer, target),
+        hovered: r.hit_target(pointer),
     })
 }
 
-pub(crate) fn set_pending(state: &ReorderState, surface: &Surface, order: Vec<usize>) {
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub(crate) struct Pending {
+    pub(crate) order: Vec<usize>,
+    pub(crate) from: usize,
+    pub(crate) target: usize,
+    pub(crate) intent: ReorderIntent,
+    pub(crate) source_tab: Option<TabId>,
+    pub(crate) target_tab: Option<TabId>,
+    pub(crate) hit_zone: Option<TabDragHitZone>,
+}
+
+pub(crate) fn set_pending(
+    state: &ReorderState,
+    surface: &Surface,
+    order: Vec<usize>,
+    target: usize,
+    intent: ReorderIntent,
+) {
     if let Some(r) = state.borrow().as_ref().filter(|r| r.surface == *surface) {
-        *r.pending.borrow_mut() = Some(order);
+        *r.pending.borrow_mut() = Some(Pending {
+            order,
+            from: r.from,
+            target,
+            intent,
+            source_tab: None,
+            target_tab: None,
+            hit_zone: None,
+        });
+    }
+}
+
+pub(crate) fn set_tab_pending(
+    state: &ReorderState,
+    surface: &Surface,
+    order: Vec<usize>,
+    target: usize,
+    target_tab: Option<TabId>,
+) {
+    if let Some(r) = state.borrow().as_ref().filter(|r| r.surface == *surface) {
+        let Some(source_tab) = r.source_tab else {
+            return;
+        };
+        let Some(intent) = r.tab_intent else {
+            return;
+        };
+        *r.pending.borrow_mut() = Some(Pending {
+            order,
+            from: r.from,
+            target,
+            intent: ReorderIntent::Tab(intent),
+            source_tab: Some(source_tab),
+            target_tab,
+            hit_zone: r.tab_hit_zone,
+        });
     }
 }
 
@@ -46,9 +121,10 @@ pub(crate) fn clear_pending(state: &ReorderState) {
     }
 }
 
-pub(crate) fn take_pending(state: &ReorderState) -> Option<(Surface, Vec<usize>)> {
+pub(crate) fn take_pending(state: &ReorderState) -> Option<(Surface, Pending)> {
     let reorder = state.borrow_mut().take()?;
-    Some((reorder.surface, reorder.pending.into_inner()?))
+    let pending = reorder.pending.into_inner()?;
+    Some((reorder.surface, pending))
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -66,7 +142,10 @@ pub(crate) struct Reorder {
     grab: Point<Pixels>,
     prev: Cell<usize>,
     generation: Cell<usize>,
-    pending: RefCell<Option<Vec<usize>>>,
+    pending: RefCell<Option<Pending>>,
+    pub(crate) source_tab: Option<TabId>,
+    pub(crate) tab_intent: Option<TabDragIntent>,
+    pub(crate) tab_hit_zone: Option<TabDragHitZone>,
 }
 
 impl Reorder {
@@ -106,7 +185,28 @@ impl Reorder {
             prev: Cell::new(from),
             generation: Cell::new(0),
             pending: RefCell::new(None),
+            source_tab: None,
+            tab_intent: None,
+            tab_hit_zone: None,
         }
+    }
+
+    pub(crate) fn new_tab(
+        surface: Surface,
+        from: usize,
+        rects: Vec<Bounds<Pixels>>,
+        axis: Axis,
+        gap: Pixels,
+        grab: Point<Pixels>,
+        source_tab: TabId,
+        intent: TabDragIntent,
+        hit_zone: TabDragHitZone,
+    ) -> Self {
+        let mut reorder = Self::new(surface, from, rects, axis, gap, grab);
+        reorder.source_tab = Some(source_tab);
+        reorder.tab_intent = Some(intent);
+        reorder.tab_hit_zone = Some(hit_zone);
+        reorder
     }
 
     pub(crate) fn covers(&self, surface: &Surface, len: usize) -> bool {
@@ -164,6 +264,19 @@ impl Reorder {
                 None => *i < first_measured && *i < self.from,
             })
             .count()
+    }
+
+    pub(crate) fn hit_target(&self, pointer: Point<Pixels>) -> Option<usize> {
+        let along = self.along(pointer);
+        self.rects.iter().enumerate().find_map(|(index, rect)| {
+            if index == self.from {
+                return None;
+            }
+            let rect = rect.as_ref()?;
+            let start = self.along(rect.origin);
+            let end = start + self.extent(rect);
+            (along >= start && along <= end).then_some(index)
+        })
     }
 
     fn free_origin(&self, pointer: Point<Pixels>) -> Pixels {
@@ -336,8 +449,14 @@ mod tests {
         let mine = Surface::Strip;
 
         clear_pending(&state);
-        set_pending(&state, &mine, vec![1, 0, 2]);
-        set_pending(&state, &Surface::Strip, vec![2, 1, 0]);
+        set_pending(&state, &mine, vec![1, 0, 2], 1, ReorderIntent::Reorder);
+        set_pending(
+            &state,
+            &Surface::Strip,
+            vec![2, 1, 0],
+            1,
+            ReorderIntent::Reorder,
+        );
 
         clear_pending(&state);
         assert_eq!(take_pending(&state), None);
@@ -345,8 +464,51 @@ mod tests {
 
         *state.borrow_mut() = Some(column(3, 30., 2., 0));
         clear_pending(&state);
-        set_pending(&state, &mine, vec![1, 0, 2]);
-        assert_eq!(take_pending(&state), Some((Surface::Strip, vec![1, 0, 2])));
+        set_pending(
+            &state,
+            &mine,
+            vec![1, 0, 2],
+            1,
+            ReorderIntent::Tab(TabDragIntent::Merge),
+        );
+        assert_eq!(
+            take_pending(&state),
+            Some((
+                Surface::Strip,
+                Pending {
+                    order: vec![1, 0, 2],
+                    from: 0,
+                    target: 1,
+                    intent: ReorderIntent::Tab(TabDragIntent::Merge),
+                    source_tab: None,
+                    target_tab: None,
+                    hit_zone: None,
+                }
+            ))
+        );
+    }
+
+    #[test]
+    fn split_intent_defaults_to_reorder_for_unknown_handlers() {
+        let state: ReorderState = Rc::new(RefCell::new(Some(column(3, 30., 2., 0))));
+        let mine = Surface::Strip;
+        clear_pending(&state);
+        set_pending(&state, &mine, vec![1, 0, 2], 1, ReorderIntent::Reorder);
+        assert_eq!(
+            take_pending(&state),
+            Some((
+                Surface::Strip,
+                Pending {
+                    order: vec![1, 0, 2],
+                    from: 0,
+                    target: 1,
+                    intent: ReorderIntent::Reorder,
+                    source_tab: None,
+                    target_tab: None,
+                    hit_zone: None,
+                }
+            ))
+        );
     }
 
     #[test]

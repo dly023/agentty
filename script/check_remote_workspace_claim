@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+spec=docs/specs/ENVIRONMENT_MODEL_SPEC.yaml
+matrix=docs/quality/traceability.yaml
+source=src/core/session.rs
+
+[[ -f "$spec" && -f "$matrix" && -f "$source" ]] || {
+  echo '[remote-workspace-claim] required contract/source file is missing' >&2
+  exit 1
+}
+
+rg -Fq 'id: ENV-REMOTE-PEER-20' "$spec"
+rg -Fq 'spec: ENV-REMOTE-PEER-20' "$matrix"
+rg -Fq 'id: ENV-REMOTE-PEER-114' "$matrix"
+
+rg -Fq 'fn select_remote_environment_window' "$source" || {
+  echo '[remote-workspace-claim] selection must use one canonical helper' >&2
+  exit 1
+}
+claim=$(sed -n '/pub fn claim_remote(/,/^    }/p' "$source")
+grep -Fq 'select_remote_environment_window' <<<"$claim" || {
+  echo '[remote-workspace-claim] claim_remote bypasses the canonical peer selector' >&2
+  exit 1
+}
+if grep -Fq 'get_environment(&environment)' <<<"$claim"; then
+  echo '[remote-workspace-claim] claim_remote may not select the first environment record' >&2
+  exit 1
+fi
+
+helper=$(sed -n '/^fn select_remote_environment_window(/,/^}/p' "$source")
+grep -Fq 'remote_workspace == Some(remote_workspace)' <<<"$helper" || {
+  echo '[remote-workspace-claim] exact RemoteRef.workspace matching is missing' >&2
+  exit 1
+}
+grep -Fq 'latest_environment(environment)' <<<"$helper" || {
+  echo '[remote-workspace-claim] fallback must use EnvironmentWindows::latest_environment' >&2
+  exit 1
+}
+grep -Fq 'EnvironmentWindow::remote(host.target' <<<"$claim" || {
+  echo '[remote-workspace-claim] no-peer allocation must remain the canonical remote constructor' >&2
+  exit 1
+}
+
+for test_name in \
+  claim_remote_prefers_exact_remote_workspace_peer \
+  claim_remote_falls_back_to_latest_open_peer \
+  claim_remote_allocates_only_when_environment_has_no_peer
+do
+  rg -Fq "fn $test_name" "$source" || {
+    echo "[remote-workspace-claim] missing regression test $test_name" >&2
+    exit 1
+  }
+done
+
+echo 'remote workspace claim checks passed'

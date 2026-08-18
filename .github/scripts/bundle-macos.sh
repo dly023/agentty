@@ -21,11 +21,23 @@ if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
   echo "bundle-macos: could not read a version from Cargo.toml (got '$VERSION')" >&2
   exit 1
 fi
+# Keep the user-facing SemVer stable while carrying the exact source identity
+# emitted by the staged native server. Git revision alone is insufficient for
+# local packages: two dirty builds can share HEAD while linking different
+# server source and speaking different provider vocabularies.
+SERVER_PROTOCOL="$("target/${TARGET}/release/agentty-server" --protocol | awk 'NF { line = $0 } END { print line }')"
+BUNDLE_VERSION="$(printf '%s\n' "$SERVER_PROTOCOL" | sed -nE 's/^\{"control":[0-9]+,"protocol":[0-9]+,"build":"([^"]+)"\}$/\1/p')"
+if [[ ! "$BUNDLE_VERSION" =~ ^${VERSION}\+[[:alnum:]]+\.[0-9a-f]{16}$ ]]; then
+  echo "bundle-macos: staged server returned an incomplete exact build identity: $SERVER_PROTOCOL" >&2
+  exit 1
+fi
 APP="dist/Agentty.app"
 
 # Always remove this target's old stage and package before touching new inputs.
 # A failed package run must never leave an older DMG looking current.
 rm -rf "$APP" "dist/dmg-stage" "dist/notarize.zip" "dist/agentty-${VERSION}-macos-${ARCH}.dmg"
+bash script/check_bundled_remote_helpers \
+  "target/${TARGET}/release/agentty-server" bundled-server
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "target/${TARGET}/release/agentty-app" "$APP/Contents/MacOS/agentty-app"
 chmod +x "$APP/Contents/MacOS/agentty-app"
@@ -69,7 +81,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleName</key><string>Agentty</string>
     <key>CFBundleDisplayName</key><string>Agentty</string>
     <key>CFBundleIdentifier</key><string>com.dly023.agentty</string>
-    <key>CFBundleVersion</key><string>${VERSION}</string>
+    <key>CFBundleVersion</key><string>${BUNDLE_VERSION}</string>
     <key>CFBundleShortVersionString</key><string>${VERSION}</string>
     <key>CFBundleExecutable</key><string>agentty-app</string>
     <key>CFBundleIconFile</key><string>agentty</string>
@@ -171,4 +183,8 @@ rm -rf "$STAGE"
 if [[ -n "$SIGN_ID" && -n "${APPLE_CERTIFICATE:-}" ]]; then
     codesign --force --timestamp --sign "$SIGN_ID" "$DMG"
 fi
+# The .app is an intermediate signing/staging input, not a second installable
+# desktop copy. Leave the DMG as the handoff artifact so Launch Services cannot
+# register a stale dist/Agentty.app beside /Applications/Agentty.app.
+rm -rf "$APP"
 echo "✅ $DMG"

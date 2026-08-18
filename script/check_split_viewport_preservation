@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+python3 - <<'PY'
+from pathlib import Path
+import re
+import sys
+
+spec = Path("docs/specs/WINDOW_SESSION_LAYOUT_SPEC.yaml").read_text(encoding="utf-8")
+matrix = Path("docs/quality/traceability.yaml").read_text(encoding="utf-8")
+keymap = Path("src/ui/keymap.rs").read_text(encoding="utf-8")
+app = Path("src/ui/app.rs").read_text(encoding="utf-8")
+view = Path("src/terminal/view.rs").read_text(encoding="utf-8")
+remote = Path("src/terminal/remote.rs").read_text(encoding="utf-8")
+
+
+def require(haystack: str, needle: str, label: str) -> None:
+    if needle not in haystack:
+        print(f"[split-viewport] missing {label}: {needle}", file=sys.stderr)
+        raise SystemExit(1)
+
+
+require(spec, "WINDOW-SESSION-VIEWPORT-PRESERVATION-09", "viewport spec")
+require(matrix, "WINDOW-SESSION-VIEWPORT-PRESERVATION-111", "viewport matrix row")
+require(
+    spec,
+    "command_d_split_right_gpui_preserves_old_pane_viewport_selection_and_geometry",
+    "app-level SplitRight acceptance contract",
+)
+require(
+    matrix,
+    "command_d_split_right_gpui_preserves_old_pane_viewport_selection_and_geometry",
+    "app-level SplitRight matrix test",
+)
+require(view, "fn command_d_split_geometry_preserves_existing_pane_viewport_and_selection", "focused GPUI red test")
+require(remote, "fn resize_echo_preserves_scrollback_viewport_and_selection", "echoed Size focused test")
+require(
+    app,
+    "fn command_d_split_right_gpui_preserves_old_pane_viewport_selection_and_geometry",
+    "production app SplitRight GPUI test",
+)
+require(app, "app.run_command(CommandKind::SplitRight, window, cx)", "production SplitRight invocation")
+require(app, ".pane.leaf_rects()", "canonical Pane geometry observation")
+require(app, "RemoteTarget::LocalStdio", "daemon-free Connecting sibling harness")
+require(view, "view.set_grid_size(40, 24", "right-split geometry test input")
+require(view, "term.grid().display_offset()", "display offset assertion")
+require(view, "term.selection.clone()", "selection identity assertion")
+
+split_binding = re.search(
+    r'"SplitRight"\s*,\s*per_platform\("secondary-d",\s*"secondary-shift-d"\)',
+    keymap,
+)
+if not split_binding:
+    print("[split-viewport] macOS Command+D must remain the SplitRight binding", file=sys.stderr)
+    raise SystemExit(1)
+require(app, "SplitRight => self.split(Axis::Horizontal, window, cx)", "canonical SplitRight dispatch")
+
+
+def method_bodies(source: str):
+    """Return coarse Rust method slices for resize-named methods.
+
+    This is deliberately a fail-closed architectural check, not a parser: a
+    future implementation may put the snapshot/restore in either
+    TerminalView or RemoteTerminal, but the resize-named canonical method must
+    visibly carry both terminal state dimensions.
+    """
+    starts = list(
+        re.finditer(
+            r"\n    (?:(?:pub|pub\([^)]*\))\s+)?fn\s+([A-Za-z0-9_]+)\b",
+            source,
+        )
+    )
+    for index, match in enumerate(starts):
+        end = starts[index + 1].start() if index + 1 < len(starts) else len(source)
+        name = match.group(1)
+        if "resize" in name or name == "set_grid_size":
+            yield name, source[match.start():end]
+
+
+production_view = view.split("#[cfg(all(test, unix))]\npub(crate) fn quiet_test_pane", 1)[0]
+production_remote = remote.split("#[cfg(test)]\nmod tests", 1)[0]
+preserving_methods = [
+    (name, body)
+    for name, body in (*method_bodies(production_view), *method_bodies(production_remote))
+    if "display_offset" in body and "selection" in body
+]
+if not preserving_methods:
+    print(
+        "[split-viewport] no canonical resize method snapshots/restores both display_offset and selection; "
+        "keep this gate red until the production preservation primitive is implemented",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+
+print("split viewport preservation checks passed")
+PY

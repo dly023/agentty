@@ -26,6 +26,7 @@ pub const LAYOUT_EVENT_QUEUE: usize = 1024;
 pub trait PaneDirectory: Send + Sync {
     fn pane_count(&self) -> u64;
     fn agent_states(&self) -> Vec<PaneAgentState>;
+    fn reassign_owner(&self, _panes: &[u64], _owner: &str) {}
 }
 
 #[derive(Clone, Default)]
@@ -724,6 +725,27 @@ fn run_request(
                 .tab_move(workspace, tab, clamp_usize(to), conn.machine_origin)?;
             (ReplyOk::Unit, Vec::new())
         }
+        ControlRequest::TabTransfer {
+            from_workspace,
+            tab,
+            to_workspace,
+            to,
+        } => {
+            let directory = conn.panes.clone();
+            let panes = conn.machine()?.tab_transfer_with(
+                from_workspace,
+                tab,
+                to_workspace,
+                clamp_usize(to),
+                conn.machine_origin,
+                move |panes| {
+                    if let Some(directory) = &directory {
+                        directory.reassign_owner(panes, &to_workspace.to_string());
+                    }
+                },
+            )?;
+            (ReplyOk::Panes(panes), Vec::new())
+        }
         ControlRequest::TabSetGroup {
             workspace,
             tab,
@@ -787,6 +809,34 @@ fn run_request(
         } => {
             conn.machine()?
                 .pane_replace(workspace, old, new, conn.machine_origin)?;
+            (ReplyOk::Unit, Vec::new())
+        }
+        ControlRequest::PaneSetFirstUserTitle {
+            workspace,
+            pane,
+            title,
+        } => {
+            conn.machine()?.pane_set_first_user_title(
+                workspace,
+                pane,
+                title,
+                conn.machine_origin,
+            )?;
+            (ReplyOk::Unit, Vec::new())
+        }
+        ControlRequest::PaneSetProviderTitle {
+            workspace,
+            pane,
+            title,
+            expected_identity,
+        } => {
+            conn.machine()?.pane_set_provider_title(
+                workspace,
+                pane,
+                title,
+                expected_identity,
+                conn.machine_origin,
+            )?;
             (ReplyOk::Unit, Vec::new())
         }
 

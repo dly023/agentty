@@ -1,9 +1,9 @@
-version: 2
-updated: 2026-08-05
+version: 4
+updated: 2026-08-17
 domain: environment_and_window_model
 contracts:
   - id: ENV-WINDOW-BOUNDARY-01
-    rule: Every managed execution Environment owns an application window. A local window and each managed remote Environment are separate authority surfaces, while one Environment window may contain many repositories, tabs, panes, and Agent sessions.
+    rule: Every application window is bound to exactly one managed execution Environment. One Environment may own multiple application windows, and each window may contain many repositories, tabs, panes, and Agent sessions. Creating a peer window preserves EnvironmentId and creates a distinct daemon workspace collection for that window.
     migration: Replace user-facing workspace switching with open_or_focus_environment_window. WorkspaceId may remain temporarily as daemon collection identity but must not define the product model.
     forbidden:
       - retargeting_an_existing_window_to_another_environment
@@ -21,11 +21,12 @@ contracts:
       - deriving_execution_host_from_incidental_application_focus
       - silently_mixing_local_and_remote_panes_in_one_window
   - id: ENV-INDICATOR-04
-    rule: The Environment Indicator sits at the leading edge of the tab strip — the top-left of the content column, immediately right of the session sidebar — is always visible, and displays the window authority, connection health, and open-or-focus actions for other environments. The visible affordance is a health dot plus the environment short name; detailed state lives in the tooltip and menu.
+    rule: The Environment Indicator sits at the leading edge of the tab strip — the top-left of the content column, immediately right of the session sidebar — is always visible, and displays the window authority, connection health, and open-or-focus actions for other environments. The visible affordance is a health dot plus the environment short name; detailed state and non-secret remote endpoint context (user@host/IP and meaningful port) live in the tooltip and menu.
     display:
       - icon_and_short_name
       - local_or_remote_kind
       - connected_connecting_disconnected_error
+      - remote_endpoint_detail_in_tooltip
     actions:
       - open_or_focus_environment_window
       - connect_or_reconnect
@@ -53,7 +54,7 @@ contracts:
   - id: ENV-NAVIGATOR-SEPARATION-05
     rule: The left Agent Session Navigator lists sessions for the window Environment and does not replace the Environment Indicator.
   - id: ENV-PERSISTENCE-06
-    rule: Persistence stores Environment windows and their tabs without duplicating execution authority in unrelated view records. Multiple repository workspaces on one Environment must not require multiple application windows.
+    rule: Persistence stores every Environment-bound application window by stable window/workspace identity without duplicating execution authority in unrelated view records. Multiple windows may reference the same EnvironmentId, while each keeps a distinct daemon workspace collection, geometry, tab tree, and last-active timestamp.
   - id: ENV-AUTHORITY-VISIBLE-07
     rule: Local and managed remote windows continuously identify their execution authority. Remote connection success also produces one explicit entered-remote-environment notification.
   - id: ENV-CONNECTION-TRANSITION-08
@@ -63,7 +64,14 @@ contracts:
   - id: ENV-OPENSSH-NATIVE-BOUNDARY-10
     rule: Running ssh inside a terminal remains an OpenSSH child process in that window and does not change Agentty Environment authority. Selecting an SSH Environment through Agentty uses the managed russh path and opens or focuses a dedicated Environment window.
   - id: ENV-OPEN-OR-FOCUS-11
-    rule: Opening a managed Environment deduplicates by EnvironmentId. If its window is already open Agentty activates that window; otherwise Agentty creates a new window bound to that Environment.
+    rule: The ordinary Open Environment action activates the most-recent open window for that EnvironmentId, or creates one when none is open. Explicit session-detach and New Peer Window actions may create another window bound to the same EnvironmentId; they never retarget a window from another Environment.
+  - id: ENV-WINDOW-ACTIVATION-17
+    rule: Every ordinary Environment-menu open-or-focus action uses the existing canonical `open_or_focus_environment` → `open_with_session` path. A fresh window is not considered opened until its WindowRegistry entry has been published and that exact native window handle has been activated; the activation/focus step occurs before the path returns to the menu action. The existing-window branch activates the exact same handle. WorkspaceStore claim and managed-remote supervision remain the existing lifecycle responsibilities, and a repeated intent for the same Environment returns the exact existing window without a duplicate registry entry or host supervisor.
+    boundary: The invariant covers UI publication and native window activation only. It does not claim rollback of an already-started child process, SSH handshake, or daemon-side mutation; remote supervision remains responsible for eventual convergence.
+    forbidden:
+      - returning_before_new_window_activation
+      - duplicate_environment_window_or_host_supervisor_on_repeat
+      - activating_a_different_window_than_the_newly_registered_handle
   - id: ENV-WINDOW-MENU-16
     rule: When multiple environments are available, the tab/dock bar context menu exposes one quick open-or-focus item per environment. Selecting an item uses the canonical open_or_focus_environment_window path, never retargets the current window, and the resulting window title uses the environment display name.
     display:
@@ -73,6 +81,13 @@ contracts:
       - duplicate_environment_menu_items
       - retargeting_current_window_in_place
       - opening_a_window_without_environment_authority
+  - id: ENV-WINDOW-DRAG-BOUNDARY-18
+    rule: A primary-button tab drag is scoped to the active application window and its single Environment. Pointer movement across another application window or outside the strip never transfers, rebinds, or retargets a tab; the source window and Environment remain unchanged. Moving a tab to a new window is an explicit context-menu/command action that creates a peer bound to the same Environment and uses the canonical atomic tree transfer. The explicit action is not inferred from a drag leaving the window.
+    forbidden:
+      - cross_environment_pointer_drop
+      - cross_window_pointer_transfer
+      - drag_outside_strip_implicitly_detaching_a_tab
+      - retargeting_the_source_window_environment
   - id: ENV-PROFILE-DISPLAY-LABEL-12
     rule: A saved SSH profile Environment keeps the profile UUID in EnvironmentId and routing, while every user-visible short label resolves from the current profile registry name. Renaming a profile updates presentation without changing EnvironmentId. A missing profile uses an explicit stable fallback and never exposes a raw UUID as the normal connected label.
     forbidden:
@@ -84,3 +99,26 @@ contracts:
       - ui_is_local_branch_for_session_discovery
       - gui_guessing_remote_provider_roots
       - remote_session_ops_falling_back_to_local_host
+  - id: ENV-REMOTE-FACTS-19
+    rule: For a managed remote Environment, the selected Host and its daemon are the sole authority for target-owned machine trees, pane facts and titles, provider stores, session user state, hooks, and target-side files. GUI-local files and mirrors may hold only explicitly named client state, cache, or pending intent. Hydration, reconnect, refresh, and source failure must never promote local data into remote facts or use local data as a remote-success fallback. Any local-to-remote write must use the canonical HostOps or ControlRequest path with workspace/pane/session identity and ownership preconditions; unknown, stale, rejected, or disconnected results fail closed.
+    forbidden:
+      - hydrate_promoting_local_projection_to_remote_fact
+      - reconnect_using_local_same_name_data_as_remote_fallback
+      - direct_gui_file_write_for_remote_authority
+      - remote_write_without_identity_or_ownership_precondition
+  - id: ENV-REMOTE-PEER-20
+    rule: WorkspaceStore::claim_remote resolves a persisted peer for the requested Environment without losing the daemon workspace identity. It first selects a peer whose remote_workspace exactly equals RemoteRef.workspace; when no exact peer exists, it selects the latest open peer using the canonical (open, last_active) ordering; only when the Environment has no persisted peer does it allocate a new application workspace. Selection never retargets another Environment or overwrites a selected peer's remote_workspace.
+    forbidden:
+      - selecting_the_first_environment_record_without_matching_remote_workspace
+      - allocating_duplicate_environment_windows_when_a_peer_can_be_reused
+      - replacing_a_persisted_peer_remote_workspace_during_claim
+  - id: ENV-REMOTE-HOOK-ROOTS-21
+    rule: Agent hooks and Navigator user state are target-side files. A local Environment facade resolves one immutable AgentStoreRoots snapshot from the local target environment at construction. A remote Connected/HostLinks carries the exact target snapshot published in HelloOk.store_roots; hook state, install, uninstall, refresh, and session alias/pin/order persistence consume that snapshot and never consult GUI HOME/environment or re-derive defaults from the local machine. Additive root fields (XDG_CONFIG_HOME, AGENTTY_CONFIG_DIR, OPENCODE_CONFIG_DIR, and GROK_HOME) are resolved by the target daemon; fields absent from an older HelloOk derive defaults from the published target home only. Discovery, hooks, and user-state persistence therefore address the same target roots, including custom provider configuration directories.
+    forbidden:
+      - remote_hook_target_reading_gui_environment
+      - remote_hook_target_rederiving_roots_from_local_home
+      - custom_store_discovery_with_default_hook_install_path
+      - hostlinks_dropping_hook_root_fields
+      - remote_user_state_rederiving_home_config_path
+      - mutable_or_callsite_specific_hook_root_resolution
+      - wire_dialect_bump_for_additive_hello_root_fields

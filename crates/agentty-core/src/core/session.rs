@@ -2,6 +2,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+use crate::agent_runtime::SessionTitleCandidates;
 use crate::daemon::protocol::NativeSshSpec;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -20,6 +21,43 @@ pub struct LiveContainerBinding {
     pub session_id: Option<String>,
     #[serde(default, rename = "agent_launch_argv")]
     pub launch_argv: Vec<String>,
+    /// Provider-authored or legacy historical title carried into a resumed
+    /// live carrier.  Keep this separate from the first real AgentPrompt so a
+    /// post-resume prompt cannot be mistaken for historical first-user
+    /// evidence.
+    #[serde(
+        default,
+        deserialize_with = "deserialize_provider_title",
+        rename = "agent_provider_title",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub provider_title: Option<String>,
+    /// First real AgentPrompt observed by the live carrier. This is a
+    /// persisted title candidate, not the final display title; provider
+    /// history may later supply a more meaningful title.
+    #[serde(
+        default,
+        deserialize_with = "deserialize_first_user_title",
+        rename = "agent_first_user_title",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub first_user_title: Option<String>,
+}
+
+fn deserialize_first_user_title<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<String>::deserialize(deserializer)?;
+    Ok(value.and_then(|value| crate::agent_runtime::normalize_title_candidate(&value)))
+}
+
+fn deserialize_provider_title<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<String>::deserialize(deserializer)?;
+    Ok(value.and_then(|value| crate::agent_runtime::normalize_title_candidate(&value)))
 }
 
 fn new_live_container_id() -> String {
@@ -37,7 +75,39 @@ impl LiveContainerBinding {
             agent,
             session_id,
             launch_argv,
+            provider_title: None,
+            first_user_title: None,
         }
+    }
+
+    /// Materialize a live carrier with all title evidence already known by
+    /// the historical Navigator row.  Provider and first-user slots remain
+    /// typed and are never collapsed into one display string.
+    pub fn new_with_title_candidates(
+        agent: Option<crate::core::cli_agent::CLIAgent>,
+        session_id: Option<String>,
+        launch_argv: Vec<String>,
+        candidates: SessionTitleCandidates,
+    ) -> Self {
+        let mut binding = Self::new(agent, session_id, launch_argv);
+        binding.set_title_candidates(candidates);
+        binding
+    }
+
+    /// Materialize a new live carrier without dropping title evidence already
+    /// learned from its historical row.
+    pub fn new_with_first_user_title(
+        agent: Option<crate::core::cli_agent::CLIAgent>,
+        session_id: Option<String>,
+        launch_argv: Vec<String>,
+        first_user_title: Option<String>,
+    ) -> Self {
+        Self::new_with_title_candidates(
+            agent,
+            session_id,
+            launch_argv,
+            SessionTitleCandidates::from_raw(None, first_user_title.as_deref()),
+        )
     }
 
     pub fn restored(
@@ -51,7 +121,97 @@ impl LiveContainerBinding {
             agent,
             session_id,
             launch_argv,
+            provider_title: None,
+            first_user_title: None,
         }
+    }
+
+    /// Restore a binding while retaining typed title evidence from the
+    /// machine/session snapshot.  The legacy first-user-only constructor
+    /// below remains for old callers and old JSON shapes.
+    pub fn restored_with_title_candidates(
+        container_id: String,
+        agent: Option<crate::core::cli_agent::CLIAgent>,
+        session_id: Option<String>,
+        launch_argv: Vec<String>,
+        candidates: SessionTitleCandidates,
+    ) -> Self {
+        let mut binding = Self::restored(container_id, agent, session_id, launch_argv);
+        binding.set_title_candidates(candidates);
+        binding
+    }
+
+    /// Restore a binding reconstructed from the machine tree while retaining
+    /// the first-user candidate carried in AgentFacts. Keep [`Self::restored`]
+    /// as the legacy no-title constructor for older callers and JSON shapes.
+    pub fn restored_with_first_user_title(
+        container_id: String,
+        agent: Option<crate::core::cli_agent::CLIAgent>,
+        session_id: Option<String>,
+        launch_argv: Vec<String>,
+        first_user_title: Option<String>,
+    ) -> Self {
+        Self::restored_with_title_candidates(
+            container_id,
+            agent,
+            session_id,
+            launch_argv,
+            SessionTitleCandidates::from_raw(None, first_user_title.as_deref()),
+        )
+    }
+
+    /// Return normalized typed title evidence carried by this binding.
+    pub fn title_candidates(&self) -> SessionTitleCandidates {
+        SessionTitleCandidates::from_raw(
+            self.provider_title.as_deref(),
+            self.first_user_title.as_deref(),
+        )
+    }
+
+    /// Replace both title slots through the canonical normalizer.  This is
+    /// the only resume/materialization boundary that should seed a binding.
+    pub fn set_title_candidates(&mut self, candidates: SessionTitleCandidates) {
+        let normalized = SessionTitleCandidates::from_raw(
+            candidates.provider_title.as_deref(),
+            candidates.first_user_title.as_deref(),
+        );
+        self.provider_title = normalized.provider_title;
+        self.first_user_title = normalized.first_user_title;
+    }
+
+    pub fn provider_title(&self) -> Option<&str> {
+        self.provider_title.as_deref()
+    }
+
+    /// Observe the first delivered AgentPrompt as a write-once title
+    /// candidate. Placeholder and blank prompts are ignored by the shared
+    /// title normalizer. Older persisted bindings and direct public struct
+    /// literals may still contain a blank/product placeholder; normalize that
+    /// slot before deciding whether the real prompt has already been seen.
+    pub fn observe_first_user_title(&mut self, prompt: &str) -> bool {
+        let previous_provider = self.provider_title.clone();
+        let previous_first_user = self.first_user_title.clone();
+        let normalized = self.title_candidates();
+        self.set_title_candidates(normalized);
+        let mut changed = self.provider_title != previous_provider
+            || self.first_user_title != previous_first_user;
+        // A provider/legacy title is already a stable historical name.  Do
+        // not reinterpret a prompt typed after resume as its first-user
+        // evidence; this keeps provenance and the visible name stable even if
+        // the history source is temporarily unavailable.
+        if self.provider_title.is_some() || self.first_user_title.is_some() {
+            return changed;
+        }
+        let Some(title) = crate::agent_runtime::first_user_title_candidate(prompt) else {
+            return changed;
+        };
+        self.first_user_title = Some(title);
+        changed = true;
+        changed
+    }
+
+    pub fn first_user_title(&self) -> Option<&str> {
+        self.first_user_title.as_deref()
     }
 }
 
@@ -345,6 +505,19 @@ impl EnvironmentWindow {
             .map(RemoteTarget::host_id)
             .unwrap_or(crate::host::HostId::LOCAL)
     }
+
+    pub fn peer(&self) -> Self {
+        Self {
+            environment: self.environment.clone(),
+            workspace: WorkspaceId::new(),
+            remote_workspace: self.is_remote().then(WorkspaceId::new),
+            window: None,
+            open: true,
+            last_active: now_secs(),
+            label: self.label.clone(),
+            subject: self.subject.clone(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -417,6 +590,16 @@ impl EnvironmentWindows {
             .find(|window| &window.environment.id == id)
     }
 
+    pub fn latest_environment(
+        &self,
+        id: &crate::core::environment::EnvironmentId,
+    ) -> Option<&EnvironmentWindow> {
+        self.windows
+            .iter()
+            .filter(|window| &window.environment.id == id)
+            .max_by_key(|window| (window.open, window.last_active))
+    }
+
     pub fn get_environment_mut(
         &mut self,
         id: &crate::core::environment::EnvironmentId,
@@ -446,12 +629,21 @@ impl EnvironmentWindows {
         let focused = self
             .active
             .as_ref()
-            .and_then(|id| self.get_environment(id))
+            .and_then(|id| self.latest_environment(id))
             .filter(|w| w.open);
         focused
             .or_else(|| self.open_windows().max_by_key(|w| w.last_active))
             .or_else(|| self.windows.iter().max_by_key(|w| w.last_active))
             .map(|w| w.workspace)
+    }
+
+    pub fn workspaces_to_restore(&self) -> Vec<WorkspaceId> {
+        let mut open: Vec<_> = self.open_windows().collect();
+        open.sort_by_key(|window| window.last_active);
+        if !open.is_empty() {
+            return open.into_iter().map(|window| window.workspace).collect();
+        }
+        self.workspace_to_restore().into_iter().collect()
     }
 
     pub fn load() -> Option<Self> {
@@ -1117,11 +1309,12 @@ mod live_container_binding_tests {
 
     #[test]
     fn restored_live_binding_survives_placeholder_and_restart() {
-        let binding = LiveContainerBinding::new(
+        let mut binding = LiveContainerBinding::new(
             Some(crate::core::cli_agent::CLIAgent::Codex),
             Some("session-1".into()),
             vec!["codex".into(), "resume".into(), "session-1".into()],
         );
+        binding.first_user_title = Some("Draw a fox".into());
         let pane = SessionPane::Leaf {
             cwd: None,
             pane_id: Some(7),
@@ -1134,5 +1327,89 @@ mod live_container_binding_tests {
             panic!("leaf")
         };
         assert_eq!(live_binding, binding);
+    }
+
+    #[test]
+    fn live_binding_first_user_title_round_trips_and_old_json_defaults() {
+        let mut binding = LiveContainerBinding::default();
+        assert!(binding.observe_first_user_title("  Draw a fox  "));
+        assert_eq!(binding.first_user_title.as_deref(), Some("Draw a fox"));
+
+        let encoded = serde_json::to_string(&binding).unwrap();
+        assert!(encoded.contains("agent_first_user_title"));
+        let decoded: LiveContainerBinding = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(decoded.first_user_title.as_deref(), Some("Draw a fox"));
+
+        // Existing session files predate the title field and must continue to
+        // deserialize with an empty candidate.
+        let legacy: LiveContainerBinding =
+            serde_json::from_value(serde_json::json!({"container_id": "legacy"})).unwrap();
+        assert_eq!(legacy.first_user_title, None);
+        assert_eq!(legacy.provider_title, None);
+    }
+
+    #[test]
+    fn live_binding_typed_title_candidates_round_trip_with_legacy_fields() {
+        let binding = LiveContainerBinding::new_with_title_candidates(
+            Some(crate::core::cli_agent::CLIAgent::Codex),
+            Some("session-typed".into()),
+            vec!["codex".into(), "--resume".into()],
+            SessionTitleCandidates::from_raw(Some("Provider title"), Some("First request")),
+        );
+        let encoded = serde_json::to_value(&binding).unwrap();
+        assert_eq!(
+            encoded
+                .get("agent_provider_title")
+                .and_then(serde_json::Value::as_str),
+            Some("Provider title")
+        );
+        assert_eq!(
+            encoded
+                .get("agent_first_user_title")
+                .and_then(serde_json::Value::as_str),
+            Some("First request")
+        );
+        let restored: LiveContainerBinding = serde_json::from_value(encoded).unwrap();
+        assert_eq!(
+            restored.title_candidates(),
+            SessionTitleCandidates::from_raw(Some("Provider title"), Some("First request"))
+        );
+    }
+
+    #[test]
+    fn provider_title_seed_blocks_post_resume_prompt_without_fake_first_user() {
+        let mut binding = LiveContainerBinding::new_with_title_candidates(
+            Some(crate::core::cli_agent::CLIAgent::Codex),
+            Some("session-provider".into()),
+            vec!["codex".into(), "--resume".into()],
+            SessionTitleCandidates::from_raw(Some("Provider title"), None),
+        );
+        assert!(!binding.observe_first_user_title("Second request"));
+        assert_eq!(binding.provider_title(), Some("Provider title"));
+        assert_eq!(binding.first_user_title(), None);
+    }
+
+    #[test]
+    fn persisted_blank_or_placeholder_title_does_not_block_first_prompt() {
+        for persisted in ["", "  ", "Agent 会话", "Agent会话", "agentty"] {
+            let mut binding: LiveContainerBinding = serde_json::from_value(serde_json::json!({
+                "container_id": "legacy",
+                "agent_first_user_title": persisted,
+            }))
+            .unwrap();
+            assert_eq!(binding.first_user_title, None, "persisted={persisted:?}");
+            assert!(
+                binding.observe_first_user_title("Draw a fox"),
+                "persisted={persisted:?}"
+            );
+            assert_eq!(binding.first_user_title.as_deref(), Some("Draw a fox"));
+        }
+
+        // The public field remains safe even when a caller constructs a
+        // legacy-shaped value directly instead of going through serde.
+        let mut direct = LiveContainerBinding::default();
+        direct.first_user_title = Some("Agent会话".into());
+        assert!(direct.observe_first_user_title("Draw a fox"));
+        assert_eq!(direct.first_user_title.as_deref(), Some("Draw a fox"));
     }
 }

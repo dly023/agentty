@@ -9,9 +9,10 @@ use gpui::{
     KeyDownEvent, Modifiers, MouseButton, MouseDownEvent, Pixels, ScrollDelta, ScrollWheelEvent,
     WeakEntity, Window, actions, div, prelude::*, px,
 };
+use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::kbd::Kbd;
 use gpui_component::menu::{ContextMenuExt, PopupMenuItem};
-use gpui_component::{ActiveTheme as _, Icon, IconName, WindowExt as _, h_flex};
+use gpui_component::{ActiveTheme as _, Icon, IconName, Sizable as _, WindowExt as _, h_flex};
 
 use super::TermSize;
 use super::cmd_editor::CmdEditor;
@@ -168,9 +169,6 @@ pub struct TerminalView {
     owner_workspace: Option<crate::core::session::WorkspaceId>,
     restored: bool,
     live_binding: agentty_core::core::session::LiveContainerBinding,
-    /// Once-only first AgentPrompt excerpt for Navigator display before
-    /// provider discovery publishes a title. Never set from tab/OSC chrome.
-    live_first_user_title: Option<String>,
     ssh_spec: Option<Box<crate::daemon::protocol::NativeSshSpec>>,
     remote_clipboard_dir: Option<String>,
     pub focus_handle: FocusHandle,
@@ -890,7 +888,6 @@ impl TerminalView {
             owner_workspace: None,
             restored: false,
             live_binding: Default::default(),
-            live_first_user_title: None,
             ssh_spec: None,
             remote_clipboard_dir: None,
             focus_handle,
@@ -1130,12 +1127,12 @@ impl TerminalView {
 
     /// Stamp the first delivered AgentPrompt as a live display title when
     /// absent. Later prompts do not overwrite. Returns true when stamped.
-    pub fn note_first_user_prompt(&mut self, prompt: &str) -> bool {
-        stamp_live_first_user_title(&mut self.live_first_user_title, prompt)
+    fn note_first_user_prompt(&mut self, prompt: &str) -> bool {
+        self.live_binding.observe_first_user_title(prompt)
     }
 
-    pub fn live_first_user_title(&self) -> Option<&str> {
-        self.live_first_user_title.as_deref()
+    pub(crate) fn live_first_user_title(&self) -> Option<&str> {
+        self.live_binding.first_user_title()
     }
 
     pub fn agent(&self) -> Option<crate::core::cli_agent::CLIAgent> {
@@ -1185,12 +1182,12 @@ impl TerminalView {
 
     /// Canonical terminal-boundary delivery. Callers keep typed invocations
     /// typed until this point and must resolve a stable PaneIdentity first.
-    pub fn deliver_input(
+    fn deliver_input(
         &self,
         delivery: &crate::ui::composer::InputDelivery,
         cx: &gpui::App,
     ) -> crate::ui::composer::DeliveryOutcome {
-        if !self.accepts_input(cx) {
+        if self.terminal.exited || !self.accepts_input(cx) {
             return crate::ui::composer::DeliveryOutcome::Disconnected;
         }
         let bytes = match delivery {
@@ -1208,15 +1205,19 @@ impl TerminalView {
         crate::ui::composer::DeliveryOutcome::Delivered
     }
 
-    pub fn send_agent_prompt(
-        &self,
+    pub(crate) fn send_agent_prompt(
+        &mut self,
         prompt: &str,
-        cx: &gpui::App,
+        cx: &mut Context<Self>,
     ) -> crate::ui::composer::DeliveryOutcome {
-        self.deliver_input(
+        let outcome = self.deliver_input(
             &crate::ui::composer::InputDelivery::AgentPrompt(prompt.to_owned()),
-            cx,
-        )
+            &*cx,
+        );
+        if matches!(outcome, crate::ui::composer::DeliveryOutcome::Delivered) {
+            self.note_first_user_prompt(prompt);
+        }
+        outcome
     }
 
     pub fn run_command_line(
@@ -3539,12 +3540,17 @@ impl TerminalView {
         let line = self.cmd.text();
         let cursor = self.cmd.cursor();
         let shared = self.shared_completion_candidates(&line, cursor, cx);
-        let mut comp = super::completion::complete(&line, cursor, cwd.as_deref()).unwrap_or(
-            super::completion::Completion {
-                candidates: Vec::new(),
-                pending: Vec::new(),
-            },
-        );
+        let authority = if self.paths_are_local() {
+            super::completion::CompletionAuthority::Local
+        } else {
+            super::completion::CompletionAuthority::Remote
+        };
+        let mut comp =
+            super::completion::complete_with_authority(&line, cursor, cwd.as_deref(), authority)
+                .unwrap_or(super::completion::Completion {
+                    candidates: Vec::new(),
+                    pending: Vec::new(),
+                });
         let mut seen: std::collections::BTreeSet<String> = comp
             .candidates
             .iter()
@@ -4958,6 +4964,27 @@ impl Render for TerminalView {
             .flatten();
         let integration_notice = self.render_integration_notice(cx);
 
+        let jump_to_bottom = (self.terminal.term.lock().grid().display_offset() > 0).then(|| {
+            let button = Button::new("terminal-jump-to-bottom")
+                .icon(IconName::ArrowDown)
+                .ghost()
+                .small()
+                .on_click(cx.listener(|this, _, _window, cx| {
+                    this.jump_to_prompt();
+                    cx.notify();
+                }));
+            div()
+                .absolute()
+                .bottom(px(GRID_PAD_Y + 8.))
+                .right(px(GRID_PAD_X + 8.))
+                .debug_selector(|| "TERMINAL_JUMP_TO_BOTTOM".into())
+                .rounded_full()
+                .bg(cx.theme().popover)
+                .border_1()
+                .border_color(cx.theme().border)
+                .child(button)
+        });
+
         let menu_focus = self.focus_handle.clone();
         let has_selection = self.any_selection();
         let menu_view = cx.entity();
@@ -5018,6 +5045,7 @@ impl Render for TerminalView {
                 this.tab_pressed(false, cx);
             }))
             .child(TerminalElement::new(entity))
+            .children(jump_to_bottom)
             .children(search_bar)
             .children(input_bar)
             .children(completion_menu)
@@ -5549,18 +5577,6 @@ fn scroll_anim_step(remaining: f32, dt: std::time::Duration) -> (f32, bool) {
     }
 }
 
-/// Once-only live title from the first AgentPrompt. Rejects placeholders.
-pub(crate) fn stamp_live_first_user_title(slot: &mut Option<String>, prompt: &str) -> bool {
-    if slot.is_some() {
-        return false;
-    }
-    let Some(title) = agentty_core::agent_runtime::first_user_title_candidate(prompt) else {
-        return false;
-    };
-    *slot = Some(title);
-    true
-}
-
 fn drag_scroll_step(overshoot: f32) -> i32 {
     let lines = overshoot.abs().ceil().clamp(1., 8.) as i32;
     if overshoot < 0. { -lines } else { lines }
@@ -5590,7 +5606,7 @@ mod tests {
         LoopbackPlan, SelectEndCopy, WheelRoute, agent_bound_carrier_close_predicate,
         apply_live_binding_agent_poll, clipboard_paste_text, completion_authority, cwd_is_on_host,
         display_width, loopback_plan, remote_paste_spec, staged_path_for_pane,
-        stages_clipboard_image, staging_dir_is_safe, stamp_live_first_user_title, wsl_path,
+        stages_clipboard_image, staging_dir_is_safe, wsl_path,
     };
     use super::{
         SCROLL_ANIM_FRAME, drag_scroll_step, encode_mouse, expand_file_command_template,
@@ -5607,6 +5623,7 @@ mod tests {
     use crate::core::session::{RemoteTarget, WorkspaceId};
     use crate::daemon::protocol::RemoteKind;
     use crate::terminal::PaneWorkspace;
+    use agentty_core::core::session::LiveContainerBinding;
 
     fn ws(target: RemoteTarget, with_spec: bool) -> PaneWorkspace {
         PaneWorkspace {
@@ -5705,17 +5722,29 @@ mod tests {
 
     #[test]
     fn note_first_user_prompt_stamps_once() {
-        let mut title = None;
-        assert!(stamp_live_first_user_title(
-            &mut title,
-            "  Fix the flaky navigator gate  "
-        ));
-        assert_eq!(title.as_deref(), Some("Fix the flaky navigator gate"));
-        assert!(!stamp_live_first_user_title(&mut title, "Second prompt"));
-        assert_eq!(title.as_deref(), Some("Fix the flaky navigator gate"));
-        let mut empty = None;
-        assert!(!stamp_live_first_user_title(&mut empty, "agentty"));
-        assert!(empty.is_none());
+        let mut binding = LiveContainerBinding::default();
+        assert!(binding.observe_first_user_title("  Fix the flaky navigator gate  "));
+        assert_eq!(
+            binding.first_user_title(),
+            Some("Fix the flaky navigator gate")
+        );
+        assert!(!binding.observe_first_user_title("Second prompt"));
+        assert_eq!(
+            binding.first_user_title(),
+            Some("Fix the flaky navigator gate")
+        );
+        let mut empty = LiveContainerBinding::default();
+        assert!(!empty.observe_first_user_title("agentty"));
+        assert!(empty.first_user_title().is_none());
+    }
+
+    #[test]
+    fn live_first_user_title_round_trips_with_binding() {
+        let mut binding = LiveContainerBinding::default();
+        assert!(binding.observe_first_user_title("Draw a fox"));
+        let encoded = serde_json::to_string(&binding).unwrap();
+        let restored: LiveContainerBinding = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(restored.first_user_title(), Some("Draw a fox"));
     }
 
     #[test]
@@ -6620,6 +6649,51 @@ mod gpui_tests {
     }
 
     #[gpui::test]
+    fn send_agent_prompt_stamps_only_after_successful_delivery(cx: &mut TestAppContext) {
+        let (window, mut daemon) = harness(cx);
+        let outcome = window
+            .update(cx, |view, _, cx| {
+                view.send_agent_prompt("  Draw a fox  ", cx)
+            })
+            .unwrap();
+        assert_eq!(outcome, crate::ui::composer::DeliveryOutcome::Delivered);
+        assert_eq!(
+            next_input(&mut daemon),
+            crate::core::agent_prompt::submit_bytes("  Draw a fox  ")
+        );
+        assert_eq!(
+            window
+                .update(cx, |view, _, _| view
+                    .live_first_user_title()
+                    .map(str::to_owned))
+                .unwrap()
+                .as_deref(),
+            Some("Draw a fox")
+        );
+
+        let disconnected = window
+            .update(cx, |view, _, cx| {
+                view.terminal.exited = true;
+                view.send_agent_prompt("Second prompt", cx)
+            })
+            .unwrap();
+        assert_eq!(
+            disconnected,
+            crate::ui::composer::DeliveryOutcome::Disconnected
+        );
+        assert_eq!(
+            window
+                .update(cx, |view, _, _| view
+                    .live_first_user_title()
+                    .map(str::to_owned))
+                .unwrap()
+                .as_deref(),
+            Some("Draw a fox"),
+            "a failed delivery must not replace the write-once candidate"
+        );
+    }
+
+    #[gpui::test]
     fn a_stale_hover_row_does_not_index_the_shrunken_grid(cx: &mut TestAppContext) {
         let (window, _daemon) = harness(cx);
         window
@@ -6654,6 +6728,57 @@ mod gpui_tests {
                 assert!(view.hovered_link.is_none(), "so is the link it resolved");
             })
             .unwrap();
+    }
+
+    #[gpui::test]
+    fn command_d_split_geometry_preserves_existing_pane_viewport_and_selection(
+        cx: &mut TestAppContext,
+    ) {
+        // On macOS Command+D dispatches SplitRight. The old pane therefore
+        // receives a narrower grid while the newly-created sibling gets its
+        // own initial viewport. Exercise the canonical TerminalView resize
+        // boundary directly so a split cannot silently reset old-pane state.
+        let (window, _daemon) = harness(cx);
+        let (before_offset, before_selection) = window
+            .update(cx, |view, _, cx| {
+                view.set_grid_size(80, 24, px(8.), px(17.), 1.);
+                let mut parser: alacritty_terminal::vte::ansi::Processor = Default::default();
+                let mut term = view.terminal.term.lock();
+                let long_line = b"0123456789012345678901234567890123456789\r\n";
+                parser.advance(&mut *term, &long_line.repeat(60));
+                term.scroll_display(Scroll::Delta(10));
+                assert_eq!(
+                    term.grid().display_offset(),
+                    10,
+                    "the old pane must begin in a user-scrolled viewport"
+                );
+                drop(term);
+                view.select_all(cx);
+                let term = view.terminal.term.lock();
+                (term.grid().display_offset(), term.selection.clone())
+            })
+            .unwrap();
+        assert!(
+            before_selection.is_some(),
+            "the pre-split old pane must carry a real terminal selection"
+        );
+
+        // A right split changes the old pane's column geometry. The production
+        // implementation currently forwards this to Term::resize, which is
+        // exactly where display_offset/selection preservation must be proved.
+        let (after_offset, after_selection) = window
+            .update(cx, |view, _, _| {
+                view.set_grid_size(40, 24, px(8.), px(17.), 1.);
+                let term = view.terminal.term.lock();
+                (term.grid().display_offset(), term.selection.clone())
+            })
+            .unwrap();
+
+        assert_eq!(
+            (after_offset, after_selection),
+            (before_offset, before_selection),
+            "Command+D/right-split geometry must preserve the old pane's viewport and selection"
+        );
     }
 
     #[gpui::test]
@@ -7607,6 +7732,77 @@ mod gpui_tests {
 
     fn display_offset(view: &TerminalView) -> usize {
         view.terminal.term.lock().grid().display_offset()
+    }
+
+    #[gpui::test]
+    fn terminal_scrollback_shows_jump_button_and_click_returns_to_bottom_without_focus_steal(
+        cx: &mut TestAppContext,
+    ) {
+        use gpui::{MouseButton, VisualTestContext};
+
+        const SELECTOR: &str = "TERMINAL_JUMP_TO_BOTTOM";
+        let (window, _daemon) = harness(cx);
+        let before_prompt = window
+            .update(cx, |view, window, cx| {
+                window.activate_window();
+                view.focus_handle.focus(window, cx);
+                scroll_into_history(view, 10);
+                cx.notify();
+                view.cmd.text().to_owned()
+            })
+            .unwrap();
+
+        let mut visual = VisualTestContext::from_window(window.into(), cx);
+        visual.run_until_parked();
+        assert!(
+            visual.debug_bounds(SELECTOR).is_some(),
+            "production terminal must expose the jump control while display_offset() > 0"
+        );
+
+        let before_focus = window
+            .update(cx, |view, window, cx| {
+                view.focus_handle.contains_focused(window, cx)
+            })
+            .unwrap();
+        assert!(before_focus, "the terminal owns focus before the click");
+
+        let bounds = visual
+            .debug_bounds(SELECTOR)
+            .expect("the jump control remains rendered before click");
+        let point = gpui::point(
+            bounds.origin.x + bounds.size.width / 2.,
+            bounds.origin.y + bounds.size.height / 2.,
+        );
+        visual.simulate_mouse_move(point, None, gpui::Modifiers::none());
+        visual.simulate_mouse_down(point, MouseButton::Left, gpui::Modifiers::none());
+        visual.simulate_mouse_up(point, MouseButton::Left, gpui::Modifiers::none());
+        visual.run_until_parked();
+
+        let (offset, prompt, focus) = window
+            .update(cx, |view, window, cx| {
+                (
+                    display_offset(view),
+                    view.cmd.text().to_owned(),
+                    view.focus_handle.contains_focused(window, cx),
+                )
+            })
+            .unwrap();
+        assert_eq!(
+            offset, 0,
+            "clicking the control must return to the live bottom"
+        );
+        assert_eq!(
+            prompt, before_prompt,
+            "jumping must not mutate the prompt buffer"
+        );
+        assert_eq!(
+            focus, before_focus,
+            "jumping must not steal terminal input focus"
+        );
+        assert!(
+            visual.debug_bounds(SELECTOR).is_none(),
+            "the control disappears after returning to the live bottom"
+        );
     }
 
     #[gpui::test]

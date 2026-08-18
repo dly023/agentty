@@ -1,10 +1,10 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::io;
 use std::sync::Arc;
 
 use agentty_core::core::machine::{
-    AgentFacts, Axis as TreeAxis, LayoutDelta, Machine, PaneNode, PaneRecord, PaneSeed, Side,
-    Tab as TreeTab, TabId,
+    AgentFacts, Axis as TreeAxis, LayoutDelta, Machine, PaneNode, PaneRecord, PaneSeed,
+    PaneTitleIdentity, Side, Tab as TreeTab, TabId,
 };
 use agentty_core::daemon::control::{ControlClient, ControlRequest, ReplyOk};
 use agentty_core::host::HostId;
@@ -55,6 +55,40 @@ fn tree_workspace_id(cx: &App, client_ws: WorkspaceId) -> WorkspaceId {
         .unwrap_or(client_ws)
 }
 
+pub(crate) struct TabTransferDispatch {
+    pub(crate) client: Arc<ControlClient>,
+    pub(crate) request: ControlRequest,
+}
+
+pub(crate) fn transfer_tab_to_workspace(
+    cx: &mut App,
+    from_client_workspace: WorkspaceId,
+    tab: TabId,
+    to_client_workspace: WorkspaceId,
+) -> Result<TabTransferDispatch, String> {
+    let from_host = WorkspaceStore::host_of(cx, from_client_workspace);
+    let to_host = WorkspaceStore::host_of(cx, to_client_workspace);
+    if from_host != to_host {
+        return Err("source and destination windows belong to different machines".into());
+    }
+    let client = match tree_control_for(cx, from_host) {
+        TreeLink::Ready(client) => client,
+        TreeLink::Unserved => {
+            return Err("this machine does not support persisted workspace transfer".into());
+        }
+        TreeLink::Down => return Err("the environment control link is unavailable".into()),
+    };
+    Ok(TabTransferDispatch {
+        client,
+        request: ControlRequest::TabTransfer {
+            from_workspace: tree_workspace_id(cx, from_client_workspace),
+            tab,
+            to_workspace: tree_workspace_id(cx, to_client_workspace),
+            to: 0,
+        },
+    })
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct DesiredTab {
     pub id: TabId,
@@ -101,6 +135,47 @@ impl DesiredNode {
         match self {
             DesiredNode::Leaf { pane: p, seed } => (*p == pane).then_some(seed),
             DesiredNode::Split { a, b, .. } => a.seed_of(pane).or_else(|| b.seed_of(pane)),
+        }
+    }
+
+    fn first_user_titles(&self, out: &mut Vec<(u64, String)>) {
+        match self {
+            DesiredNode::Leaf { pane, seed } => {
+                if let Some(title) = seed
+                    .agent
+                    .as_ref()
+                    .and_then(|agent| agent.first_user_title.as_deref())
+                    .and_then(agentty_core::agent_runtime::normalize_title_candidate)
+                {
+                    out.push((*pane, title));
+                }
+            }
+            DesiredNode::Split { a, b, .. } => {
+                a.first_user_titles(out);
+                b.first_user_titles(out);
+            }
+        }
+    }
+
+    fn provider_titles(&self, out: &mut Vec<(u64, String, PaneTitleIdentity)>) {
+        match self {
+            DesiredNode::Leaf { pane, seed } => {
+                let Some(agent) = seed.agent.as_ref() else {
+                    return;
+                };
+                let Some(title) = agent
+                    .provider_title
+                    .as_deref()
+                    .and_then(agentty_core::agent_runtime::normalize_title_candidate)
+                else {
+                    return;
+                };
+                out.push((*pane, title, PaneTitleIdentity::from_facts(agent)));
+            }
+            DesiredNode::Split { a, b, .. } => {
+                a.provider_titles(out);
+                b.provider_titles(out);
+            }
         }
     }
 }
@@ -150,6 +225,46 @@ fn every_leaf_is_native_ssh(pane: &Pane, cx: &App) -> bool {
     }
 }
 
+/// Project a ready terminal's durable binding into the machine-tree seed.
+///
+/// `TerminalView::agent` and `agent_session` are live observations. They may
+/// disappear as soon as the foreground process exits, while the
+/// `LiveContainerBinding` is the persisted carrier identity that must survive
+/// that transition. Prefer every binding-owned identity field and consult the
+/// runtime observations only when the corresponding binding field is absent.
+fn desired_agent_facts(
+    binding: &agentty_core::core::session::LiveContainerBinding,
+    runtime_agent: Option<crate::core::cli_agent::CLIAgent>,
+    runtime_session: Option<&crate::core::cli_agent::AgentSessionState>,
+) -> Option<AgentFacts> {
+    let agent = binding.agent.or(runtime_agent)?;
+    let session_id = binding
+        .session_id
+        .clone()
+        .or_else(|| runtime_session.and_then(|session| session.session_id.clone()));
+    let launch_argv = if binding.launch_argv.is_empty() {
+        runtime_session.and_then(|session| session.launch_argv.clone())
+    } else {
+        Some(binding.launch_argv.clone())
+    };
+    let first_user_title = binding
+        .first_user_title()
+        .and_then(agentty_core::agent_runtime::normalize_title_candidate);
+    let provider_title = binding
+        .provider_title()
+        .and_then(agentty_core::agent_runtime::normalize_title_candidate);
+
+    Some(AgentFacts {
+        agent,
+        container_id: Some(binding.container_id.clone()),
+        session_id,
+        launch_argv,
+        status: None,
+        provider_title,
+        first_user_title,
+    })
+}
+
 fn desired_node(pane: &Pane, remote_window: bool, cx: &App) -> Option<DesiredNode> {
     match pane {
         Pane::Leaf(PaneSlot::Ready(view)) => {
@@ -158,16 +273,10 @@ fn desired_node(pane: &Pane, remote_window: bool, cx: &App) -> Option<DesiredNod
             if remote_window && ssh_spec.is_some() {
                 return None;
             }
-            let agent = view.agent().map(|agent| {
-                let session = view.agent_session();
-                AgentFacts {
-                    agent,
-                    container_id: Some(view.live_binding().container_id.clone()),
-                    session_id: session.as_ref().and_then(|s| s.session_id.clone()),
-                    launch_argv: session.as_ref().and_then(|s| s.launch_argv.clone()),
-                    status: None,
-                }
-            });
+            let runtime_agent = view.agent();
+            let runtime_session = view.agent_session();
+            let agent =
+                desired_agent_facts(view.live_binding(), runtime_agent, runtime_session.as_ref());
             Some(DesiredNode::Leaf {
                 pane: view.pane_id,
                 seed: PaneSeed {
@@ -189,6 +298,8 @@ fn desired_node(pane: &Pane, remote_window: bool, cx: &App) -> Option<DesiredNod
                 session_id: spawn.live_binding.session_id.clone(),
                 launch_argv: Some(spawn.live_binding.launch_argv.clone()),
                 status: None,
+                provider_title: spawn.live_binding.provider_title().map(str::to_owned),
+                first_user_title: spawn.live_binding.first_user_title().map(str::to_owned),
             });
             Some(DesiredNode::Leaf {
                 pane,
@@ -229,6 +340,37 @@ fn desired_node(pane: &Pane, remote_window: bool, cx: &App) -> Option<DesiredNod
 pub(crate) struct WsMirror {
     pub tabs: Vec<TreeTab>,
     pub active: Option<TabId>,
+    /// Write-once title candidates already known by this window's machine
+    /// mirror.  Keep only non-empty values so a late hydrate/delta can still
+    /// enqueue the first real title exactly once.
+    pub pane_first_user_titles: HashMap<u64, String>,
+    /// Provider/legacy title evidence already known by this window's machine
+    /// mirror.  The map prevents a later runtime observation from erasing it
+    /// during hydrate/reconnect and is advanced only after machine authority
+    /// is known (or a structural seed carries the value atomically).
+    pub pane_provider_titles: HashMap<u64, String>,
+    /// Identity snapshots fetched from MachineGet/PaneFacts.  Provider-title
+    /// migrations are not queued for a pane whose machine identity is absent;
+    /// that fail-closed rule avoids optimistic bookkeeping for bare panes.
+    pub pane_agent_identities: HashMap<u64, PaneTitleIdentity>,
+}
+
+fn mirror_from_machine(
+    machine: &Machine,
+    workspace: &agentty_core::core::machine::Workspace,
+) -> WsMirror {
+    let mut mirror = WsMirror {
+        tabs: workspace.tabs.clone(),
+        active: workspace.active_tab,
+        ..WsMirror::default()
+    };
+    for pane in &machine.panes {
+        // The machine snapshot is authoritative for both identity and typed
+        // evidence.  Keeping this projection in one helper prevents prime
+        // and hydrate from drifting into different title semantics.
+        remember_pane_title(&mut mirror, pane);
+    }
+    mirror
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -246,23 +388,27 @@ pub(crate) fn diff(
     held: &[TabId],
 ) -> Vec<ControlRequest> {
     let mut ops = Vec::new();
+    let mut blocked_orphans = HashSet::new();
 
-    if scope == SyncScope::Full {
-        let mut index = 0;
-        while index < mirror.tabs.len() {
-            let id = mirror.tabs[index].id;
-            if desired.iter().any(|t| t.id == id) || held.contains(&id) {
-                index += 1;
-                continue;
-            }
-            let closed = mirror.tabs.remove(index);
-            ops.push(ControlRequest::TabClose {
-                workspace,
-                tab: closed.id,
-            });
-            heal_active(mirror, index);
-        }
-    }
+    // Keep orphan tabs in the mirror until after desired tabs have been
+    // reconciled.  A tab-strip merge presents the destination as a tab with
+    // one additional pane while the source tab disappears at the same time;
+    // retaining the source here lets the reconciliation turn that pair into
+    // the machine's atomic PaneMove operation instead of a duplicate
+    // PaneSplit followed by TabClose.
+    let orphan_sources: HashMap<u64, TabId> = if scope == SyncScope::Full {
+        mirror
+            .tabs
+            .iter()
+            .filter(|tab| !desired.iter().any(|want| want.id == tab.id) && !held.contains(&tab.id))
+            .filter_map(|tab| match &tab.root {
+                PaneNode::Leaf { pane } => Some((*pane, tab.id)),
+                PaneNode::Split { .. } => None,
+            })
+            .collect()
+    } else {
+        HashMap::new()
+    };
 
     for (index, want) in desired.iter().enumerate() {
         match mirror.tabs.iter().position(|t| t.id == want.id) {
@@ -273,9 +419,49 @@ pub(crate) fn diff(
                 };
                 create_tab(workspace, mirror, at, want, &mut ops);
             }
-            Some(at) => reconcile_tab(workspace, mirror, at, want, &mut ops),
+            Some(at) => reconcile_tab(
+                workspace,
+                mirror,
+                at,
+                want,
+                &orphan_sources,
+                &mut blocked_orphans,
+                &mut ops,
+            ),
         }
     }
+
+    // Any orphan not consumed by a PaneMove is an ordinary closed tab.  Do
+    // this only after reconciliation so a merge can remove its source from
+    // the mirror without emitting a second, racing TabClose.
+    if scope == SyncScope::Full {
+        let mut index = 0;
+        while index < mirror.tabs.len() {
+            let id = mirror.tabs[index].id;
+            if desired.iter().any(|want| want.id == id)
+                || held.contains(&id)
+                || blocked_orphans.contains(&id)
+            {
+                index += 1;
+                continue;
+            }
+            let closed = mirror.tabs.remove(index);
+            forget_tab_titles(mirror, &closed.root);
+            ops.push(ControlRequest::TabClose {
+                workspace,
+                tab: closed.id,
+            });
+            heal_active(mirror, index);
+        }
+    }
+
+    // Title writes must follow all topology operations above: a freshly
+    // created/split/replaced pane does not exist on the machine until its
+    // corresponding structural request has been applied. Provider evidence
+    // is queued first and carries an identity precondition; first-user
+    // evidence remains a separate write-once request.
+    queue_provider_title_updates(workspace, mirror, desired, &mut ops);
+    queue_first_user_title_updates(workspace, mirror, desired, &mut ops);
 
     if scope == SyncScope::Additive || !held.is_empty() {
         return ops;
@@ -324,6 +510,146 @@ fn heal_active(mirror: &mut WsMirror, removed: usize) {
         return;
     }
     mirror.active = Some(mirror.tabs[removed.min(mirror.tabs.len() - 1)].id);
+}
+
+fn forget_pane_title_state(mirror: &mut WsMirror, pane: u64) {
+    mirror.pane_first_user_titles.remove(&pane);
+    mirror.pane_provider_titles.remove(&pane);
+    mirror.pane_agent_identities.remove(&pane);
+}
+
+fn forget_tab_titles(mirror: &mut WsMirror, root: &PaneNode) {
+    for pane in root.pane_ids() {
+        forget_pane_title_state(mirror, pane);
+    }
+}
+
+fn queue_provider_title_updates(
+    workspace: WorkspaceId,
+    mirror: &mut WsMirror,
+    desired: &[DesiredTab],
+    ops: &mut Vec<ControlRequest>,
+) {
+    let mut wanted = Vec::new();
+    for tab in desired {
+        tab.root.provider_titles(&mut wanted);
+    }
+    for (pane, title, expected_identity) in wanted {
+        if mirror.pane_provider_titles.contains_key(&pane) {
+            if mirror
+                .pane_agent_identities
+                .get(&pane)
+                .is_some_and(|identity| identity == &expected_identity)
+            {
+                continue;
+            }
+            // A pane id was reused but the stale delta has not reached this
+            // mirror yet.  Drop the old evidence and wait for an authoritative
+            // identity rather than suppressing the replacement migration.
+            mirror.pane_provider_titles.remove(&pane);
+        }
+
+        // A structural seed persists provider evidence atomically with the
+        // pane create/split/replace.  Mark both typed slots only after
+        // recognizing that exact seed; this is safe even when the pane was
+        // absent from the mirror before this diff.
+        if ops.iter().any(|op| seeded_provider_title(op, pane, &title)) {
+            mirror.pane_provider_titles.insert(pane, title);
+            mirror.pane_agent_identities.insert(pane, expected_identity);
+            continue;
+        }
+
+        // Do not optimistically mark a bare/unknown pane.  Prime/hydrate must
+        // first fetch MachineGet and populate the identity map; otherwise a
+        // no-agent machine response could make the migration look committed
+        // forever.
+        let Some(machine_identity) = mirror.pane_agent_identities.get(&pane).cloned() else {
+            continue;
+        };
+        if machine_identity != expected_identity {
+            // The pane id may have been reused for another agent.  Waiting for
+            // the next authoritative delta/re-pull is safer than stamping a
+            // stale title onto the replacement.
+            continue;
+        }
+
+        mirror.pane_provider_titles.insert(pane, title.clone());
+        ops.push(ControlRequest::PaneSetProviderTitle {
+            workspace,
+            pane,
+            title,
+            expected_identity: Some(expected_identity),
+        });
+    }
+}
+
+fn queue_first_user_title_updates(
+    workspace: WorkspaceId,
+    mirror: &mut WsMirror,
+    desired: &[DesiredTab],
+    ops: &mut Vec<ControlRequest>,
+) {
+    let mut wanted = Vec::new();
+    for tab in desired {
+        tab.root.first_user_titles(&mut wanted);
+    }
+    for (pane, title) in wanted {
+        // A known value is write-once.  In particular, a stale live binding
+        // must not replace the title already restored from the machine tree.
+        if mirror.pane_first_user_titles.contains_key(&pane) {
+            continue;
+        }
+        // Structural requests already carry the complete PaneSeed. Mark a
+        // title included in TabCreate/PaneSplit/PaneReplace as committed in
+        // the optimistic mirror instead of sending a redundant follow-up
+        // request (the machine stores the seed atomically with that op).
+        if ops.iter().any(|op| seeded_title(op, pane, &title)) {
+            mirror.pane_first_user_titles.insert(pane, title);
+            continue;
+        }
+        mirror.pane_first_user_titles.insert(pane, title.clone());
+        ops.push(ControlRequest::PaneSetFirstUserTitle {
+            workspace,
+            pane,
+            title,
+        });
+    }
+}
+
+fn seeded_title(op: &ControlRequest, pane: u64, title: &str) -> bool {
+    let seed = match op {
+        ControlRequest::TabCreate { pane: seed, .. }
+        | ControlRequest::PaneSplit { new: seed, .. }
+        | ControlRequest::PaneReplace { new: seed, .. }
+            if seed.pane == pane =>
+        {
+            seed
+        }
+        _ => return false,
+    };
+    seed.agent
+        .as_ref()
+        .and_then(|agent| agent.first_user_title.as_deref())
+        .and_then(agentty_core::agent_runtime::normalize_title_candidate)
+        .is_some_and(|candidate| candidate == title)
+}
+
+fn seeded_provider_title(op: &ControlRequest, pane: u64, title: &str) -> bool {
+    let seed = match op {
+        ControlRequest::TabCreate { pane: seed, .. }
+        | ControlRequest::PaneSplit { new: seed, .. }
+        | ControlRequest::PaneReplace { new: seed, .. }
+            if seed.pane == pane =>
+        {
+            seed
+        }
+        _ => return false,
+    };
+    seed.agent
+        .as_ref()
+        .and_then(|agent| agent.provider_title.as_deref())
+        .and_then(agentty_core::agent_runtime::normalize_title_candidate)
+        .is_some_and(|candidate| candidate == title)
 }
 
 fn create_tab(
@@ -397,6 +723,8 @@ fn reconcile_tab(
     mirror: &mut WsMirror,
     at: usize,
     want: &DesiredTab,
+    orphan_sources: &HashMap<u64, TabId>,
+    blocked_orphans: &mut HashSet<TabId>,
     ops: &mut Vec<ControlRequest>,
 ) {
     {
@@ -447,11 +775,28 @@ fn reconcile_tab(
         .filter(|p| !wanted.contains(p))
         .collect();
 
+    let mut moved_source = None;
     let done = match (added.as_slice(), removed.as_slice()) {
-        ([new], []) => try_single_split(workspace, mirror, at, want, &desired_root, *new, ops),
+        ([new], []) => {
+            if let Some(source) = try_single_pane_move(
+                workspace,
+                mirror,
+                at,
+                &desired_root,
+                *new,
+                orphan_sources,
+                ops,
+            ) {
+                moved_source = Some(source);
+                true
+            } else {
+                try_single_split(workspace, mirror, at, want, &desired_root, *new, ops)
+            }
+        }
         ([], gone) if !gone.is_empty() => {
             for pane in gone {
                 mirror.tabs[at].root.remove_leaf(*pane);
+                forget_pane_title_state(mirror, *pane);
                 ops.push(ControlRequest::PaneClose {
                     workspace,
                     pane: *pane,
@@ -473,6 +818,7 @@ fn reconcile_tab(
                     .seed_of(*new)
                     .expect("the added pane is a desired leaf")
                     .clone();
+                forget_pane_title_state(mirror, *old);
                 mirror.tabs[at].root = predicted;
                 ops.push(ControlRequest::PaneReplace {
                     workspace,
@@ -488,23 +834,125 @@ fn reconcile_tab(
     };
 
     if done {
+        if let Some(source) = moved_source {
+            // The source may precede the destination in the mirror.  Remove
+            // it by stable tab id, then re-find the destination before fixing
+            // ratios; the old `at` index is no longer reliable.
+            if let Some(source_at) = mirror.tabs.iter().position(|tab| tab.id == source) {
+                mirror.tabs.remove(source_at);
+                heal_active(mirror, source_at);
+            }
+        }
+        let target_at = mirror
+            .tabs
+            .iter()
+            .position(|tab| tab.id == want.id)
+            .expect("the reconciled destination tab remains in the mirror");
         fix_ratios(
             workspace,
             want.id,
-            &mut mirror.tabs[at].root,
+            &mut mirror.tabs[target_at].root,
             &desired_root,
             ops,
         );
         return;
     }
 
+    // A pane id already owned by another tab cannot be materialized with
+    // PaneSplit/TabCreate.  If the constrained PaneMove shape did not match,
+    // fail closed and leave the current tree intact for a later, valid drag
+    // snapshot.  Keep an orphan source in the mirror as well; the deferred
+    // cleanup below must not turn this refusal into a destructive TabClose.
+    if added.iter().any(|pane| {
+        mirror
+            .tabs
+            .iter()
+            .enumerate()
+            .any(|(index, tab)| index != at && tab.root.contains(*pane))
+    }) {
+        for pane in &added {
+            if let Some(source) = orphan_sources.get(pane) {
+                blocked_orphans.insert(*source);
+            }
+        }
+        return;
+    }
+
     let closed = mirror.tabs.remove(at);
+    forget_tab_titles(mirror, &closed.root);
     ops.push(ControlRequest::TabClose {
         workspace,
         tab: closed.id,
     });
     heal_active(mirror, at);
     create_tab(workspace, mirror, at, want, ops);
+}
+
+/// Recognize the constrained 1+1 tab-strip merge shape and express it using
+/// the machine's atomic pane-move primitive.  The source tab must still be a
+/// single orphan leaf; held tabs and desired tabs are never eligible sources.
+fn try_single_pane_move(
+    workspace: WorkspaceId,
+    mirror: &mut WsMirror,
+    target_at: usize,
+    desired_root: &PaneNode,
+    new: u64,
+    orphan_sources: &HashMap<u64, TabId>,
+    ops: &mut Vec<ControlRequest>,
+) -> Option<TabId> {
+    let PaneNode::Split { axis, a, b, .. } = desired_root else {
+        return None;
+    };
+    let (sibling, first) = match (&**a, &**b) {
+        (PaneNode::Leaf { pane }, PaneNode::Leaf { pane: added }) if *added == new => {
+            (*pane, false)
+        }
+        (PaneNode::Leaf { pane: added }, PaneNode::Leaf { pane }) if *added == new => (*pane, true),
+        _ => return None,
+    };
+
+    let PaneNode::Leaf { pane: current } = &mirror.tabs[target_at].root else {
+        return None;
+    };
+    if *current != sibling {
+        return None;
+    }
+
+    let source = *orphan_sources.get(&new)?;
+    if source == mirror.tabs[target_at].id {
+        return None;
+    }
+    let source_at = mirror.tabs.iter().position(|tab| tab.id == source)?;
+    if !matches!(&mirror.tabs[source_at].root, PaneNode::Leaf { pane } if *pane == new) {
+        return None;
+    }
+    // A pane id must have one owner.  Refuse the move if a malformed/stale
+    // mirror also references it from another tab.
+    if mirror
+        .tabs
+        .iter()
+        .enumerate()
+        .any(|(index, tab)| index != source_at && tab.root.contains(new))
+    {
+        return None;
+    }
+
+    // The machine's PaneMove primitive always starts the new split at ratio
+    // 0.5.  Keep that fact in the optimistic mirror so the normal ratio pass
+    // can emit PaneSetRatio when the UI snapshot requested a different ratio.
+    let mut predicted = mirror.tabs[target_at].root.clone();
+    if !predicted.split_leaf(sibling, new, *axis, 0.5, first) {
+        return None;
+    }
+    mirror.tabs[target_at].root = predicted;
+    ops.push(ControlRequest::PaneMove {
+        workspace,
+        pane: new,
+        to: sibling,
+        axis: *axis,
+        first,
+    });
+    Some(source)
 }
 
 fn try_single_split(
@@ -519,6 +967,17 @@ fn try_single_split(
     let Some((sibling, axis, ratio, first)) = split_site(desired_root, new) else {
         return false;
     };
+    // A PaneSplit materializes a fresh pane record.  If the id is already
+    // owned by another mirror tab, sending it would be refused by the
+    // machine (and is precisely the race avoided by PaneMove for merges).
+    if mirror
+        .tabs
+        .iter()
+        .enumerate()
+        .any(|(index, tab)| index != at && tab.root.contains(new))
+    {
+        return false;
+    }
     let mut predicted = mirror.tabs[at].root.clone();
     if !predicted.split_leaf(sibling, new, axis, ratio, first) {
         return false;
@@ -921,13 +1380,17 @@ fn start_prime(cx: &mut App, client_ws: WorkspaceId) {
 }
 
 fn pull_or_create(client: &ControlClient, machine_ws: WorkspaceId) -> io::Result<WsMirror> {
+    // Prime reads the complete machine snapshot before any optimistic diff.
+    // WorkspaceTree alone has no PaneRecord identity, which would make a
+    // provider-title migration either unsafe or permanently invisible.
+    let machine: Machine = match client.call(ControlRequest::MachineGet)? {
+        ReplyOk::MachineTree(machine) => *machine,
+        other => return Err(io::Error::other(format!("MachineGet answered {other:?}"))),
+    };
     match client.call(ControlRequest::WorkspaceTree {
         workspace: machine_ws,
     }) {
-        Ok(ReplyOk::WorkspaceTree(ws)) => Ok(WsMirror {
-            tabs: ws.tabs,
-            active: ws.active_tab,
-        }),
+        Ok(ReplyOk::WorkspaceTree(ws)) => Ok(mirror_from_machine(&machine, &ws)),
         Ok(other) => Err(io::Error::other(format!(
             "WorkspaceTree answered {other:?}"
         ))),
@@ -936,10 +1399,7 @@ fn pull_or_create(client: &ControlClient, machine_ws: WorkspaceId) -> io::Result
                 name: None,
                 workspace: Some(machine_ws),
             })? {
-                ReplyOk::WorkspaceTree(ws) => Ok(WsMirror {
-                    tabs: ws.tabs,
-                    active: ws.active_tab,
-                }),
+                ReplyOk::WorkspaceTree(ws) => Ok(mirror_from_machine(&machine, &ws)),
                 other => Err(io::Error::other(format!(
                     "WorkspaceCreate answered {other:?}"
                 ))),
@@ -1174,13 +1634,18 @@ fn session_pane_from_node(node: &PaneNode, panes: &[PaneRecord]) -> SessionPane 
                 pane_id: live.then_some(*pane),
                 ssh_spec,
                 live_binding: agent.map_or_else(Default::default, |agent| {
-                    agentty_core::core::session::LiveContainerBinding::restored(
+                    let candidates = agentty_core::agent_runtime::SessionTitleCandidates::from_raw(
+                        agent.provider_title.as_deref(),
+                        agent.first_user_title.as_deref(),
+                    );
+                    agentty_core::core::session::LiveContainerBinding::restored_with_title_candidates(
                         agent
                             .container_id
                             .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
                         Some(agent.agent),
                         agent.session_id,
                         agent.launch_argv.unwrap_or_default(),
+                        candidates,
                     )
                 }),
             }
@@ -1296,10 +1761,7 @@ fn pull_workspace(
     };
     match machine.workspaces.iter().find(|w| w.id == machine_ws) {
         Some(ws) => {
-            let mirror = WsMirror {
-                tabs: ws.tabs.clone(),
-                active: ws.active_tab,
-            };
+            let mirror = mirror_from_machine(&machine, ws);
             let session = session_from_tree(ws, &machine.panes);
             Ok((machine, mirror, session))
         }
@@ -1444,13 +1906,20 @@ fn apply_to_mirror(mirror: &mut WsMirror, delta: &LayoutDelta) -> bool {
         LayoutDelta::WorkspaceCreated { .. }
         | LayoutDelta::WorkspaceRenamed { .. }
         | LayoutDelta::WorkspaceTouched { .. }
-        | LayoutDelta::WorkspaceDeleted
-        | LayoutDelta::PaneFacts { .. } => true,
+        | LayoutDelta::WorkspaceDeleted => true,
+        LayoutDelta::PaneFacts { pane } => {
+            remember_pane_title(mirror, pane);
+            true
+        }
         LayoutDelta::ActiveTabChanged { tab } => {
             mirror.active = Some(*tab);
             true
         }
         LayoutDelta::TabCreated { at, tab } => {
+            if let Some(previous) = mirror.tabs.iter().find(|t| t.id == tab.id) {
+                let previous = previous.root.clone();
+                forget_tab_titles(mirror, &previous);
+            }
             mirror.tabs.retain(|t| t.id != tab.id);
             let at = (*at).min(mirror.tabs.len());
             mirror.tabs.insert(at, tab.clone());
@@ -1458,6 +1927,10 @@ fn apply_to_mirror(mirror: &mut WsMirror, delta: &LayoutDelta) -> bool {
         }
         LayoutDelta::TabClosed { tab } => {
             let before = mirror.tabs.len();
+            if let Some(closed) = mirror.tabs.iter().find(|t| t.id == *tab) {
+                let root = closed.root.clone();
+                forget_tab_titles(mirror, &root);
+            }
             mirror.tabs.retain(|t| t.id != *tab);
             if mirror.tabs.is_empty() {
                 mirror.active = None;
@@ -1486,11 +1959,21 @@ fn apply_to_mirror(mirror: &mut WsMirror, delta: &LayoutDelta) -> bool {
             mirror.tabs.insert((*to).min(mirror.tabs.len()), moved);
             true
         }
-        LayoutDelta::TabRestructured { tab, .. } => {
-            let Some(t) = mirror.tabs.iter_mut().find(|t| t.id == tab.id) else {
+        LayoutDelta::TabRestructured { tab, pane } => {
+            let Some(index) = mirror.tabs.iter().position(|t| t.id == tab.id) else {
                 return false;
             };
-            *t = tab.clone();
+            let old_ids = mirror.tabs[index].root.pane_ids();
+            let new_ids = tab.root.pane_ids();
+            for pane in old_ids {
+                if !new_ids.contains(&pane) {
+                    forget_pane_title_state(mirror, pane);
+                }
+            }
+            mirror.tabs[index] = tab.clone();
+            if let Some(record) = pane {
+                remember_pane_title(mirror, record);
+            }
             true
         }
         LayoutDelta::RatioChanged { tab, path, ratio } => {
@@ -1505,6 +1988,44 @@ fn apply_to_mirror(mirror: &mut WsMirror, delta: &LayoutDelta) -> bool {
                 _ => false,
             }
         }
+    }
+}
+
+fn remember_pane_title(mirror: &mut WsMirror, pane: &PaneRecord) {
+    let Some(agent) = pane.agent.as_ref() else {
+        // A PaneFacts snapshot without AgentFacts is authoritative negative
+        // identity evidence.  Do not let a pane number reuse the previous
+        // agent's identity to authorize a provider-title request.
+        forget_pane_title_state(mirror, pane.id);
+        return;
+    };
+    let identity = PaneTitleIdentity::from_facts(agent);
+    if mirror
+        .pane_agent_identities
+        .get(&pane.id)
+        .is_some_and(|previous| previous != &identity)
+    {
+        // A pane id was reused.  Typed evidence belongs to the old identity
+        // and must not be sent to the replacement.
+        forget_pane_title_state(mirror, pane.id);
+    }
+    mirror.pane_agent_identities.insert(pane.id, identity);
+    if let Some(title) = agent
+        .provider_title
+        .as_deref()
+        .and_then(agentty_core::agent_runtime::normalize_title_candidate)
+    {
+        mirror.pane_provider_titles.entry(pane.id).or_insert(title);
+    }
+    if let Some(title) = agent
+        .first_user_title
+        .as_deref()
+        .and_then(agentty_core::agent_runtime::normalize_title_candidate)
+    {
+        mirror
+            .pane_first_user_titles
+            .entry(pane.id)
+            .or_insert(title);
     }
 }
 
@@ -1976,6 +2497,297 @@ mod tests {
         assert_eq!(mirror.tabs.len(), 1);
     }
 
+    #[test]
+    fn pane_facts_delta_primes_the_title_mirror_without_overwriting_it() {
+        use agentty_core::core::cli_agent::CLIAgent;
+
+        let mut mirror = WsMirror::default();
+        let pane = PaneRecord {
+            id: 7,
+            agent: Some(AgentFacts {
+                agent: CLIAgent::Codex,
+                container_id: None,
+                session_id: None,
+                launch_argv: None,
+                status: None,
+                provider_title: None,
+                first_user_title: Some("Draw a fox".into()),
+            }),
+            ..PaneRecord::new(7)
+        };
+        assert!(apply_to_mirror(
+            &mut mirror,
+            &LayoutDelta::PaneFacts { pane: pane.clone() },
+        ));
+        assert_eq!(
+            mirror.pane_first_user_titles.get(&7).map(String::as_str),
+            Some("Draw a fox")
+        );
+
+        let mut later = pane;
+        later.agent.as_mut().unwrap().first_user_title = Some("Later".into());
+        assert!(apply_to_mirror(
+            &mut mirror,
+            &LayoutDelta::PaneFacts { pane: later },
+        ));
+        assert_eq!(
+            mirror.pane_first_user_titles.get(&7).map(String::as_str),
+            Some("Draw a fox"),
+            "the mirror follows the machine's write-once policy"
+        );
+    }
+
+    #[test]
+    fn pane_facts_delta_preserves_provider_title_evidence() {
+        use agentty_core::core::cli_agent::CLIAgent;
+
+        let mut mirror = WsMirror::default();
+        let pane = PaneRecord {
+            id: 8,
+            agent: Some(AgentFacts {
+                agent: CLIAgent::Codex,
+                container_id: None,
+                session_id: None,
+                launch_argv: None,
+                status: None,
+                provider_title: Some("Historical rollout".into()),
+                first_user_title: Some("Draw a fox".into()),
+            }),
+            ..PaneRecord::new(8)
+        };
+        assert!(apply_to_mirror(
+            &mut mirror,
+            &LayoutDelta::PaneFacts { pane: pane.clone() },
+        ));
+        assert_eq!(
+            mirror.pane_provider_titles.get(&8).map(String::as_str),
+            Some("Historical rollout")
+        );
+
+        let mut later = pane;
+        later.agent.as_mut().unwrap().provider_title = Some("Newer".into());
+        assert!(apply_to_mirror(
+            &mut mirror,
+            &LayoutDelta::PaneFacts { pane: later },
+        ));
+        assert_eq!(
+            mirror.pane_provider_titles.get(&8).map(String::as_str),
+            Some("Historical rollout"),
+            "provider evidence is retained write-once in the mirror"
+        );
+    }
+
+    #[test]
+    fn tab_restructure_clears_removed_pane_identity() {
+        let tab_id = TabId::new();
+        let mut mirror = WsMirror {
+            tabs: vec![TreeTab {
+                id: tab_id,
+                name: None,
+                sidebar_group: None,
+                root: PaneNode::Leaf { pane: 31 },
+            }],
+            active: Some(tab_id),
+            ..WsMirror::default()
+        };
+        let pane = machine_provider_record(
+            31,
+            Some("Historical rollout"),
+            Some("container-31"),
+            Some("session-31"),
+        );
+        assert!(apply_to_mirror(
+            &mut mirror,
+            &LayoutDelta::PaneFacts { pane },
+        ));
+        assert!(mirror.pane_agent_identities.contains_key(&31));
+
+        assert!(apply_to_mirror(
+            &mut mirror,
+            &LayoutDelta::TabRestructured {
+                tab: TreeTab {
+                    id: tab_id,
+                    name: None,
+                    sidebar_group: None,
+                    root: PaneNode::Leaf { pane: 32 },
+                },
+                pane: None,
+            },
+        ));
+        assert!(!mirror.pane_first_user_titles.contains_key(&31));
+        assert!(!mirror.pane_provider_titles.contains_key(&31));
+        assert!(
+            !mirror.pane_agent_identities.contains_key(&31),
+            "a removed pane id must not retain authorization for a future title write"
+        );
+    }
+
+    #[test]
+    fn agentless_pane_facts_clear_all_title_identity_slots() {
+        let mut mirror = WsMirror {
+            tabs: vec![TreeTab::leaf(32)],
+            ..WsMirror::default()
+        };
+        let pane = machine_provider_record(
+            32,
+            Some("Historical rollout"),
+            Some("container-32"),
+            Some("session-32"),
+        );
+        assert!(apply_to_mirror(
+            &mut mirror,
+            &LayoutDelta::PaneFacts { pane },
+        ));
+        assert!(apply_to_mirror(
+            &mut mirror,
+            &LayoutDelta::PaneFacts {
+                pane: PaneRecord::new(32),
+            },
+        ));
+        assert!(!mirror.pane_first_user_titles.contains_key(&32));
+        assert!(!mirror.pane_provider_titles.contains_key(&32));
+        assert!(
+            !mirror.pane_agent_identities.contains_key(&32),
+            "agent-less facts revoke the previous pane identity"
+        );
+    }
+
+    #[test]
+    fn reused_pane_after_agentless_facts_cannot_queue_provider_title() {
+        let tab_id = TabId::new();
+        let mut mirror = WsMirror {
+            tabs: vec![TreeTab {
+                id: tab_id,
+                name: None,
+                sidebar_group: None,
+                root: PaneNode::Leaf { pane: 33 },
+            }],
+            active: Some(tab_id),
+            ..WsMirror::default()
+        };
+        assert!(apply_to_mirror(
+            &mut mirror,
+            &LayoutDelta::PaneFacts {
+                pane: machine_provider_record(
+                    33,
+                    Some("Historical rollout"),
+                    Some("container-33"),
+                    Some("session-33"),
+                ),
+            },
+        ));
+        assert!(apply_to_mirror(
+            &mut mirror,
+            &LayoutDelta::TabRestructured {
+                tab: TreeTab {
+                    id: tab_id,
+                    name: None,
+                    sidebar_group: None,
+                    root: PaneNode::Leaf { pane: 34 },
+                },
+                pane: None,
+            },
+        ));
+        assert!(apply_to_mirror(
+            &mut mirror,
+            &LayoutDelta::TabRestructured {
+                tab: TreeTab {
+                    id: tab_id,
+                    name: None,
+                    sidebar_group: None,
+                    root: PaneNode::Leaf { pane: 33 },
+                },
+                pane: Some(PaneRecord::new(33)),
+            },
+        ));
+
+        let ops = diff(
+            WorkspaceId::new(),
+            &mut mirror,
+            &[tab(
+                tab_id,
+                DesiredNode::Leaf {
+                    pane: 33,
+                    seed: seed_with_provider_title(33, "Replacement rollout"),
+                },
+            )],
+            Some(tab_id),
+            SyncScope::Full,
+            &[],
+        );
+        assert!(
+            !ops.iter()
+                .any(|op| matches!(op, ControlRequest::PaneSetProviderTitle { .. })),
+            "pane-number reuse without fresh AgentFacts must not authorize a title write: {ops:?}"
+        );
+        assert!(!mirror.pane_agent_identities.contains_key(&33));
+    }
+
+    #[test]
+    fn ready_desired_agent_facts_prefer_live_binding_over_runtime_fallback() {
+        use agentty_core::core::cli_agent::{AgentSessionState, AgentStatus, CLIAgent};
+        use agentty_core::core::session::LiveContainerBinding;
+
+        let binding = LiveContainerBinding::restored_with_title_candidates(
+            "container-persisted".into(),
+            Some(CLIAgent::Codex),
+            Some("persisted-session".into()),
+            vec!["codex".into(), "--resume".into()],
+            agentty_core::agent_runtime::SessionTitleCandidates::from_raw(
+                Some("Persisted provider"),
+                Some("Persisted title"),
+            ),
+        );
+        let runtime = AgentSessionState {
+            status: AgentStatus::Working,
+            session_id: Some("runtime-session".into()),
+            launch_argv: Some(vec!["runtime-agent".into()]),
+            ..Default::default()
+        };
+
+        let facts = desired_agent_facts(&binding, None, Some(&runtime))
+            .expect("a persisted binding supplies the agent facts after runtime exit");
+        assert_eq!(facts.agent, CLIAgent::Codex);
+        assert_eq!(facts.container_id.as_deref(), Some("container-persisted"));
+        assert_eq!(facts.session_id.as_deref(), Some("persisted-session"));
+        assert_eq!(
+            facts.launch_argv.as_deref(),
+            Some(["codex".to_string(), "--resume".to_string()].as_slice())
+        );
+        assert_eq!(facts.provider_title.as_deref(), Some("Persisted provider"));
+        assert_eq!(facts.first_user_title.as_deref(), Some("Persisted title"));
+
+        let conflicting_runtime =
+            desired_agent_facts(&binding, Some(CLIAgent::Claude), Some(&runtime)).unwrap();
+        assert_eq!(conflicting_runtime.agent, CLIAgent::Codex);
+    }
+
+    #[test]
+    fn ready_desired_agent_facts_use_runtime_identity_only_when_binding_is_empty() {
+        use agentty_core::core::cli_agent::{AgentSessionState, AgentStatus, CLIAgent};
+        use agentty_core::core::session::LiveContainerBinding;
+
+        let binding =
+            LiveContainerBinding::restored("container-runtime".into(), None, None, Vec::new());
+        let runtime = AgentSessionState {
+            status: AgentStatus::Working,
+            session_id: Some("runtime-session".into()),
+            launch_argv: Some(vec!["runtime-agent".into()]),
+            ..Default::default()
+        };
+
+        let facts = desired_agent_facts(&binding, Some(CLIAgent::Claude), Some(&runtime))
+            .expect("runtime identity remains a fallback for an unstamped binding");
+        assert_eq!(facts.agent, CLIAgent::Claude);
+        assert_eq!(facts.container_id.as_deref(), Some("container-runtime"));
+        assert_eq!(facts.session_id.as_deref(), Some("runtime-session"));
+        assert_eq!(
+            facts.launch_argv.as_deref(),
+            Some(["runtime-agent".to_string()].as_slice())
+        );
+        assert_eq!(facts.first_user_title, None);
+    }
+
     #[gpui::test]
     fn a_superseded_prime_result_does_not_roll_the_mirror_back(cx: &mut gpui::TestAppContext) {
         cx.update(|cx| {
@@ -1995,6 +2807,7 @@ mod tests {
             let advanced = WsMirror {
                 tabs: vec![TreeTab::leaf(7)],
                 active: None,
+                ..WsMirror::default()
             };
             {
                 let state = cx
@@ -2024,6 +2837,42 @@ mod tests {
             cwd: Some(format!("/work/{pane}")),
             ssh_spec: None,
             agent: None,
+        }
+    }
+
+    fn seed_with_first_user_title(pane: u64, title: &str) -> PaneSeed {
+        let mut seed = seed(pane);
+        seed.agent = Some(AgentFacts {
+            agent: agentty_core::core::cli_agent::CLIAgent::Codex,
+            container_id: Some(format!("container-{pane}")),
+            session_id: Some(format!("session-{pane}")),
+            launch_argv: Some(vec!["codex".into()]),
+            status: None,
+            provider_title: None,
+            first_user_title: Some(title.into()),
+        });
+        seed
+    }
+
+    fn seed_with_provider_title(pane: u64, provider: &str) -> PaneSeed {
+        let mut seed = seed(pane);
+        seed.agent = Some(AgentFacts {
+            agent: agentty_core::core::cli_agent::CLIAgent::Codex,
+            container_id: Some(format!("container-{pane}")),
+            session_id: Some(format!("session-{pane}")),
+            launch_argv: Some(vec!["codex".into()]),
+            status: None,
+            provider_title: Some(provider.into()),
+            first_user_title: None,
+        });
+        seed
+    }
+
+    fn provider_identity(pane: u64) -> PaneTitleIdentity {
+        PaneTitleIdentity {
+            agent: agentty_core::core::cli_agent::CLIAgent::Codex,
+            container_id: Some(format!("container-{pane}")),
+            session_id: Some(format!("session-{pane}")),
         }
     }
 
@@ -2082,6 +2931,412 @@ mod tests {
         );
         assert_converged(&mirror, &desired);
         assert_eq!(mirror.active, Some(id));
+    }
+
+    #[test]
+    fn a_first_user_title_is_persisted_after_pane_materialization_and_only_once() {
+        let ws = WorkspaceId::new();
+        let id = TabId::new();
+        let mut mirror = WsMirror::default();
+        let desired = vec![tab(
+            id,
+            DesiredNode::Leaf {
+                pane: 7,
+                seed: seed_with_first_user_title(7, "Draw a fox"),
+            },
+        )];
+
+        let ops = diff(ws, &mut mirror, &desired, Some(id), SyncScope::Full, &[]);
+        assert_eq!(
+            ops,
+            vec![ControlRequest::TabCreate {
+                workspace: ws,
+                at: Some(0),
+                pane: seed_with_first_user_title(7, "Draw a fox"),
+                tab: Some(id),
+            },],
+            "the complete seed persists the title atomically with the create"
+        );
+        assert_eq!(
+            mirror.pane_first_user_titles.get(&7).map(String::as_str),
+            Some("Draw a fox")
+        );
+        assert!(
+            diff(ws, &mut mirror, &desired, Some(id), SyncScope::Full, &[]).is_empty(),
+            "a title request is write-once in the optimistic mirror"
+        );
+    }
+
+    #[test]
+    fn an_existing_pane_gets_a_typed_first_user_title_request() {
+        let ws = WorkspaceId::new();
+        let id = TabId::new();
+        let mut mirror = WsMirror::default();
+        diff(
+            ws,
+            &mut mirror,
+            &[tab(id, leaf(7))],
+            Some(id),
+            SyncScope::Full,
+            &[],
+        );
+
+        let desired = vec![tab(
+            id,
+            DesiredNode::Leaf {
+                pane: 7,
+                seed: seed_with_first_user_title(7, "Draw a fox"),
+            },
+        )];
+        assert_eq!(
+            diff(ws, &mut mirror, &desired, Some(id), SyncScope::Full, &[]),
+            vec![ControlRequest::PaneSetFirstUserTitle {
+                workspace: ws,
+                pane: 7,
+                title: "Draw a fox".into(),
+            }]
+        );
+    }
+
+    #[test]
+    fn an_existing_pane_gets_a_typed_provider_title_request() {
+        let ws = WorkspaceId::new();
+        let id = TabId::new();
+        let mut mirror = WsMirror::default();
+        diff(
+            ws,
+            &mut mirror,
+            &[tab(id, leaf(7))],
+            Some(id),
+            SyncScope::Full,
+            &[],
+        );
+        mirror.pane_agent_identities.insert(7, provider_identity(7));
+
+        let desired = vec![tab(
+            id,
+            DesiredNode::Leaf {
+                pane: 7,
+                seed: seed_with_provider_title(7, "Historical rollout"),
+            },
+        )];
+        assert_eq!(
+            diff(ws, &mut mirror, &desired, Some(id), SyncScope::Full, &[]),
+            vec![ControlRequest::PaneSetProviderTitle {
+                workspace: ws,
+                pane: 7,
+                title: "Historical rollout".into(),
+                expected_identity: Some(provider_identity(7)),
+            }]
+        );
+    }
+
+    #[test]
+    fn provider_title_seed_is_persisted_after_pane_materialization_and_only_once() {
+        let ws = WorkspaceId::new();
+        let id = TabId::new();
+        let mut mirror = WsMirror::default();
+        let desired = vec![tab(
+            id,
+            DesiredNode::Leaf {
+                pane: 8,
+                seed: seed_with_provider_title(8, "Historical rollout"),
+            },
+        )];
+
+        let ops = diff(ws, &mut mirror, &desired, Some(id), SyncScope::Full, &[]);
+        assert_eq!(
+            ops,
+            vec![ControlRequest::TabCreate {
+                workspace: ws,
+                at: Some(0),
+                pane: seed_with_provider_title(8, "Historical rollout"),
+                tab: Some(id),
+            }]
+        );
+        assert_eq!(
+            mirror.pane_provider_titles.get(&8).map(String::as_str),
+            Some("Historical rollout")
+        );
+        assert_eq!(
+            mirror.pane_agent_identities.get(&8),
+            Some(&provider_identity(8))
+        );
+        assert!(
+            diff(ws, &mut mirror, &desired, Some(id), SyncScope::Full, &[]).is_empty(),
+            "a seeded provider title is write-once in the optimistic mirror"
+        );
+    }
+
+    #[test]
+    fn provider_title_requests_precede_first_user_title_requests() {
+        let ws = WorkspaceId::new();
+        let id = TabId::new();
+        let mut mirror = WsMirror::default();
+        diff(
+            ws,
+            &mut mirror,
+            &[tab(id, leaf(9))],
+            Some(id),
+            SyncScope::Full,
+            &[],
+        );
+        mirror.pane_agent_identities.insert(9, provider_identity(9));
+        let mut seed = seed_with_provider_title(9, "Historical rollout");
+        seed.agent.as_mut().unwrap().first_user_title = Some("Draw a fox".into());
+
+        let ops = diff(
+            ws,
+            &mut mirror,
+            &[tab(id, DesiredNode::Leaf { pane: 9, seed })],
+            Some(id),
+            SyncScope::Full,
+            &[],
+        );
+        assert!(matches!(
+            ops.as_slice(),
+            [
+                ControlRequest::PaneSetProviderTitle { .. },
+                ControlRequest::PaneSetFirstUserTitle { .. }
+            ]
+        ));
+    }
+
+    #[test]
+    fn no_agent_pane_is_not_optimistically_marked_for_provider_title() {
+        let ws = WorkspaceId::new();
+        let id = TabId::new();
+        let mut mirror = WsMirror::default();
+        diff(
+            ws,
+            &mut mirror,
+            &[tab(id, leaf(10))],
+            Some(id),
+            SyncScope::Full,
+            &[],
+        );
+        let desired = vec![tab(
+            id,
+            DesiredNode::Leaf {
+                pane: 10,
+                seed: seed_with_provider_title(10, "Historical rollout"),
+            },
+        )];
+        assert!(
+            diff(ws, &mut mirror, &desired, Some(id), SyncScope::Full, &[]).is_empty(),
+            "without a MachineGet identity, provider migration waits instead of guessing"
+        );
+        assert!(!mirror.pane_provider_titles.contains_key(&10));
+    }
+
+    #[test]
+    fn prime_mirror_reads_machine_provider_title_before_queueing() {
+        let ws = agentty_core::core::machine::Workspace {
+            id: WorkspaceId::new(),
+            name: None,
+            last_active: 0,
+            tabs: vec![TreeTab::leaf(11)],
+            active_tab: None,
+            attachment: None,
+        };
+        let machine = Machine {
+            workspaces: vec![ws.clone()],
+            panes: vec![PaneRecord {
+                id: 11,
+                agent: Some(AgentFacts {
+                    agent: agentty_core::core::cli_agent::CLIAgent::Codex,
+                    container_id: Some("container-11".into()),
+                    session_id: Some("session-11".into()),
+                    launch_argv: Some(vec!["codex".into()]),
+                    status: None,
+                    provider_title: Some("Historical rollout".into()),
+                    first_user_title: None,
+                }),
+                ..PaneRecord::new(11)
+            }],
+        };
+        let mirror = mirror_from_machine(&machine, &ws);
+        assert_eq!(
+            mirror.pane_provider_titles.get(&11).map(String::as_str),
+            Some("Historical rollout")
+        );
+        assert_eq!(
+            mirror.pane_agent_identities.get(&11),
+            Some(&provider_identity(11))
+        );
+    }
+
+    #[test]
+    fn existing_pane_provider_title_request_is_idempotent_after_authoritative_delta() {
+        let ws = WorkspaceId::new();
+        let id = TabId::new();
+        let mut mirror = WsMirror {
+            tabs: vec![TreeTab {
+                id,
+                name: None,
+                sidebar_group: None,
+                root: PaneNode::Leaf { pane: 12 },
+            }],
+            active: Some(id),
+            ..WsMirror::default()
+        };
+        mirror
+            .pane_agent_identities
+            .insert(12, provider_identity(12));
+        let desired = vec![tab(
+            id,
+            DesiredNode::Leaf {
+                pane: 12,
+                seed: seed_with_provider_title(12, "Historical rollout"),
+            },
+        )];
+        let first = diff(ws, &mut mirror, &desired, Some(id), SyncScope::Full, &[]);
+        assert!(matches!(
+            first.as_slice(),
+            [ControlRequest::PaneSetProviderTitle { .. }]
+        ));
+
+        // A subsequent authoritative PaneFacts delta is idempotent and does
+        // not enqueue a second migration after reconnect/hydrate.
+        let pane = PaneRecord {
+            id: 12,
+            agent: Some(AgentFacts {
+                agent: agentty_core::core::cli_agent::CLIAgent::Codex,
+                container_id: Some("container-12".into()),
+                session_id: Some("session-12".into()),
+                launch_argv: Some(vec!["codex".into()]),
+                status: None,
+                provider_title: Some("Historical rollout".into()),
+                first_user_title: None,
+            }),
+            ..PaneRecord::new(12)
+        };
+        apply_to_mirror(&mut mirror, &LayoutDelta::PaneFacts { pane });
+        assert!(diff(ws, &mut mirror, &desired, Some(id), SyncScope::Full, &[]).is_empty());
+    }
+
+    #[test]
+    fn replace_hydrate_machine_missing_provider_title_fails_closed() {
+        let workspace = agentty_core::core::machine::Workspace {
+            id: WorkspaceId::new(),
+            name: None,
+            last_active: 0,
+            tabs: vec![TreeTab::leaf(21)],
+            active_tab: None,
+            attachment: None,
+        };
+        let machine = Machine {
+            workspaces: vec![workspace.clone()],
+            panes: vec![machine_provider_record(
+                21,
+                None,
+                Some("machine-container"),
+                Some("machine-session"),
+            )],
+        };
+        let session = session_from_tree(&workspace, &machine.panes);
+        let SessionPane::Leaf { live_binding, .. } = &session.tabs[0].pane else {
+            panic!("single-pane hydration remains a leaf");
+        };
+        assert_eq!(
+            live_binding.provider_title(),
+            None,
+            "Replace must preserve machine-empty provider slot, not infer a local title"
+        );
+
+        let mut mirror = mirror_from_machine(&machine, &workspace);
+        let desired = vec![tab(TabId::new(), leaf(21))];
+        let ops = diff(
+            workspace.id,
+            &mut mirror,
+            &desired,
+            Some(desired[0].id),
+            SyncScope::Full,
+            &[],
+        );
+        assert!(
+            !ops.iter()
+                .any(|op| matches!(op, ControlRequest::PaneSetProviderTitle { .. }))
+        );
+        assert!(!mirror.pane_provider_titles.contains_key(&21));
+    }
+
+    #[test]
+    fn replace_hydrate_machine_provider_title_wins() {
+        let workspace = agentty_core::core::machine::Workspace {
+            id: WorkspaceId::new(),
+            name: None,
+            last_active: 0,
+            tabs: vec![TreeTab::leaf(22)],
+            active_tab: None,
+            attachment: None,
+        };
+        let machine = Machine {
+            workspaces: vec![workspace.clone()],
+            panes: vec![machine_provider_record(
+                22,
+                Some("Machine authority"),
+                Some("machine-container"),
+                Some("machine-session"),
+            )],
+        };
+        let session = session_from_tree(&workspace, &machine.panes);
+        let SessionPane::Leaf { live_binding, .. } = &session.tabs[0].pane else {
+            panic!("single-pane hydration remains a leaf");
+        };
+        assert_eq!(
+            live_binding.provider_title(),
+            Some("Machine authority"),
+            "Replace must project meaningful machine evidence"
+        );
+    }
+
+    #[test]
+    fn replace_hydrate_no_agent_does_not_fabricate_provider_title() {
+        let workspace = agentty_core::core::machine::Workspace {
+            id: WorkspaceId::new(),
+            name: None,
+            last_active: 0,
+            tabs: vec![TreeTab::leaf(23)],
+            active_tab: None,
+            attachment: None,
+        };
+        let machine = Machine {
+            workspaces: vec![workspace.clone()],
+            panes: vec![PaneRecord::new(23)],
+        };
+        let session = session_from_tree(&workspace, &machine.panes);
+        let SessionPane::Leaf {
+            pane_id,
+            live_binding,
+            ..
+        } = &session.tabs[0].pane
+        else {
+            panic!("single-pane hydration remains a leaf");
+        };
+        assert_eq!(*pane_id, None);
+        assert_eq!(live_binding.provider_title(), None);
+    }
+
+    fn machine_provider_record(
+        pane: u64,
+        provider_title: Option<&str>,
+        container_id: Option<&str>,
+        session_id: Option<&str>,
+    ) -> PaneRecord {
+        PaneRecord {
+            id: pane,
+            agent: Some(AgentFacts {
+                agent: agentty_core::core::cli_agent::CLIAgent::Codex,
+                container_id: container_id.map(str::to_owned),
+                session_id: session_id.map(str::to_owned),
+                launch_argv: Some(vec!["codex".into()]),
+                status: None,
+                provider_title: provider_title.map(str::to_owned),
+                first_user_title: None,
+            }),
+            ..PaneRecord::new(pane)
+        }
     }
 
     #[test]
@@ -2253,6 +3508,139 @@ mod tests {
         );
         assert_converged(&mirror, &want);
         assert_eq!(mirror.active, Some(a));
+    }
+
+    #[test]
+    fn tab_drag_merge_tree_diff_emits_one_pane_move_not_split_and_tab_close() {
+        let ws = WorkspaceId::new();
+        let (target, source) = (TabId::new(), TabId::new());
+        let mut mirror = WsMirror::default();
+        let before = vec![tab(target, leaf(1)), tab(source, leaf(2))];
+        diff(ws, &mut mirror, &before, Some(target), SyncScope::Full, &[]);
+
+        let want = vec![tab(
+            target,
+            split(TreeAxis::Horizontal, 0.5, leaf(1), leaf(2)),
+        )];
+        let ops = diff(ws, &mut mirror, &want, Some(target), SyncScope::Full, &[]);
+        assert_eq!(
+            ops,
+            vec![ControlRequest::PaneMove {
+                workspace: ws,
+                pane: 2,
+                to: 1,
+                axis: TreeAxis::Horizontal,
+                first: false,
+            }],
+            "a 1+1 drag merge must use the machine's atomic PaneMove primitive"
+        );
+        assert!(
+            !ops.iter().any(|op| matches!(
+                op,
+                ControlRequest::PaneSplit { .. } | ControlRequest::TabClose { .. }
+            )),
+            "PaneSplit + TabClose can race and reject the duplicate pane"
+        );
+        assert_converged(&mirror, &want);
+    }
+
+    #[test]
+    fn tab_drag_merge_removes_source_by_id_when_source_precedes_target() {
+        let ws = WorkspaceId::new();
+        let (target, source) = (TabId::new(), TabId::new());
+        let mut mirror = WsMirror::default();
+        let before = vec![tab(source, leaf(2)), tab(target, leaf(1))];
+        diff(ws, &mut mirror, &before, Some(target), SyncScope::Full, &[]);
+
+        let want = vec![tab(
+            target,
+            split(TreeAxis::Horizontal, 0.5, leaf(1), leaf(2)),
+        )];
+        let ops = diff(ws, &mut mirror, &want, Some(target), SyncScope::Full, &[]);
+        assert_eq!(
+            ops,
+            vec![ControlRequest::PaneMove {
+                workspace: ws,
+                pane: 2,
+                to: 1,
+                axis: TreeAxis::Horizontal,
+                first: false,
+            }]
+        );
+        assert_converged(&mirror, &want);
+    }
+
+    #[test]
+    fn an_invalid_duplicate_pane_merge_is_left_for_a_later_snapshot() {
+        let ws = WorkspaceId::new();
+        let (target, source) = (TabId::new(), TabId::new());
+        let mut mirror = WsMirror::default();
+        let before = vec![tab(target, leaf(1)), tab(source, leaf(2))];
+        diff(ws, &mut mirror, &before, Some(target), SyncScope::Full, &[]);
+
+        // A 1+2 target is outside the constrained merge contract, but it
+        // still references the orphan's pane.  Do not rebuild the target (or
+        // close the source) with a duplicate PaneSplit/TabCreate.
+        let want = vec![tab(
+            target,
+            split(
+                TreeAxis::Horizontal,
+                0.5,
+                leaf(1),
+                split(TreeAxis::Vertical, 0.5, leaf(2), leaf(3)),
+            ),
+        )];
+        let ops = diff(ws, &mut mirror, &want, Some(target), SyncScope::Full, &[]);
+        assert!(
+            ops.is_empty(),
+            "invalid duplicate merge must fail closed: {ops:?}"
+        );
+        assert_eq!(
+            mirror.tabs,
+            before
+                .iter()
+                .map(|tab| TreeTab {
+                    id: tab.id,
+                    name: tab.name.clone(),
+                    sidebar_group: tab.group.clone(),
+                    root: tab.root.to_pane_node(),
+                })
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn tab_drag_merge_reconciles_a_non_default_split_ratio_after_pane_move() {
+        let ws = WorkspaceId::new();
+        let (target, source) = (TabId::new(), TabId::new());
+        let mut mirror = WsMirror::default();
+        let before = vec![tab(target, leaf(1)), tab(source, leaf(2))];
+        diff(ws, &mut mirror, &before, Some(target), SyncScope::Full, &[]);
+
+        let want = vec![tab(
+            target,
+            split(TreeAxis::Horizontal, 0.4, leaf(1), leaf(2)),
+        )];
+        let ops = diff(ws, &mut mirror, &want, Some(target), SyncScope::Full, &[]);
+        assert_eq!(
+            ops,
+            vec![
+                ControlRequest::PaneMove {
+                    workspace: ws,
+                    pane: 2,
+                    to: 1,
+                    axis: TreeAxis::Horizontal,
+                    first: false,
+                },
+                ControlRequest::PaneSetRatio {
+                    workspace: ws,
+                    tab: target,
+                    path: Vec::new(),
+                    ratio: 0.4,
+                },
+            ]
+        );
+        assert_converged(&mirror, &want);
     }
 
     #[test]
@@ -2621,6 +4009,8 @@ mod tests {
                     session_id: Some("sid".into()),
                     launch_argv: Some(vec!["claude".into()]),
                     status: None,
+                    provider_title: None,
+                    first_user_title: None,
                 }),
                 ..PaneRecord::new(2)
             },
@@ -2665,6 +4055,48 @@ mod tests {
             }
             _ => panic!("leaf"),
         }
+    }
+
+    #[test]
+    fn a_remote_hydrate_restores_the_persisted_first_user_title() {
+        use agentty_core::core::cli_agent::CLIAgent;
+
+        let tab_id = TabId::new();
+        let ws = agentty_core::core::machine::Workspace {
+            tabs: vec![TreeTab {
+                id: tab_id,
+                name: None,
+                sidebar_group: None,
+                root: PaneNode::Leaf { pane: 7 },
+            }],
+            active_tab: Some(tab_id),
+            ..Default::default()
+        };
+        let panes = vec![PaneRecord {
+            id: 7,
+            live: true,
+            agent: Some(AgentFacts {
+                agent: CLIAgent::Codex,
+                container_id: Some("container-7".into()),
+                session_id: Some("session-7".into()),
+                launch_argv: Some(vec!["codex".into()]),
+                status: None,
+                provider_title: Some("Historical provider title".into()),
+                first_user_title: Some("Draw a fox".into()),
+            }),
+            ..PaneRecord::new(7)
+        }];
+
+        let session = session_from_tree(&ws, &panes);
+        let SessionPane::Leaf { live_binding, .. } = &session.tabs[0].pane else {
+            panic!("a single remote pane remains a leaf")
+        };
+        assert_eq!(live_binding.first_user_title(), Some("Draw a fox"));
+        assert_eq!(
+            live_binding.provider_title(),
+            Some("Historical provider title")
+        );
+        assert_eq!(live_binding.container_id, "container-7");
     }
 
     #[test]

@@ -477,6 +477,7 @@ pub struct AgenttyApp {
     pub(crate) session_keyboard_cursor: crate::ui::session_navigator::SessionKeyboardCursor,
     pub(crate) session_navigator: agentty_core::agent_runtime::SessionNavigator,
     pub(crate) session_history: Vec<agentty_core::agent_runtime::AgentSessionRecord>,
+    pub(crate) session_history_environment: Option<agentty_core::core::environment::EnvironmentId>,
     pub(crate) session_refresh: crate::ui::session_navigator::SessionRefreshState,
     pub(crate) session_scan_error: Option<String>,
     pub(crate) session_scan_started: bool,
@@ -501,6 +502,7 @@ pub struct AgenttyApp {
     settings: Option<SettingsState>,
     pub(crate) ssh_prompt: crate::ui::ssh_prompt::SshPromptState,
     pub(crate) ssh_close_confirm: Option<SshCloseKind>,
+    pub(crate) pending_carrier_action: Option<PendingCarrierAction>,
     window_bounds: Bounds<Pixels>,
     pub(crate) workspace: WorkspaceId,
     pub(crate) workspace_rename: Option<WorkspaceRename>,
@@ -519,6 +521,45 @@ pub struct AgenttyApp {
 pub(crate) enum SshCloseKind {
     Tab(usize),
     Pane,
+    Carrier,
+}
+
+/// Stable identity captured before a Navigator carrier-close confirmation.
+/// Physical tab indices are intentionally absent: the callback must resolve
+/// the same Environment, logical row, and complete carrier tuple again.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct CarrierCloseToken {
+    pub(crate) scope: crate::ui::session_navigator::SessionNavigatorScope,
+    pub(crate) row_id: agentty_core::agent_runtime::NavigatorRowId,
+    pub(crate) identity: agentty_core::agent_runtime::SessionIdentity,
+    pub(crate) carrier: agentty_core::agent_runtime::LiveCarrier,
+}
+
+/// A carrier action paused behind the exact target's SSH warning.  The
+/// Close-and-Delete variant carries the original Host/roots snapshot so a
+/// delayed confirmation cannot resolve authority from a new Environment.
+pub(crate) enum PendingCarrierAction {
+    SoftClose {
+        token: CarrierCloseToken,
+    },
+    CloseAndDelete {
+        token: CarrierCloseToken,
+        plan: agentty_core::agent_runtime::DeletePlan,
+        host: crate::ui::host_ops::SharedHost,
+        roots: agentty_core::agent_runtime::AgentStoreRoots,
+        alias_path: std::path::PathBuf,
+        environment: agentty_core::core::environment::EnvironmentId,
+        aliases: agentty_core::agent_runtime::SessionUserStateStore,
+        source: Option<agentty_core::agent_runtime::SessionDeleteSource>,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CarrierCloseOutcome {
+    Closed,
+    NeedsSshConfirmation,
+    Stale,
+    Missing,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -804,6 +845,7 @@ impl AgenttyApp {
             session_keyboard_cursor: Default::default(),
             session_navigator: agentty_core::agent_runtime::SessionNavigator::default(),
             session_history: Vec::new(),
+            session_history_environment: None,
             session_refresh: Default::default(),
             session_scan_error: None,
             session_scan_started: false,
@@ -826,6 +868,7 @@ impl AgenttyApp {
             settings: None,
             ssh_prompt: crate::ui::ssh_prompt::SshPromptState::new(cx),
             ssh_close_confirm: None,
+            pending_carrier_action: None,
             window_bounds: window.window_bounds().get_bounds(),
             workspace,
             workspace_rename: None,
@@ -1059,6 +1102,11 @@ impl AgenttyApp {
         if previous == id {
             return;
         }
+        // Invalidate the old Navigator scope before any asynchronous Host
+        // completion can land while this window is being rebound. The new
+        // workspace must never inherit rows, alias paths, or in-flight scan
+        // generations from the previous Environment.
+        self.invalidate_session_navigator_scope(cx);
         if self.tabs.is_empty() && crate::ui::tree_sync::window_is_informed(cx, previous) {
             crate::ui::tree_sync::fire_workspace_op(cx, previous, |ws| {
                 agentty_core::daemon::control::ControlRequest::WorkspaceRemove { workspace: ws }
@@ -1076,6 +1124,11 @@ impl AgenttyApp {
         crate::ui::windows::WindowRegistry::rebind(cx, previous, claimed);
         crate::ui::remote_workspace::RemoteLinks::supervise(cx, claimed);
         self.adopt_workspace(claimed, Session::default(), window, cx);
+        self.rebuild_session_navigator(cx);
+        self.refresh_session_navigator_for(
+            crate::ui::session_navigator::SessionRefreshIntent::InitialTargetReady,
+            cx,
+        );
         crate::ui::tree_sync::hydrate_window_from_tree(cx, claimed);
     }
 
@@ -2693,6 +2746,201 @@ impl AgenttyApp {
         }
     }
 
+    fn apply_tab_strip_split_right(
+        &mut self,
+        pending: crate::ui::reorder::Pending,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if pending.intent
+            != crate::ui::reorder::ReorderIntent::Tab(crate::ui::reorder::TabDragIntent::Merge)
+            || pending.hit_zone != Some(crate::ui::reorder::TabDragHitZone::Icon)
+        {
+            return;
+        }
+        let Some(source_id) = pending.source_tab else {
+            return;
+        };
+        let Some(target_id) = pending.target_tab else {
+            return;
+        };
+        if source_id == target_id {
+            return;
+        }
+        let Some(source) = self
+            .tabs
+            .iter()
+            .position(|tab| tab.tree_id.get() == source_id)
+        else {
+            return;
+        };
+        let Some(destination) = self
+            .tabs
+            .iter()
+            .position(|tab| tab.tree_id.get() == target_id)
+        else {
+            return;
+        };
+        if source == destination {
+            return;
+        }
+        let source_tab = self.tabs.get(source).and_then(|tab| {
+            if tab.pane.terminals().len() == 1 && tab.pane.leaves().len() == 1 {
+                tab.pane.first_leaf().map(|slot| (tab, slot))
+            } else {
+                None
+            }
+        });
+        let Some((_, source_slot)) = source_tab else {
+            return;
+        };
+        if !self
+            .tabs
+            .get(destination)
+            .is_some_and(|tab| tab.pane.terminals().len() == 1 && tab.pane.leaves().len() == 1)
+        {
+            return;
+        }
+        let Some(anchor_leaf) = self.tabs.get(destination).and_then(|tab| {
+            tab.pane
+                .focused_or_first_slot(window, cx)
+                .or_else(|| tab.pane.first_leaf())
+        }) else {
+            return;
+        };
+        if !self.tabs.get_mut(destination).is_some_and(|tab| {
+            tab.pane.split_leaf(
+                anchor_leaf.entity_id(),
+                Axis::Horizontal,
+                false,
+                source_slot.clone(),
+            )
+        }) {
+            let reason = "the target tab was unavailable".to_string();
+            window.push_notification(
+                crate::core::i18n::current_format(cx, "notify.split_failed", &[("error", &reason)]),
+                cx,
+            );
+            return;
+        }
+
+        let active_id = self.tabs.get(self.active).map(|tab| tab.tree_id.get());
+        self.tabs.remove(source);
+        let destination_after_remove = if source < destination {
+            destination.saturating_sub(1)
+        } else {
+            destination
+        };
+        if self.tabs.is_empty() {
+            self.active = 0;
+        } else {
+            self.active = if active_id == Some(source_id) {
+                destination_after_remove.min(self.tabs.len() - 1)
+            } else {
+                active_id
+                    .and_then(|id| self.tabs.iter().position(|tab| tab.tree_id.get() == id))
+                    .unwrap_or_else(|| destination_after_remove.min(self.tabs.len() - 1))
+            };
+            self.focus_leaf(&source_slot, window, cx);
+        }
+        self.maximized = None;
+        self.save_session(cx);
+        cx.notify();
+    }
+
+    pub(crate) fn move_tab_to_new_window(
+        &mut self,
+        index: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if index >= self.tabs.len() {
+            return;
+        }
+        let source_workspace = self.workspace;
+        let tab = self.tabs[index].tree_id.get();
+        let Some(target_workspace) = WorkspaceStore::claim_peer(cx, source_workspace) else {
+            window.push_notification(
+                crate::core::i18n::current_format(
+                    cx,
+                    "notify.split_failed",
+                    &[(
+                        "error",
+                        &"could not allocate the destination window".to_string(),
+                    )],
+                ),
+                cx,
+            );
+            return;
+        };
+        if crate::ui::windows::open_empty(cx, target_workspace).is_none() {
+            WorkspaceStore::remove(cx, target_workspace);
+            window.push_notification(
+                crate::core::i18n::current_format(
+                    cx,
+                    "notify.split_failed",
+                    &[(
+                        "error",
+                        &"could not open the destination window".to_string(),
+                    )],
+                ),
+                cx,
+            );
+            return;
+        }
+        let dispatch = match crate::ui::tree_sync::transfer_tab_to_workspace(
+            cx,
+            source_workspace,
+            tab,
+            target_workspace,
+        ) {
+            Ok(dispatch) => dispatch,
+            Err(error) => {
+                crate::ui::windows::discard_empty_window(cx, target_workspace);
+                window.push_notification(
+                    crate::core::i18n::current_format(
+                        cx,
+                        "notify.split_failed",
+                        &[("error", &error)],
+                    ),
+                    cx,
+                );
+                return;
+            }
+        };
+
+        let source_app = cx.weak_entity();
+        let source_handle = window.window_handle();
+        cx.spawn(async move |_this, cx| {
+            let result = cx
+                .background_executor()
+                .spawn(async move { dispatch.client.call(dispatch.request) })
+                .await;
+            let _ = cx.update(|cx| match result {
+                Ok(_) => {
+                    crate::ui::tree_sync::resync_window_from_tree(cx, source_workspace);
+                    crate::ui::tree_sync::resync_window_from_tree(cx, target_workspace);
+                }
+                Err(error) => {
+                    crate::ui::windows::discard_empty_window(cx, target_workspace);
+                    let _ = source_handle.update(cx, |_, window, cx| {
+                        if source_app.upgrade().is_some() {
+                            window.push_notification(
+                                crate::core::i18n::current_format(
+                                    cx,
+                                    "notify.split_failed",
+                                    &[("error", &error.to_string())],
+                                ),
+                                cx,
+                            );
+                        }
+                    });
+                }
+            });
+        })
+        .detach();
+    }
+
     fn close_pane(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.ssh_close_confirm.is_none() && self.focused_pane_is_warn_ssh(window, cx) {
             self.ssh_close_confirm = Some(SshCloseKind::Pane);
@@ -2741,6 +2989,125 @@ impl AgenttyApp {
                     );
                 }
                 cx.notify();
+            }
+        }
+    }
+
+    /// Close exactly the live Navigator carrier identified by its stable tab
+    /// and pane/container identity.  A Navigator row represents one pane,
+    /// not the whole split tab; only a sole-leaf tab falls back to the normal
+    /// close_tab path.  Callers re-resolve the carrier after any confirmation
+    /// prompt so a stale numeric tab index can never close an unrelated tab.
+    pub(crate) fn close_carrier_pane(
+        &mut self,
+        token: &CarrierCloseToken,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        ssh_confirmed: bool,
+    ) -> CarrierCloseOutcome {
+        if !self.session_navigator_scope_is_current(&token.scope, cx) {
+            return CarrierCloseOutcome::Stale;
+        }
+        let carrier = &token.carrier;
+        let Some(tab_id) = carrier.tab_id.as_deref() else {
+            return CarrierCloseOutcome::Missing;
+        };
+        let Some(tab_index) = self
+            .tabs
+            .iter()
+            .position(|tab| tab.tree_id.get().to_string() == tab_id)
+        else {
+            return CarrierCloseOutcome::Missing;
+        };
+
+        let matches = {
+            let tab = &self.tabs[tab_index];
+            tab.pane
+                .leaves()
+                .into_iter()
+                .filter_map(|slot| {
+                    let (container_id, pane_id, route) = match &slot {
+                        PaneSlot::Ready(view) => {
+                            let view = view.read(cx);
+                            (
+                                view.live_binding().container_id.clone(),
+                                Some(view.pane_id()),
+                                Some((view.pane_route(), view.pane_id())),
+                            )
+                        }
+                        PaneSlot::Connecting(pending) => {
+                            let pending = pending.read(cx);
+                            (
+                                pending.spawn.live_binding.container_id.clone(),
+                                pending.spawn.restore_pane,
+                                pending.spawn.restore_pane.map(|pane_id| {
+                                    (
+                                        crate::terminal::PaneRoute::for_workspace(
+                                            pending.spawn.workspace.as_ref(),
+                                        ),
+                                        pane_id,
+                                    )
+                                }),
+                            )
+                        }
+                    };
+                    let container_matches =
+                        !carrier.container_id.is_empty() && container_id == carrier.container_id;
+                    let pane_matches = carrier
+                        .pane_id
+                        .is_some_and(|expected| pane_id == Some(expected));
+                    let identity_matches =
+                        container_matches && (carrier.pane_id.is_none() || pane_matches);
+                    identity_matches.then_some((slot, route))
+                })
+                .collect::<Vec<_>>()
+        };
+        if matches.len() != 1 {
+            // A missing or duplicated complete carrier tuple is stale.  In
+            // particular, a pane-less token is safe only when it identifies
+            // the sole matching leaf; never guess among split siblings.
+            return CarrierCloseOutcome::Missing;
+        }
+        let (slot, kill) = matches.into_iter().next().expect("one carrier match");
+
+        if !ssh_confirmed
+            && matches!(&slot, PaneSlot::Ready(view) if self.leaf_is_warn_ssh(view, cx))
+        {
+            return CarrierCloseOutcome::NeedsSshConfirmation;
+        }
+
+        let target_entity = slot.entity_id();
+        let leaf_count = self.tabs[tab_index].pane.leaves().len();
+        if leaf_count <= 1 {
+            let closed = self.close_tab_inner(tab_index, window, cx, true, false);
+            return if closed {
+                CarrierCloseOutcome::Closed
+            } else {
+                CarrierCloseOutcome::Missing
+            };
+        }
+        let outcome = self.tabs[tab_index].pane.close_leaf(target_entity);
+        match outcome {
+            CloseOutcome::NotFound => CarrierCloseOutcome::Missing,
+            CloseOutcome::RemoveSelf => {
+                let closed = self.close_tab_inner(tab_index, window, cx, true, false);
+                if closed {
+                    CarrierCloseOutcome::Closed
+                } else {
+                    CarrierCloseOutcome::Missing
+                }
+            }
+            CloseOutcome::Collapsed => {
+                if let Some((route, pane_id)) = kill {
+                    kill_pane_off_thread(route, pane_id, cx);
+                }
+                if tab_index == self.active {
+                    self.maximized = None;
+                    self.focus_active(window, cx);
+                }
+                self.save_session(cx);
+                cx.notify();
+                CarrierCloseOutcome::Closed
             }
         }
     }
@@ -2972,14 +3339,30 @@ impl AgenttyApp {
     }
 
     pub(crate) fn close_tab(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let _ = self.close_tab_inner(index, window, cx, false, true);
+    }
+
+    /// Canonical tab mutation shared by ordinary tab close and the stable
+    /// carrier path.  `skip_ssh_warning` is only used after a matching typed
+    /// CarrierCloseToken has been confirmed; callers must never pass it for a
+    /// numeric/index-only action.  Navigator carrier close suppresses the
+    /// automatic refresh so it can hand off the exact row before rebuilding.
+    fn close_tab_inner(
+        &mut self,
+        index: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        skip_ssh_warning: bool,
+        refresh_navigator: bool,
+    ) -> bool {
         if index >= self.tabs.len() {
-            return;
+            return false;
         }
         let already_confirming = self.ssh_close_confirm == Some(SshCloseKind::Tab(index));
-        if !already_confirming && self.tab_has_warn_ssh(index, cx) {
+        if !skip_ssh_warning && !already_confirming && self.tab_has_warn_ssh(index, cx) {
             self.ssh_close_confirm = Some(SshCloseKind::Tab(index));
             cx.notify();
-            return;
+            return false;
         }
         self.ssh_close_confirm = None;
         self.maximized = None;
@@ -3008,7 +3391,7 @@ impl AgenttyApp {
         }
         self.focus_active(window, cx);
         self.save_session(cx);
-        if closed_agent_carrier {
+        if refresh_navigator && closed_agent_carrier {
             self.refresh_session_navigator_for(
                 crate::ui::session_navigator::SessionRefreshIntent::AgentCarrierClosed,
                 cx,
@@ -3016,6 +3399,7 @@ impl AgenttyApp {
         }
         cx.notify();
         self.offer_worktree_cleanup(worktree_cwd, cx);
+        true
     }
 
     fn offer_worktree_cleanup(
@@ -3859,6 +4243,31 @@ impl AgenttyApp {
             .find(runs_agent)
     }
 
+    pub(crate) fn deliver_agent_prompt_to(
+        &mut self,
+        target: Entity<TerminalView>,
+        prompt: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> crate::ui::composer::DeliveryOutcome {
+        let (outcome, title_changed, binding) = target.update(cx, |view, cx| {
+            let before = view.live_first_user_title().map(str::to_owned);
+            let outcome = view.send_agent_prompt(prompt, cx);
+            let changed = before != view.live_first_user_title().map(str::to_owned);
+            (outcome, changed, view.live_binding().clone())
+        });
+        if matches!(outcome, crate::ui::composer::DeliveryOutcome::Delivered) {
+            if title_changed {
+                self.rebuild_session_navigator(cx);
+            }
+            // Persist the binding on every successful canonical delivery. The
+            // first-user candidate is write-once, but the carrier may also
+            // have acquired provider identity/argv since the previous prompt.
+            self.persist_live_binding_rebind(&binding, window, cx);
+        }
+        outcome
+    }
+
     fn deliver_agent_prompt(&mut self, prompt: &str, window: &mut Window, cx: &mut Context<Self>) {
         let Some(target) = self.agent_target_leaf(cx) else {
             crate::terminal::notify_desktop(
@@ -3867,7 +4276,7 @@ impl AgenttyApp {
             );
             return;
         };
-        target.read(cx).send_agent_prompt(prompt, cx);
+        let _ = self.deliver_agent_prompt_to(target.clone(), prompt, window, cx);
         if let Some(i) = self
             .tabs
             .iter()
@@ -4637,15 +5046,31 @@ impl AgenttyApp {
     }
 
     pub(crate) fn confirm_ssh_close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        match self.ssh_close_confirm {
-            Some(SshCloseKind::Tab(i)) => self.close_tab(i, window, cx),
-            Some(SshCloseKind::Pane) => self.close_pane(window, cx),
+        let kind = self.ssh_close_confirm.take();
+        match kind {
+            Some(SshCloseKind::Tab(i)) => {
+                // Keep the legacy Tab(index) path's confirmation marker until
+                // close_tab_inner consumes it; Navigator carriers never use
+                // this numeric variant.
+                self.ssh_close_confirm = Some(SshCloseKind::Tab(i));
+                self.close_tab(i, window, cx);
+            }
+            Some(SshCloseKind::Pane) => {
+                self.ssh_close_confirm = Some(SshCloseKind::Pane);
+                self.close_pane(window, cx);
+            }
+            Some(SshCloseKind::Carrier) => {
+                if let Some(action) = self.pending_carrier_action.take() {
+                    self.finish_pending_carrier_action(action, window, cx);
+                }
+            }
             None => {}
         }
     }
 
     pub(crate) fn cancel_ssh_close(&mut self, cx: &mut Context<Self>) {
         self.ssh_close_confirm = None;
+        self.pending_carrier_action = None;
         cx.notify();
     }
 
@@ -4774,7 +5199,7 @@ impl AgenttyApp {
             }
             None => return,
         };
-        let Some((host, home)) = self.agent_hooks_link(host_id, cx) else {
+        let Some((host, store_roots)) = self.agent_hooks_link(host_id, cx) else {
             if let Some(s) = self.settings.as_mut() {
                 s.agent_hooks_states =
                     AgentHooksView::Unavailable(Self::AGENT_HOOKS_OFFLINE.into());
@@ -4787,8 +5212,8 @@ impl AgenttyApp {
             host,
             cx,
             move |h| {
-                let target = match &home {
-                    Some(home) => HookTarget::remote(h, home.clone()),
+                let target = match &store_roots {
+                    Some(store_roots) => HookTarget::remote(h, store_roots.clone()),
                     None => HookTarget::local(h)?,
                 };
                 Some(
@@ -4829,7 +5254,10 @@ impl AgenttyApp {
         &self,
         host_id: crate::ui::host_ops::HostId,
         cx: &mut App,
-    ) -> Option<(crate::ui::host_ops::SharedHost, Option<std::path::PathBuf>)> {
+    ) -> Option<(
+        crate::ui::host_ops::SharedHost,
+        Option<agentty_core::agent_runtime::AgentStoreRoots>,
+    )> {
         let host = crate::ui::host_registry::HostRegistry::get(cx, host_id)?;
         if host_id.is_local() {
             return Some((host, None));
@@ -4837,8 +5265,8 @@ impl AgenttyApp {
         if !host.is_connected() {
             return None;
         }
-        let home = crate::ui::remote_connect::HostLinks::home(cx, host_id)?;
-        Some((host, Some(home)))
+        let store_roots = crate::ui::remote_connect::HostLinks::store_roots(cx, host_id)?;
+        Some((host, Some(store_roots)))
     }
 
     pub(crate) fn settings_install_agent_hooks(
@@ -4868,7 +5296,7 @@ impl AgenttyApp {
         let Some(host_id) = self.settings.as_ref().map(|s| s.agent_hooks_host) else {
             return;
         };
-        let Some((host, home)) = self.agent_hooks_link(host_id, cx) else {
+        let Some((host, store_roots)) = self.agent_hooks_link(host_id, cx) else {
             if let Some(s) = self.settings.as_mut() {
                 s.agent_hooks_note = Some((agent, Self::AGENT_HOOKS_OFFLINE.to_string()));
                 s.agent_hooks_states = crate::ui::settings::AgentHooksView::Unavailable(
@@ -4883,8 +5311,8 @@ impl AgenttyApp {
             host,
             cx,
             move |h| {
-                let target = match &home {
-                    Some(home) => HookTarget::remote(h, home.clone()),
+                let target = match &store_roots {
+                    Some(store_roots) => HookTarget::remote(h, store_roots.clone()),
                     None => HookTarget::local(h)
                         .ok_or_else(|| anyhow::anyhow!("cannot resolve home directory"))?,
                 };
@@ -5425,9 +5853,19 @@ impl Render for AgenttyApp {
             crate::ui::reorder::clear_pending(&self.reorder);
         } else if let Some((surface, order)) = crate::ui::reorder::take_pending(&self.reorder) {
             match surface {
-                crate::ui::reorder::Surface::Strip => self.apply_tab_order(&order, cx),
+                crate::ui::reorder::Surface::Strip => match order.intent {
+                    crate::ui::reorder::ReorderIntent::Reorder => {
+                        self.apply_tab_order(&order.order, cx)
+                    }
+                    crate::ui::reorder::ReorderIntent::Tab(
+                        crate::ui::reorder::TabDragIntent::Reorder,
+                    ) => self.apply_tab_order(&order.order, cx),
+                    crate::ui::reorder::ReorderIntent::Tab(
+                        crate::ui::reorder::TabDragIntent::Merge,
+                    ) => self.apply_tab_strip_split_right(order, window, cx),
+                },
                 crate::ui::reorder::Surface::Navigator => {
-                    self.apply_session_reorder(&order, window, cx)
+                    self.apply_session_reorder(&order.order, window, cx)
                 }
             }
         }
@@ -6721,6 +7159,86 @@ mod tests {
     };
 
     #[test]
+    fn move_to_new_window_routes_through_atomic_tree_transfer() {
+        let source = include_str!("app.rs");
+        let body = source
+            .split("pub(crate) fn move_tab_to_new_window(")
+            .nth(1)
+            .and_then(|tail| tail.split("\n    fn close_pane(").next())
+            .expect("move_tab_to_new_window body");
+        assert!(body.contains("WorkspaceStore::claim_peer"), "{body}");
+        assert!(body.contains("transfer_tab_to_workspace"), "{body}");
+        assert!(
+            !body.contains("tabs.remove") && !body.contains("open_with_session"),
+            "detach must leave the source UI untouched until the machine commits: {body}"
+        );
+    }
+
+    #[test]
+    fn carrier_close_token_requires_exact_scope_identity_and_carrier() {
+        let source = include_str!("app.rs");
+        let body = source
+            .split("pub(crate) fn close_carrier_pane(")
+            .nth(1)
+            .and_then(|tail| tail.split("\n    fn on_child_exited").next())
+            .expect("close_carrier_pane body");
+        for required in [
+            "CarrierCloseToken",
+            "CarrierCloseOutcome",
+            "scope",
+            "identity",
+            "container_id",
+            "tab_id",
+            "pane_id",
+        ] {
+            assert!(
+                body.contains(required),
+                "carrier close omitted {required}: {body}"
+            );
+        }
+    }
+
+    #[test]
+    fn carrier_close_ssh_warning_covers_multi_leaf_and_sole_leaf() {
+        let source = include_str!("app.rs");
+        let body = source
+            .split("pub(crate) fn close_carrier_pane(")
+            .nth(1)
+            .and_then(|tail| tail.split("\n    fn on_child_exited").next())
+            .expect("close_carrier_pane body");
+        assert!(
+            body.contains("leaf_is_warn_ssh"),
+            "the exact target leaf must use the SSH warning predicate: {body}"
+        );
+        assert!(
+            body.contains("ssh_confirmed"),
+            "the exact carrier primitive must receive confirmation state from the typed action: {body}"
+        );
+        assert!(
+            !body.contains("close_tab(tab_index"),
+            "Navigator carrier close must not delegate warning/confirmation to a numeric tab index"
+        );
+    }
+
+    #[test]
+    fn carrier_close_ssh_confirmation_resumes_typed_action() {
+        let source = include_str!("app.rs");
+        let body = source
+            .split("pub(crate) fn confirm_ssh_close(")
+            .nth(1)
+            .and_then(|tail| tail.split("\n    pub(crate) fn cancel_ssh_close").next())
+            .expect("confirm_ssh_close body");
+        assert!(
+            body.contains("SshCloseKind::Carrier") && body.contains("pending_carrier_action"),
+            "SSH confirmation must retain the typed carrier action: {body}"
+        );
+        assert!(
+            body.contains("finish_pending_carrier_action"),
+            "confirmation must resume the typed action that owns the canonical carrier primitive: {body}"
+        );
+    }
+
+    #[test]
     fn title_bar_content_lead_hugs_split_when_sidebar_open() {
         assert_eq!(title_bar_content_lead(true), panel_split_chrome_inset());
         assert!(
@@ -7125,6 +7643,161 @@ mod ssh_rebuild_gpui_tests {
             held.is_empty(),
             "the pure-SSH tab is permanently invisible, not held — holding it \
              would freeze ordering and active-tab sync for the whole window"
+        );
+    }
+}
+
+/// Production split coverage for WINDOW-SESSION-VIEWPORT-PRESERVATION-09.
+///
+/// This deliberately uses an invalid LocalStdio route for the new sibling. The
+/// split still goes through `AgenttyApp::run_command(CommandKind::SplitRight)`
+/// and the real `split(Axis::Horizontal)` implementation, but the connecting
+/// pane cannot start a daemon or an SSH process. The existing pane remains a
+/// real Ready `TerminalView`, so its terminal state is observed across the
+/// actual app-level mutation rather than through a parallel test-only split.
+#[cfg(all(test, unix))]
+mod split_viewport_gpui_tests {
+    use super::test_window::harness_with_pane;
+    use crate::core::session::{
+        RemoteRef, RemoteTarget, WindowView, WindowViews, WorkspaceId, WorkspaceStore,
+    };
+    use crate::ui::palette::CommandKind;
+    use crate::ui::pane::PaneSlot;
+    use alacritty_terminal::grid::{Dimensions as _, Scroll};
+    use gpui::TestAppContext;
+
+    #[gpui::test]
+    fn command_d_split_right_gpui_preserves_old_pane_viewport_selection_and_geometry(
+        cx: &mut TestAppContext,
+    ) {
+        let (app, mut vcx, _local_pane_stream) = harness_with_pane(cx);
+        // Establish the real full-width Ready pane geometry before priming
+        // scrollback. Without this first render, the test would compare a
+        // hand-written 80-column baseline with the window's actual layout and
+        // could mistake the initial paint for the SplitRight resize.
+        vcx.update(|window, _| window.refresh());
+        vcx.run_until_parked();
+
+        let (old_view, before) = app.update_in(&mut vcx, |app, _window, cx| {
+            // A routable-but-invalid LocalStdio target keeps the test on the
+            // production remote materialization branch without starting a
+            // real daemon. `split` must still publish the Connecting sibling
+            // and commit the Pane tree before the failed spawn is reported.
+            let remote = WindowView::on_remote(RemoteRef::new(
+                RemoteTarget::LocalStdio {
+                    program: "/__agentty_missing_split_e2e__".into(),
+                    args: Vec::new(),
+                },
+                WorkspaceId::new(),
+            ));
+            let remote_id = remote.id;
+            WorkspaceStore::install_for_test(
+                cx,
+                WindowViews {
+                    views: vec![remote],
+                    active: None,
+                },
+            );
+            app.workspace = remote_id;
+
+            let old_view = app.tabs[0]
+                .pane
+                .terminals()
+                .into_iter()
+                .next()
+                .expect("the production harness provides one Ready pane");
+            old_view.update(cx, |view, cx| {
+                let mut parser: alacritty_terminal::vte::ansi::Processor = Default::default();
+                let mut term = view.terminal.term.lock();
+                let long_line = b"0123456789012345678901234567890123456789\r\n";
+                parser.advance(&mut *term, &long_line.repeat(60));
+                term.scroll_display(Scroll::Delta(10));
+                assert_eq!(term.grid().display_offset(), 10);
+                drop(term);
+                view.select_all(cx);
+            });
+
+            let term = old_view.read(cx).terminal.term.lock();
+            let before = (
+                term.grid().columns(),
+                term.grid().display_offset(),
+                term.selection.clone(),
+            );
+            assert!(
+                before.2.is_some(),
+                "the old pane must carry a real selection"
+            );
+            (old_view, before)
+        });
+
+        app.update_in(&mut vcx, |app, window, cx| {
+            app.run_command(CommandKind::SplitRight, window, cx);
+        });
+
+        // Let the production render/layout path apply the new half-width to
+        // the old TerminalView before observing its terminal state and Pane
+        // geometry. The failed LocalStdio spawn may transition Connecting to
+        // Failed, but it must not remove the sibling or mutate the old leaf.
+        vcx.update(|window, _| window.refresh());
+        vcx.run_until_parked();
+        vcx.update(|window, _| window.refresh());
+        vcx.run_until_parked();
+
+        let (after, rects) = app.update_in(&mut vcx, |app, _, cx| {
+            let term = old_view.read(cx).terminal.term.lock();
+            let after = (
+                term.grid().columns(),
+                term.grid().display_offset(),
+                term.selection.clone(),
+            );
+            (after, app.tabs[0].pane.leaf_rects())
+        });
+
+        assert_eq!(
+            (after.1, after.2),
+            (before.1, before.2),
+            "the real SplitRight app path must preserve the old pane viewport and selection"
+        );
+        assert!(
+            after.0 < before.0,
+            "the old Ready pane must receive the narrower right-split geometry (before={:?}, after={:?})",
+            before.0,
+            after.0
+        );
+
+        assert_eq!(
+            rects.len(),
+            2,
+            "SplitRight must commit exactly two pane leaves"
+        );
+        let old_id = old_view.entity_id();
+        let old_rect = rects
+            .iter()
+            .find(|(slot, _)| slot.entity_id() == old_id)
+            .map(|(_, rect)| *rect)
+            .expect("the original Ready pane remains in the split tree");
+        let (new_slot, new_rect) = rects
+            .iter()
+            .find(|(slot, _)| slot.entity_id() != old_id)
+            .expect("SplitRight must add one sibling leaf");
+        assert!(
+            matches!(new_slot, PaneSlot::Connecting(_)),
+            "the no-daemon test sibling must remain on the production Connecting path"
+        );
+        let close = |a: f32, b: f32| (a - b).abs() < 0.02;
+        assert!(
+            close(old_rect.x, 0.0)
+                && close(old_rect.y, 0.0)
+                && close(old_rect.w, 0.5)
+                && close(old_rect.h, 1.0),
+            "old pane must occupy the left half after SplitRight: {old_rect:?}"
+        );
+        assert!(
+            close(new_rect.x, 0.5)
+                && close(new_rect.y, 0.0)
+                && close(new_rect.w, 0.5)
+                && close(new_rect.h, 1.0),
+            "new pane must occupy the right half after SplitRight: {new_rect:?}"
         );
     }
 }

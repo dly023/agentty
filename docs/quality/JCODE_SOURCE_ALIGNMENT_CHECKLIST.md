@@ -50,12 +50,13 @@
 - [x] **Jcode 文件发现 fixture 测试**
   - 覆盖：主会话、子代理、debug、journal、纯 system-reminder、system-reminder + 真实用户消息。
 
-- [ ] **Jcode API fallback 的 system-reminder 语义**
-  - 当前 stable `ListSessions` 返回字段不包含消息内容。
-  - 必须确认 API 返回的 `title/status` 是否已经由 Jcode 过滤内部会话，不能在 Agentty 侧猜测。
+- [x] **Jcode API fallback 的 system-reminder 语义**
+  - 源码核对确认 stable `ListSessions` 只返回同一 bridge connection 已 attach 的 session，fresh discovery connection 返回空列表；字段也不足以证明 root/debug/visible/resumable。
+  - 结论：当前 API 不作为历史发现源；durable history 只走 documented Session JSON。未来 API 扩展必须另行晋升 spec，不能在 Agentty 侧猜测内部过滤。
 
-- [ ] **Jcode 自己的显示标题规则逐字段对照**
-  - 需要补齐 `short_name`、`last_active_at`、`updated_at` 和 latest user preview 的映射测试。
+- [x] **Jcode 自己的显示标题规则逐字段对照**
+  - 已映射 `short_name`、`last_active_at`、`updated_at`，并用大于 256 KiB 的完整 JSON fixture 验证；候选集合先按文件 mtime 取 Jcode 官方最新 32 条。
+  - Jcode desktop 的 latest-user preview 经审计后不照搬：Agentty 统一标题契约明确使用 first real User message；`short_name` 只在 custom/title 和首条有效用户标题均缺失时兜底。
 
 - [ ] **真实桌面验收**
   - 本地新终端启动 Jcode 后临时 carrier 是否出现。
@@ -79,4 +80,4 @@
 
 ## 当前结论
 
-会话发现过滤主路径已经逐项对照源码并有 fixture 测试。当前仍明确保留两个边界：API fallback 不是完整历史列表，真实桌面验收仍需用户操作。未完成这两个边界前，不把整体 Jcode 适配标记为 fully verified。
+会话发现过滤、完整文档读取、字段映射、候选排序和 typed resume 已逐项对照源码并有 fixture 测试。API 边界已明确关闭为“不用于历史发现”。当前只保留真实桌面验收；完成同源 c8 GUI 的本地/远程运行验证前，不把整体 Jcode 适配标记为 fully verified。

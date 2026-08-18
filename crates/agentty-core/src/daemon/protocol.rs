@@ -2128,7 +2128,18 @@ mod tests {
         let stamp = build_stamp();
         let (version, sha) = stamp.split_once('+').expect("stamp is version+sha");
         assert_eq!(version, env!("CARGO_PKG_VERSION"));
-        assert!(!sha.is_empty());
+        let (revision, source_fingerprint) = sha
+            .rsplit_once('.')
+            .expect("build identity is revision.core-source-fingerprint");
+        assert!(!revision.is_empty());
+        assert_eq!(source_fingerprint.len(), 16);
+        assert!(
+            source_fingerprint
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit()),
+            "fingerprint must be portable build metadata: {source_fingerprint}"
+        );
+        assert_eq!(sha, env!("AGENTTY_BUILD_SHA"));
         let current = DaemonVersion::current();
         assert_eq!(current.build, stamp);
     }

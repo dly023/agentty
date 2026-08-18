@@ -1,0 +1,147 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+python3 - <<'PY'
+from pathlib import Path
+import re
+import sys
+
+spec = Path("docs/specs/REMOTE_HELPER_SPEC.yaml").read_text(encoding="utf-8")
+matrix = Path("docs/quality/traceability.yaml").read_text(encoding="utf-8")
+tracker = Path("docs/quality/development-tracker.yaml").read_text(encoding="utf-8")
+remote = Path("src/ui/remote_workspace.rs").read_text(encoding="utf-8")
+switcher = Path("src/ui/switcher.rs").read_text(encoding="utf-8")
+
+
+def require(haystack: str, needle: str, label: str) -> None:
+    if needle not in haystack:
+        print(f"[remote-entry] missing {label}: {needle}", file=sys.stderr)
+        raise SystemExit(1)
+
+
+require(spec, "REMOTE-CONNECTION-ENTRY-21", "remote entry spec")
+require(matrix, "REMOTE-CONNECTION-ENTRY-112", "remote entry matrix row")
+require(tracker, "HELPER-018", "remote entry milestone")
+for name in (
+    "switcher_reports_supervised_in_flight_attempt_as_connecting",
+    "switcher_does_not_start_parallel_connect_for_supervised_host",
+    "stale_remote_connection_result_is_ignored",
+    "live_supervisor_observation_clears_attempting_before_reconnect_guard",
+    "stale_manual_completion_does_not_drop_newer_manual_lease",
+    "stale_manual_completion_keeps_unbound_supervisor_alive",
+):
+    require(remote + switcher, f"fn {name}", "focused red test")
+
+
+def function_body(source: str, name: str, start_at: int = 0) -> str:
+    match = re.search(rf"\bfn\s+{re.escape(name)}\s*\([^{{]*", source[start_at:])
+    if not match:
+        print(f"[remote-entry] missing production function {name}", file=sys.stderr)
+        raise SystemExit(1)
+    match_end = start_at + match.end()
+    start = source.find("{", match_end)
+    if start < 0:
+        print(f"[remote-entry] malformed production function {name}", file=sys.stderr)
+        raise SystemExit(1)
+    depth = 0
+    for index in range(start, len(source)):
+        if source[index] == "{":
+            depth += 1
+        elif source[index] == "}":
+            depth -= 1
+            if depth == 0:
+                return source[start : index + 1]
+    print(f"[remote-entry] unterminated production function {name}", file=sys.stderr)
+    raise SystemExit(1)
+
+
+link_state = function_body(switcher, "link_state")
+connect_to_host = function_body(remote, "connect_to_host")
+finish_connect = function_body(remote, "finish_connect")
+finish_manual_attempt = function_body(remote, "finish_manual_attempt")
+remove_manual_attempt = function_body(remote, "remove_manual_attempt_if_generation")
+begin_attempt_start = remote.find("fn begin_attempt(cx:")
+if begin_attempt_start < 0:
+    print("[remote-entry] missing coordinator begin_attempt", file=sys.stderr)
+    raise SystemExit(1)
+begin_attempt = function_body(remote, "begin_attempt", begin_attempt_start)
+
+# The switcher must consume coordinator state, not infer Offline solely from
+# the absence of a published HostLink. The current implementation intentionally
+# fails this gate until the coordinator is wired in.
+if "RemoteLinks::" not in link_state:
+    print(
+        "[remote-entry] link_state must consult the RemoteLinks per-host coordinator",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+
+# Manual entry must join the same generation-owned attempt and may not launch a
+# second raw connection operation. These checks are deliberately semantic rather
+# than naming a single future helper API.
+if "generation" not in connect_to_host or "RemoteLinks::" not in connect_to_host:
+    print(
+        "[remote-entry] connect_to_host must register a generation-owned coordinator attempt",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+if "connect_blocking" in connect_to_host:
+    print(
+        "[remote-entry] connect_to_host must not launch a parallel connect_blocking path",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+if not ("generation" in finish_connect or "accept_connection_result" in finish_connect):
+    print(
+        "[remote-entry] finish_connect must reject stale results through the coordinator generation",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+
+# A stale completion may settle only the lease/flow that it owns.  The lease
+# must carry its generation and cleanup must compare that generation before
+# removing anything; otherwise an older manual result can tear down a newer
+# unbound supervisor attempt.
+if "ManualAttemptLease" not in remote or "generation" not in finish_manual_attempt:
+    print(
+        "[remote-entry] manual attempt leases must carry generation-aware cleanup",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+if not re.search(
+    r"generation\s*==\s*[^\n]+generation|generation\s*==\s*lease\.generation",
+    finish_manual_attempt + remove_manual_attempt,
+):
+    print(
+        "[remote-entry] finish_manual_attempt must compare lease and result generations",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+if "flow_generation" not in finish_connect and "flow.*generation" not in finish_connect:
+    print(
+        "[remote-entry] stale finish_connect cleanup must match the ConnectFlow generation",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+if "manual_targets.get_mut" not in begin_attempt or "lease.generation = generation" not in begin_attempt:
+    print(
+        "[remote-entry] begin_attempt must retag an existing manual lease to the new generation",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+
+live_start = remote.find("if live {")
+guard = remote.find("if attempting {")
+if live_start < 0 or guard < 0 or guard <= live_start:
+    print("[remote-entry] pump_tick live/attempting boundaries are missing", file=sys.stderr)
+    raise SystemExit(1)
+if "link.attempting = false" not in remote[live_start:guard]:
+    print(
+        "[remote-entry] live HostLink observation must clear attempting before the reconnect guard",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+
+print("remote connection entry checks passed")
+PY

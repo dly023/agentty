@@ -437,7 +437,7 @@ impl AgenttyApp {
 
     fn link_state(&self, target: &RemoteTarget, cx: &mut Context<Self>) -> Link {
         match &self.connect {
-            Some(ConnectFlow::Connecting { choice }) if &choice.target == target => {
+            Some(ConnectFlow::Connecting { choice, .. }) if &choice.target == target => {
                 return Link::Connecting;
             }
             Some(ConnectFlow::Failed { choice, .. }) if &choice.target == target => {
@@ -445,9 +445,13 @@ impl AgenttyApp {
             }
             _ => {}
         }
-        match remote_connect::HostLinks::get(cx, target.host_id()) {
-            Some(_) => Link::Connected,
-            None => Link::Offline,
+        match crate::ui::remote_workspace::RemoteLinks::status_for_host(cx, target.host_id()) {
+            crate::ui::remote_workspace::RemoteStatus::Attached => Link::Connected,
+            crate::ui::remote_workspace::RemoteStatus::Connecting
+            | crate::ui::remote_workspace::RemoteStatus::Reconnecting { .. } => Link::Connecting,
+            crate::ui::remote_workspace::RemoteStatus::Failed(_) => Link::Failed,
+            crate::ui::remote_workspace::RemoteStatus::Disconnected
+            | crate::ui::remote_workspace::RemoteStatus::Preempted { .. } => Link::Offline,
         }
     }
 
@@ -1485,5 +1489,97 @@ mod dialect_failure_tests {
             dialect_failure_actions(refusal, false),
             DialectFailureActions::None,
         );
+    }
+}
+
+#[cfg(test)]
+mod remote_attempt_projection_tests {
+    use super::{GroupRef, Link};
+    use crate::core::session::{
+        RemoteRef, RemoteTarget, WindowView, WindowViews, WorkspaceId, WorkspaceStore,
+    };
+    use crate::ui::remote_workspace::RemoteLinks;
+    use gpui::TestAppContext;
+
+    fn profile_target() -> RemoteTarget {
+        RemoteTarget::Profile {
+            id: uuid::Uuid::nil(),
+        }
+    }
+
+    fn install_profile_and_remote_workspace(
+        cx: &mut gpui::VisualTestContext,
+        target: &RemoteTarget,
+    ) -> WorkspaceId {
+        cx.update(|_, cx| {
+            let mut config = cx.global::<crate::core::config::Config>().clone();
+            let mut profile = crate::core::ssh_profile::SshProfile::new("in-flight-target");
+            profile.id = uuid::Uuid::nil();
+            profile.host = "127.0.0.1".into();
+            profile.port = 1;
+            config.ssh_profiles.push(profile);
+            cx.set_global(config);
+
+            let remote = WindowView::on_remote(RemoteRef::new(target.clone(), WorkspaceId::new()));
+            let workspace = remote.id;
+            WorkspaceStore::install_for_test(
+                cx,
+                WindowViews {
+                    views: vec![remote],
+                    active: Some(workspace),
+                },
+            );
+            RemoteLinks::retry_now(cx, workspace);
+            workspace
+        })
+    }
+
+    #[gpui::test]
+    fn switcher_reports_supervised_in_flight_attempt_as_connecting(cx: &mut TestAppContext) {
+        let (app, mut visual) = crate::ui::app::test_window::harness(cx);
+        let target = profile_target();
+        let _workspace = install_profile_and_remote_workspace(&mut visual, &target);
+
+        let projected = app.update_in(&mut visual, |app, _window, cx| {
+            // RemoteLinks::retry_now has created a Reconnecting MachineLink,
+            // but no HostLinks is published until the attempt completes. The
+            // switcher must not project this state as Offline.
+            app.link_state(&target, cx)
+        });
+        assert!(
+            projected == Link::Connecting,
+            "an in-flight supervised host must stay actionable as Connecting"
+        );
+    }
+
+    #[gpui::test]
+    fn switcher_does_not_start_parallel_connect_for_supervised_host(cx: &mut TestAppContext) {
+        let (app, mut visual) = crate::ui::app::test_window::harness(cx);
+        let target = profile_target();
+        let workspace = install_profile_and_remote_workspace(&mut visual, &target);
+        let group = GroupRef {
+            key: target.to_string(),
+            label: "in-flight-target".into(),
+            target: Some(target),
+            home: None,
+            // This is the stale projection produced by the current link_state.
+            link: Link::Offline,
+        };
+
+        app.update_in(&mut visual, |app, _window, cx| {
+            assert!(
+                matches!(
+                    RemoteLinks::status_of(cx, workspace),
+                    Some(crate::ui::remote_workspace::RemoteStatus::Connecting)
+                        | Some(crate::ui::remote_workspace::RemoteStatus::Reconnecting { .. })
+                ),
+                "the test fixture must begin with a supervised in-flight attempt"
+            );
+            app.switcher_toggle_host(&group, cx);
+            assert!(
+                app.connect.is_none(),
+                "a click on an in-flight host must not create a second ConnectFlow"
+            );
+        });
     }
 }

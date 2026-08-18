@@ -10,6 +10,7 @@ pub mod provider;
 pub mod resume;
 pub mod service;
 pub mod stores;
+pub mod title;
 pub mod user_state;
 
 pub use activity::{
@@ -31,12 +32,12 @@ pub use discovery::{
     DiscoveryReducer, OperationId, ScanGeneration,
 };
 pub use navigator::{
-    ExecutionBadge, LiveCarrier, LiveExecutionState, LiveSession, NavigatorRow, NavigatorRowId,
-    RestoreOutcome, RowLifecycle, SessionIdentity, SessionNavigator, SessionReorderUnit,
-    execution_badge, execution_message, session_display_title,
+    DeletePlan, ExecutionBadge, LiveCarrier, LiveExecutionState, LiveSession, NavigatorRow,
+    NavigatorRowId, RestoreOutcome, RowLifecycle, SessionIdentity, SessionNavigator,
+    SessionReorderUnit, execution_badge, execution_message, session_display_title,
 };
 pub use operation::{BoundedBatch, OperationLimits, OperationRegistry};
-pub use parse::first_user_title_candidate;
+pub use parse::SessionVisibility;
 pub use provider::{
     PERSISTED_PROVIDER_DESCRIPTORS, ProviderDescriptor, ProviderId, ProviderScanner,
     descriptor_for_agent, descriptor_for_id,
@@ -44,6 +45,10 @@ pub use provider::{
 pub use resume::{ResumeInvocation, shell_command, shell_line};
 pub use service::{DiscoveryRequest, discover};
 pub use stores::AgentStoreRoots;
+pub use title::{
+    SessionTitleCandidates, first_user_title_candidate, is_absent_session_title,
+    normalize_title_candidate, resolve_title_candidates,
+};
 pub use user_state::{AliasError, SessionUserStateStore};
 
 pub const HELPER_PROTOCOL_VERSION: u32 = 2;

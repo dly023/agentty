@@ -1,6 +1,6 @@
 use gpui::{
-    Anchor, Axis, Context, DismissEvent, Entity, MouseButton, MouseDownEvent, PromptLevel, Window,
-    deferred, div, linear_color_stop, linear_gradient, prelude::*, px,
+    Anchor, Axis, Context, DismissEvent, Entity, MouseButton, PromptLevel, Window, deferred, div,
+    linear_color_stop, linear_gradient, prelude::*, px,
 };
 use gpui_component::button::{Button, ButtonVariants as _};
 use gpui_component::hover_card::HoverCard;
@@ -300,7 +300,13 @@ impl AgenttyApp {
             })
             .flatten();
         if let Some(preview) = &preview {
-            reorder::set_pending(&self.reorder, &Surface::Navigator, preview.order.clone());
+            reorder::set_pending(
+                &self.reorder,
+                &Surface::Navigator,
+                preview.order.clone(),
+                preview.target,
+                crate::ui::reorder::ReorderIntent::Reorder,
+            );
         }
 
         let list = if projection.is_empty() {
@@ -573,6 +579,7 @@ impl AgenttyApp {
         let title = row.display_title(&crate::core::i18n::current(cx, "session.default_name"));
         let subtitle = navigator_subtitle(&row);
         let row_id = row.row_id.clone();
+        let debug_row_id = row.row_id.clone();
         let alias_input = self
             .session_alias_edit
             .as_ref()
@@ -645,6 +652,7 @@ impl AgenttyApp {
                 "agent-session-row-{}",
                 row.row_id.as_str()
             )))
+            .debug_selector(move || format!("SESSION_ROW_{}", debug_row_id.as_str()))
             .group("agent-session-row")
             .w_full()
             .min_h(px(metrics.row_min_height))
@@ -663,13 +671,13 @@ impl AgenttyApp {
             .when(!selected, |item| {
                 item.hover(|item| item.bg(gpui::rgb(hover_fill)))
             })
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(move |this, _: &MouseDownEvent, window, cx| {
-                    cx.stop_propagation();
-                    this.activate_navigator_row(row_id.clone(), window, cx);
-                }),
-            )
+            .on_click(cx.listener(move |this, _, window, cx| {
+                if cx.has_active_drag() {
+                    return;
+                }
+                cx.stop_propagation();
+                this.activate_navigator_row(row_id.clone(), window, cx);
+            }))
             .child(
                 div()
                     .flex_shrink_0()
@@ -1234,6 +1242,7 @@ mod tests {
                 },
                 agent: CLIAgent::Codex,
                 title: Some("Fix subtitle hierarchy".into()),
+                title_candidates: Default::default(),
                 cwd: Some("/repo/agentty".into()),
                 updated_at_unix_ms: None,
                 launch_argv: Vec::new(),
@@ -1680,6 +1689,189 @@ mod tests {
         let production = source.split("#[cfg(test)]").next().unwrap_or(source);
         assert!(!production.contains("IconName::Play"));
         assert!(production.contains("this.activate_navigator_row(row_id.clone(), window, cx)"));
+    }
+
+    #[test]
+    fn historical_row_activation_is_click_only() {
+        let source = include_str!("tab_sidebar.rs");
+        let production = source.split("#[cfg(test)]").next().unwrap_or(source);
+
+        let mut cursor = 0usize;
+        while let Some(offset) = production[cursor..].find("on_mouse_down(") {
+            let start = cursor + offset;
+            let open_offset = production[start..]
+                .find('(')
+                .unwrap_or_else(|| panic!("expected opening paren for on_mouse_down at {start}"));
+            let mut depth = 0i32;
+            let mut end = None;
+            for (idx, ch) in production[start + open_offset..].char_indices() {
+                match ch {
+                    '(' => depth += 1,
+                    ')' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            end = Some(start + open_offset + idx + 1);
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            let end = end.unwrap_or_else(|| {
+                panic!("could not parse on_mouse_down call ending for production slice at {start}")
+            });
+            let chunk = &production[start..end];
+            assert!(
+                !chunk.contains("activate_navigator_row("),
+                "navigator activation must remain click-driven for session rows; chunk: {chunk}",
+            );
+            cursor = end;
+        }
+
+        assert!(
+            production.contains("this.activate_navigator_row(row_id.clone(), window, cx)"),
+            "activate_navigator_row should remain present and be reached from click paths"
+        );
+        assert!(
+            production.contains(".has_active_drag()"),
+            "navigator click activation should ignore click paths when a drag is active"
+        );
+        assert!(
+            production.contains(".on_click(cx.listener(move |this, _, window, cx| {"),
+            "session row activation should remain explicit in on_click handler"
+        );
+    }
+
+    #[gpui::test]
+    fn historical_row_pointer_drag_cancels_resume_and_click_release_selects(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let (app, mut visual) = crate::ui::app::test_window::harness(cx);
+        visual.update(|_, cx| {
+            let mut config = cx.global::<crate::core::config::Config>().clone();
+            config.tab_bar_position = crate::core::config::TabBarPosition::Left;
+            cx.set_global(config);
+        });
+        let row_id = app.update_in(&mut visual, |app, _window, cx| {
+            let target = crate::core::session::RemoteTarget::Alias {
+                alias: "drag-only-remote".into(),
+            };
+            let remote_machine_workspace = crate::core::session::WorkspaceId::new();
+            let remote = crate::core::session::WindowView::on_remote(
+                crate::core::session::RemoteRef::new(target, remote_machine_workspace),
+            );
+            let window_workspace = remote.id;
+            crate::core::session::WorkspaceStore::install_for_test(
+                cx,
+                crate::core::session::WindowViews {
+                    views: vec![remote],
+                    active: Some(window_workspace),
+                },
+            );
+            app.workspace = window_workspace;
+            app.tabs = vec![crate::ui::app::Tab::new(crate::ui::pane::Pane::Empty)];
+            app.active = 0;
+            app.sidebar_collapsed = false;
+            app.session_scan_started = true;
+            app.session_scan_error = None;
+            app.session_history = vec![AgentSessionRecord {
+                key: AgentSessionKey {
+                    provider: "codex".into(),
+                    session_id: "inactive-history-row".into(),
+                },
+                agent: CLIAgent::Codex,
+                title: Some("Inactive history row".into()),
+                title_candidates: Default::default(),
+                cwd: None,
+                updated_at_unix_ms: None,
+                launch_argv: Vec::new(),
+                source_path: None,
+                created_at_unix_ms: None,
+            }];
+            app.rebuild_session_navigator(cx);
+            let row_id = app.session_navigator.rows()[0].row_id.clone();
+            cx.notify();
+            row_id
+        });
+        visual.run_until_parked();
+
+        let selector: &'static str =
+            Box::leak(format!("SESSION_ROW_{}", row_id.as_str()).into_boxed_str());
+        let row = visual
+            .debug_bounds(selector)
+            .expect("historical production navigator row must render");
+        let press = gpui::point(
+            row.origin.x + row.size.width / 2.,
+            row.origin.y + row.size.height / 2.,
+        );
+        let dragged = gpui::point(press.x, press.y + gpui::px(16.));
+
+        visual.simulate_mouse_move(press, None, gpui::Modifiers::none());
+        visual.simulate_mouse_down(press, gpui::MouseButton::Left, gpui::Modifiers::none());
+        assert!(
+            app.update_in(&mut visual, |app, _, _| app
+                .session_navigator
+                .selected()
+                .is_none()),
+            "pointer-down alone must not select or resume a historical row"
+        );
+        visual.simulate_mouse_move(
+            dragged,
+            Some(gpui::MouseButton::Left),
+            gpui::Modifiers::none(),
+        );
+        visual.run_until_parked();
+        assert!(
+            visual.update(|_, cx| cx.has_active_drag()),
+            "movement beyond GPUI's drag threshold must enter navigator drag"
+        );
+        assert!(
+            app.update_in(&mut visual, |app, _, _| app
+                .session_navigator
+                .selected()
+                .is_none()),
+            "starting a row drag must not select or resume it"
+        );
+        visual.simulate_mouse_up(dragged, gpui::MouseButton::Left, gpui::Modifiers::none());
+        visual.run_until_parked();
+        assert!(
+            app.update_in(&mut visual, |app, _, _| app
+                .session_navigator
+                .selected()
+                .is_none()),
+            "release after navigator drag must not replay resume"
+        );
+
+        let row = visual
+            .debug_bounds(selector)
+            .expect("historical production navigator row must remain rendered");
+        let click = gpui::point(
+            row.origin.x + row.size.width / 2.,
+            row.origin.y + row.size.height / 2.,
+        );
+        visual.simulate_mouse_move(click, None, gpui::Modifiers::none());
+        visual.simulate_mouse_down(click, gpui::MouseButton::Left, gpui::Modifiers::none());
+        assert!(
+            app.update_in(&mut visual, |app, _, _| app
+                .session_navigator
+                .selected()
+                .is_none()),
+            "historical row activation must wait for click release"
+        );
+        visual.simulate_mouse_up(click, gpui::MouseButton::Left, gpui::Modifiers::none());
+        visual.run_until_parked();
+        let (selected, tab_count) = app.update_in(&mut visual, |app, _, _| {
+            (app.session_navigator.selected().cloned(), app.tabs.len())
+        });
+        assert_eq!(
+            selected.as_ref(),
+            Some(&row_id),
+            "stationary click-release must route through canonical row activation"
+        );
+        assert_eq!(
+            tab_count, 1,
+            "the disconnected remote fixture must not create a local fallback pane"
+        );
     }
 
     #[test]

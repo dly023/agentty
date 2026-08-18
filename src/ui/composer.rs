@@ -105,7 +105,7 @@ mod tests {
     }
 
     #[test]
-    fn composer_mode_cycles_and_auto_hides_plain_shells() {
+    fn composer_mode_cycles_and_auto_includes_plain_shells() {
         assert_eq!(ComposerMode::Auto.next(), ComposerMode::Always);
         assert_eq!(ComposerMode::Always.next(), ComposerMode::Off);
         assert_eq!(ComposerMode::Off.next(), ComposerMode::Auto);
@@ -136,8 +136,8 @@ mod tests {
 }
 
 use gpui::{
-    AppContext as _, Entity, Focusable as _, IntoElement, ParentElement as _, Styled as _, Window,
-    div, prelude::FluentBuilder as _, px,
+    AppContext as _, Entity, Focusable as _, InteractiveElement as _, IntoElement,
+    ParentElement as _, Styled as _, Window, div, prelude::FluentBuilder as _, px,
 };
 use gpui_component::input::{Input, InputState};
 use gpui_component::{ActiveTheme as _, WindowExt as _};
@@ -145,6 +145,9 @@ use gpui_component::{ActiveTheme as _, WindowExt as _};
 pub struct ComposerState {
     pub target: PaneIdentity,
     pub input: Entity<InputState>,
+    // The callback belongs to this exact Input instance. Dropping ComposerState
+    // cancels it before a replacement Composer can become observable.
+    _input_subscription: gpui::Subscription,
 }
 
 impl crate::ui::app::AgenttyApp {
@@ -271,25 +274,42 @@ impl crate::ui::app::AgenttyApp {
                 .placeholder(crate::core::i18n::current(cx, "composer.placeholder"))
                 .default_value(initial)
         });
-        cx.subscribe_in(
-            &input,
-            window,
-            move |this, _input, event, window, cx| match event {
-                gpui_component::input::InputEvent::PressEnter { shift: false, .. } => {
-                    if this.composer_completion.is_some() {
-                        this.composer_completion_accept(window, cx);
-                    } else {
-                        this.submit_composer(window, cx);
+        let input_subscription =
+            cx.subscribe_in(&input, window, move |this, source, event, window, cx| {
+                let source_is_current = this
+                    .composer
+                    .as_ref()
+                    .is_some_and(|composer| composer.input.entity_id() == source.entity_id());
+                if !source_is_current {
+                    return;
+                }
+                match event {
+                    gpui_component::input::InputEvent::PressEnter { shift: false, .. } => {
+                        let completion_has_selection = this
+                            .composer_completion
+                            .as_ref()
+                            .and_then(|state| state.session.selected())
+                            .is_some();
+                        if completion_has_selection {
+                            this.composer_completion_accept(window, cx);
+                        } else {
+                            // An empty completion state has no rendered menu and
+                            // therefore must not swallow the normal submit path.
+                            this.composer_completion_close(cx);
+                            this.submit_composer(window, cx);
+                        }
                     }
+                    gpui_component::input::InputEvent::Change => {
+                        this.composer_completion_refilter(cx);
+                    }
+                    _ => {}
                 }
-                gpui_component::input::InputEvent::Change => {
-                    this.composer_completion_refilter(cx);
-                }
-                _ => {}
-            },
-        )
-        .detach();
-        self.composer = Some(ComposerState { target, input });
+            });
+        self.composer = Some(ComposerState {
+            target,
+            input,
+            _input_subscription: input_subscription,
+        });
         cx.notify();
     }
 
@@ -374,12 +394,21 @@ impl crate::ui::app::AgenttyApp {
         let local_cwd = paths_local
             .then(|| cwd.clone().or_else(|| std::env::current_dir().ok()))
             .flatten();
-        let mut gui =
-            crate::terminal::completion::complete(&line, cursor_chars, local_cwd.as_deref())
-                .unwrap_or(crate::terminal::completion::Completion {
-                    candidates: Vec::new(),
-                    pending: Vec::new(),
-                });
+        let authority = if paths_local {
+            crate::terminal::completion::CompletionAuthority::Local
+        } else {
+            crate::terminal::completion::CompletionAuthority::Remote
+        };
+        let mut gui = crate::terminal::completion::complete_with_authority(
+            &line,
+            cursor_chars,
+            local_cwd.as_deref(),
+            authority,
+        )
+        .unwrap_or(crate::terminal::completion::Completion {
+            candidates: Vec::new(),
+            pending: Vec::new(),
+        });
         if let Some(host) = host {
             let cursor_bytes = line
                 .char_indices()
@@ -563,6 +592,7 @@ impl crate::ui::app::AgenttyApp {
             .collect();
         Some(
             div()
+                .debug_selector(|| "COMPOSER_COMPLETION_MENU".into())
                 .mb_1()
                 .max_h(px(200.))
                 .overflow_hidden()
@@ -603,9 +633,7 @@ impl crate::ui::app::AgenttyApp {
         }
         self.composer_drafts.set(target.clone(), draft.clone());
         let outcome = match self.target_terminal(&target, cx) {
-            Ok(terminal) => terminal
-                .read(cx)
-                .deliver_input(&InputDelivery::AgentPrompt(draft.clone()), cx),
+            Ok(terminal) => self.deliver_agent_prompt_to(terminal, &draft, window, cx),
             Err(outcome) => outcome,
         };
         match outcome {
@@ -616,22 +644,10 @@ impl crate::ui::app::AgenttyApp {
                         input.set_value("", window, cx);
                     });
                 }
-                if let Ok(terminal) = self.target_terminal(&target, cx) {
-                    let stamped = terminal.update(cx, |view, cx| {
-                        let changed = view.note_first_user_prompt(&draft);
-                        if changed {
-                            cx.notify();
-                        }
-                        changed
-                    });
-                    if stamped {
-                        self.rebuild_session_navigator(cx);
-                    }
-                }
-                let mode = cx.global::<crate::core::config::Config>().composer_mode;
-                if mode == ComposerMode::Off {
-                    self.composer = None;
-                }
+                self.save_session(cx);
+                // Do not tear down ComposerState (and its active callback) from
+                // inside that callback. The next render's sync_composer_dock
+                // applies Off mode after event delivery has returned.
                 self.focus_active(window, cx);
             }
             DeliveryOutcome::TargetMissing => window.push_notification(
@@ -657,6 +673,20 @@ impl crate::ui::app::AgenttyApp {
         let menu = self.render_composer_completion_menu(cx);
         Some(
             div()
+                .debug_selector(|| "COMPOSER_RICH_INPUT_DOCK".into())
+                // gpui-component intentionally propagates a submit-on-enter
+                // action. Stop that action at the Composer boundary so GPUI
+                // does not fall through to the simulated/native text input
+                // handler and commit the Enter key's `\n` after PressEnter.
+                // Shift+Enter is consumed by InputState itself and never
+                // reaches this listener, preserving the multiline edit path.
+                .on_action(
+                    cx.listener(|_, action: &gpui_component::input::Enter, _, cx| {
+                        if !action.shift {
+                            cx.stop_propagation();
+                        }
+                    }),
+                )
                 .flex_shrink_0()
                 .gap_1()
                 .px_2()
@@ -678,5 +708,411 @@ fn mode_i18n_key(mode: ComposerMode) -> &'static str {
         ComposerMode::Auto => "composer.mode.auto",
         ComposerMode::Always => "composer.mode.always",
         ComposerMode::Off => "composer.mode.off",
+    }
+}
+
+#[cfg(all(test, unix))]
+mod gpui_tests {
+    use super::*;
+    use crate::daemon::protocol::{ClientMsg, DaemonMsg};
+    use crate::terminal::completion::{Candidate, CandidateKind, CompletionSession};
+    use crate::ui::app::{AgenttyApp, test_window::harness_with_pane};
+    use gpui::{Entity, MouseButton, TestAppContext, VisualTestContext};
+    use gpui_component::input::InputEvent;
+    use std::io::ErrorKind;
+    use std::os::unix::net::UnixStream;
+    use std::time::Duration;
+
+    fn open_and_focus_composer(
+        app: &Entity<AgenttyApp>,
+        cx: &mut VisualTestContext,
+    ) -> Entity<InputState> {
+        let input = app.update_in(cx, |app, window, cx| {
+            app.ensure_composer_open(window, cx);
+            let input = app
+                .composer
+                .as_ref()
+                .expect("the pane owns a composer")
+                .input
+                .clone();
+            input.update(cx, |input, cx| input.focus(window, cx));
+            cx.notify();
+            input
+        });
+        cx.run_until_parked();
+        input
+    }
+
+    fn set_draft(
+        app: &Entity<AgenttyApp>,
+        input: &Entity<InputState>,
+        value: &str,
+        cx: &mut VisualTestContext,
+    ) {
+        let position =
+            crate::ui::completion_surface::char_index_to_position(value, value.chars().count());
+        cx.update(|window, cx| {
+            input.update(cx, |input, cx| {
+                input.set_value(value, window, cx);
+                input.set_cursor_position(position, window, cx);
+            });
+        });
+        app.update_in(cx, |_, _, cx| cx.notify());
+        cx.run_until_parked();
+    }
+
+    fn input_value(input: &Entity<InputState>, cx: &mut VisualTestContext) -> String {
+        cx.update(|_, cx| input.read(cx).value().to_string())
+    }
+
+    fn click_debug_selector(selector: &'static str, cx: &mut VisualTestContext) {
+        let bounds = cx
+            .debug_bounds(selector)
+            .unwrap_or_else(|| panic!("production selector {selector} must be rendered"));
+        let point = gpui::point(
+            bounds.origin.x + bounds.size.width / 2.,
+            bounds.origin.y + bounds.size.height / 2.,
+        );
+        cx.simulate_mouse_move(point, None, gpui::Modifiers::none());
+        cx.simulate_mouse_down(point, MouseButton::Left, gpui::Modifiers::none());
+        cx.simulate_mouse_up(point, MouseButton::Left, gpui::Modifiers::none());
+        cx.run_until_parked();
+    }
+
+    fn report_agent_session(
+        app: &Entity<AgenttyApp>,
+        stream: &mut UnixStream,
+        cx: &mut VisualTestContext,
+    ) {
+        DaemonMsg::AgentStatus(Some(crate::core::cli_agent::AgentSessionState {
+            status: crate::core::cli_agent::AgentStatus::Idle,
+            session_id: Some("composer-activity-e2e".into()),
+            launch_argv: Some(vec!["codex".into()]),
+            rich: true,
+            ..Default::default()
+        }))
+        .encode(stream)
+        .expect("test pane accepts an AgentStatus frame");
+        for _ in 0..200 {
+            cx.run_until_parked();
+            if app.update_in(cx, |app, window, cx| {
+                app.focused_leaf(window, cx)
+                    .is_some_and(|leaf| leaf.read(cx).agent_session().is_some())
+            }) {
+                app.update_in(cx, |_, _, cx| cx.notify());
+                cx.run_until_parked();
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        panic!("AgentStatus did not reach the production terminal view");
+    }
+
+    fn next_input_until_timeout(stream: &mut UnixStream) -> Option<Vec<u8>> {
+        stream
+            .set_read_timeout(Some(Duration::from_millis(250)))
+            .expect("test socket accepts a timeout");
+        loop {
+            match ClientMsg::read(stream) {
+                Ok(ClientMsg::Input(bytes)) => return Some(bytes),
+                Ok(_) => continue,
+                Err(error)
+                    if matches!(error.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) =>
+                {
+                    return None;
+                }
+                Err(error) => panic!("composer test socket failed before Input: {error}"),
+            }
+        }
+    }
+
+    fn candidate(text: &str, start: usize, end: usize) -> Candidate {
+        Candidate {
+            text: text.into(),
+            kind: CandidateKind::Command,
+            start,
+            end,
+            description: None,
+            icon: None,
+        }
+    }
+
+    #[gpui::test]
+    fn composer_shift_enter_inserts_newline_without_delivery(cx: &mut TestAppContext) {
+        let (app, mut cx, mut pane_stream) = harness_with_pane(cx);
+        let input = open_and_focus_composer(&app, &mut cx);
+        set_draft(&app, &input, "first line", &mut cx);
+
+        cx.simulate_keystrokes("shift-enter");
+
+        assert_eq!(input_value(&input, &mut cx), "first line\n");
+        assert_eq!(
+            next_input_until_timeout(&mut pane_stream),
+            None,
+            "Shift+Enter edits the draft and must not reach the PTY"
+        );
+    }
+
+    #[gpui::test]
+    fn composer_enter_accepts_open_completion_without_delivery(cx: &mut TestAppContext) {
+        let (app, mut cx, mut pane_stream) = harness_with_pane(cx);
+        let input = open_and_focus_composer(&app, &mut cx);
+        set_draft(&app, &input, "git ch", &mut cx);
+        app.update_in(&mut cx, |app, _, cx| {
+            app.composer_completion =
+                Some(crate::ui::completion_surface::ComposerCompletionState::new(
+                    1,
+                    CompletionSession::new(4, "ch".into(), vec![candidate("checkout", 4, 6)]),
+                ));
+            cx.notify();
+        });
+        cx.run_until_parked();
+        assert!(
+            cx.debug_bounds("COMPOSER_COMPLETION_MENU").is_some(),
+            "the completion state is painted as an open menu before Enter"
+        );
+
+        cx.simulate_keystrokes("enter");
+
+        assert_eq!(input_value(&input, &mut cx), "git checkout");
+        app.update_in(&mut cx, |app, _, _| {
+            assert!(
+                app.composer_completion.is_none(),
+                "accept closes the completion menu"
+            );
+        });
+        assert_eq!(
+            next_input_until_timeout(&mut pane_stream),
+            None,
+            "accept mutates only the draft and must not reach the PTY"
+        );
+    }
+
+    #[gpui::test]
+    fn composer_enter_without_completion_submits_once(cx: &mut TestAppContext) {
+        let (app, mut cx, mut pane_stream) = harness_with_pane(cx);
+        let input = open_and_focus_composer(&app, &mut cx);
+        set_draft(&app, &input, "explain this", &mut cx);
+
+        cx.simulate_keystrokes("enter");
+
+        assert_eq!(
+            next_input_until_timeout(&mut pane_stream),
+            Some(crate::core::agent_prompt::submit_bytes("explain this")),
+            "plain Enter follows the canonical AgentPrompt delivery path"
+        );
+        assert_eq!(
+            next_input_until_timeout(&mut pane_stream),
+            None,
+            "one Enter must produce exactly one delivery"
+        );
+        assert_eq!(input_value(&input, &mut cx), "");
+        app.update_in(&mut cx, |app, window, cx| {
+            let terminal = app
+                .focused_leaf(window, cx)
+                .expect("the Composer keeps its terminal target");
+            assert_eq!(
+                terminal.read(cx).live_first_user_title(),
+                Some("explain this"),
+                "Composer delivery must stamp the canonical live binding, not only write to the PTY"
+            );
+        });
+    }
+
+    fn composer_height_for(
+        app: &Entity<AgenttyApp>,
+        input: &Entity<InputState>,
+        rows: usize,
+        cx: &mut VisualTestContext,
+    ) -> gpui::Pixels {
+        let value = (1..=rows)
+            .map(|row| format!("row {row}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        set_draft(app, input, &value, cx);
+        cx.debug_bounds("COMPOSER_RICH_INPUT_DOCK")
+            .expect("the rendered composer publishes test bounds")
+            .size
+            .height
+    }
+
+    #[gpui::test]
+    fn composer_auto_grow_clamps_between_two_and_eight_rows(cx: &mut TestAppContext) {
+        let (app, mut cx, _pane_stream) = harness_with_pane(cx);
+        let input = open_and_focus_composer(&app, &mut cx);
+
+        let one = composer_height_for(&app, &input, 1, &mut cx);
+        let two = composer_height_for(&app, &input, 2, &mut cx);
+        let four = composer_height_for(&app, &input, 4, &mut cx);
+        let eight = composer_height_for(&app, &input, 8, &mut cx);
+        let nine = composer_height_for(&app, &input, 9, &mut cx);
+
+        assert_eq!(one, two, "one content row still reserves the 2-row minimum");
+        assert!(four > two, "the dock grows above its 2-row minimum");
+        assert!(eight > four, "the dock continues growing through row 8");
+        assert_eq!(nine, eight, "row 9 is scrolled inside the 8-row maximum");
+    }
+
+    #[gpui::test]
+    fn composer_activity_bar_click_round_trips_draft_and_focus(cx: &mut TestAppContext) {
+        let (app, mut cx, mut pane_stream) = harness_with_pane(cx);
+        report_agent_session(&app, &mut pane_stream, &mut cx);
+        let input = open_and_focus_composer(&app, &mut cx);
+        set_draft(&app, &input, "draft survives collapse", &mut cx);
+        let target = app.update_in(&mut cx, |app, window, cx| {
+            let composer = app
+                .composer
+                .as_ref()
+                .expect("open Composer owns a stable target");
+            assert!(
+                composer
+                    .input
+                    .read(cx)
+                    .focus_handle(cx)
+                    .contains_focused(window, cx),
+                "the expanded Composer Input owns focus before the first click"
+            );
+            composer.target.clone()
+        });
+        assert!(
+            cx.debug_bounds("COMPOSER_RICH_INPUT_DOCK").is_some(),
+            "expanded state paints the production Composer dock"
+        );
+
+        click_debug_selector("AGENT_ACTIVITY_COMPOSER_TOGGLE", &mut cx);
+
+        assert!(
+            cx.debug_bounds("COMPOSER_RICH_INPUT_DOCK").is_none(),
+            "collapse removes the production Composer dock"
+        );
+        assert!(
+            cx.debug_bounds("AGENT_ACTIVITY_COMPOSER_TOGGLE").is_some(),
+            "the Activity Bar remains visible while Composer is collapsed"
+        );
+
+        app.update_in(&mut cx, |app, window, cx| {
+            assert!(app.composer.is_none(), "first click collapses the Composer");
+            assert_eq!(
+                app.composer_drafts.get(&target),
+                "draft survives collapse",
+                "collapse snapshots the exact draft before dropping ComposerState"
+            );
+            assert_eq!(
+                cx.global::<crate::core::config::Config>().composer_mode,
+                ComposerMode::Auto,
+                "direct manipulation must not mutate the persisted mode"
+            );
+            let terminal = app.focused_leaf(window, cx).expect("focused test terminal");
+            assert!(
+                terminal
+                    .read(cx)
+                    .focus_handle(cx)
+                    .contains_focused(window, cx),
+                "collapse returns focus to the same terminal"
+            );
+        });
+
+        click_debug_selector("AGENT_ACTIVITY_COMPOSER_TOGGLE", &mut cx);
+
+        assert!(
+            cx.debug_bounds("COMPOSER_RICH_INPUT_DOCK").is_some(),
+            "expand restores the production Composer dock"
+        );
+        assert!(
+            cx.debug_bounds("AGENT_ACTIVITY_COMPOSER_TOGGLE").is_some(),
+            "the Activity Bar remains visible after expand"
+        );
+
+        app.update_in(&mut cx, |app, window, cx| {
+            let restored = app
+                .composer
+                .as_ref()
+                .expect("second click restores the Composer");
+            assert_eq!(
+                restored.input.read(cx).value().to_string(),
+                "draft survives collapse",
+                "expand restores the exact pane-isolated draft"
+            );
+            assert!(
+                restored
+                    .input
+                    .read(cx)
+                    .focus_handle(cx)
+                    .contains_focused(window, cx),
+                "expand focuses the restored Composer Input"
+            );
+            let terminal = app
+                .focused_leaf(window, cx)
+                .expect("same test terminal remains active");
+            assert!(
+                !terminal
+                    .read(cx)
+                    .focus_handle(cx)
+                    .contains_focused(window, cx),
+                "Composer focus is exclusive after expand"
+            );
+            assert_eq!(
+                cx.global::<crate::core::config::Config>().composer_mode,
+                ComposerMode::Auto,
+                "round trip still leaves the persisted mode unchanged"
+            );
+        });
+    }
+
+    #[gpui::test]
+    fn stale_composer_input_callback_cannot_submit_replacement(cx: &mut TestAppContext) {
+        let (app, mut cx, mut pane_stream) = harness_with_pane(cx);
+        let stale_input = open_and_focus_composer(&app, &mut cx);
+
+        let replacement_input = app.update_in(&mut cx, |app, window, cx| {
+            app.close_composer(window, cx);
+            app.ensure_composer_open(window, cx);
+            let input = app
+                .composer
+                .as_ref()
+                .expect("composer reopens for the same pane")
+                .input
+                .clone();
+            let position = crate::ui::completion_surface::char_index_to_position(
+                "replacement draft",
+                "replacement draft".chars().count(),
+            );
+            input.update(cx, |input, cx| {
+                input.set_value("replacement draft", window, cx);
+                input.set_cursor_position(position, window, cx);
+            });
+            input
+        });
+
+        cx.update(|_, cx| {
+            stale_input.update(cx, |_, cx| {
+                cx.emit(InputEvent::PressEnter {
+                    secondary: false,
+                    shift: false,
+                });
+            });
+        });
+        cx.run_until_parked();
+
+        assert_eq!(
+            input_value(&replacement_input, &mut cx),
+            "replacement draft",
+            "a torn-down Input cannot mutate the replacement Composer"
+        );
+        assert_eq!(
+            next_input_until_timeout(&mut pane_stream),
+            None,
+            "a torn-down Input cannot submit the replacement draft"
+        );
+
+        app.update_in(&mut cx, |_, window, cx| {
+            replacement_input.update(cx, |input, cx| input.focus(window, cx));
+        });
+        cx.simulate_keystrokes("enter");
+        assert_eq!(
+            next_input_until_timeout(&mut pane_stream),
+            Some(crate::core::agent_prompt::submit_bytes("replacement draft")),
+            "the replacement Composer owns one live callback after the stale one is cancelled"
+        );
     }
 }

@@ -14,6 +14,8 @@ required=(
   crates/agentty-core/src/agent_runtime/navigator.rs
   crates/agentty-core/src/daemon/install/mod.rs
   crates/agentty-core/src/daemon/install/wsl.rs
+  script/check_bundled_remote_helpers
+  script/tests/remote_helper_bundle_contract.sh
   .github/scripts/bundle-macos.sh
   .github/scripts/bundle-windows.ps1
   .github/scripts/bundle-linux.sh
@@ -31,6 +33,20 @@ rg -q 'HelperHello' crates/agentty-core/src/daemon/control.rs
 rg -q 'fn discovery_available' crates/agentty-core/src/agent_runtime/adapter.rs
 rg -q 'store_roots_derive_from_hello_home_when_omitted' crates/agentty-core/src/host/remote.rs
 rg -q 'AgentStoreRoots::for_home' crates/agentty-core/src/host/remote.rs
+rg -q 'with_derived_defaults' crates/agentty-core/src/agent_runtime/stores.rs crates/agentty-core/src/host/remote.rs
+rg -q 'agentty_config_dir' crates/agentty-core/src/agent_runtime/stores.rs crates/agentty-core/src/agent_runtime/user_state.rs
+rg -q 'opencode_config_dir' crates/agentty-core/src/agent_runtime/stores.rs crates/agentty-core/src/core/agent_hooks.rs
+rg -q 'remote_hook_target_uses_custom_store_root_snapshot' crates/agentty-core/src/core/agent_hooks.rs
+rg -q 'session_alias_store_path_uses_published_agentty_config_root' crates/agentty-core/src/agent_runtime/user_state.rs
+rg -q 'environment_session_context_uses_snapshot_for_user_state_path' src/ui/environment_session.rs
+if rg -n 'HookTarget::remote\(h, home|HookTarget::remote\(&\*host, home|refresh_remote_hooks\(&\*host, home' crates/agentty-core/src/core/agent_hooks.rs src/ui/app.rs src/ui/remote_connect.rs; then
+  echo '[remote-helper] remote hook operations must consume the published AgentStoreRoots snapshot, not a home-only argument' >&2
+  exit 1
+fi
+if rg -n 'var_os\("(CLAUDE_CONFIG_DIR|XDG_CONFIG_HOME|AGENTTY_CONFIG_DIR|OPENCODE_CONFIG_DIR|GROK_HOME)"\)' crates/agentty-core/src/core/agent_hooks.rs; then
+  echo '[remote-helper] HookTarget must not read GUI environment while resolving target paths' >&2
+  exit 1
+fi
 rg -q 'DiscoverAgentSessions' crates/agentty-core/src/daemon/control.rs
 rg -q 'ResumeInvocation' crates/agentty-core/src/agent_runtime/resume.rs
 rg -q 'physical_source_limit_is_explicit_not_enumeration_truncation' crates/agentty-core/src/agent_runtime/*.rs
@@ -64,12 +80,60 @@ if rg -n 'restartable = target\.is_ssh|if !target\.is_ssh' src/ui/app.rs src/ui/
   exit 1
 fi
 rg -q 'provider_enum_growth_advances_the_control_dialect' crates/agentty-core/src/daemon/control.rs
+rg -q 'jcode_provider_growth_advances_the_control_dialect' crates/agentty-core/src/daemon/control.rs
+rg -q 'first_user_title_persistence_advances_the_control_dialect' crates/agentty-core/src/daemon/control.rs
+rg -q 'provider_title_persistence_advances_the_control_dialect' crates/agentty-core/src/daemon/control.rs
+rg -q 'PaneSetFirstUserTitle' crates/agentty-core/src/host/server.rs crates/agentty-core/src/daemon/control.rs
+rg -q 'PaneSetProviderTitle' crates/agentty-core/src/host/server.rs crates/agentty-core/src/daemon/control.rs
+rg -q 'enum CompletionAuthority' src/terminal/completion.rs
+rg -q 'complete_with_authority' src/terminal/completion.rs src/terminal/view.rs
+rg -q 'remote_completion_never_enumerates_gui_path' src/terminal/completion.rs
+if rg -n 'super::completion::complete\(&line' src/terminal/view.rs; then
+  echo '[remote-helper] remote terminal completion must use the authority-aware entrypoint, not local complete()' >&2
+  exit 1
+fi
+rg -q 'REMOTE_DIALECT_MARKER' crates/agentty-core/src/daemon/install/mod.rs
+rg -q 'pane_set_provider_title' script/check_bundled_remote_helpers script/tests/remote_helper_bundle_contract.sh
+rg -q 'provider_title_request_persists_and_notifies_once' crates/agentty-server/tests/machine_tree.rs
+rg -q 'different_dialect_running_daemon_is_not_mistaken_for_desired_bridge' crates/agentty-core/src/daemon/install/tests.rs
+rg -q 'REMOTE-INSTALL-DAEMON-IDENTITY-22' docs/specs/REMOTE_HELPER_SPEC.yaml
+rg -q 'REMOTE-INSTALL-DAEMON-IDENTITY-22' docs/quality/traceability.yaml
+rg -q 'macro_rules! daemon_process_scan' crates/agentty-core/src/daemon/install/mod.rs
+rg -q 'fn daemon_process_matches' crates/agentty-core/src/daemon/install/mod.rs
+rg -q 'running_exe_probe_skips_pane_bridge_until_daemon' crates/agentty-core/src/daemon/install/tests.rs
+rg -q 'terminate_probe_preserves_pane_bridge_and_kills_only_daemon' crates/agentty-core/src/daemon/install/tests.rs
+rg -q 'no_daemon_process_is_not_reported_or_signalled' crates/agentty-core/src/daemon/install/tests.rs
+daemon_predicate_count=$(grep -F -o 'case " $cmd " in *" --daemon "*)' crates/agentty-core/src/daemon/install/mod.rs | wc -l | tr -d ' ')
+if [[ "$daemon_predicate_count" != 1 ]]; then
+  echo '[remote-helper] RUNNING_EXE and TERMINATE must share exactly one standalone --daemon argv predicate' >&2
+  exit 1
+fi
+rg -q 'fn source_tree_fingerprint' crates/agentty-core/build.rs
+rg -q 'cargo:rerun-if-changed=src' crates/agentty-core/build.rs
+rg -q 'cargo:rerun-if-changed=../agentty-server/src' crates/agentty-core/build.rs
+rg -q 'retry_reused_remote_link_once' crates/agentty-core/src/daemon/ssh/mod.rs
+rg -q 'reused_setup_failure_evicts_and_retries_once_on_a_fresh_connection' crates/agentty-core/src/daemon/ssh/mod.rs
+rg -q 'reused_open_session_channel_failure_retries_once_on_a_fresh_connection' crates/agentty-core/src/daemon/ssh/mod.rs
+rg -q 'reused_first_exec_failure_retries_once_on_a_fresh_connection' crates/agentty-core/src/daemon/ssh/mod.rs
+rg -q 'fresh_attempt_failure_is_returned_without_a_third_connection' crates/agentty-core/src/daemon/ssh/mod.rs
+rg -q 'failed_reused_and_fresh_attempts_never_publish_a_remote_link' crates/agentty-core/src/daemon/ssh/mod.rs
 rg -q 'known_dialect_skew_offers_only_replace_server' src/ui/switcher.rs
 rg -q 'replacing_prefers_a_matching_bundled_helper' crates/agentty-core/src/daemon/install/tests.rs
 rg -q 'live_replace_remote_helper_full_chain' crates/agentty-core/src/daemon/ssh/mod.rs
 rg -q 'DialectFailureActions::ReplaceOnly' src/ui/switcher.rs
 rg -q 'remote_mismatch_remains_after_modal_cancel' src/ui/remote_workspace.rs
 rg -q 'every_remote_mismatch_action_routes_to_replace_server' src/ui/remote_workspace.rs
+rg -q 'manual_route_setup_failure_drains_recorded_mismatch' src/ui/remote_workspace.rs
+rg -q 'supervisor_route_setup_failure_uses_terminal_mismatch_settlement' src/ui/remote_workspace.rs
+rg -q 'ordinary_connection_failure_remains_retryable' src/ui/remote_workspace.rs
+rg -q 'fn settle_connection_failure' src/ui/remote_workspace.rs
+rg -q 'recorded_mismatch_for_host' src/ui/remote_workspace.rs
+rg -q 'schedule_remote_mismatch_notice_for_host' src/ui/remote_workspace.rs
+settlement_calls=$(grep -F -c 'let recorded_mismatch = settle_connection_failure' src/ui/remote_workspace.rs || true)
+if [[ "$settlement_calls" != "3" ]]; then
+  echo '[remote-helper] manual completion, supervisor route setup, and supervisor completion must share the failure settlement path' >&2
+  exit 1
+fi
 rg -q 'replace_mismatched_remote_server' src/ui/remote_workspace.rs src/ui/app.rs
 rg -q 'mismatch_route' src/ui/remote_workspace.rs
 rg -q 'render_remote_mismatch_notice' src/ui/app.rs
@@ -95,7 +159,9 @@ for bundle in .github/scripts/bundle-macos.sh .github/scripts/bundle-windows.ps1
   rg -q 'bundled-server' "$bundle"
   rg -q 'agentty-server-linux-x86_64-musl' "$bundle"
   rg -q 'agentty-server-linux-aarch64-musl' "$bundle"
+  rg -q 'check_bundled_remote_helpers' "$bundle"
 done
+bash script/tests/remote_helper_bundle_contract.sh
 ./script/check_package_cleanup
 if rg -n 'fallback.*local|LocalHost::shared' crates/agentty-core/src/agent_runtime crates/agentty-core/src/host/server.rs; then
   echo '[remote-helper] remote helper must not contain a local fallback path' >&2

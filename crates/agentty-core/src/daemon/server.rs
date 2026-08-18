@@ -125,6 +125,15 @@ impl crate::host::server::PaneDirectory for Registry {
         states.sort_by_key(|s| s.pane_id);
         states
     }
+
+    fn reassign_owner(&self, pane_ids: &[u64], owner: &str) {
+        let panes = self.panes.lock().unwrap();
+        for pane_id in pane_ids {
+            if let Some(pane) = panes.get(pane_id) {
+                pane.set_owner(owner.to_string());
+            }
+        }
+    }
 }
 
 const ORPHAN_SWEEP_INTERVAL: std::time::Duration = std::time::Duration::from_secs(600);

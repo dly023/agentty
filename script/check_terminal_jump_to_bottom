@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+python3 - <<'PY'
+from pathlib import Path
+import re
+import sys
+
+spec = Path("docs/specs/INPUT_EXPERIENCE_SPEC.yaml").read_text(encoding="utf-8")
+matrix = Path("docs/quality/traceability.yaml").read_text(encoding="utf-8")
+view = Path("src/terminal/view.rs").read_text(encoding="utf-8")
+
+def require(haystack: str, needle: str, label: str) -> None:
+    if needle not in haystack:
+        print(f"[terminal-jump] missing {label}: {needle}", file=sys.stderr)
+        raise SystemExit(1)
+
+require(spec, "INPUT-TERMINAL-JUMP-TO-BOTTOM-14", "spec contract")
+require(matrix, "INPUT-TERMINAL-JUMP-TO-BOTTOM-108", "traceability row")
+require(view, "terminal_scrollback_shows_jump_button_and_click_returns_to_bottom_without_focus_steal", "focused GPUI test")
+require(view, "simulate_mouse_down", "pointer-down test evidence")
+require(view, "simulate_mouse_up", "pointer-up test evidence")
+
+# Keep production obligations separate from the test module. A selector that
+# exists only in a test string is not evidence that the shipped surface paints
+# the control.
+production = view.split("#[cfg(all(test, unix))]\npub(crate) fn quiet_test_pane", 1)[0]
+require(production, "TERMINAL_JUMP_TO_BOTTOM", "production debug selector")
+if not re.search(r"display_offset\(\)\s*>\s*0", production):
+    print("[terminal-jump] production visibility must be derived from grid.display_offset() > 0", file=sys.stderr)
+    raise SystemExit(1)
+
+selector_at = production.find("TERMINAL_JUMP_TO_BOTTOM")
+nearby = production[max(0, selector_at - 3000): selector_at + 3000]
+if ".on_click" not in nearby or "jump_to_prompt" not in nearby:
+    print("[terminal-jump] selector handler must route through .on_click -> jump_to_prompt", file=sys.stderr)
+    raise SystemExit(1)
+
+print("terminal jump-to-bottom checks passed")
+PY

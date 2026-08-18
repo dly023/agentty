@@ -9,7 +9,10 @@ use serde::{Deserialize, Serialize};
 
 use super::protocol::{MAX_FRAME, read_frame, write_frame};
 
-pub const CONTROL_VERSION: u32 = 7;
+// v10 adds the typed, identity-scoped PaneSetProviderTitle request. Older
+// helpers must refuse the handshake before a client can send that enum
+// variant.
+pub const CONTROL_VERSION: u32 = 10;
 
 const DIALECT_MARKER: &str = "speaks control v";
 
@@ -68,7 +71,9 @@ pub use crate::host::{Entry, MTime, Meta, Output, SearchHit};
 
 pub use crate::core::shells::{DetectedShell, ShellInventory};
 
-pub use crate::core::machine::{Axis, LayoutDelta, Machine, PaneSeed, Side, Tab, TabId};
+pub use crate::core::machine::{
+    Axis, LayoutDelta, Machine, PaneSeed, PaneTitleIdentity, Side, Tab, TabId,
+};
 pub use crate::core::session::WorkspaceId;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -210,6 +215,12 @@ pub enum ControlRequest {
         tab: TabId,
         to: u64,
     },
+    TabTransfer {
+        from_workspace: WorkspaceId,
+        tab: TabId,
+        to_workspace: WorkspaceId,
+        to: u64,
+    },
     TabSetGroup {
         workspace: WorkspaceId,
         tab: TabId,
@@ -244,6 +255,18 @@ pub enum ControlRequest {
         workspace: WorkspaceId,
         old: u64,
         new: PaneSeed,
+    },
+    PaneSetFirstUserTitle {
+        workspace: WorkspaceId,
+        pane: u64,
+        title: String,
+    },
+    PaneSetProviderTitle {
+        workspace: WorkspaceId,
+        pane: u64,
+        title: String,
+        #[serde(default)]
+        expected_identity: Option<PaneTitleIdentity>,
     },
 
     AgentActivity {
@@ -331,12 +354,15 @@ impl ControlRequest {
             | TabClose { .. }
             | TabRename { .. }
             | TabMove { .. }
+            | TabTransfer { .. }
             | TabSetGroup { .. }
             | PaneSplit { .. }
             | PaneClose { .. }
             | PaneSetRatio { .. }
             | PaneMove { .. }
-            | PaneReplace { .. } => Duration::from_secs(10),
+            | PaneReplace { .. }
+            | PaneSetFirstUserTitle { .. }
+            | PaneSetProviderTitle { .. } => Duration::from_secs(10),
             AgentActivity { .. } | AgentStates | Routes | Status => Duration::from_secs(5),
         }
     }
@@ -1466,6 +1492,21 @@ mod tests {
                 dirs: vec!["/home/me/proj".into(), "/home/me/proj/src".into()],
             },
             ControlRequest::WatchClose { id: 7 },
+            ControlRequest::PaneSetFirstUserTitle {
+                workspace: WorkspaceId::new(),
+                pane: 7,
+                title: "Draw a fox".into(),
+            },
+            ControlRequest::PaneSetProviderTitle {
+                workspace: WorkspaceId::new(),
+                pane: 8,
+                title: "Historical rollout".into(),
+                expected_identity: Some(crate::core::machine::PaneTitleIdentity {
+                    agent: crate::core::cli_agent::CLIAgent::Codex,
+                    container_id: Some("container-8".into()),
+                    session_id: Some("session-8".into()),
+                }),
+            },
             ControlRequest::AgentActivity {
                 operation: crate::agent_runtime::OperationId(10),
                 limit: 100,
@@ -2188,6 +2229,23 @@ mod tests {
                 },
                 s(30),
             ),
+            (
+                R::PaneSetFirstUserTitle {
+                    workspace: WorkspaceId::new(),
+                    pane: 7,
+                    title: "Draw a fox".into(),
+                },
+                s(10),
+            ),
+            (
+                R::PaneSetProviderTitle {
+                    workspace: WorkspaceId::new(),
+                    pane: 8,
+                    title: "Historical rollout".into(),
+                    expected_identity: None,
+                },
+                s(10),
+            ),
             (R::WriteFile { path: "/".into() }, s(30)),
             (R::CreateFileNew { path: "/".into() }, s(10)),
             (
@@ -2768,6 +2826,82 @@ mod tests {
     }
 
     #[test]
+    fn jcode_provider_growth_advances_the_control_dialect() {
+        const PRE_JCODE_CONTROL_VERSION: u32 = 7;
+        let request = ControlRequest::DiscoverAgentSessions {
+            operation: crate::agent_runtime::OperationId(1),
+            generation: crate::agent_runtime::ScanGeneration(1),
+            authority: crate::agent_runtime::AuthorityKind::Remote,
+            roots: crate::agent_runtime::AgentStoreRoots::for_home("/home/me".into()),
+            providers: vec![crate::agent_runtime::ProviderId::Jcode],
+            logical_limit: 40,
+            physical_source_limit: 2_000,
+        };
+        let encoded = serde_json::to_string(&request).expect("Jcode request encodes");
+        assert!(encoded.contains("jcode"), "{encoded}");
+        assert!(
+            CONTROL_VERSION > PRE_JCODE_CONTROL_VERSION,
+            "a v{PRE_JCODE_CONTROL_VERSION} helper accepts the handshake but cannot decode Jcode"
+        );
+    }
+
+    #[test]
+    fn tab_transfer_growth_advances_control_dialect() {
+        const PRE_TAB_TRANSFER_CONTROL_VERSION: u32 = 7;
+        let request = ControlRequest::TabTransfer {
+            from_workspace: crate::core::session::WorkspaceId::new(),
+            tab: crate::core::machine::TabId::new(),
+            to_workspace: crate::core::session::WorkspaceId::new(),
+            to: 0,
+        };
+        let encoded = serde_json::to_string(&request).expect("TabTransfer request encodes");
+        assert!(encoded.contains("tab_transfer"), "{encoded}");
+        assert!(
+            CONTROL_VERSION > PRE_TAB_TRANSFER_CONTROL_VERSION,
+            "an older v{PRE_TAB_TRANSFER_CONTROL_VERSION} helper cannot decode TabTransfer"
+        );
+    }
+
+    #[test]
+    fn first_user_title_persistence_advances_the_control_dialect() {
+        // v8 is the last dialect that can be spoken by a helper before the
+        // write-once title request was added.  A v8 handshake must therefore
+        // be rejected before a client can send this newly serialized enum.
+        const PRE_FIRST_USER_TITLE_CONTROL_VERSION: u32 = 8;
+        let request = ControlRequest::PaneSetFirstUserTitle {
+            workspace: WorkspaceId::new(),
+            pane: 7,
+            title: "Draw a fox".into(),
+        };
+        let encoded = serde_json::to_string(&request).expect("title request encodes");
+        assert!(encoded.contains("pane_set_first_user_title"), "{encoded}");
+        assert!(
+            CONTROL_VERSION > PRE_FIRST_USER_TITLE_CONTROL_VERSION,
+            "a v{PRE_FIRST_USER_TITLE_CONTROL_VERSION} helper cannot decode PaneSetFirstUserTitle"
+        );
+    }
+
+    #[test]
+    fn provider_title_persistence_advances_the_control_dialect() {
+        // v9 is the last dialect before the provider-provenance migration.
+        // The handshake must reject it before this request can be serialized
+        // to an older helper.
+        const PRE_PROVIDER_TITLE_CONTROL_VERSION: u32 = 9;
+        let request = ControlRequest::PaneSetProviderTitle {
+            workspace: WorkspaceId::new(),
+            pane: 8,
+            title: "Historical rollout".into(),
+            expected_identity: None,
+        };
+        let encoded = serde_json::to_string(&request).expect("provider title request encodes");
+        assert!(encoded.contains("pane_set_provider_title"), "{encoded}");
+        assert!(
+            CONTROL_VERSION > PRE_PROVIDER_TITLE_CONTROL_VERSION,
+            "a v{PRE_PROVIDER_TITLE_CONTROL_VERSION} helper cannot decode PaneSetProviderTitle"
+        );
+    }
+
+    #[test]
     fn a_handshake_answered_with_the_wrong_frame_is_invalid_data() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap();
@@ -2854,6 +2988,10 @@ mod tests {
             |name| match name {
                 "CODEX_HOME" => Some(std::ffi::OsString::from("/srv/codex")),
                 "CLAUDE_CONFIG_DIR" => Some(std::ffi::OsString::from("relative-claude")),
+                "XDG_CONFIG_HOME" => Some(std::ffi::OsString::from("/srv/config")),
+                "AGENTTY_CONFIG_DIR" => Some(std::ffi::OsString::from("/srv/agentty")),
+                "OPENCODE_CONFIG_DIR" => Some(std::ffi::OsString::from("/srv/opencode")),
+                "GROK_HOME" => Some(std::ffi::OsString::from("/srv/grok")),
                 _ => None,
             },
         );
@@ -2873,6 +3011,18 @@ mod tests {
         assert_eq!(
             target_roots.claude_config_dir,
             std::path::PathBuf::from("/home/remote/relative-claude")
+        );
+        assert_eq!(
+            target_roots.agentty_config_dir,
+            std::path::PathBuf::from("/srv/agentty")
+        );
+        assert_eq!(
+            target_roots.opencode_config_dir,
+            std::path::PathBuf::from("/srv/opencode")
+        );
+        assert_eq!(
+            target_roots.grok_home,
+            std::path::PathBuf::from("/srv/grok")
         );
     }
 }

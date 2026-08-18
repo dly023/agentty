@@ -357,6 +357,9 @@ pub fn install_progress() -> Arc<dyn InstallProgress> {
 }
 
 pub const PROTOCOL_FLAG: &str = "--protocol";
+pub const REMOTE_BUILD_STAMP: &str =
+    concat!(env!("CARGO_PKG_VERSION"), "+", env!("AGENTTY_BUILD_SHA"));
+pub const REMOTE_DIALECT_MARKER: &str = "agentty-remote-dialect:c10p5";
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct RemoteProtocol {
@@ -370,7 +373,7 @@ impl RemoteProtocol {
         RemoteProtocol {
             control: crate::daemon::control::CONTROL_VERSION,
             protocol: crate::daemon::protocol::PROTOCOL_VERSION,
-            build: client_version().to_string(),
+            build: REMOTE_BUILD_STAMP.to_string(),
         }
     }
 
@@ -383,6 +386,11 @@ impl RemoteProtocol {
     }
 
     pub fn to_line(&self) -> String {
+        // Package validation must compare cross-architecture helpers without
+        // executing them. Keep one complete dialect identity in every linked
+        // server binary; the regression below locks this literal to the wire
+        // constants whenever either dialect advances.
+        std::hint::black_box(REMOTE_DIALECT_MARKER);
         serde_json::to_string(self).unwrap_or_default()
     }
 
@@ -888,8 +896,15 @@ impl<'a> Installer<'a> {
         &self,
         paths: &RemotePaths,
     ) -> Result<(bool, Option<MismatchedRemoteDaemon>), InstallError> {
+        if let Some(mismatch) = self.check_running_build(paths) {
+            // The desired binary's bridge cannot displace a daemon already
+            // serving the control socket. Launching it here only creates a
+            // second short-lived process and turns an actionable dialect skew
+            // into a reconnect loop. Replacement remains an explicit action.
+            return Ok((false, Some(mismatch)));
+        }
         if self.daemon_is_serving(paths)? {
-            return Ok((false, self.check_running_build(paths)));
+            return Ok((false, None));
         }
 
         self.launch_daemon(paths)?;
@@ -897,7 +912,7 @@ impl<'a> Installer<'a> {
         let deadline = Instant::now() + self.startup_timeout;
         loop {
             if self.daemon_is_serving(paths)? {
-                return Ok((true, self.check_running_build(paths)));
+                return Ok((true, None));
             }
             if Instant::now() >= deadline {
                 return Err(InstallError::Launch {
@@ -994,9 +1009,47 @@ impl<'a> Installer<'a> {
     }
 }
 
-const RUNNING_EXE_COMMAND: &str = r#"for p in /proc/[0-9]*; do e=$(readlink "$p/exe" 2>/dev/null) || continue; case "$e" in */agentty-server-*) printf '%s' "${e% (deleted)}"; break;; esac; done; true"#;
+// Keep process identity fail-closed at the remote boundary.  A pane bridge
+// uses the same executable as the daemon, so the executable path alone is not
+// an identity; only a standalone `--daemon` argv entry identifies the long
+// lived process.  The macro is intentionally the one source for both probe
+// and terminate commands so they cannot drift into selecting different PIDs.
+macro_rules! daemon_process_scan {
+    ($action:literal) => {
+        concat!(
+            r#"for p in /proc/[0-9]*; do e=$(readlink "$p/exe" 2>/dev/null) || continue; "#,
+            r#"case "$e" in */agentty-server-*) "#,
+            r#"cmd=$(tr '\0' ' ' < "$p/cmdline" 2>/dev/null) || continue; "#,
+            r#"case " $cmd " in *" --daemon "*) "#,
+            $action,
+            r#"; break;; *) continue;; esac;; *) continue;; esac; done; true"#,
+        )
+    };
+}
 
-const TERMINATE_RUNNING_COMMAND: &str = r#"for p in /proc/[0-9]*; do e=$(readlink "$p/exe" 2>/dev/null) || continue; case "$e" in */agentty-server-*) kill -TERM "${p#/proc/}" 2>/dev/null; break;; esac; done; true"#;
+const RUNNING_EXE_COMMAND: &str = daemon_process_scan!(r#"printf '%s' "${e% (deleted)}""#);
+
+const TERMINATE_RUNNING_COMMAND: &str =
+    daemon_process_scan!(r#"kill -TERM "${p#/proc/}" 2>/dev/null"#);
+
+/// Pure mirror of the remote shell predicate, used by deterministic installer
+/// tests and FakeRemote's process table.  `None` models an unreadable cmdline;
+/// it must never be treated as a daemon match.
+#[cfg(test)]
+fn daemon_process_matches(exe: &str, cmdline: Option<&[u8]>) -> bool {
+    let Some((_, basename)) = exe.rsplit_once('/') else {
+        return false;
+    };
+    if !basename.starts_with("agentty-server-") {
+        return false;
+    }
+    let Some(cmdline) = cmdline else {
+        return false;
+    };
+    cmdline
+        .split(|byte| *byte == 0)
+        .any(|argument| argument == b"--daemon")
+}
 
 fn launch_command(binary: &str) -> String {
     let bin = shell_quote(binary);

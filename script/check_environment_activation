@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+spec=docs/specs/ENVIRONMENT_MODEL_SPEC.yaml
+matrix=docs/quality/traceability.yaml
+windows=src/ui/windows.rs
+strip=src/ui/tab_strip.rs
+
+rg -Fq 'id: ENV-WINDOW-ACTIVATION-17' "$spec"
+rg -Fq 'spec: ENV-WINDOW-ACTIVATION-17' "$matrix"
+rg -Fq 'environment_menu_first_click_activates_and_reuses_same_window' "$strip" "$windows"
+rg -Fq 'ENVIRONMENT_MENU_TRIGGER' "$strip"
+rg -Fq 'ENVIRONMENT_MENU_TARGET_PROFILE_' "$strip"
+
+# The canonical materializer must publish and then activate the exact new
+# native handle before returning. Keep this check local to open_with_session;
+# it intentionally does not make claims about external SSH/daemon rollback.
+materializer=$(sed -n '/pub fn open_with_session(/,/^pub fn refresh_menu/p' "$windows")
+grep -Fq 'WindowRegistry::register' <<<"$materializer"
+helper=$(sed -n '/^fn activate_registered_window(/,/^pub fn open_empty/p' "$windows")
+grep -Fq 'activate_window()' <<<"$helper"
+grep -Fq 'cx.defer' <<<"$helper"
+grep -Fq 'cx.activate(true)' <<<"$helper"
+register_line=$(grep -n -m1 'WindowRegistry::register' <<<"$materializer" | cut -d: -f1)
+post_register=$(tail -n +"$register_line" <<<"$materializer")
+grep -Fq 'activate_registered_window(cx, handle)' <<<"$post_register"
+activate_offset=$(grep -n -m1 'activate_registered_window(cx, handle)' <<<"$post_register" | cut -d: -f1)
+activate_line=$((register_line + activate_offset - 1))
+if [[ -z "$register_line" || -z "$activate_line" || "$activate_line" -le "$register_line" ]]; then
+  echo '[environment-activation] fresh window must activate after registry publication' >&2
+  exit 1
+fi
+
+rg -Fq 'open_with_session' "$strip" "$windows"
+open_focus=$(sed -n '/pub fn open_or_focus_environment(/,/^pub fn open(/p' "$windows")
+if grep -Fq 'window.activate_window' <<<"$open_focus"; then
+  echo '[environment-activation] open-or-focus has a parallel direct activation path' >&2
+  exit 1
+fi
+grep -Fq 'activate_registered_window(cx, handle)' <<<"$open_focus"
+
+echo 'environment activation checks passed'

@@ -5,6 +5,11 @@ cd "$(dirname "$0")/.."
 tracker=docs/quality/development-tracker.yaml
 [[ -f "$tracker" ]] || { echo "[tracker] missing $tracker" >&2; exit 1; }
 [[ -f DEVELOPMENT.md ]] || { echo "[tracker] missing root DEVELOPMENT.md" >&2; exit 1; }
+[[ -x script/check_structured_docs ]] || {
+  echo "[tracker] missing executable script/check_structured_docs" >&2
+  exit 1
+}
+./script/check_structured_docs tracker
 
 rg -q '^feedback_policy:\s*$' "$tracker" || {
   echo "[tracker] missing feedback_policy" >&2

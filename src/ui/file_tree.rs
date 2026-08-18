@@ -1219,6 +1219,7 @@ impl AgenttyApp {
         let query = self.file_tree_query(cx);
         let host = self.active_host(cx);
         let host_id = self.spawn_host(cx);
+        let allow_gui_reveal = crate::ui::right_panel::gui_reveal_allowed(host_id.is_local());
         if let Some(host) = host.clone() {
             self.file_tree_sync_watch(host, cx);
         }
@@ -1245,7 +1246,7 @@ impl AgenttyApp {
             }))
             .children(
                 rows.iter()
-                    .flat_map(|row| self.render_tree_row(row, window, cx)),
+                    .flat_map(|row| self.render_tree_row(row, allow_gui_reveal, window, cx)),
             );
         crate::ui::scrollbar::with_vertical_scrollbar(
             "right-panel-tree-scrollbar",
@@ -1257,6 +1258,7 @@ impl AgenttyApp {
     fn render_tree_row(
         &self,
         row: &TreeRow,
+        allow_gui_reveal: bool,
         _window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Vec<AnyElement> {
@@ -1362,6 +1364,7 @@ impl AgenttyApp {
                         &path,
                         is_dir,
                         is_root,
+                        allow_gui_reveal,
                         show_hidden,
                         danger,
                         &app,
@@ -1399,6 +1402,7 @@ impl AgenttyApp {
         path: &Path,
         is_dir: bool,
         is_root: bool,
+        allow_gui_reveal: bool,
         show_hidden: bool,
         danger: gpui::Hsla,
         app: &gpui::WeakEntity<Self>,
@@ -1500,19 +1504,16 @@ impl AgenttyApp {
             );
         }
 
-        menu = menu
-            .separator()
-            .item(
-                PopupMenuItem::new(crate::core::i18n::current(cx, "menu.copy_path")).on_click({
-                    let p = p.clone();
-                    move |_, _window, cx| {
-                        cx.write_to_clipboard(gpui::ClipboardItem::new_string(
-                            p.display().to_string(),
-                        ));
-                    }
-                }),
-            )
-            .item(
+        menu = menu.separator().item(
+            PopupMenuItem::new(crate::core::i18n::current(cx, "menu.copy_path")).on_click({
+                let p = p.clone();
+                move |_, _window, cx| {
+                    cx.write_to_clipboard(gpui::ClipboardItem::new_string(p.display().to_string()));
+                }
+            }),
+        );
+        if allow_gui_reveal {
+            menu = menu.item(
                 PopupMenuItem::new(crate::ui::right_panel::reveal_label()).on_click({
                     let p = p.clone();
                     move |_, _window, cx| {
@@ -1520,6 +1521,7 @@ impl AgenttyApp {
                     }
                 }),
             );
+        }
 
         menu = menu
             .separator()
@@ -1619,6 +1621,23 @@ fn event_can_change_a_row(path: &Path, show_hidden: bool) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn remote_file_tree_hides_gui_reveal_action() {
+        let source = include_str!("file_tree.rs");
+        let menu = source
+            .split("fn tree_row_context_menu(")
+            .nth(1)
+            .expect("file-tree context menu remains a production function");
+        assert!(
+            menu.contains("allow_gui_reveal"),
+            "file-tree reveal must carry the active Host authority guard"
+        );
+        assert!(
+            menu.contains("cx.reveal_path(&p)"),
+            "local file-tree reveal remains available"
+        );
+    }
 
     fn entry(name: &str, is_dir: bool) -> TreeEntry {
         TreeEntry {

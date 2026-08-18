@@ -27,6 +27,8 @@ STAGE="dist/${NAME}"
 # Delete this format's old stage and archive first. The sibling AppImage belongs
 # to the next packaging step and must survive.
 rm -rf "$STAGE" "dist/${NAME}.tar.gz"
+bash script/check_bundled_remote_helpers \
+  "target/${TARGET}/release/agentty-server" bundled-server
 mkdir -p "$STAGE"
 
 cp "target/${TARGET}/release/agentty-app" "$STAGE/agentty-app"

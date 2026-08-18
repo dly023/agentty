@@ -580,7 +580,7 @@ struct NativeSshBackend {
 
 pub struct DaemonPane {
     pub id: u64,
-    owner: Option<String>,
+    owner: Mutex<Option<String>>,
     backend: PaneBackend,
     /// The input side (keyboard input / pasted text): the PTY writer, or the
     /// native-SSH channel writer. Behind a `Mutex` because writes can arrive from
@@ -720,7 +720,7 @@ impl DaemonPane {
 
         let pane = Arc::new(Self {
             id,
-            owner,
+            owner: Mutex::new(owner),
             backend: PaneBackend::Pty(PtyBackend {
                 master: master.clone(),
                 child: child.clone(),
@@ -848,7 +848,7 @@ impl DaemonPane {
 
         let pane = Arc::new(Self {
             id,
-            owner: None,
+            owner: Mutex::new(None),
             backend: PaneBackend::NativeSsh(NativeSshBackend {
                 handle: bridge.handle,
                 connection: connection.clone(),
@@ -1113,14 +1113,45 @@ impl DaemonPane {
                                     if cwd.is_some() {
                                         p.cwd = cwd;
                                     }
-                                    let container_id = p
-                                        .agent
+                                    let previous = p.agent.take();
+                                    let container_id = previous
                                         .as_ref()
                                         .and_then(|facts| facts.container_id.clone());
-                                    p.agent = agent.map(|mut facts| {
-                                        facts.container_id = container_id;
-                                        facts
-                                    });
+                                    let provider_title = previous
+                                        .as_ref()
+                                        .and_then(|facts| facts.provider_title.clone());
+                                    let first_user_title = previous
+                                        .as_ref()
+                                        .and_then(|facts| facts.first_user_title.clone());
+                                    p.agent = match agent {
+                                        Some(mut facts) => {
+                                            facts.container_id = container_id;
+                                            // Runtime probing cannot observe the
+                                            // client's typed title evidence. Keep
+                                            // both persisted slots while replacing
+                                            // the rest of the live facts.
+                                            if facts.provider_title.is_none() {
+                                                facts.provider_title = provider_title;
+                                            }
+                                            if facts.first_user_title.is_none() {
+                                                facts.first_user_title = first_user_title;
+                                            }
+                                            Some(facts)
+                                        }
+                                        None if provider_title.is_some() || first_user_title.is_some() => {
+                                            // A process-exit observation normally
+                                            // clears the runtime facts. Retain the
+                                            // typed title-bearing record so a
+                                            // later remote hydrate can still offer
+                                            // the correct resume identity.
+                                            previous.map(|mut facts| {
+                                                facts.provider_title = provider_title;
+                                                facts.first_user_title = first_user_title;
+                                                facts
+                                            })
+                                        }
+                                        None => None,
+                                    };
                                     if alive {
                                         p.live = true;
                                     }
@@ -1228,8 +1259,12 @@ impl DaemonPane {
             cwd: cwd.or_else(|| self.foreground_cwd()),
             title: self.foreground_title(),
             alive,
-            owner: self.owner.clone(),
+            owner: self.owner.lock().unwrap().clone(),
         }
+    }
+
+    pub fn set_owner(&self, owner: String) {
+        *self.owner.lock().unwrap() = Some(owner);
     }
 
     pub(crate) fn remote_context(&self) -> Option<RemoteContext> {
@@ -1589,6 +1624,11 @@ fn observed_facts(st: &PaneState) -> (Option<String>, Option<crate::core::machin
             .and_then(|s| s.launch_argv.clone())
             .or_else(|| st.agent_argv.clone()),
         status: st.agent_session.as_ref().map(|s| s.status),
+        // Provider/legacy title evidence is persisted in the machine record,
+        // not observed from the PTY.  The reader callback merges it from the
+        // previous facts snapshot whenever runtime facts are replaced.
+        provider_title: None,
+        first_user_title: None,
     });
     (cwd, agent)
 }
@@ -1611,6 +1651,8 @@ fn agent_facts_changed(
                 || a.container_id != b.container_id
                 || a.session_id != b.session_id
                 || a.launch_argv != b.launch_argv
+                || a.provider_title != b.provider_title
+                || a.first_user_title != b.first_user_title
         }
         _ => true,
     }
@@ -2971,6 +3013,8 @@ mod tests {
                         session_id: Some("sess-1".to_string()),
                         launch_argv: Some(vec!["claude".to_string()]),
                         status: None,
+                        provider_title: None,
+                        first_user_title: None,
                     }),
                 },
                 None,
@@ -3019,6 +3063,78 @@ mod tests {
             "an agent that left a pane still in use is a fact, and clears"
         );
 
+        withdraw_observations();
+    }
+
+    #[test]
+    fn a_pane_killed_with_its_agent_keeps_provider_title_facts() {
+        use crate::core::cli_agent::{AgentSessionState, CLIAgent};
+        use crate::core::machine::{
+            AgentFacts, MACHINE_FILE, MachineStore, OBSERVE_SLOT, PaneSeed, publish_observations,
+            withdraw_observations,
+        };
+
+        const PANE: u64 = 78;
+        let _slot = OBSERVE_SLOT.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = tempfile::TempDir::new().unwrap();
+        let store = MachineStore::open(dir.path().join(MACHINE_FILE));
+        let ws = store.workspace_create(None, None, None).unwrap();
+        store
+            .tab_create(
+                ws.id,
+                None,
+                PaneSeed {
+                    pane: PANE,
+                    cwd: Some("/work/api".to_string()),
+                    ssh_spec: None,
+                    agent: Some(AgentFacts {
+                        agent: CLIAgent::Codex,
+                        container_id: Some("container-provider".into()),
+                        session_id: Some("session-provider".into()),
+                        launch_argv: Some(vec!["codex".into()]),
+                        status: None,
+                        provider_title: Some("Historical rollout".into()),
+                        first_user_title: None,
+                    }),
+                },
+                None,
+                None,
+            )
+            .unwrap();
+        publish_observations(&store);
+
+        let state = test_state(true);
+        let mut state = state;
+        state.id = PANE;
+        state.agent = Some(CLIAgent::Codex);
+        state.agent_session = Some(AgentSessionState {
+            session_id: Some("session-provider".into()),
+            ..Default::default()
+        });
+        DaemonPane::spawn_reader(
+            Arc::new(Mutex::new(state)),
+            Arc::new(AtomicBool::new(false)),
+            Arc::new(OutputGate::new()),
+            Box::new(std::io::Cursor::new(b"\x1b]133;D;0\x07".to_vec())),
+            null_writer(),
+            || false,
+            ForegroundProbes {
+                remote: Box::new(|| None),
+                agent: Box::new(|| Some(None)),
+                cwd: Box::new(|| None),
+            },
+            Arc::new(DeathReporter::new(|| {})),
+        )
+        .join()
+        .unwrap();
+
+        let kept = store
+            .pane(PANE)
+            .expect("the record outlives the pane")
+            .agent
+            .expect("typed provider evidence keeps the identity carrier");
+        assert_eq!(kept.provider_title.as_deref(), Some("Historical rollout"));
+        assert_eq!(kept.session_id.as_deref(), Some("session-provider"));
         withdraw_observations();
     }
 

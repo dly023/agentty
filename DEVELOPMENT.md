@@ -8,6 +8,7 @@ Agentty is in an early architecture phase. Correctness and conceptual clarity ta
 - Prefer replacing a confused model with one clear canonical model while the project is young.
 - Delete superseded paths, migration-only wrappers, duplicate state, and dead compatibility layers once the new path is proven.
 - Do not add a second source of truth as a temporary shortcut.
+- For a managed remote Environment, the target Host/daemon is the sole authority for target-owned state (machine trees, pane facts and titles, provider stores, session user state, hooks, and remote files). Local GUI files and mirrors may contain only explicitly named client state, cache, or pending intent. Hydration, reconnect, refresh, and source failure must never promote that local data into remote facts or use it as a fake remote fallback. Any local-to-remote write goes through the one canonical HostOps/ControlRequest path with identity and ownership preconditions; unknown, stale, or rejected results fail closed.
 - Compatibility is required for user data and external protocols only when a spec explicitly says so; internal Rust APIs are not stable yet.
 - Every intentional temporary compromise needs an owner, removal condition, and tracker item. Untracked TODO debt is forbidden.
 
@@ -21,6 +22,7 @@ Agentty is in an early architecture phase. Correctness and conceptual clarity ta
 - The top-right Environment Indicator always shows the window authority and opens or focuses other Environment windows.
 - Running `ssh` inside a terminal is an OpenSSH child process and does not change Agentty authority; choosing SSH in the indicator uses managed russh in a dedicated window.
 - Agent sessions, Composer, Activity Bar, filesystem operations, command completion, and process launch derive authority from the Environment window, never from incidental application focus.
+- Remote authority boundary: a remote machine's persisted tree, provider evidence, session aliases/pins/order, hooks, and target-side files remain remote-owned. A local projection is never an implicit migration source during hydrate/reconnect; missing remote evidence stays missing until an explicit typed event or identity-scoped seed is accepted by the remote authority.
 
 ## 3. Required workflow
 

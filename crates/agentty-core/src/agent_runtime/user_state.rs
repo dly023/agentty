@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -8,6 +8,7 @@ use crate::core::environment::EnvironmentId;
 use crate::host::Host;
 
 use super::navigator::SessionIdentity;
+use super::stores::AgentStoreRoots;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SessionUserStateStore {
@@ -19,10 +20,18 @@ pub struct SessionUserStateStore {
 }
 
 impl SessionUserStateStore {
+    /// Resolve the target-owned alias/pin/order file from the same immutable
+    /// roots snapshot used by discovery and hooks.
+    pub fn path_from_roots(host: &dyn Host, roots: &AgentStoreRoots) -> PathBuf {
+        host.join(&roots.agentty_config_dir, "session-aliases.json")
+    }
+
+    /// Legacy home-based wrapper retained for old callers and persisted
+    /// clients. New Environment-scoped callers must pass the target snapshot
+    /// through [`Self::path_from_roots`].
     pub fn path(host: &dyn Host, home: &Path) -> std::path::PathBuf {
-        let config = host.join(home, ".config");
-        let agentty = host.join(&config, "agentty");
-        host.join(&agentty, "session-aliases.json")
+        let roots = AgentStoreRoots::for_home(home.to_path_buf());
+        Self::path_from_roots(host, &roots)
     }
 
     pub fn alias<'a>(
@@ -320,6 +329,17 @@ mod tests {
         assert_eq!(
             SessionUserStateStore::path(&*host, Path::new("/remote/home")),
             Path::new("/remote/home/.config/agentty/session-aliases.json")
+        );
+    }
+
+    #[test]
+    fn session_alias_store_path_uses_published_agentty_config_root() {
+        let host = LocalHost::new();
+        let mut roots = AgentStoreRoots::for_home(PathBuf::from("/remote/home"));
+        roots.agentty_config_dir = PathBuf::from("/srv/agentty-config");
+        assert_eq!(
+            SessionUserStateStore::path_from_roots(&*host, &roots),
+            Path::new("/srv/agentty-config/session-aliases.json")
         );
     }
 

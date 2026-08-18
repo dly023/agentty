@@ -122,11 +122,24 @@ impl WindowRegistry {
         environment: &EnvironmentId,
     ) -> Option<AnyWindowHandle> {
         Self::sweep(cx);
-        cx.global::<Self>()
-            .windows
-            .iter()
-            .find(|w| &w.environment == environment)
-            .map(|w| w.handle)
+        let preferred = WorkspaceStore::all(cx)
+            .latest_environment(environment)
+            .map(|window| window.workspace);
+        let registry = cx.global::<Self>();
+        preferred
+            .and_then(|workspace| {
+                registry
+                    .windows
+                    .iter()
+                    .find(|window| window.workspace == workspace)
+            })
+            .or_else(|| {
+                registry
+                    .windows
+                    .iter()
+                    .find(|window| &window.environment == environment)
+            })
+            .map(|window| window.handle)
     }
 
     pub fn most_recent(cx: &mut App) -> Option<WorkspaceId> {
@@ -134,7 +147,7 @@ impl WindowRegistry {
         let active = WorkspaceStore::all(cx)
             .active
             .as_ref()
-            .and_then(|environment| WorkspaceStore::all(cx).get_environment(environment))
+            .and_then(|environment| WorkspaceStore::all(cx).latest_environment(environment))
             .map(|window| window.workspace);
         let registry = cx.global::<Self>();
         active
@@ -237,7 +250,7 @@ fn workspace_for_environment_target(
 ) -> Option<WorkspaceId> {
     let environment = target.map(EnvironmentId::for_remote).unwrap_or_default();
     views
-        .get_environment(&environment)
+        .latest_environment(&environment)
         .map(|view| view.workspace)
 }
 
@@ -251,7 +264,7 @@ pub fn open_or_focus_environment(
         .map(EnvironmentId::for_remote)
         .unwrap_or_default();
     if let Some(handle) = WindowRegistry::window_for_environment(cx, &environment) {
-        let _ = handle.update(cx, |_, window, _| window.activate_window());
+        activate_registered_window(cx, handle);
         return WorkspaceStore::environment_workspace(cx, &environment)
             .or(remote_workspace)
             .unwrap_or_else(WorkspaceId::new);
@@ -275,17 +288,50 @@ pub fn open_or_focus_environment(
 }
 
 pub fn open(cx: &mut App, workspace: Option<WorkspaceId>) {
-    if let Some(id) = workspace
-        && let Some(handle) = WindowRegistry::window_for(cx, id)
-    {
+    let _ = open_with_session(cx, workspace, None);
+}
+
+/// Bring a materialized application window to the foreground through one
+/// canonical primitive. The immediate activation makes the result observable
+/// to callers; the deferred pass protects menu/popup dismissal from restoring
+/// focus to the window that dispatched the action.
+fn activate_registered_window(cx: &mut App, handle: AnyWindowHandle) {
+    cx.activate(true);
+    let _ = handle.update(cx, |_, window, _| window.activate_window());
+    cx.defer(move |cx| {
+        cx.activate(true);
         let _ = handle.update(cx, |_, window, _| window.activate_window());
-        return;
+    });
+}
+
+pub fn open_empty(cx: &mut App, workspace: WorkspaceId) -> Option<gpui::AnyWindowHandle> {
+    open_with_session(
+        cx,
+        Some(workspace),
+        Some(crate::core::session::Session::default()),
+    )
+}
+
+pub fn open_with_session(
+    cx: &mut App,
+    workspace: Option<WorkspaceId>,
+    session: Option<crate::core::session::Session>,
+) -> Option<gpui::AnyWindowHandle> {
+    let workspace = workspace.unwrap_or_else(|| WorkspaceStore::claim(cx, None));
+    if let Some(handle) = WindowRegistry::window_for(cx, workspace) {
+        activate_registered_window(cx, handle);
+        return Some(handle);
     }
 
-    let options = window_options(cx, workspace);
+    let options = window_options(cx, Some(workspace));
     let mut created: Option<gpui::Entity<AgenttyApp>> = None;
+    let app_session = session;
     let opened = cx.open_window(options, |window, cx| {
-        let app = cx.new(|cx| AgenttyApp::for_workspace(workspace, window, cx));
+        let app = if let Some(session) = app_session.clone() {
+            cx.new(|cx| AgenttyApp::with_session(Some(workspace), Some(session), window, cx))
+        } else {
+            cx.new(|cx| AgenttyApp::for_workspace(Some(workspace), window, cx))
+        };
         created = Some(app.clone());
         cx.new(|cx| Root::new(app, window, cx).bg(gpui::transparent_black()))
     });
@@ -294,21 +340,35 @@ pub fn open(cx: &mut App, workspace: Option<WorkspaceId>) {
         Ok(handle) => handle,
         Err(e) => {
             log::error!("failed to open window: {e}");
-            return;
+            return None;
         }
     };
     let Some(app) = created else {
         log::error!("opened a window but its AgenttyApp was never built; not registering");
-        return;
+        return None;
     };
 
     let id = app.read(cx).workspace;
-    WindowRegistry::register(cx, id, handle.into(), app.downgrade());
+    let handle: AnyWindowHandle = handle.into();
+    WindowRegistry::register(cx, id, handle, app.downgrade());
+    activate_registered_window(cx, handle);
     refresh_menu(cx);
+    Some(handle)
 }
 
 pub fn refresh_menu(cx: &mut App) {
     crate::ui::theme::set_menus(cx);
+}
+
+pub fn discard_empty_window(cx: &mut App, workspace: WorkspaceId) {
+    let handle = WindowRegistry::window_for(cx, workspace);
+    WindowRegistry::unregister(cx, workspace);
+    crate::ui::tree_sync::forget(cx, workspace);
+    WorkspaceStore::remove(cx, workspace);
+    if let Some(handle) = handle {
+        let _ = handle.update(cx, |_, window, _| window.remove_window());
+    }
+    refresh_menu(cx);
 }
 
 pub const MENU_SLOTS: usize = 9;
@@ -780,6 +840,170 @@ mod environment_tests {
     }
 
     #[gpui::test]
+    fn environment_menu_first_click_activates_and_reuses_same_window(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        use gpui::{MouseButton, VisualTestContext};
+
+        const TRIGGER: &str = "ENVIRONMENT_MENU_TRIGGER";
+        const TARGET: &str = "ENVIRONMENT_MENU_TARGET_PROFILE_00000000-0000-0000-0000-000000000000";
+
+        fn click(selector: &'static str, visual: &mut VisualTestContext) {
+            let bounds = visual
+                .debug_bounds(selector)
+                .unwrap_or_else(|| panic!("production selector {selector} must be rendered"));
+            let point = gpui::point(
+                bounds.origin.x + bounds.size.width / 2.,
+                bounds.origin.y + bounds.size.height / 2.,
+            );
+            visual.simulate_mouse_move(point, None, gpui::Modifiers::none());
+            visual.simulate_mouse_down(point, MouseButton::Left, gpui::Modifiers::none());
+            visual.simulate_mouse_up(point, MouseButton::Left, gpui::Modifiers::none());
+            visual.run_until_parked();
+        }
+
+        cx.executor().allow_parking();
+        let source = WindowView::default();
+        let source_id = source.id;
+        let target_id = uuid::Uuid::nil();
+        cx.update(|cx| {
+            crate::core::config::pin_test_config_dir();
+            gpui_component::init(cx);
+            let mut config = crate::core::config::Config::default();
+            let mut profile = crate::core::ssh_profile::SshProfile::new("first-click-target");
+            profile.id = target_id;
+            profile.host = "127.0.0.1".into();
+            profile.port = 1;
+            config.ssh_profiles.push(profile);
+            cx.set_global(config);
+            crate::ui::keymap::init(cx);
+            WindowRegistry::init(cx);
+            WorkspaceStore::install_for_test(
+                cx,
+                WindowViews {
+                    views: vec![source.clone()],
+                    active: Some(source_id),
+                },
+            );
+        });
+
+        let source_handle = cx.update(|cx| {
+            open_with_session(
+                cx,
+                Some(source_id),
+                Some(crate::core::session::Session::default()),
+            )
+            .expect("production source window should materialize")
+        });
+        source_handle
+            .update(cx, |_, window, _| window.activate_window())
+            .expect("source window should activate");
+        let mut visual = VisualTestContext::from_window(source_handle, cx);
+        visual.run_until_parked();
+
+        assert_eq!(
+            visual.update(|_, cx| cx.active_window()),
+            Some(source_handle),
+            "the source window is active before selecting another environment"
+        );
+        let before_count = visual.update(|_, cx| WindowRegistry::count(cx));
+
+        click(TRIGGER, &mut visual);
+        assert!(
+            visual.debug_bounds(TARGET).is_some(),
+            "the configured remote profile must be a real production menu row"
+        );
+        click(TARGET, &mut visual);
+
+        let target_environment =
+            EnvironmentId::for_remote(&RemoteTarget::Profile { id: target_id });
+        let target_workspace = visual
+            .update(|_, cx| WorkspaceStore::environment_workspace(cx, &target_environment))
+            .expect("first click must claim a workspace for the target Environment");
+        let first_status = visual.update(|_, cx| {
+            crate::ui::remote_workspace::RemoteLinks::status_of(cx, target_workspace)
+        });
+        // Failed is still a supervised link state; Disconnected is the only
+        // result that proves the host was never materialized into RemoteLinks.
+        assert!(
+            matches!(
+                first_status,
+                Some(crate::ui::remote_workspace::RemoteStatus::Connecting)
+                    | Some(crate::ui::remote_workspace::RemoteStatus::Attached)
+                    | Some(crate::ui::remote_workspace::RemoteStatus::Reconnecting { .. })
+                    | Some(crate::ui::remote_workspace::RemoteStatus::Failed(_))
+            ),
+            "first click must leave the target host under RemoteLinks supervision, got {first_status:?}"
+        );
+        let target_handle = visual.update(|_, cx| {
+            WindowRegistry::window_for_environment(cx, &target_environment)
+                .expect("first click must publish the target window")
+        });
+        assert_ne!(target_handle, source_handle);
+        assert_eq!(
+            visual.update(|_, cx| cx.active_window()),
+            Some(target_handle),
+            "the first menu click must activate the newly registered native handle"
+        );
+        assert!(
+            target_handle
+                .update(&mut visual, |_, window, _| window.is_window_active())
+                .expect("target handle should remain valid")
+        );
+        assert_eq!(
+            visual.update(|_, cx| WorkspaceStore::all(cx).active.clone()),
+            Some(target_environment.clone()),
+            "window activation must focus the target Environment record"
+        );
+        assert_eq!(
+            visual.update(|_, cx| WindowRegistry::count(cx)),
+            before_count + 1,
+            "first click creates exactly one target window"
+        );
+
+        source_handle
+            .update(&mut visual, |_, window, _| window.activate_window())
+            .expect("source window should be re-activatable for the repeat click");
+        visual.run_until_parked();
+        click(TRIGGER, &mut visual);
+        click(TARGET, &mut visual);
+        let target_workspace_again = visual
+            .update(|_, cx| WorkspaceStore::environment_workspace(cx, &target_environment))
+            .expect("repeat click keeps the target workspace claim");
+        assert_eq!(
+            target_workspace_again, target_workspace,
+            "repeat click must not allocate a second workspace for the supervised host"
+        );
+        let target_handle_again = visual.update(|_, cx| {
+            WindowRegistry::window_for_environment(cx, &target_environment)
+                .expect("repeat click keeps the target registered")
+        });
+        assert_eq!(target_handle_again, target_handle);
+        assert_eq!(
+            visual.update(|_, cx| WindowRegistry::count(cx)),
+            before_count + 1,
+            "repeat click must not duplicate the target window"
+        );
+        let second_status = visual.update(|_, cx| {
+            crate::ui::remote_workspace::RemoteLinks::status_of(cx, target_workspace)
+        });
+        assert!(
+            matches!(
+                second_status,
+                Some(crate::ui::remote_workspace::RemoteStatus::Connecting)
+                    | Some(crate::ui::remote_workspace::RemoteStatus::Attached)
+                    | Some(crate::ui::remote_workspace::RemoteStatus::Reconnecting { .. })
+                    | Some(crate::ui::remote_workspace::RemoteStatus::Failed(_))
+            ),
+            "repeat click must keep the same target host supervised, got {second_status:?}"
+        );
+        assert_eq!(
+            visual.update(|_, cx| cx.active_window()),
+            Some(target_handle)
+        );
+    }
+
+    #[gpui::test]
     fn opening_same_environment_focuses_existing_window(cx: &mut gpui::TestAppContext) {
         cx.update(|cx| {
             install_views(cx, WindowViews::default());
@@ -805,6 +1029,41 @@ mod environment_tests {
                 WorkspaceStore::environment_workspace(cx, &environment),
                 Some(first),
                 "the environment resolves to the one window it already owns"
+            );
+        });
+    }
+
+    #[gpui::test]
+    fn peer_window_preserves_environment_and_allocates_distinct_workspace(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        cx.update(|cx| {
+            let remote = WindowView::on_remote(RemoteRef::new(alias("build"), WorkspaceId::new()));
+            let source = remote.id;
+            install_views(
+                cx,
+                WindowViews {
+                    views: vec![remote],
+                    active: None,
+                },
+            );
+            let source_environment = WorkspaceStore::environment_id(cx, source);
+            let source_machine_workspace = WorkspaceStore::remote_ref(cx, source)
+                .expect("remote source")
+                .workspace;
+
+            let peer = WorkspaceStore::claim_peer(cx, source).expect("peer window");
+            let peer_remote = WorkspaceStore::remote_ref(cx, peer).expect("remote peer");
+
+            assert_ne!(peer, source, "application windows need distinct identities");
+            assert_eq!(
+                WorkspaceStore::environment_id(cx, peer),
+                source_environment,
+                "the peer remains in the same Environment"
+            );
+            assert_ne!(
+                peer_remote.workspace, source_machine_workspace,
+                "each peer window owns a distinct machine-tree workspace"
             );
         });
     }
@@ -958,6 +1217,7 @@ mod session_search_registry_tests {
                 },
                 agent: crate::core::cli_agent::CLIAgent::Codex,
                 title: Some("Fix remote discovery".into()),
+                title_candidates: Default::default(),
                 cwd: Some("/repo".into()),
                 updated_at_unix_ms: None,
                 launch_argv: Vec::new(),

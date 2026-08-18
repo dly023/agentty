@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ $# -ne 2 ]]; then
+  echo 'usage: check_bundled_remote_helpers <native-agentty-server> <bundled-server-dir>' >&2
+  exit 2
+fi
+
+reference="$1"
+helper_dir="$2"
+if [[ ! -x "$reference" ]]; then
+  echo "[remote-helper-bundle] native server is missing or not executable: $reference" >&2
+  exit 1
+fi
+
+protocol_line="$($reference --protocol | awk 'NF { line = $0 } END { print line }')"
+control="$(printf '%s\n' "$protocol_line" | sed -nE 's/^\{"control":([0-9]+),"protocol":[0-9]+,"build":"[^"]+"\}$/\1/p')"
+protocol="$(printf '%s\n' "$protocol_line" | sed -nE 's/^\{"control":[0-9]+,"protocol":([0-9]+),"build":"[^"]+"\}$/\1/p')"
+build="$(printf '%s\n' "$protocol_line" | sed -nE 's/^\{"control":[0-9]+,"protocol":[0-9]+,"build":"([^"]+)"\}$/\1/p')"
+if [[ -z "$control" || -z "$protocol" || -z "$build" || "$build" != *+* ]]; then
+  echo "[remote-helper-bundle] native server returned an incomplete source/dialect identity: $protocol_line" >&2
+  exit 1
+fi
+
+dialect_marker="agentty-remote-dialect:c${control}p${protocol}"
+vocabulary=(jcode grok tab_transfer pane_set_provider_title)
+assets=(
+  agentty-server-linux-x86_64-musl
+  agentty-server-linux-aarch64-musl
+)
+
+for word in "${vocabulary[@]}"; do
+  if ! LC_ALL=C grep -aF "$word" "$reference" >/dev/null; then
+    echo "[remote-helper-bundle] native server lacks required wire vocabulary: $word" >&2
+    exit 1
+  fi
+done
+
+for asset in "${assets[@]}"; do
+  helper="$helper_dir/$asset"
+  if [[ ! -f "$helper" ]]; then
+    echo "[remote-helper-bundle] missing required helper: $helper" >&2
+    exit 1
+  fi
+  if ! LC_ALL=C grep -aF "$build" "$helper" >/dev/null; then
+    echo "[remote-helper-bundle] $asset is stale or from another source; expected build $build" >&2
+    exit 1
+  fi
+  if ! LC_ALL=C grep -aF "$dialect_marker" "$helper" >/dev/null; then
+    echo "[remote-helper-bundle] $asset does not carry $dialect_marker" >&2
+    exit 1
+  fi
+  for word in "${vocabulary[@]}"; do
+    if ! LC_ALL=C grep -aF "$word" "$helper" >/dev/null; then
+      echo "[remote-helper-bundle] $asset lacks required wire vocabulary: $word" >&2
+      exit 1
+    fi
+  done
+done
+
+echo "remote helper bundle verified: build=$build dialect=c${control}p${protocol}"

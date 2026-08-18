@@ -79,6 +79,20 @@ pub fn label_for(target: &RemoteTarget, cx: &App) -> String {
         .unwrap_or_else(|| label_for_config(target, cx.global::<Config>()))
 }
 
+/// Return the non-secret endpoint context shown beside an Environment label.
+/// The configured alias/profile name remains the primary label; this detail is
+/// deliberately resolved from the same HostChoice list used by the picker so
+/// the indicator and menu cannot disagree about the target metadata.
+pub fn detail_for_target(target: &RemoteTarget, hosts: &[HostChoice]) -> String {
+    hosts
+        .iter()
+        .find(|host| host.target == *target)
+        .map(|host| host.detail.trim())
+        .filter(|detail| !detail.is_empty())
+        .map(str::to_owned)
+        .unwrap_or_else(|| target.to_string())
+}
+
 pub fn label_for_config(target: &RemoteTarget, config: &Config) -> String {
     match target {
         RemoteTarget::Profile { id } => config
@@ -303,7 +317,7 @@ pub fn connect_blocking(
         .map_err(|e| format!("connected to {label}, but its workspace list failed: {e}"))?;
     let home = host.home();
     let store_roots = host.store_roots();
-    refresh_agent_hooks_once(&host, &home);
+    refresh_agent_hooks_once(&host, store_roots.clone());
     Ok(Connected {
         host,
         home,
@@ -314,15 +328,21 @@ pub fn connect_blocking(
 
 static HOOKS_REFRESHED: Mutex<Vec<HostId>> = Mutex::new(Vec::new());
 
-fn refresh_agent_hooks_once(host: &Arc<RemoteHost>, home: &std::path::Path) {
+fn refresh_agent_hooks_once(
+    host: &Arc<RemoteHost>,
+    store_roots: Option<agentty_core::agent_runtime::AgentStoreRoots>,
+) {
+    let Some(store_roots) = store_roots else {
+        return;
+    };
     let id = host.id();
     match HOOKS_REFRESHED.lock() {
         Ok(mut seen) if !seen.contains(&id) => seen.push(id),
         _ => return,
     }
-    let (host, home) = (Arc::clone(host), home.to_path_buf());
+    let (host, store_roots) = (Arc::clone(host), store_roots.clone());
     std::thread::spawn(move || {
-        let refreshed = crate::core::agent_hooks::refresh_remote_hooks(&*host, home);
+        let refreshed = crate::core::agent_hooks::refresh_remote_hooks(&*host, store_roots);
         if refreshed > 0 {
             log::info!("refreshed {refreshed} stale agent hook integration(s) on {id:?}");
         }
@@ -440,7 +460,9 @@ impl HostLinks {
         table.hosts.insert(id, host);
         table.homes.insert(id, home);
         if let Some(store_roots) = store_roots {
-            table.store_roots.insert(id, store_roots);
+            table
+                .store_roots
+                .insert(id, store_roots.with_derived_defaults());
         } else {
             table.store_roots.remove(&id);
         }

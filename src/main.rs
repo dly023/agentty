@@ -244,8 +244,14 @@ fn main() {
             keymap::init(cx);
             crate::ui::local_link::LocalLink::install(cx);
 
-            let reopen = crate::core::session::WorkspaceStore::restore_one(cx);
-            crate::ui::windows::open(cx, reopen);
+            let reopen = crate::core::session::WorkspaceStore::restore_all(cx);
+            if reopen.is_empty() {
+                crate::ui::windows::open(cx, None);
+            } else {
+                for workspace in reopen {
+                    crate::ui::windows::open(cx, Some(workspace));
+                }
+            }
         });
 }
 

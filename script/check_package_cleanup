@@ -13,6 +13,21 @@ done
 
 rg -q '^## 打包产物清理纪律$' AGENTS.md
 rg -q 'rm -rf "\$APP" "dist/dmg-stage" "dist/notarize.zip" "dist/agentty-\$\{VERSION\}-macos-\$\{ARCH\}\.dmg"' "$macos"
+rg -q 'SERVER_PROTOCOL=.*target/\$\{TARGET\}/release/agentty-server.*--protocol' "$macos" || {
+  echo '[package-cleanup] macOS bundle must read identity from the staged native server' >&2
+  exit 1
+}
+rg -q 'BUNDLE_VERSION=.*SERVER_PROTOCOL' "$macos" || {
+  echo '[package-cleanup] CFBundleVersion must derive from the staged server protocol identity' >&2
+  exit 1
+}
+if rg -n 'BUILD_SHA=.*git rev-parse --short HEAD' "$macos"; then
+  echo '[package-cleanup] CFBundleVersion must use the exact staged server build, not Git revision alone' >&2
+  exit 1
+fi
+rg -q '<key>CFBundleVersion</key><string>\$\{BUNDLE_VERSION\}</string>' "$macos"
+rg -q '<key>CFBundleShortVersionString</key><string>\$\{VERSION\}</string>' "$macos"
+rg -q 'rm -rf "\$APP"$' "$macos"
 rg -q 'rm -rf "\$STAGE" "dist/\$\{NAME\}\.tar\.gz"' "$linux"
 rg -q 'rm -rf "\$APPDIR" "dist/\$\{NAME\}\.AppImage"' "$appimage"
 rg -q 'Remove-Item -Recurse -Force \$Stage' "$windows"

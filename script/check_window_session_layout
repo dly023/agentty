@@ -1,0 +1,67 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+for contract in \
+  WINDOW-SESSION-MULTI-01 \
+  WINDOW-SESSION-DROP-SPLIT-RIGHT-02 \
+  WINDOW-SESSION-SPLIT-MENU-03 \
+  WINDOW-SESSION-DETACH-04 \
+  WINDOW-SESSION-PERSISTENCE-05 \
+  WINDOW-SESSION-RECOVERY-06 \
+  WINDOW-SESSION-STRIP-ACTION-07
+do
+  rg -Fq "id: $contract" docs/specs/WINDOW_SESSION_LAYOUT_SPEC.yaml
+  rg -Fq "spec: $contract" docs/quality/traceability.yaml
+done
+
+rg -Fq 'TabTransfer {' crates/agentty-core/src/daemon/control.rs
+rg -Fq 'pub fn tab_transfer(' crates/agentty-core/src/core/machine.rs
+rg -Fq 'ControlRequest::TabTransfer {' crates/agentty-core/src/host/server.rs
+rg -Fq 'transfer_tab_to_workspace' src/ui/tree_sync.rs
+rg -Fq 'claim_peer' src/core/session.rs
+
+app_detach=$(sed -n '/pub(crate) fn move_tab_to_new_window(/,/fn close_pane(/p' src/ui/app.rs)
+[[ "$app_detach" == *'transfer_tab_to_workspace'* ]] || {
+  echo '[window-session-layout] detach must use the canonical atomic tree transfer' >&2
+  exit 1
+}
+[[ "$app_detach" != *'tabs.remove'* ]] || {
+  echo '[window-session-layout] detach may not remove the source tab before transfer commit' >&2
+  exit 1
+}
+[[ "$app_detach" != *'open_with_session'* ]] || {
+  echo '[window-session-layout] detach may not serialize a Session and respawn replacement panes' >&2
+  exit 1
+}
+
+app_drop=$(sed -n '/fn apply_tab_strip_split_right(/,/pub(crate) fn move_tab_to_new_window(/p' src/ui/app.rs)
+[[ "$app_drop" == *'split_leaf('*'self.tabs.remove(source)'* ]] || {
+  echo '[window-session-layout] tab drop must commit the canonical split before removing the source tab' >&2
+  exit 1
+}
+[[ "$app_drop" != *'Pane::Split'* ]] || {
+  echo '[window-session-layout] tab drop may not construct a parallel Pane tree' >&2
+  exit 1
+}
+
+for test_name in \
+  peer_window_preserves_environment_and_allocates_distinct_workspace \
+  tab_transfer_moves_tree_without_orphaning_panes \
+  tab_transfer_failure_preserves_source_tree \
+  tab_transfer_rebinds_owner_before_layout_notification \
+  tab_transfer_growth_advances_control_dialect \
+  move_to_new_window_routes_through_atomic_tree_transfer \
+  window_restore_keeps_all_open_peer_windows \
+  missing_window_record_recovers_unassigned_machine_workspace_without_deletion \
+  tab_strip_activation_is_click_only \
+  inactive_tab_pointer_drag_cancels_activation_and_click_release_activates \
+  tab_strip_icon_drag_inactive_source_preserves_target_tree
+do
+  rg -Fq "fn $test_name" crates src
+done
+
+rg -Fq './script/check_window_session_layout' script/presubmit
+rg -Fq 'WorkspaceStore::restore_all(cx)' src/main.rs
+rg -Fq 'recover_unassigned_machine_workspaces' src/ui/machine_mirror.rs
+echo 'window session layout checks passed'

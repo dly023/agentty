@@ -2,32 +2,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-command -v rg >/dev/null || { echo "[spec-matrix] ripgrep (rg) is required" >&2; exit 1; }
-shopt -s nullglob
-specs=(docs/specs/*.yaml)
-[[ ${#specs[@]} -gt 0 ]] || { echo "[spec-matrix] no specs found" >&2; exit 1; }
-[[ -f docs/quality/traceability.yaml ]] || { echo "[spec-matrix] missing traceability matrix" >&2; exit 1; }
-
-mapfile_compat() { while IFS= read -r line; do printf '%s\n' "$line"; done; }
-spec_ids=$(rg -No '^\s*- id: [A-Z0-9][A-Z0-9-]+$' docs/specs | sed 's/.*- id: //' | sort -u)
-[[ -n "$spec_ids" ]] || { echo "[spec-matrix] no spec IDs found" >&2; exit 1; }
-
-failed=0
-while IFS= read -r id; do
-  if ! rg -q "spec: ${id}$" docs/quality/traceability.yaml; then
-    echo "[spec-matrix] contract missing from traceability matrix: $id" >&2
-    failed=1
-  fi
-done <<< "$spec_ids"
-
-matrix_ids=$(rg -No '^\s*spec: [A-Z0-9][A-Z0-9-]+$' docs/quality/traceability.yaml | sed 's/.*spec: //' | sort -u)
-while IFS= read -r id; do
-  [[ -z "$id" ]] && continue
-  if ! grep -Fxq "$id" <<< "$spec_ids"; then
-    echo "[spec-matrix] matrix references unknown contract: $id" >&2
-    failed=1
-  fi
-done <<< "$matrix_ids"
-
-[[ $failed -eq 0 ]] || exit 1
+[[ -x script/check_structured_docs ]] || {
+  echo "[spec-matrix] missing executable script/check_structured_docs" >&2
+  exit 1
+}
+./script/check_structured_docs spec-matrix
 echo "spec matrix checks passed"

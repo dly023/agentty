@@ -30,6 +30,8 @@ NAME="agentty-${VERSION}-linux-${ARCH}"
 # inputs. The tarball step runs first, so cleanup must not wipe dist/ wholesale.
 APPDIR="dist/AppDir"
 rm -rf "$APPDIR" "dist/${NAME}.AppImage"
+bash script/check_bundled_remote_helpers \
+  "target/${TARGET}/release/agentty-server" bundled-server
 
 # AppImage tools need FUSE to self-mount; CI runners usually lack it, so extract
 # and run instead. Harmless on machines that do have FUSE.

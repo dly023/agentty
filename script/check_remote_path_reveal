@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+
+spec=docs/specs/REMOTE_HELPER_SPEC.yaml
+matrix=docs/quality/traceability.yaml
+right=src/ui/right_panel.rs
+tree=src/ui/file_tree.rs
+
+for path in "$spec" "$matrix" "$right" "$tree"; do
+  [[ -f "$path" ]] || { echo "[remote-path-reveal] missing $path" >&2; exit 1; }
+done
+rg -Fq 'id: REMOTE-PATH-REVEAL-18' "$spec"
+rg -Fq 'spec: REMOTE-PATH-REVEAL-18' "$matrix"
+rg -Fq 'id: REMOTE-PATH-REVEAL-116' "$matrix"
+
+for test_name in remote_info_hides_gui_reveal_action remote_file_tree_hides_gui_reveal_action; do
+  rg -Fq "fn $test_name" "$right" "$tree" || {
+    echo "[remote-path-reveal] missing regression test $test_name" >&2
+    exit 1
+  }
+done
+
+info=$(sed -n '/fn render_panel_info(/,/fn cwd_actions(/p' "$right")
+grep -Fq 'paths_are_local()' <<<"$info" || {
+  echo '[remote-path-reveal] Info panel must consult TerminalView::paths_are_local' >&2
+  exit 1
+}
+actions=$(sed -n '/fn cwd_actions(/,/pub(crate) fn panel_subtitle/p' "$right")
+grep -Fq 'gui_reveal_allowed(local_paths)' <<<"$actions" || {
+  echo '[remote-path-reveal] Info reveal button is not local-authority guarded' >&2
+  exit 1
+}
+grep -Fq 'cx.reveal_path(&cwd)' <<<"$actions" || {
+  echo '[remote-path-reveal] local Info reveal action disappeared' >&2
+  exit 1
+}
+grep -Fq 'copy_path' <<<"$actions" || {
+  echo '[remote-path-reveal] Info copy-path action must remain available' >&2
+  exit 1
+}
+
+rows=$(sed -n '/pub(crate) fn render_file_tree_rows(/,/fn render_tree_row(/p' "$tree")
+grep -Fq 'gui_reveal_allowed(host_id.is_local())' <<<"$rows" || {
+  echo '[remote-path-reveal] file-tree rows must derive reveal from active Host authority' >&2
+  exit 1
+}
+menu=$(sed -n '/fn tree_row_context_menu(/,/fn dotfiles_menu_item(/p' "$tree")
+grep -Fq 'allow_gui_reveal' <<<"$menu" || {
+  echo '[remote-path-reveal] file-tree context menu lacks the local reveal guard' >&2
+  exit 1
+}
+grep -Fq 'cx.reveal_path(&p)' <<<"$menu" || {
+  echo '[remote-path-reveal] local file-tree reveal action disappeared' >&2
+  exit 1
+}
+grep -Fq 'copy_path' <<<"$menu" || {
+  echo '[remote-path-reveal] file-tree copy-path action must remain available' >&2
+  exit 1
+}
+
+echo 'remote path reveal checks passed'

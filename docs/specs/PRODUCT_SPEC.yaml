@@ -20,4 +20,4 @@ contracts:
   - id: PRODUCT-QUALITY-GATE-03
     rule: Architecture changes follow SPEC -> MATRIX -> CHECK -> TEST -> IMPLEMENTATION -> VERIFY.
   - id: PRODUCT-BUILD-STAMP-04
-    rule: Every binary carries SemVer build metadata (version+commit) so the pinned version policy never makes distinct builds indistinguishable; a stale local daemon is detected at handshake and surfaced with an explicit, user-initiated restart — never an implicit one.
+    rule: Every binary carries SemVer build metadata composed from version, source revision, and a deterministic fingerprint of the exact remote-server source closure (agentty-core plus agentty-server). The macOS bundle CFBundleVersion is derived from the staged native server's exact emitted build stamp, not from Git revision alone, while CFBundleShortVersionString remains the pinned user-facing SemVer. Clean or dirty builds that share one Git HEAD but link different server source must remain distinguishable in both the wire handshake and installed bundle metadata. A stale local daemon is detected at handshake and surfaced with an explicit, user-initiated restart — never an implicit one.

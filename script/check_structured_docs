@@ -1,0 +1,349 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "date"
+require "pathname"
+require "psych"
+require "set"
+
+scope = ARGV.fetch(0, "all")
+unless %w[all spec-matrix tracker].include?(scope)
+  warn "usage: script/check_structured_docs [all|spec-matrix|tracker]"
+  exit 2
+end
+
+root = File.expand_path("..", __dir__)
+spec_paths = Dir[File.join(root, "docs/specs/*.yaml")].sort
+matrix_path = File.join(root, "docs/quality/traceability.yaml")
+tracker_path = File.join(root, "docs/quality/development-tracker.yaml")
+paths = spec_paths + [matrix_path]
+paths << tracker_path if scope == "all" || scope == "tracker"
+
+errors = []
+documents = {}
+
+relative_path = lambda do |path|
+  Pathname.new(path).relative_path_from(Pathname.new(root)).to_s
+end
+
+walk_mappings = lambda do |node, path, visit|
+  next if node.nil? || !node.respond_to?(:children) || node.children.nil?
+
+  if node.is_a?(Psych::Nodes::Mapping)
+    seen = {}
+    node.children.each_slice(2) do |key, value|
+      if key.is_a?(Psych::Nodes::Scalar)
+        if seen.key?(key.value)
+          errors << format(
+            "%s:%d: duplicate mapping key %p (first at line %d)",
+            relative_path.call(path),
+            key.start_line + 1,
+            key.value,
+            seen.fetch(key.value),
+          )
+        else
+          seen[key.value] = key.start_line + 1
+        end
+      end
+      visit.call(value, path, visit)
+    end
+  else
+    node.children.each { |child| visit.call(child, path, visit) }
+  end
+end
+
+if spec_paths.empty?
+  errors << "docs/specs: no YAML specs found"
+end
+
+paths.each do |path|
+  unless File.file?(path)
+    errors << "#{relative_path.call(path)}: missing structured document"
+    next
+  end
+
+  begin
+    contents = File.read(path, encoding: "UTF-8")
+    syntax_stream = Psych.parse_stream(contents, filename: path)
+    if syntax_stream.children.length != 1
+      qualifier = syntax_stream.children.empty? ? "no YAML document" : "multiple YAML documents"
+      errors << "#{relative_path.call(path)}: #{qualifier}; exactly one is required"
+      next
+    end
+    walk_mappings.call(syntax_stream, path, walk_mappings)
+    documents[path] = Psych.safe_load(
+      contents,
+      permitted_classes: [Date],
+      permitted_symbols: [],
+      aliases: false,
+      filename: path,
+    )
+  rescue Psych::SyntaxError => error
+    errors << format(
+      "%s:%d:%d: YAML syntax error: %s",
+      relative_path.call(path),
+      error.line,
+      error.column,
+      error.problem,
+    )
+  rescue Psych::Exception => error
+    errors << "#{relative_path.call(path)}: YAML load error: #{error.message}"
+  end
+end
+
+unless errors.empty?
+  errors.each { |error| warn "[structured-docs] #{error}" }
+  exit 1
+end
+
+line_for_id = lambda do |path, id|
+  pattern = /^\s*- id:\s*#{Regexp.escape(id.to_s)}\s*$/
+  index = File.readlines(path, encoding: "UTF-8").index { |line| pattern.match?(line) }
+  index ? index + 1 : 1
+end
+
+contract_locations = {}
+spec_paths.each do |path|
+  document = documents.fetch(path)
+  contract_keys = if document.is_a?(Hash)
+                    %w[contracts requirements].select { |key| document.key?(key) }
+                  else
+                    []
+                  end
+  unless contract_keys.length == 1 && document.fetch(contract_keys.first).is_a?(Array)
+    errors << "#{relative_path.call(path)}: root must contain exactly one contracts or requirements sequence"
+    next
+  end
+
+  document.fetch(contract_keys.first).each do |contract|
+    id = contract.is_a?(Hash) ? contract["id"] : nil
+    unless id.is_a?(String) && id.match?(/\A[A-Z0-9][A-Z0-9-]+\z/)
+      errors << "#{relative_path.call(path)}: spec contract has an invalid id"
+      next
+    end
+    line = line_for_id.call(path, id)
+    if contract_locations.key?(id)
+      previous_path, previous_line = contract_locations.fetch(id)
+      errors << format(
+        "%s:%d: duplicate spec contract id %s (first at %s:%d)",
+        relative_path.call(path),
+        line,
+        id,
+        relative_path.call(previous_path),
+        previous_line,
+      )
+    else
+      contract_locations[id] = [path, line]
+    end
+  end
+end
+
+matrix = documents.fetch(matrix_path)
+unless matrix.is_a?(Hash) && matrix["entries"].is_a?(Array)
+  errors << "#{relative_path.call(matrix_path)}: root entries must be a sequence"
+  matrix = { "entries" => [] }
+end
+
+matrix_locations = {}
+matrix_specs = Set.new
+matrix.fetch("entries").each do |entry|
+  id = entry.is_a?(Hash) ? entry["id"] : nil
+  spec = entry.is_a?(Hash) ? entry["spec"] : nil
+  unless id.is_a?(String) && id.match?(/\A[A-Z0-9][A-Z0-9-]+\z/)
+    errors << "#{relative_path.call(matrix_path)}: traceability entry has an invalid id"
+    next
+  end
+  line = line_for_id.call(matrix_path, id)
+  if matrix_locations.key?(id)
+    previous_line = matrix_locations.fetch(id)
+    errors << format(
+      "%s:%d: duplicate traceability entry id %s (first at line %d)",
+      relative_path.call(matrix_path),
+      line,
+      id,
+      previous_line,
+    )
+  else
+    matrix_locations[id] = line
+  end
+  unless spec.is_a?(String) && contract_locations.key?(spec)
+    errors << format(
+      "%s:%d: traceability entry %s references unknown spec contract %s",
+      relative_path.call(matrix_path),
+      line,
+      id,
+      spec.inspect,
+    )
+    next
+  end
+  matrix_specs << spec
+end
+
+contract_locations.each do |id, (path, line)|
+  next if matrix_specs.include?(id)
+
+  errors << format(
+    "%s:%d: spec contract %s is missing from the traceability matrix",
+    relative_path.call(path),
+    line,
+    id,
+  )
+end
+
+if scope == "all" || scope == "tracker"
+  tracker = documents.fetch(tracker_path)
+  unless tracker.is_a?(Hash) && tracker["feedback"].is_a?(Array) && tracker["milestones"].is_a?(Array)
+    errors << "#{relative_path.call(tracker_path)}: feedback and milestones must be sequences"
+    tracker = { "feedback" => [], "milestones" => [] }
+  end
+
+  feedback_locations = {}
+  tracker.fetch("feedback").each do |feedback|
+    id = feedback.is_a?(Hash) ? feedback["id"] : nil
+    unless id.is_a?(String) && id.match?(/\AFEEDBACK-[0-9]{8}-[0-9]{3}\z/)
+      errors << "#{relative_path.call(tracker_path)}: feedback item has an invalid id"
+      next
+    end
+    line = line_for_id.call(tracker_path, id)
+    if feedback_locations.key?(id)
+      errors << format(
+        "%s:%d: duplicate feedback id %s (first at line %d)",
+        relative_path.call(tracker_path),
+        line,
+        id,
+        feedback_locations.fetch(id),
+      )
+    else
+      feedback_locations[id] = line
+    end
+  end
+
+  milestone_items = {}
+  item_owners = Hash.new { |hash, key| hash[key] = [] }
+  tracker.fetch("milestones").each do |milestone|
+    id = milestone.is_a?(Hash) ? milestone["id"] : nil
+    unless id.is_a?(String)
+      errors << "#{relative_path.call(tracker_path)}: milestone has an invalid id"
+      next
+    end
+    if milestone_items.key?(id)
+      errors << "#{relative_path.call(tracker_path)}: duplicate milestone id #{id}"
+      next
+    end
+    items = milestone["items"]
+    unless items.is_a?(Array)
+      errors << "#{relative_path.call(tracker_path)}: milestone #{id} items must be a sequence"
+      items = []
+    end
+    ids = Set.new
+    items.each do |item|
+      item_id = item.is_a?(Hash) ? item["id"] : nil
+      unless item_id.is_a?(String)
+        errors << "#{relative_path.call(tracker_path)}: milestone #{id} has an invalid item id"
+        next
+      end
+      if ids.include?(item_id)
+        errors << "#{relative_path.call(tracker_path)}: milestone #{id} has duplicate item #{item_id}"
+      end
+      ids << item_id
+      item_owners[item_id] << id
+    end
+    milestone_items[id] = ids
+  end
+
+  values_for = lambda do |value, feedback_id, kind|
+    values = value.is_a?(Array) ? value : [value]
+    unless values.all? { |candidate| candidate.is_a?(String) && !candidate.empty? }
+      errors << "#{relative_path.call(tracker_path)}: feedback #{feedback_id} has invalid #{kind} reference"
+      next []
+    end
+    values
+  end
+
+  tracker.fetch("feedback").each do |feedback|
+    next unless feedback.is_a?(Hash)
+
+    feedback_id = feedback["id"]
+    line = line_for_id.call(tracker_path, feedback_id)
+    promoted = feedback["promoted_to"]
+    if promoted && !promoted.is_a?(Hash)
+      errors << "#{relative_path.call(tracker_path)}:#{line}: feedback #{feedback_id} promoted_to must be a mapping"
+      next
+    end
+
+    refs = promoted || {}
+    refs.each do |kind, raw_value|
+      kind = kind.to_s
+      values = values_for.call(raw_value, feedback_id, kind)
+      if kind == "spec" || kind.end_with?("_spec") || kind == "visual_contract"
+        values.each do |reference|
+          next if contract_locations.key?(reference)
+
+          errors << format(
+            "%s:%d: feedback %s references unknown spec contract %s",
+            relative_path.call(tracker_path), line, feedback_id, reference
+          )
+        end
+      elsif kind == "traceability" || kind == "matrix" || kind.end_with?("_traceability")
+        values.each do |reference|
+          next if matrix_locations.key?(reference)
+
+          errors << format(
+            "%s:%d: feedback %s references unknown traceability entry %s",
+            relative_path.call(tracker_path), line, feedback_id, reference
+          )
+        end
+      elsif kind == "milestone" || kind.end_with?("_milestone")
+        values.each do |reference|
+          milestone_id, item_id = reference.split("/", 2)
+          if item_id
+            next if milestone_items.fetch(milestone_id, Set.new).include?(item_id)
+          elsif milestone_items.key?(milestone_id)
+            next
+          end
+          errors << format(
+            "%s:%d: feedback %s references unknown milestone item %s",
+            relative_path.call(tracker_path), line, feedback_id, reference
+          )
+        end
+      elsif kind == "milestone_item"
+        values.each do |reference|
+          owners = item_owners.fetch(reference, [])
+          next if owners.length == 1
+
+          errors << format(
+            "%s:%d: feedback %s references unknown or ambiguous milestone item %s",
+            relative_path.call(tracker_path), line, feedback_id, reference
+          )
+        end
+      elsif kind == "superseded_by"
+        values.each do |reference|
+          next if feedback_locations.key?(reference)
+
+          errors << format(
+            "%s:%d: feedback %s references unknown feedback %s",
+            relative_path.call(tracker_path), line, feedback_id, reference
+          )
+        end
+      end
+    end
+
+    next unless feedback["superseded_by"]
+
+    values_for.call(feedback["superseded_by"], feedback_id, "superseded_by").each do |reference|
+      next if feedback_locations.key?(reference)
+
+      errors << format(
+        "%s:%d: feedback %s references unknown feedback %s",
+        relative_path.call(tracker_path), line, feedback_id, reference
+      )
+    end
+  end
+end
+
+unless errors.empty?
+  errors.each { |error| warn "[structured-docs] #{error}" }
+  exit 1
+end
+
+puts "structured document checks passed (#{scope})"

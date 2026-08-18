@@ -2,6 +2,7 @@ use std::io;
 use std::io::{IsTerminal as _, Read as _};
 use std::path::{Path, PathBuf};
 
+use crate::agent_runtime::AgentStoreRoots;
 use crate::core::cli_agent::AGENT_EVENT_SENTINEL;
 use crate::host::Host;
 
@@ -258,16 +259,21 @@ impl HookAgent {
     fn target_path(self, target: &HookTarget) -> PathBuf {
         match self {
             HookAgent::Claude => target.claude_settings_path(),
-            HookAgent::Codex => target.under_home(&[".codex", "hooks.json"]),
-            HookAgent::Copilot => target.under_home(&[".copilot", "hooks", OWNED_FILE_STEM_JSON]),
-            HookAgent::OpenCode => target.under(
-                &target.xdg_config_dir(),
-                &["opencode", "plugins", OWNED_FILE_STEM_JS],
-            ),
-            HookAgent::Pi => {
-                target.under_home(&[".pi", "agent", "extensions", "agentty", "index.ts"])
+            HookAgent::Codex => target.under(&target.roots.codex_home, &["hooks.json"]),
+            HookAgent::Copilot => {
+                target.under(&target.roots.copilot_home, &["hooks", OWNED_FILE_STEM_JSON])
             }
-            HookAgent::Grok => target.under_home(&[".grok", "hooks", OWNED_FILE_STEM_JSON]),
+            HookAgent::OpenCode => target.under(
+                &target.roots.opencode_config_dir,
+                &["plugins", OWNED_FILE_STEM_JS],
+            ),
+            HookAgent::Pi => target.under(
+                &target.roots.pi_agent_dir,
+                &["extensions", "agentty", "index.ts"],
+            ),
+            HookAgent::Grok => {
+                target.under(&target.roots.grok_home, &["hooks", OWNED_FILE_STEM_JSON])
+            }
         }
     }
 
@@ -280,30 +286,32 @@ const MAX_CONFIG_BYTES: u64 = 4 * 1024 * 1024;
 
 pub struct HookTarget<'a> {
     host: &'a dyn Host,
-    home: PathBuf,
+    roots: AgentStoreRoots,
     exe: PathBuf,
 }
 
 impl<'a> HookTarget<'a> {
     pub fn local(host: &'a dyn Host) -> Option<HookTarget<'a>> {
+        let home = home_dir()?;
         Some(HookTarget {
             host,
-            home: home_dir()?,
+            roots: AgentStoreRoots::for_current_process(&home),
             exe: std::env::current_exe().ok()?,
         })
     }
 
-    pub fn remote(host: &'a dyn Host, home: PathBuf) -> HookTarget<'a> {
+    pub fn remote(host: &'a dyn Host, roots: AgentStoreRoots) -> HookTarget<'a> {
+        let roots = roots.with_derived_defaults();
         let dialect = crate::daemon::install::RemoteProtocol::of_this_build();
         let binary = crate::daemon::install::asset::remote_paths(
-            &home.to_string_lossy(),
+            &roots.home.to_string_lossy(),
             dialect.control,
             dialect.protocol,
         )
         .binary;
         HookTarget {
             host,
-            home,
+            roots,
             exe: PathBuf::from(binary),
         }
     }
@@ -320,26 +328,8 @@ impl<'a> HookTarget<'a> {
         p
     }
 
-    fn under_home(&self, parts: &[&str]) -> PathBuf {
-        self.under(&self.home, parts)
-    }
-
     fn claude_settings_path(&self) -> PathBuf {
-        if self.is_local()
-            && let Some(dir) = std::env::var_os("CLAUDE_CONFIG_DIR").filter(|d| !d.is_empty())
-        {
-            return PathBuf::from(dir).join("settings.json");
-        }
-        self.under_home(&[".claude", "settings.json"])
-    }
-
-    fn xdg_config_dir(&self) -> PathBuf {
-        if self.is_local()
-            && let Some(dir) = std::env::var_os("XDG_CONFIG_HOME").filter(|d| !d.is_empty())
-        {
-            return PathBuf::from(dir);
-        }
-        self.under_home(&[".config"])
+        self.under(&self.roots.claude_config_dir, &["settings.json"])
     }
 
     fn hook_command(&self, agent: HookAgent, event: &str) -> String {
@@ -368,7 +358,7 @@ impl<'a> HookTarget<'a> {
     }
 
     fn abbreviate_home(&self, path: &Path) -> String {
-        match path.strip_prefix(&self.home) {
+        match path.strip_prefix(&self.roots.home) {
             Ok(rest) => format!("~/{}", rest.display()),
             Err(_) => path.display().to_string(),
         }
@@ -461,11 +451,8 @@ pub fn refresh_hooks(target: &HookTarget) -> usize {
     refreshed
 }
 
-pub fn refresh_remote_hooks(host: &dyn Host, home: PathBuf) -> usize {
-    if home_dir().is_some_and(|ours| ours == home) {
-        return 0;
-    }
-    refresh_hooks(&HookTarget::remote(host, home))
+pub fn refresh_remote_hooks(host: &dyn Host, roots: AgentStoreRoots) -> usize {
+    refresh_hooks(&HookTarget::remote(host, roots))
 }
 
 pub fn refresh_hooks_at_launch() -> usize {
@@ -1140,7 +1127,8 @@ mod tests {
     #[test]
     fn remote_paths_are_built_in_the_remote_machine_s_spelling() {
         let host = FakeRemote::shared();
-        let target = HookTarget::remote(&*host, PathBuf::from("/home/me"));
+        let target =
+            HookTarget::remote(&*host, AgentStoreRoots::for_home(PathBuf::from("/home/me")));
 
         for (agent, expected) in [
             (HookAgent::Claude, "/home/me/.claude/settings.json"),
@@ -1170,9 +1158,48 @@ mod tests {
     }
 
     #[test]
+    fn remote_hook_target_uses_custom_store_root_snapshot() {
+        let host = FakeRemote::shared();
+        let mut roots = AgentStoreRoots::for_home(PathBuf::from("/target/home"));
+        roots.claude_config_dir = PathBuf::from("/target/claude-config");
+        roots.codex_home = PathBuf::from("/target/codex");
+        roots.copilot_home = PathBuf::from("/target/copilot");
+        roots.opencode_config_dir = PathBuf::from("/target/opencode-config");
+        roots.pi_agent_dir = PathBuf::from("/target/pi-agent");
+        roots.grok_home = PathBuf::from("/target/grok");
+        let target = HookTarget::remote(&*host, roots);
+
+        assert_eq!(
+            HookAgent::Claude.target_path(&target),
+            PathBuf::from("/target/claude-config/settings.json")
+        );
+        assert_eq!(
+            HookAgent::Codex.target_path(&target),
+            PathBuf::from("/target/codex/hooks.json")
+        );
+        assert_eq!(
+            HookAgent::Copilot.target_path(&target),
+            PathBuf::from("/target/copilot/hooks/agentty.json")
+        );
+        assert_eq!(
+            HookAgent::OpenCode.target_path(&target),
+            PathBuf::from("/target/opencode-config/plugins/agentty.js")
+        );
+        assert_eq!(
+            HookAgent::Pi.target_path(&target),
+            PathBuf::from("/target/pi-agent/extensions/agentty/index.ts")
+        );
+        assert_eq!(
+            HookAgent::Grok.target_path(&target),
+            PathBuf::from("/target/grok/hooks/agentty.json")
+        );
+    }
+
+    #[test]
     fn the_hook_command_names_the_binary_on_that_machine() {
         let host = FakeRemote::shared();
-        let target = HookTarget::remote(&*host, PathBuf::from("/home/me"));
+        let target =
+            HookTarget::remote(&*host, AgentStoreRoots::for_home(PathBuf::from("/home/me")));
         let dialect = crate::daemon::install::RemoteProtocol::of_this_build();
         let name = format!("agentty-server-c{}p{}", dialect.control, dialect.protocol);
         assert_eq!(
@@ -1195,7 +1222,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let host = FakeRemote::shared();
-        let target = HookTarget::remote(&*host, dir.clone());
+        let target = HookTarget::remote(&*host, AgentStoreRoots::for_home(dir.clone()));
 
         for agent in [HookAgent::Claude, HookAgent::Grok] {
             assert_eq!(hooks_state(&target, agent), HooksState::NotInstalled);
@@ -1344,7 +1371,10 @@ mod tests {
         let host = local_host();
         let t = HookTarget::local(&*host).expect("home resolves in tests");
         let remote_host = FakeRemote::shared();
-        let remote = HookTarget::remote(&*remote_host, PathBuf::from("/home/me"));
+        let remote = HookTarget::remote(
+            &*remote_host,
+            AgentStoreRoots::for_home(PathBuf::from("/home/me")),
+        );
         assert_eq!(
             HookAgent::Claude.target_path(&remote),
             PathBuf::from("/home/me/.claude/settings.json")
