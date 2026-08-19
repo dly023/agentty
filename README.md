@@ -81,18 +81,10 @@ Native builds are published on [**Releases**](https://github.com/dly023/agentty/
 
 ## Benchmarks
 
-Same machine, same day, same 155×40 grid — Apple M1 Pro, macOS 26.3.1,
-five-run averages (2026-07-04):
-
-| | **agentty** | Alacritty | Ghostty | Kitty |
-|---|---:|---:|---:|---:|
-| Plaintext IO — 11 MB `cat` <sub>(lower = better)</sub> | **95 ms** | 239 ms | 179 ms | 185 ms |
-| [DOOM-fire](https://github.com/const-void/DOOM-fire-zig) frame rate <sub>(higher = better)</sub> | **888 fps** | 485 fps | 552 fps | 617 fps |
-| Cold-launch memory | 116 MB¹ | 105 MB | 128 MB | 130 MB |
-
-<sub>¹ GUI 105 MB + persistent daemon 11 MB.</sub>
-
-Methodology and one-command reproduction: [`scripts/bench/`](scripts/bench/README.md).
+The benchmark script and methodology are available at
+[`scripts/bench/`](scripts/bench/README.md). We avoid hard-coding snapshot numbers in README
+because values drift quickly with optimizer passes, terminals, and hardware.
+Run `scripts/bench/` on your target machine for current local numbers.
 
 ## What Agentty is not
 
@@ -125,12 +117,10 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for local setup and architecture notes.
 
 ### Relationship to upstream
 
-Agentty is rooted in open-source terminal and editor foundations and carries forward the core rendering,
-input, and session runtime while removing cloud-dependent control paths where possible.
-Key base layers include:
-
-- [warp](https://github.com/warpdotdev/warp)
-- [zap](https://github.com/zerx-lab/zap)
+Agentty is maintained in the open-source terminal tooling lineage that now lives as
+[`tty7`](https://github.com/l0ng-ai/tty7). The project keeps a local-first posture and
+local quality gates while evolving the runtime and UI behaviors for resilient coding-agent
+workflows.
 
 ## License
 

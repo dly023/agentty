@@ -79,17 +79,9 @@ Agent 工作不是单纯对话，而是持续运行的工作现场：
 
 ## 基准测试
 
-同一台机器、同一天、统一 155×40 网格 —— Apple M1 Pro，macOS 26.3.1，五次运行均值（2026-07-04）：
-
-| | **agentty** | Alacritty | Ghostty | Kitty |
-|---|---:|---:|---:|---:|
-| 纯文本 IO — 11 MB `cat` <sub>（越低越好）</sub> | **95 ms** | 239 ms | 179 ms | 185 ms |
-| [DOOM-fire](https://github.com/const-void/DOOM-fire-zig) 帧率 <sub>（越高越好）</sub> | **888 fps** | 485 fps | 552 fps | 617 fps |
-| 冷启动内存 | 116 MB¹ | 105 MB | 128 MB | 130 MB |
-
-<sub>¹ GUI 105 MB + 常驻守护进程 11 MB。</sub>
-
-复现和方法：[`scripts/bench/`](scripts/bench/README.md)。
+基准脚本与测试方法见 [`scripts/bench/`](scripts/bench/README.md)。
+README 不再内嵌历史快照数字，避免不同版本、机器和优化阶段产生误导。
+如果你要看本地当前结果，直接在目标机器上运行 `scripts/bench/` 即可。
 
 ## Agentty 不是
 
@@ -119,11 +111,9 @@ TERM=xterm-256color MACOSX_DEPLOYMENT_TARGET=10.14 ./script/run
 
 ### 与上游关系
 
-Agentty 基于开源终端与编辑器基础持续演进，保留了核心渲染、输入和会话运行框架，并持续清理与云依赖相关的路径。
-主要底层来自：
-
-- [warp](https://github.com/warpdotdev/warp)
-- [zap](https://github.com/zerx-lab/zap)
+Agentty 当前沿用的是开源终端工具链的公开演进路线，处于
+[`tty7`](https://github.com/l0ng-ai/tty7) 的上游生态中。
+项目重点保持 local-first 与本地质检链路，同时持续演进用于稳定 coding-agent 工作流的运行时和界面行为。
 
 ## 许可
 
