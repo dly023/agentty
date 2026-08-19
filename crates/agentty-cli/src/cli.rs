@@ -4,7 +4,7 @@ use clap::{ArgGroup, Args, Parser, Subcommand};
 #[command(
     name = "agentty",
     version,
-    about = "A terminal workbench, from the command line",
+    about = "Terminal-native CLI companion for agentty",
     long_about = "One name, three artifacts: this CLI, the agentty GUI (agentty-app), and\n\
                   agentty-server.\n\n\
                   The GUI and this CLI are both clients of the server on each machine —\n\

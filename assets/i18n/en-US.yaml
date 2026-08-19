@@ -437,8 +437,8 @@ session.refresh: Refresh Agent sessions
 session.restoring: Restoring…
 session.resume: Resume
 session.search_placeholder: Search sessions…
-settings.about_stack: Pure Rust · GPU rendering on Zed's gpui · VT core from Alacritty
-settings.about_tagline: A terminal workbench: shells, workspaces, SSH, coding agents.
+settings.about_stack: Built in pure Rust · GPU rendering with gpui · VT core from Alacritty
+settings.about_tagline: A terminal-native workspace for local and remote coding sessions.
 settings.add_rule: + Add rule
 settings.agent_forwarding: Agent forwarding
 settings.agent_forwarding.desc: Forward the local ssh-agent to the connection.

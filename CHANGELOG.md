@@ -1138,7 +1138,7 @@ it shipped rather than what changed.
   cut mid-height. (#97)
 - **README rewritten as a minimal index** — feature details, keybindings,
   and performance notes moved to `docs/features.md` (en + zh-CN); the
-  tagline now positions agentty as a terminal workbench.
+  tagline now positions agentty as a terminal-native workspace.
 
 ### Fixed
 

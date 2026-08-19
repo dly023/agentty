@@ -437,8 +437,8 @@ session.refresh: 刷新 Agent 会话
 session.restoring: 正在恢复…
 session.resume: 恢复
 session.search_placeholder: 搜索会话…
-settings.about_stack: 纯 Rust · 基于 Zed gpui 的 GPU 渲染 · 来自 Alacritty 的 VT 内核
-settings.about_tagline: 一个终端工作台:shell、工作区、SSH 与 coding agent。
+settings.about_stack: 纯 Rust 开发 · 基于 gpui 的 GPU 渲染 · 来自 Alacritty 的 VT 内核
+settings.about_tagline: 本地优先的终端工作区：shell、会话、远程 SSH 与 coding agent。
 settings.add_rule: + 添加规则
 settings.agent_forwarding: Agent 转发
 settings.agent_forwarding.desc: 将本地 ssh-agent 转发到该连接。

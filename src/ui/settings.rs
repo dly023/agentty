@@ -4664,9 +4664,9 @@ impl AgenttyApp {
                             )))
                             .child(
                                 Link::new("about-github")
-                                    .href("https://github.com/dly023/agentty")
+                                    .href("https://github.com/dly023/agentty/releases/latest")
                                     .text_sm()
-                                    .child("github.com/dly023/agentty"),
+                                    .child("github.com/dly023/agentty/releases/latest"),
                             ),
                     ),
             )
@@ -4680,9 +4680,9 @@ impl AgenttyApp {
                             .text_color(foreground)
                             .child(crate::core::i18n::current(cx, "settings.about_tagline")),
                     )
-                    .child(div().text_sm().text_color(muted_fg).child(
-                        "Editor-grade input in every shell, shells that outlive quits and reboots without tmux, a native SSH stack with profiles and port forwarding, and live status for panes running coding agents.",
-                    ))
+                        .child(div().text_sm().text_color(muted_fg).child(
+                            "Terminal-native coding agent workspace: editor-grade input on every shell, persistent local and remote sessions, native SSH with profiles and port forwarding, and live status for every coding-agent pane.",
+                        ))
                     .child(
                         div()
                             .text_xs()

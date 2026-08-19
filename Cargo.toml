@@ -2,7 +2,7 @@
 name = "agentty"
 version.workspace = true
 edition = "2024"
-description = "A terminal workbench: shells, persistent sessions, SSH, coding agents — GPU-rendered on Zed's gpui, pure Rust"
+description = "A terminal-native workspace for local and remote coding sessions, native SSH, and coding agents"
 repository = "https://github.com/dly023/agentty"
 license = "Apache-2.0"
 readme = "README.md"
