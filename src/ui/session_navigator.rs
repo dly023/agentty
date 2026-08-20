@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use agentty_core::agent_runtime::{
     DiscoveryOutcome, DiscoveryRequest, LiveCarrier, LiveSession, NavigatorRow, NavigatorRowId,
-    OperationId, RestoreOutcome, ScanGeneration, SessionIdentity, SessionNavigator,
+    OperationId, RestoreOutcome, RowLifecycle, ScanGeneration, SessionIdentity, SessionNavigator,
     SessionReorderUnit, SessionTitleCandidates,
 };
 use agentty_core::core::environment::EnvironmentId;
@@ -19,6 +19,118 @@ fn live_title_candidates(
     binding: &agentty_core::core::session::LiveContainerBinding,
 ) -> SessionTitleCandidates {
     binding.title_candidates()
+}
+
+pub(crate) fn navigator_rows_share_session(a: &NavigatorRow, b: &NavigatorRow) -> bool {
+    if a.row_id == b.row_id || a.identity == b.identity {
+        return true;
+    }
+    match (&a.session_id, &b.session_id) {
+        (Some(a_id), Some(b_id)) => a_id == b_id && a.agent == b.agent,
+        _ => false,
+    }
+}
+
+pub(crate) fn live_carrier_row_for_activation<'a>(
+    rows: &'a [NavigatorRow],
+    target: &NavigatorRow,
+) -> Option<&'a NavigatorRow> {
+    if target.carrier.is_some() {
+        return None;
+    }
+    rows.iter().find(|row| {
+        row.lifecycle == RowLifecycle::Live
+            && row.carrier.is_some()
+            && navigator_rows_share_session(row, target)
+    })
+}
+
+/// Content-addressed gate for SESSION-PROJECTION-PAINT-GATE-53. Search query is
+/// intentionally omitted — filtering is viewport-only.
+pub(crate) fn session_navigator_input_fingerprint(
+    environment: &EnvironmentId,
+    history: &[agentty_core::agent_runtime::AgentSessionRecord],
+    live: &[LiveSession],
+    aliases: &[(agentty_core::agent_runtime::SessionIdentity, String)],
+    pins: &[agentty_core::agent_runtime::SessionIdentity],
+    display_orders: &[(agentty_core::agent_runtime::SessionIdentity, u64)],
+) -> u64 {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+
+    let mut hasher = DefaultHasher::new();
+    environment.as_str().hash(&mut hasher);
+    history.len().hash(&mut hasher);
+    for record in history {
+        record.key.provider.hash(&mut hasher);
+        record.key.session_id.hash(&mut hasher);
+        record.updated_at_unix_ms.hash(&mut hasher);
+        record.title.hash(&mut hasher);
+        record.title_candidates.provider_title.hash(&mut hasher);
+        record.title_candidates.first_user_title.hash(&mut hasher);
+        record.cwd.hash(&mut hasher);
+    }
+    live.len().hash(&mut hasher);
+    for session in live {
+        hash_live_session(session, &mut hasher);
+    }
+    aliases.len().hash(&mut hasher);
+    for (identity, alias) in aliases {
+        hash_session_identity(identity, &mut hasher);
+        alias.hash(&mut hasher);
+    }
+    pins.len().hash(&mut hasher);
+    for identity in pins {
+        hash_session_identity(identity, &mut hasher);
+    }
+    display_orders.len().hash(&mut hasher);
+    for (identity, order) in display_orders {
+        hash_session_identity(identity, &mut hasher);
+        order.hash(&mut hasher);
+    }
+    hasher.finish()
+}
+
+fn hash_session_identity(identity: &SessionIdentity, hasher: &mut impl std::hash::Hasher) {
+    use std::hash::Hash;
+    match identity {
+        SessionIdentity::Provider(key) => {
+            0u8.hash(hasher);
+            key.provider.hash(hasher);
+            key.session_id.hash(hasher);
+        }
+        SessionIdentity::Durable(id) => {
+            1u8.hash(hasher);
+            id.hash(hasher);
+        }
+    }
+}
+
+fn hash_live_session(session: &LiveSession, hasher: &mut impl std::hash::Hasher) {
+    use std::hash::Hash;
+    hash_session_identity(&session.identity, hasher);
+    format!("{:?}", session.agent).hash(hasher);
+    session.session_id.hash(hasher);
+    session.title.hash(hasher);
+    session.title_candidates.provider_title.hash(hasher);
+    session.title_candidates.first_user_title.hash(hasher);
+    session.cwd.hash(hasher);
+    session.launch_argv.hash(hasher);
+    session.carrier.container_id.hash(hasher);
+    session.carrier.tab_id.hash(hasher);
+    session.carrier.pane_id.hash(hasher);
+    match &session.execution {
+        None => 0u8.hash(hasher),
+        Some(execution) => {
+            1u8.hash(hasher);
+            format!("{:?}", execution.state.status).hash(hasher);
+            execution.state.message.hash(hasher);
+            execution.state.session_id.hash(hasher);
+            execution.state.activity_seq.hash(hasher);
+            execution.focused.hash(hasher);
+            execution.unread.hash(hasher);
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -403,6 +515,9 @@ impl AgenttyApp {
     /// resolve, request RemoteLinkUp so remote discovery is not stuck empty.
     pub(crate) fn ensure_session_navigator_scan(&mut self, cx: &mut Context<Self>) {
         if !self.session_scan_started {
+            if !self.remote_session_discovery_ready(cx) {
+                return;
+            }
             self.refresh_session_navigator_for(SessionRefreshIntent::InitialTargetReady, cx);
             return;
         }
@@ -462,7 +577,9 @@ impl AgenttyApp {
 
     /// Clear every projection and cached Host path before a workspace/window
     /// rebind. The next workspace starts with an empty Navigator and requests
-    /// a fresh Environment-scoped scan.
+    /// a fresh Environment-scoped scan. Per-environment stash in
+    /// `environment_navigator_cache` is preserved so switching back can restore
+    /// a prior committed projection.
     pub(crate) fn invalidate_session_navigator_scope(&mut self, cx: &mut Context<Self>) {
         self.session_refresh.invalidate();
         self.session_history.clear();
@@ -477,8 +594,72 @@ impl AgenttyApp {
         self.session_scan_started = false;
         self.session_scan_error = None;
         self.session_navigator = Default::default();
+        self.session_navigator_input_fingerprint = None;
         self.session_keyboard_cursor.clear();
         cx.notify();
+    }
+
+    pub(crate) fn stash_environment_navigator(
+        &mut self,
+        environment: agentty_core::core::environment::EnvironmentId,
+    ) {
+        if !self.session_scan_started && self.session_history.is_empty() {
+            return;
+        }
+        self.environment_navigator_cache.insert(
+            environment,
+            crate::ui::environment_navigator_cache::CachedEnvironmentNavigator {
+                navigator: self.session_navigator.clone(),
+                history: self.session_history.clone(),
+                history_environment: self.session_history_environment.clone(),
+                user_state: self.session_user_state.clone(),
+                user_state_path: self.session_user_state_path.clone(),
+                store_roots: self.session_store_roots.clone(),
+                alias_environment: self.session_alias_environment.clone(),
+                scan_error: self.session_scan_error.clone(),
+                scan_started: self.session_scan_started,
+            },
+        );
+    }
+
+    pub(crate) fn restore_environment_navigator(
+        &mut self,
+        environment: &agentty_core::core::environment::EnvironmentId,
+    ) -> bool {
+        let Some(entry) = self.environment_navigator_cache.take(environment) else {
+            return false;
+        };
+        self.session_navigator = entry.navigator;
+        self.session_history = entry.history;
+        self.session_history_environment = entry.history_environment;
+        self.session_user_state = entry.user_state;
+        self.session_user_state_path = entry.user_state_path;
+        self.session_store_roots = entry.store_roots;
+        self.session_alias_environment = entry.alias_environment;
+        self.session_scan_error = entry.scan_error;
+        self.session_scan_started = entry.scan_started;
+        self.session_navigator_input_fingerprint = None;
+        true
+    }
+
+    pub(crate) fn environment_session_counts(
+        &self,
+        environment: &agentty_core::core::environment::EnvironmentId,
+        is_current: bool,
+    ) -> crate::ui::environment_navigator_cache::EnvironmentSessionCounts {
+        if is_current {
+            return crate::ui::environment_navigator_cache::counts_from_navigator(
+                &self.session_navigator,
+            );
+        }
+        self.environment_navigator_cache
+            .counts(environment)
+            .unwrap_or(
+                crate::ui::environment_navigator_cache::EnvironmentSessionCounts {
+                    live: 0,
+                    total: 0,
+                },
+            )
     }
 
     fn request_session_navigator_refresh(
@@ -609,7 +790,6 @@ impl AgenttyApp {
                 Some(scoped) if scoped == &environment => &self.session_history,
                 Some(_) => &[],
             };
-        self.session_navigator.refresh(history, &live);
         let aliases = if self.session_alias_environment.as_ref() == Some(&environment) {
             self.session_user_state
                 .aliases_for_environment(&environment)
@@ -627,10 +807,23 @@ impl AgenttyApp {
         } else {
             Vec::new()
         };
+        let fingerprint = session_navigator_input_fingerprint(
+            &environment,
+            history,
+            &live,
+            &aliases,
+            &pins,
+            &display_orders,
+        );
+        if self.session_navigator_input_fingerprint == Some(fingerprint) {
+            return;
+        }
+        self.session_navigator.refresh(history, &live);
         self.session_navigator.project_aliases(&aliases);
         self.session_navigator.project_pins(&pins);
         self.session_navigator
             .project_display_order(&display_orders);
+        self.session_navigator_input_fingerprint = Some(fingerprint);
 
         let environment_label =
             crate::core::session::WorkspaceStore::remote_ref(cx, self.workspace)
@@ -795,6 +988,29 @@ impl AgenttyApp {
         };
         // Selection chrome is keyed by NavigatorRowId; always select before focus/resume.
         let _ = self.session_navigator.select(&row_id);
+        if row.carrier.is_none() {
+            let live_focus = live_carrier_row_for_activation(self.session_navigator.rows(), &row)
+                .and_then(|live_row| {
+                    live_row.carrier.as_ref().and_then(|carrier| {
+                        carrier
+                            .tab_id
+                            .clone()
+                            .map(|tab_id| (live_row.row_id.clone(), tab_id))
+                    })
+                });
+            if let Some((live_row_id, tab_id)) = live_focus {
+                let _ = self.session_navigator.select(&live_row_id);
+                if let Some(index) = self
+                    .tabs
+                    .iter()
+                    .position(|tab| Some(tab.tree_id.get().to_string()) == Some(tab_id.clone()))
+                {
+                    self.activate(index, window, cx);
+                    cx.notify();
+                    return;
+                }
+            }
+        }
         if let Some(carrier) = row.carrier {
             if let Some(index) = self
                 .tabs
@@ -1799,6 +2015,14 @@ mod refresh_tests {
     }
 
     #[test]
+    fn remote_session_discovery_waits_for_attach() {
+        let app = include_str!("app.rs");
+        let nav = include_str!("session_navigator.rs");
+        assert!(app.contains("remote_session_discovery_ready"));
+        assert!(nav.contains("remote_session_discovery_ready"));
+    }
+
+    #[test]
     fn connect_and_link_up_share_passive_refresh_intent() {
         assert_eq!(
             SessionRefreshIntent::InitialTargetReady.explicit(),
@@ -1891,10 +2115,75 @@ mod refresh_tests {
             "workspace switch must invalidate Navigator state before rebind"
         );
         assert!(
+            switch.contains("stash_environment_navigator")
+                && switch.contains("restore_environment_navigator"),
+            "workspace switch must stash and restore per-environment Navigator cache"
+        );
+        assert!(
             switch.contains("refresh_session_navigator_for")
                 && switch.contains("InitialTargetReady"),
             "new workspace must request a fresh initial scan"
         );
+    }
+
+    #[test]
+    fn identical_projection_inputs_share_fingerprint() {
+        let environment = EnvironmentId::local();
+        let live = [live_fp("s1")];
+        let a = session_navigator_input_fingerprint(&environment, &[], &live, &[], &[], &[]);
+        let b = session_navigator_input_fingerprint(&environment, &[], &live, &[], &[], &[]);
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn live_execution_change_updates_fingerprint() {
+        let environment = EnvironmentId::local();
+        let mut live = live_fp("s1");
+        let before =
+            session_navigator_input_fingerprint(&environment, &[], &[live.clone()], &[], &[], &[]);
+        live.execution = Some(agentty_core::agent_runtime::LiveExecutionState {
+            state: crate::core::cli_agent::AgentSessionState {
+                status: crate::core::cli_agent::AgentStatus::Waiting,
+                ..Default::default()
+            },
+            focused: false,
+            unread: false,
+        });
+        let after = session_navigator_input_fingerprint(&environment, &[], &[live], &[], &[], &[]);
+        assert_ne!(before, after);
+    }
+
+    #[test]
+    fn rebuild_session_navigator_gates_on_input_fingerprint() {
+        let source = include_str!("session_navigator.rs");
+        let prod = source.split("#[cfg(test)]").next().unwrap_or(source);
+        assert!(prod.contains("session_navigator_input_fingerprint"));
+        assert!(prod.contains("session_navigator_input_fingerprint == Some(fingerprint)"));
+        assert!(
+            prod.contains("intentionally omitted"),
+            "search query must not feed the rebuild fingerprint"
+        );
+    }
+
+    fn live_fp(id: &str) -> LiveSession {
+        LiveSession {
+            identity: SessionIdentity::Provider(agentty_core::agent_runtime::AgentSessionKey {
+                provider: "codex".into(),
+                session_id: id.into(),
+            }),
+            agent: crate::core::cli_agent::CLIAgent::Codex,
+            session_id: Some(id.into()),
+            title: Some(id.into()),
+            title_candidates: Default::default(),
+            cwd: Some("/repo".into()),
+            launch_argv: vec![],
+            carrier: LiveCarrier {
+                container_id: format!("container-{id}"),
+                tab_id: Some("tab".into()),
+                pane_id: Some(1),
+            },
+            execution: None,
+        }
     }
 }
 
@@ -2445,6 +2734,67 @@ mod session_search_identity_tests {
 
         assert_ne!(local, remote);
         assert_eq!(local.environment().as_str(), "local");
+    }
+}
+
+#[cfg(test)]
+mod activate_dedup_tests {
+    use super::{live_carrier_row_for_activation, navigator_rows_share_session};
+    use agentty_core::agent_runtime::RowLifecycle;
+    use agentty_core::agent_runtime::SessionNavigator;
+
+    fn history(id: &str) -> agentty_core::agent_runtime::AgentSessionRecord {
+        agentty_core::agent_runtime::AgentSessionRecord {
+            key: agentty_core::agent_runtime::AgentSessionKey {
+                provider: "codex".into(),
+                session_id: id.into(),
+            },
+            agent: agentty_core::core::cli_agent::CLIAgent::Codex,
+            title: Some(id.into()),
+            title_candidates: agentty_core::agent_runtime::SessionTitleCandidates::default(),
+            cwd: Some("/repo".into()),
+            updated_at_unix_ms: Some(1),
+            launch_argv: vec![],
+            source_path: Some(format!("/tmp/{id}")),
+            created_at_unix_ms: None,
+        }
+    }
+
+    fn live(id: &str, tab: &str, pane: u64) -> agentty_core::agent_runtime::LiveSession {
+        agentty_core::agent_runtime::LiveSession {
+            identity: agentty_core::agent_runtime::SessionIdentity::Provider(history(id).key),
+            agent: agentty_core::core::cli_agent::CLIAgent::Codex,
+            session_id: Some(id.into()),
+            title: Some(id.into()),
+            title_candidates: agentty_core::agent_runtime::SessionTitleCandidates::default(),
+            cwd: Some("/repo".into()),
+            launch_argv: vec![],
+            carrier: agentty_core::agent_runtime::LiveCarrier {
+                container_id: format!("container-{id}"),
+                tab_id: Some(tab.into()),
+                pane_id: Some(pane),
+            },
+            execution: None,
+        }
+    }
+
+    #[test]
+    fn activate_virtual_while_live_exists_focuses_existing_tab() {
+        let mut virtual_model = SessionNavigator::default();
+        virtual_model.refresh(&[history("s1")], &[]);
+        let virtual_row = virtual_model.rows()[0].clone();
+        let mut live_model = SessionNavigator::default();
+        live_model.refresh(&[], &[live("s1", "tab-live", 1)]);
+        let live = live_model.rows()[0].clone();
+        assert!(navigator_rows_share_session(&virtual_row, &live));
+        let rows = [virtual_row.clone(), live.clone()];
+        let resolved = live_carrier_row_for_activation(&rows, &virtual_row).expect("live carrier");
+        assert_eq!(resolved.lifecycle, RowLifecycle::Live);
+        assert!(resolved.carrier.is_some());
+        assert_eq!(
+            resolved.carrier.as_ref().and_then(|c| c.tab_id.as_deref()),
+            Some("tab-live")
+        );
     }
 }
 

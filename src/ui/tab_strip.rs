@@ -402,7 +402,7 @@ impl AgenttyApp {
         )
     }
 
-    fn environment_indicator_state(
+    pub(crate) fn environment_indicator_state(
         remote: Option<&crate::core::session::RemoteRef>,
         remote_label: Option<&str>,
         status: Option<&crate::ui::remote_workspace::RemoteStatus>,
@@ -482,6 +482,9 @@ impl AgenttyApp {
     pub(crate) fn environment_menu(
         mut menu: PopupMenu,
         current_environment: agentty_core::core::environment::EnvironmentId,
+        remote: Option<crate::core::session::RemoteRef>,
+        remote_status: Option<crate::ui::remote_workspace::RemoteStatus>,
+        workspace: crate::core::session::WorkspaceId,
         hosts: &[crate::ui::remote_connect::HostChoice],
         app: &gpui::WeakEntity<Self>,
         cx: &App,
@@ -489,10 +492,66 @@ impl AgenttyApp {
         menu = menu.min_w(px(260.)).item(
             PopupMenuItem::new(crate::core::i18n::current(cx, "menu.this_mac"))
                 .disabled(current_environment.is_local())
-                .on_click(|_, _window, cx| {
-                    crate::ui::windows::open_or_focus_environment(cx, None, None);
+                .on_click({
+                    let app = app.clone();
+                    move |_, window, cx| {
+                        if let Some(app) = app.upgrade() {
+                            app.update(cx, |this, cx| {
+                                this.select_environment(None, window, cx);
+                            });
+                        } else {
+                            crate::ui::windows::open_or_focus_environment(cx, None, None);
+                        }
+                    }
                 }),
         );
+        let environment_pinned = cx
+            .global::<crate::core::config::Config>()
+            .environment_rail
+            .is_pinned(&current_environment);
+        let pin_label = if environment_pinned {
+            crate::core::i18n::current(cx, "environment.rail.unpin")
+        } else {
+            crate::core::i18n::current(cx, "environment.rail.pin")
+        };
+        menu = menu
+            .separator()
+            .item(PopupMenuItem::new(pin_label).on_click({
+                let app = app.clone();
+                move |_, _window, cx| {
+                    if let Some(app) = app.upgrade() {
+                        app.update(cx, |this, cx| this.toggle_environment_pin(cx));
+                    }
+                }
+            }));
+        if let Some(remote) = remote.as_ref() {
+            let host = remote.target.host_id();
+            menu = menu.separator();
+            if !matches!(
+                remote_status,
+                Some(crate::ui::remote_workspace::RemoteStatus::Attached)
+            ) {
+                menu = menu.item(
+                    PopupMenuItem::new(crate::core::i18n::current(cx, "common.reconnect"))
+                        .on_click({
+                            let app = app.clone();
+                            move |_, _window, cx| {
+                                if let Some(app) = app.upgrade() {
+                                    app.update(cx, |this, cx| this.remote_retry(cx));
+                                }
+                            }
+                        }),
+                );
+            }
+            menu = menu.item(
+                PopupMenuItem::new(crate::core::i18n::current(cx, "menu.disconnect")).on_click(
+                    move |_, _window, cx| {
+                        crate::ui::remote_workspace::RemoteLinks::disconnect(cx, host);
+                        let _ = workspace;
+                    },
+                ),
+            );
+        }
         let mut seen = std::collections::HashSet::new();
         for host in hosts {
             let target = host.target.clone();
@@ -520,8 +579,19 @@ impl AgenttyApp {
             });
             menu = menu.item(item.disabled(selected).on_click({
                 let target = target.clone();
-                move |_, _window, cx| {
-                    crate::ui::windows::open_or_focus_environment(cx, Some(target.clone()), None);
+                let app = app.clone();
+                move |_, window, cx| {
+                    if let Some(app) = app.upgrade() {
+                        app.update(cx, |this, cx| {
+                            this.select_environment(Some(target.clone()), window, cx);
+                        });
+                    } else {
+                        crate::ui::windows::open_or_focus_environment(
+                            cx,
+                            Some(target.clone()),
+                            None,
+                        );
+                    }
                 }
             }));
         }
@@ -555,7 +625,9 @@ impl AgenttyApp {
             });
         let current_environment =
             crate::core::session::WorkspaceStore::environment_id(cx, self.workspace);
+        let remote_status = self.remote_status(cx);
         let app_for_menu = cx.entity().downgrade();
+        let workspace = self.workspace;
         div()
             .debug_selector(|| "ENVIRONMENT_MENU_TRIGGER".into())
             .child(
@@ -596,6 +668,9 @@ impl AgenttyApp {
                         Self::environment_menu(
                             menu,
                             current_environment.clone(),
+                            remote.clone(),
+                            remote_status.clone(),
+                            workspace,
                             &hosts,
                             &app_for_menu,
                             cx,
@@ -1062,7 +1137,7 @@ impl AgenttyApp {
         cx: &mut Context<Self>,
     ) -> impl IntoElement + use<> {
         let active = self.active;
-        let show_badges = self.mod_hint_badges;
+        let show_badges = show_chips && self.mod_hint_badges;
         let strip_w = if cfg!(target_os = "macos") {
             (window.viewport_size().width - px(80.)).max(px(160.))
         } else {
@@ -1145,7 +1220,7 @@ impl AgenttyApp {
         };
 
         let render_all = preview.is_some();
-        if !render_all && chip_window.leading_hidden > 0 {
+        if show_chips && !render_all && chip_window.leading_hidden > 0 {
             let target = chip_window.start - 1;
             let hidden = chip_window.leading_hidden;
             chips = chips.child(
@@ -1433,7 +1508,7 @@ impl AgenttyApp {
             });
         }
 
-        if !render_all && chip_window.trailing_hidden > 0 {
+        if show_chips && !render_all && chip_window.trailing_hidden > 0 {
             let target = chip_window.start + chip_window.visible;
             let hidden = chip_window.trailing_hidden;
             chips = chips.child(
@@ -1542,6 +1617,10 @@ impl AgenttyApp {
         let environment_menu_hosts = crate::ui::remote_connect::available_hosts(cx);
         let environment_menu_current =
             crate::core::session::WorkspaceStore::environment_id(cx, self.workspace);
+        let environment_menu_remote =
+            crate::core::session::WorkspaceStore::remote_ref(cx, self.workspace);
+        let environment_menu_status = self.remote_status(cx);
+        let environment_menu_workspace = self.workspace;
         let environment_menu_app = cx.entity().downgrade();
 
         h_flex()
@@ -1550,6 +1629,9 @@ impl AgenttyApp {
                 Self::environment_menu(
                     menu,
                     environment_menu_current.clone(),
+                    environment_menu_remote.clone(),
+                    environment_menu_status.clone(),
+                    environment_menu_workspace,
                     &environment_menu_hosts,
                     &environment_menu_app,
                     cx,
@@ -1572,7 +1654,7 @@ impl AgenttyApp {
             )
             .when_some(rail_new_tab, |this, add| this.child(add))
             .when_some(left_group, |this, g| this.child(g))
-            .child(chips)
+            .when(show_chips, |this| this.child(chips))
             .when_some(strip_add, |this, add| this.child(add))
             .child(div().flex_1().min_w(px(GRAB_HANDLE_W)))
             .child(self.command_palette_tile(cx))
@@ -1782,6 +1864,34 @@ mod tests {
     }
 
     #[test]
+    fn horizontal_chip_strip_only_enables_overflow_and_mod_hints() {
+        let strip = include_str!("tab_strip.rs");
+        let prod = strip.split("#[cfg(test)]").next().unwrap_or(strip);
+        assert!(
+            prod.contains("show_chips && !render_all && chip_window.leading_hidden"),
+            "leading overflow must be gated on horizontal chip strip"
+        );
+        assert!(
+            prod.contains("show_chips && !render_all && chip_window.trailing_hidden"),
+            "trailing overflow must be gated on horizontal chip strip"
+        );
+        assert!(
+            prod.contains("show_chips && self.mod_hint_badges"),
+            "mod-hint badges must be gated on horizontal chip strip"
+        );
+        assert!(
+            prod.contains(".when(show_chips, |this| this.child(chips))"),
+            "chip container must not render when horizontal strip is hidden"
+        );
+        let hints = include_str!("hints.rs");
+        let hints_prod = hints.split("#[cfg(test)]").next().unwrap_or(hints);
+        assert!(
+            hints_prod.contains("horizontal_tab_chips_visible"),
+            "mod-hint arming must be suppressed when horizontal chips are hidden"
+        );
+    }
+
+    #[test]
     fn left_rail_keeps_new_tab_affordance() {
         let source = include_str!("tab_strip.rs");
         let prod = source.split("#[cfg(test)]").next().unwrap_or(source);
@@ -1814,6 +1924,34 @@ mod tests {
     }
 
     #[test]
+    fn environment_menu_exposes_reconnect_and_disconnect_for_remote() {
+        let source = include_str!("tab_strip.rs");
+        let prod = source.split("#[cfg(test)]").next().unwrap_or(source);
+        assert!(prod.contains("common.reconnect"));
+        assert!(prod.contains("menu.disconnect"));
+        assert!(prod.contains("RemoteLinks::disconnect"));
+        assert!(prod.contains("remote_status.clone()"));
+    }
+
+    #[test]
+    fn environment_menu_selects_environment_in_current_window() {
+        let source = include_str!("tab_strip.rs");
+        let prod = source.split("#[cfg(test)]").next().unwrap_or(source);
+        assert!(prod.contains("select_environment"));
+        let windows = include_str!("windows.rs");
+        assert!(windows.contains("resolve_workspace_for_environment"));
+    }
+
+    #[test]
+    fn environment_menu_exposes_environment_pin_toggle() {
+        let source = include_str!("tab_strip.rs");
+        let prod = source.split("#[cfg(test)]").next().unwrap_or(source);
+        assert!(prod.contains("environment.rail.pin"));
+        assert!(prod.contains("environment.rail.unpin"));
+        assert!(prod.contains("toggle_environment_pin"));
+    }
+
+    #[test]
     fn environment_menu_uses_canonical_open_or_focus_path() {
         let source = include_str!("tab_strip.rs");
         let prod = source.split("#[cfg(test)]").next().unwrap_or(source);
@@ -1822,15 +1960,12 @@ mod tests {
                 && prod.contains(".context_menu(move |menu")
                 && prod.contains("Self::environment_menu(")
         );
-        assert!(
-            prod.contains("open_or_focus_environment(cx, Some(target.clone()), None)")
-                && prod.contains("EnvironmentId::for_remote")
-        );
+        assert!(prod.contains("select_environment"));
         let windows = include_str!("windows.rs");
         assert!(
             windows.contains("open_or_focus_environment")
-                && windows.contains("WindowRegistry::window_for_environment"),
-            "environment window opening must use the canonical deduplicating path"
+                && windows.contains("resolve_workspace_for_environment"),
+            "environment switching must use select_environment in-window and open_or_focus for headless entry"
         );
         let app = include_str!("app.rs");
         assert!(

@@ -8,9 +8,10 @@ use crate::host::{Host, MTime};
 use super::discovery::{AgentSessionKey, AgentSessionRecord, DiscoveryOutcome};
 use super::parse::{
     claude_transcript_metadata, codex_index_metadata, codex_transcript_metadata,
-    gemini_first_user_excerpt, gemini_header_metadata, gemini_updated_at_unix_ms,
-    grok_summary_metadata, grok_summary_updated_at_unix_ms, omp_transcript_metadata,
-    parse_iso8601_millis, parse_jsonl_strict,
+    cursor_project_cwd_from_path, cursor_session_id_from_path, gemini_first_user_excerpt,
+    gemini_header_metadata, gemini_updated_at_unix_ms, grok_summary_metadata,
+    grok_summary_updated_at_unix_ms, is_cursor_main_transcript, omp_transcript_metadata,
+    parse_iso8601_millis, parse_jsonl_strict, strip_cursor_user_query,
 };
 use super::provider::{
     PERSISTED_PROVIDER_DESCRIPTORS, ProviderDescriptor, ProviderId, ProviderScanner,
@@ -759,16 +760,24 @@ fn discover_generic_jsonl(
         if !descriptor.accepts_source(&request.roots, &file.path) {
             continue;
         }
+        if descriptor.id == ProviderId::Cursor && !is_cursor_main_transcript(&file.path) {
+            continue;
+        }
         let values = match read_jsonl_head(host, &file.path, DEFAULT_HEAD_BYTES, DEFAULT_LINE_LIMIT)
         {
             Ok(values) => values,
             Err(error) => return failed(&file.path, error),
         };
-        let Some((session_id, title_candidates, cwd)) =
+        let Some((session_id, title_candidates, mut cwd)) =
             generic_jsonl_metadata(descriptor.id, &file.path, &values)
         else {
             continue;
         };
+        if descriptor.id == ProviderId::Cursor {
+            cwd = cwd.or_else(|| {
+                cursor_project_cwd_from_path(&request.roots.cursor_projects(), &file.path)
+            });
+        }
         rows.push(record_with_candidates(
             descriptor.agent,
             descriptor.id.slug(),
@@ -878,8 +887,11 @@ fn generic_jsonl_metadata(
             provider_title = generic_provider_title(value);
         }
         if first_user_title.is_none() {
-            first_user_title = generic_user_message_text(provider, value)
-                .and_then(|text| first_user_title_candidate(&text));
+            let message = generic_user_message_text(provider, value);
+            first_user_title = match provider {
+                ProviderId::Cursor => message.and_then(|text| strip_cursor_user_query(&text)),
+                _ => message.and_then(|text| first_user_title_candidate(&text)),
+            };
         }
     }
     if provider == ProviderId::Antigravity && session_id.is_none() {
@@ -889,6 +901,9 @@ fn generic_jsonl_metadata(
             .and_then(|_| path.ancestors().nth(3))
             .and_then(Path::file_name)
             .map(|name| name.to_string_lossy().into_owned());
+    }
+    if provider == ProviderId::Cursor && session_id.is_none() {
+        session_id = cursor_session_id_from_path(path);
     }
     let candidates =
         SessionTitleCandidates::from_raw(provider_title.as_deref(), first_user_title.as_deref());
@@ -1759,7 +1774,7 @@ mod tests {
         }
         let transcript = roots
             .cursor_projects()
-            .join("repo/agent-transcripts/cursor-session/cursor.jsonl");
+            .join("repo/agent-transcripts/cursor-session/cursor-session.jsonl");
         fs::create_dir_all(transcript.parent().unwrap()).unwrap();
         fs::write(
             &transcript,
@@ -1786,6 +1801,67 @@ mod tests {
         };
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].key.session_id, "cursor-1");
+    }
+
+    #[test]
+    fn cursor_discovery_uses_native_transcript_shape_and_skips_subagents() {
+        let temp = tempfile::tempdir().unwrap();
+        let roots = roots(temp.path());
+        let session_id = "d40014ce-6a82-443d-ab66-5018cd63e4d6";
+        let main = roots.cursor_projects().join(format!(
+            "Users-admin-agentty/agent-transcripts/{session_id}/{session_id}.jsonl"
+        ));
+        fs::create_dir_all(main.parent().unwrap()).unwrap();
+        fs::write(
+            &main,
+            serde_json::json!({
+                "role": "user",
+                "message": {
+                    "content": [
+                        {"type": "text", "text": "<user_query>\nAdapt Cursor CLI sessions\n</user_query>"}
+                    ]
+                }
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let subagent = roots.cursor_projects().join(format!(
+            "Users-admin-agentty/agent-transcripts/{session_id}/subagents/sub.jsonl"
+        ));
+        fs::create_dir_all(subagent.parent().unwrap()).unwrap();
+        fs::write(
+            &subagent,
+            serde_json::json!({
+                "role": "user",
+                "message": {"content": [{"type":"text","text":"subagent noise"}]}
+            })
+            .to_string(),
+        )
+        .unwrap();
+
+        let outcome = discover(
+            &*LocalHost::new(),
+            &DiscoveryRequest {
+                providers: vec![ProviderId::Cursor],
+                ..DiscoveryRequest::standard(roots.clone())
+            },
+        );
+        let DiscoveryOutcome::Complete(rows) = outcome else {
+            panic!("cursor discovery must succeed: {outcome:?}")
+        };
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].key.session_id, session_id);
+        assert_eq!(
+            rows[0].title_candidates.first_user_title.as_deref(),
+            Some("Adapt Cursor CLI sessions")
+        );
+        assert_eq!(rows[0].cwd.as_deref(), Some("/Users/admin/agentty"));
+        let invocation = rows[0]
+            .agent
+            .resume_invocation(&rows[0].key.session_id, None, rows[0].cwd.clone())
+            .expect("cursor rows must resume through cursor-agent --resume");
+        assert_eq!(invocation.program, "cursor-agent");
+        assert_eq!(invocation.args, ["--resume", session_id]);
     }
 
     #[test]
@@ -2488,7 +2564,7 @@ mod tests {
             ),
             (
                 ProviderId::Cursor,
-                roots.cursor_projects().join("repo/agent-transcripts/cursor.jsonl"),
+                roots.cursor_projects().join("repo/agent-transcripts/cursor-1/cursor-1.jsonl"),
                 serde_json::json!({"sessionId":"cursor-1","role":"user","message":{"content":"Cursor task"},"cwd":project}).to_string(),
                 "cursor-1",
                 "Cursor task",

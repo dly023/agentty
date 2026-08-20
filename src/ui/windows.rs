@@ -254,6 +254,20 @@ fn workspace_for_environment_target(
         .map(|view| view.workspace)
 }
 
+pub(crate) fn resolve_workspace_for_environment(
+    cx: &mut App,
+    target: Option<RemoteTarget>,
+) -> WorkspaceId {
+    match target {
+        Some(target) => workspace_for_environment_target(WorkspaceStore::all(cx), Some(&target))
+            .unwrap_or_else(|| {
+                WorkspaceStore::claim_remote(cx, RemoteRef::new(target, WorkspaceId::new()))
+            }),
+        None => workspace_for_environment_target(WorkspaceStore::all(cx), None)
+            .unwrap_or_else(|| WorkspaceStore::claim(cx, None)),
+    }
+}
+
 pub fn open_or_focus_environment(
     cx: &mut App,
     target: Option<RemoteTarget>,
@@ -925,46 +939,28 @@ mod environment_tests {
         });
         // Failed is still a supervised link state; Disconnected is the only
         // result that proves the host was never materialized into RemoteLinks.
-        assert!(
-            matches!(
-                first_status,
-                Some(crate::ui::remote_workspace::RemoteStatus::Connecting)
-                    | Some(crate::ui::remote_workspace::RemoteStatus::Attached)
-                    | Some(crate::ui::remote_workspace::RemoteStatus::Reconnecting { .. })
-                    | Some(crate::ui::remote_workspace::RemoteStatus::Failed(_))
-            ),
-            "first click must leave the target host under RemoteLinks supervision, got {first_status:?}"
+        assert_eq!(
+            first_status,
+            Some(crate::ui::remote_workspace::RemoteStatus::Disconnected),
+            "first environment select must defer connect until explicit reconnect, got {first_status:?}"
         );
-        let target_handle = visual.update(|_, cx| {
-            WindowRegistry::window_for_environment(cx, &target_environment)
-                .expect("first click must publish the target window")
-        });
-        assert_ne!(target_handle, source_handle);
         assert_eq!(
             visual.update(|_, cx| cx.active_window()),
-            Some(target_handle),
-            "the first menu click must activate the newly registered native handle"
-        );
-        assert!(
-            target_handle
-                .update(&mut visual, |_, window, _| window.is_window_active())
-                .expect("target handle should remain valid")
-        );
-        assert_eq!(
-            visual.update(|_, cx| WorkspaceStore::all(cx).active.clone()),
-            Some(target_environment.clone()),
-            "window activation must focus the target Environment record"
+            Some(source_handle),
+            "single-window select keeps the invoking window active"
         );
         assert_eq!(
             visual.update(|_, cx| WindowRegistry::count(cx)),
-            before_count + 1,
-            "first click creates exactly one target window"
+            before_count,
+            "environment select must not open a peer window"
+        );
+        assert!(
+            visual.update(|_, cx| {
+                WindowRegistry::window_for(cx, target_workspace) == Some(source_handle)
+            }),
+            "the invoking window must rebind to the selected Environment workspace"
         );
 
-        source_handle
-            .update(&mut visual, |_, window, _| window.activate_window())
-            .expect("source window should be re-activatable for the repeat click");
-        visual.run_until_parked();
         click(TRIGGER, &mut visual);
         click(TARGET, &mut visual);
         let target_workspace_again = visual
@@ -974,32 +970,22 @@ mod environment_tests {
             target_workspace_again, target_workspace,
             "repeat click must not allocate a second workspace for the supervised host"
         );
-        let target_handle_again = visual.update(|_, cx| {
-            WindowRegistry::window_for_environment(cx, &target_environment)
-                .expect("repeat click keeps the target registered")
-        });
-        assert_eq!(target_handle_again, target_handle);
         assert_eq!(
             visual.update(|_, cx| WindowRegistry::count(cx)),
-            before_count + 1,
-            "repeat click must not duplicate the target window"
+            before_count,
+            "repeat click must not duplicate windows"
         );
         let second_status = visual.update(|_, cx| {
             crate::ui::remote_workspace::RemoteLinks::status_of(cx, target_workspace)
         });
-        assert!(
-            matches!(
-                second_status,
-                Some(crate::ui::remote_workspace::RemoteStatus::Connecting)
-                    | Some(crate::ui::remote_workspace::RemoteStatus::Attached)
-                    | Some(crate::ui::remote_workspace::RemoteStatus::Reconnecting { .. })
-                    | Some(crate::ui::remote_workspace::RemoteStatus::Failed(_))
-            ),
-            "repeat click must keep the same target host supervised, got {second_status:?}"
+        assert_eq!(
+            second_status,
+            Some(crate::ui::remote_workspace::RemoteStatus::Disconnected),
+            "repeat select must stay offline until explicit connect, got {second_status:?}"
         );
         assert_eq!(
             visual.update(|_, cx| cx.active_window()),
-            Some(target_handle)
+            Some(source_handle)
         );
     }
 

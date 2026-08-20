@@ -4664,9 +4664,12 @@ impl AgenttyApp {
                             )))
                             .child(
                                 Link::new("about-github")
-                                    .href("https://github.com/dly023/agentty/releases/latest")
+                                    .href(crate::core::update::RELEASES_URL)
                                     .text_sm()
-                                    .child("github.com/dly023/agentty/releases/latest"),
+                                    .child(crate::core::i18n::current(
+                                        cx,
+                                        "settings.about_releases_link",
+                                    )),
                             ),
                     ),
             )

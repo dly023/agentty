@@ -1,11 +1,16 @@
 pub mod activity_bar;
+pub mod agent_attention;
 pub mod agent_icon;
 pub mod app;
 pub mod assets;
 pub mod code_editor;
 pub mod completion_surface;
 pub mod composer;
+pub mod composer_context_footer;
+pub mod composer_dock;
 pub mod diff_overlay;
+pub mod environment_navigator_cache;
+pub mod environment_rail;
 pub mod environment_session;
 pub mod file_tree;
 pub mod forwards;

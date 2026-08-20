@@ -582,6 +582,10 @@ impl Command {
                 ShowRightPanel(RightPanelTab::Files),
             ),
             Command::new(
+                crate::core::i18n::current(cx, "palette.cmd.right_activity"),
+                ShowRightPanel(RightPanelTab::Activity),
+            ),
+            Command::new(
                 crate::core::i18n::current(cx, "palette.cmd.change_theme"),
                 OpenThemePicker,
             ),
@@ -1444,6 +1448,7 @@ mod tests {
             CommandKind::Quit,
             CommandKind::ShowRightPanel(RightPanelTab::Info),
             CommandKind::ShowRightPanel(RightPanelTab::Files),
+            CommandKind::ShowRightPanel(RightPanelTab::Activity),
         ] {
             let id = kind.id().expect("static command has an id");
             assert!(seen.insert(id), "duplicate command id {id:?}");

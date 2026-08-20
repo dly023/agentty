@@ -7,7 +7,7 @@ if rg -Fq 'send_agent_prompt(' <<<"$composer_prod"; then
   echo 'Composer must route AgentPrompt delivery through AgenttyApp::deliver_agent_prompt_to' >&2
   exit 1
 fi
-if rg -Fq '.child(Input::new(&state.input))' src/ui/composer.rs; then
+if rg -n '\.child\(Input::new\(&state\.input\)\)' src/ui/composer.rs | rg -v 'appearance\(false\)'; then
   echo 'Composer must not render the default bordered Input appearance' >&2
   exit 1
 fi

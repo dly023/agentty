@@ -106,10 +106,7 @@ impl ProviderDescriptor {
             }
             ProviderId::Cursor => {
                 is_descendant(&roots.cursor_projects(), source)
-                    && source
-                        .components()
-                        .any(|component| component.as_os_str() == "agent-transcripts")
-                    && has_extension(source, "jsonl")
+                    && super::parse::is_cursor_main_transcript(source)
             }
             ProviderId::Antigravity => {
                 is_descendant(&roots.antigravity_brain(), source)
@@ -170,7 +167,7 @@ pub const PERSISTED_PROVIDER_DESCRIPTORS: &[ProviderDescriptor] = &[
         id: ProviderId::Cursor,
         agent: CLIAgent::Cursor,
         scanner: ProviderScanner::CursorJsonl,
-        can_resume: false,
+        can_resume: true,
     },
     ProviderDescriptor {
         id: ProviderId::Antigravity,
@@ -286,6 +283,24 @@ mod tests {
             &roots,
             &roots.omp_sessions().join("project/tool-logs/event.jsonl"),
         ));
+        let cursor = descriptor_for_id(ProviderId::Cursor);
+        assert!(cursor.can_resume);
+        assert!(
+            cursor.accepts_source(
+                &roots,
+                &roots
+                    .cursor_projects()
+                    .join("repo/agent-transcripts/uuid/uuid.jsonl"),
+            )
+        );
+        assert!(
+            !cursor.accepts_source(
+                &roots,
+                &roots
+                    .cursor_projects()
+                    .join("repo/agent-transcripts/uuid/subagents/sub.jsonl"),
+            )
+        );
         let grok = descriptor_for_id(ProviderId::Grok);
         assert!(
             grok.accepts_source(

@@ -14,15 +14,15 @@ Agentty is in an early architecture phase. Correctness and conceptual clarity ta
 
 ## 2. Product model
 
-- Every managed Environment has a dedicated application window; a window must never be retargeted to another Environment in place.
+- The primary GUI is a single application window that switches Environment authority in place through `select_environment`; CLI and headless connect flows may still open or focus a dedicated Environment window via `open_or_focus_environment`.
 - Environment is execution authority: Local, SSH, WSL, or another explicit host backend.
-- One Environment window may contain many repositories, tabs, panes, and Agent sessions; this replaces the old one-workspace-per-window product model.
-- Tabs and panes inherit the window Environment and must not silently mix execution authorities.
-- The left sidebar is the Agent Session Navigator for the window Environment, not the authority selector and not a generic workspace list.
-- The top-right Environment Indicator always shows the window authority and opens or focuses other Environment windows.
-- Running `ssh` inside a terminal is an OpenSSH child process and does not change Agentty authority; choosing SSH in the indicator uses managed russh in a dedicated window.
-- Agent sessions, Composer, Activity Bar, filesystem operations, command completion, and process launch derive authority from the Environment window, never from incidental application focus.
-- Remote authority boundary: a remote machine's persisted tree, provider evidence, session aliases/pins/order, hooks, and target-side files remain remote-owned. A local projection is never an implicit migration source during hydrate/reconnect; missing remote evidence stays missing until an explicit typed event or identity-scoped seed is accepted by the remote authority.
+- One selected Environment may contain many repositories, tabs, panes, and Agent sessions; this replaces the old one-workspace-per-window product model.
+- Tabs and panes inherit the selected Environment and must not silently mix execution authorities.
+- The left sidebar carries an Environment rail plus the Agent Session Navigator for the selected Environment; non-current Environments may show stashed session counts without becoming content-column authority.
+- The top-right Environment Indicator always shows the selected authority and switches Environments in the same window (or opens a window when no invoking app is available).
+- Running `ssh` inside a terminal is an OpenSSH child process and does not change Agentty authority; choosing SSH in the indicator uses managed russh and switches Environment authority.
+- Agent sessions, Composer, filesystem operations, command completion, and process launch derive authority from the selected Environment, never from incidental application focus.
+- Remote authority boundary: a remote machine's persisted tree, provider evidence, session aliases/pins/order, hooks, and target-side files remain remote-owned. A local projection or EnvironmentNavigatorCache stash is never an implicit migration source during hydrate/reconnect; missing remote evidence stays missing until an explicit typed event or identity-scoped seed is accepted by the remote authority.
 
 ## 3. Required workflow
 

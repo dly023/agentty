@@ -15,6 +15,9 @@ activity.structured: Structured
 activity.title: Agent Activity
 activity.waiting: Agent needs input
 activity.working: Agent is working
+attention.banner.action.go_to_session: Go to session
+attention.banner.done_unread: "{agent} finished — review and continue"
+attention.banner.waiting: "{agent} needs input — {detail}"
 app.name: Agentty
 common.abort: Abort
 common.cancel: Cancel
@@ -55,6 +58,10 @@ composer.mode_switched: Composer mode — {mode}
 composer.placeholder: Write a prompt…  Shift+Enter for newline
 composer.toggle.collapse: Collapse Composer
 composer.toggle.expand: Expand Composer
+composer.footer.environment: Environment
+composer.footer.cwd: Directory
+composer.footer.branch: Branch
+composer.footer.agent: Agent
 composer.target_missing: Composer target no longer exists; draft preserved.
 daemon.keep_shells: Keep Shells
 daemon.mismatch_detail_unknown: "The server holding your shells is from an older version of the app. You can keep using it and your shells stay, but newer features may misbehave until it's restarted. Restarting starts a clean server: tabs reopen with fresh shells and anything running in them is terminated."
@@ -90,7 +97,15 @@ editor.unsaved_changes: "{name}" has unsaved changes
 environment.auth_error: Authentication error — {error}
 environment.connecting: Connecting
 environment.disconnected: Disconnected
+environment.disconnected_detail: "{machine} is disconnected — reconnect to continue"
 environment.execution: Execution environment
+environment.rail.connected: Connected
+environment.rail.pin: Pin environment
+environment.rail.preempted: Preempted
+environment.rail.reconnecting: Reconnecting
+environment.rail.preview_overflow: "+{count} more"
+environment.rail.session_counts: "{live} live · {total} sessions"
+environment.rail.unpin: Unpin environment
 environment.local.detail: Local environment
 environment.local.label: This Mac
 environment.remote.detail: Remote environment
@@ -427,6 +442,8 @@ session.details_provider: Provider
 session.details_session_id: Session ID
 session.details_title: Session Details
 session.details_updated: Updated
+session.execution_pill_done_unread: Finished
+session.execution_pill_waiting: Needs input
 session.details_working_directory: Working directory
 session.discovering: Discovering Agent sessions…
 session.empty: No Codex or Claude sessions found in this environment.
@@ -437,6 +454,7 @@ session.refresh: Refresh Agent sessions
 session.restoring: Restoring…
 session.resume: Resume
 session.search_placeholder: Search sessions…
+settings.about_releases_link: github.com/dly023/agentty/releases/latest
 settings.about_stack: Built in pure Rust · GPU rendering with gpui · VT core from Alacritty
 settings.about_tagline: A terminal-native workspace for local and remote coding sessions.
 settings.add_rule: + Add rule

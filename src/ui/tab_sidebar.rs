@@ -479,18 +479,23 @@ impl AgenttyApp {
                         cx,
                     ))
                     .child(search_bar)
-                    .child({
-                        let more_below = !projection.is_empty()
-                            && crate::ui::scrollbar::list_has_overflow_below(
+                    .when_some(self.render_environment_rail(window, cx), |column, rail| {
+                        column.child(rail)
+                    })
+                    .when(!self.environment_rail_current_collapsed(cx), |column| {
+                        column.child({
+                            let more_below = !projection.is_empty()
+                                && crate::ui::scrollbar::list_has_overflow_below(
+                                    &self.session_list_state,
+                                );
+                            crate::ui::scrollbar::with_vertical_scrollbar_overflow(
+                                "agent-session-navigator-scrollbar",
+                                list,
                                 &self.session_list_state,
-                            );
-                        crate::ui::scrollbar::with_vertical_scrollbar_overflow(
-                            "agent-session-navigator-scrollbar",
-                            list,
-                            &self.session_list_state,
-                            more_below,
-                            cx.theme().sidebar,
-                        )
+                                more_below,
+                                cx.theme().sidebar,
+                            )
+                        })
                     }),
             )
             .child(handle)
@@ -647,6 +652,12 @@ impl AgenttyApp {
         } else {
             gpui::rgb(sf.text_resting)
         };
+        let execution_pill_key = crate::ui::agent_attention::execution_attention_pill_key(badge);
+        let execution_pill_color = match badge {
+            Some(agentty_core::agent_runtime::ExecutionBadge::Waiting) => cx.theme().warning,
+            Some(agentty_core::agent_runtime::ExecutionBadge::CompletedUnread) => cx.theme().accent,
+            _ => cx.theme().transparent,
+        };
         let item = h_flex()
             .id(gpui::SharedString::from(format!(
                 "agent-session-row-{}",
@@ -668,6 +679,9 @@ impl AgenttyApp {
             .cursor_pointer()
             .text_color(text)
             .bg(gpui::rgb(fill))
+            .when(execution_pill_key.is_some(), |item| {
+                item.border_l_2().border_color(execution_pill_color)
+            })
             .when(!selected, |item| {
                 item.hover(|item| item.bg(gpui::rgb(hover_fill)))
             })
@@ -730,6 +744,20 @@ impl AgenttyApp {
                             }))
                             .child(title)
                             .into_any_element(),
+                    })
+                    .when_some(execution_pill_key, |column, key| {
+                        column.child(
+                            div()
+                                .flex_shrink_0()
+                                .px_1p5()
+                                .py_0p5()
+                                .rounded_sm()
+                                .text_xs()
+                                .font_weight(gpui::FontWeight::MEDIUM)
+                                .text_color(execution_pill_color)
+                                .bg(execution_pill_color.opacity(0.12))
+                                .child(crate::core::i18n::current(cx, key)),
+                        )
                     })
                     .when_some(waiting_message.or(subtitle), |column, detail| {
                         column.child(
@@ -1888,6 +1916,17 @@ mod tests {
         let source = include_str!("tab_sidebar.rs");
         let production = source.split("#[cfg(test)]").next().unwrap_or(source);
         assert!(!production.contains("environment_menu_hosts"));
+    }
+
+    #[test]
+    fn environment_rail_renders_above_session_list() {
+        let sidebar = include_str!("tab_sidebar.rs");
+        let production = sidebar.split("#[cfg(test)]").next().unwrap_or(sidebar);
+        assert!(production.contains("render_environment_rail"));
+        assert!(production.contains("environment_rail_current_collapsed"));
+        let rail = include_str!("environment_rail.rs");
+        let rail_prod = rail.split("#[cfg(test)]").next().unwrap_or(rail);
+        assert!(rail_prod.contains("environment-rail"));
     }
 
     #[test]

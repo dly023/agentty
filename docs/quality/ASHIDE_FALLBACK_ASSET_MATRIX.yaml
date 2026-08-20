@@ -88,7 +88,7 @@ tracks:
       close_of_agent_bound_carrier_triggers_passive_native_history_refresh:
         tests: [closing_live_carrier_hands_off_to_native_history, agent_bound_carrier_close_uses_binding_or_session]
       restore_finalize_has_typed_success_retryable_cancelled_and_model_broken_outcomes:
-        tests: [restore_failure_rolls_back_without_duplicate_row]
+        tests: [restore_failure_rolls_back_without_duplicate_row, history_committed_while_live_still_unbound_does_not_duplicate_row, virtual_row_consumed_when_live_with_same_provider_key_exists]
       missing_restore_content_has_zero_identity_or_persistence_side_effects:
         tests: [missing_restore_content_has_zero_side_effects]
       environment_disconnect_preserves_rows_and_authority:

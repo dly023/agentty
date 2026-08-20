@@ -70,6 +70,7 @@ actions!(
         ShowRightPanelOutline,
         ShowRightPanelChanges,
         ShowRightPanelFiles,
+        ShowRightPanelActivity,
         OpenSettings,
         ShowKeyboardShortcuts,
         About,

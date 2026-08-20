@@ -42,6 +42,98 @@ feedback_policy:
   retention_rule: Never delete feedback silently; declined or superseded entries retain
     the reason and replacement ID when one exists.
 feedback:
+- id: FEEDBACK-20260819-009
+  summary: Composer 底栏「根据终端推断」Activity Bar 价值低；改为环境/路径 factual chips，参考 ashide AgentInputFooter。
+  status: implemented
+  priority: high
+  area: composer_context_footer
+  decision: 提升为 INPUT-COMPOSER-CONTEXT-FOOTER-16；替换 activity.inferred/rich 与 heuristic status。
+  next_action: None — composer context footer shipped with split dock.
+  promoted_to:
+    spec: INPUT-COMPOSER-CONTEXT-FOOTER-16
+    traceability: INPUT-COMPOSER-CONTEXT-FOOTER-098
+- id: FEEDBACK-20260819-008
+  summary: 分屏下 Composer 无法正常工作；左右分屏应各列独立 dock，垂直分屏共享 dock 由焦点决定投递。
+  status: implemented
+  priority: high
+  area: composer_split_dock
+  decision: 提升为 INPUT-COMPOSER-SPLIT-DOCK-15；修正 focused_or_first 在 composer 持焦时的误绑。
+  next_action: None — split dock + focus tests landed.
+  promoted_to:
+    spec: INPUT-COMPOSER-SPLIT-DOCK-15
+    traceability: INPUT-COMPOSER-SPLIT-DOCK-097
+- id: FEEDBACK-20260819-007
+  summary: 左栏环境树不应假设远程环境一直连着、一直可拉状态；远程应默认离线，显式 Connect 后再展示连接态与会话发现，避免 idle HostLinks 浪费。
+  status: implemented
+  priority: high
+  area: explicit_remote_connect_lifecycle
+  decision: ENV-EXPLICIT-CONNECT-51；supervise defer + discovery 门控；pin/折叠不等于 connect。
+  next_action: None — ENV-RAIL tree + explicit connect landed.
+  promoted_to:
+    spec: ENV-EXPLICIT-CONNECT-51
+    traceability: ENV-EXPLICIT-CONNECT-094A
+- id: FEEDBACK-20260819-006
+  summary: 环境断连后缺少显式提示与显式重连；现有重连入口分散在 switcher/banner，indicator menu 未对齐 ENV-INDICATOR-04。
+  status: implemented
+  priority: high
+  area: remote_disconnect_reconnect_ux
+  decision: 提升为 ENV-DISCONNECT-SURFACE-50；indicator menu 增加 Reconnect/Disconnect，title bar 下 persistent disconnect strip。
+  next_action: None — disconnect strip and indicator menu actions landed.
+  promoted_to:
+    spec: ENV-DISCONNECT-SURFACE-50
+    traceability: ENV-DISCONNECT-SURFACE-093
+- id: FEEDBACK-20260819-005
+  summary: 考虑单窗口左栏同时承载环境与 Session；环境 pin、手动多开折叠，替换一环境一窗口模型。
+  status: implemented
+  priority: medium
+  area: single_window_environment_rail
+  decision: ENV-SINGLE-WINDOW-RAIL-47 + ENV-RAIL-TREE-52；左栏两级树预览行来自 EnvironmentNavigatorCache，点击只走 select_environment。
+  next_action: None — two-level indented preview rows landed; optional virtualized full multi-env lists remain polish.
+  promoted_to:
+    spec: ENV-SINGLE-WINDOW-RAIL-47
+    traceability: ENV-SINGLE-WINDOW-RAIL-094
+- id: FEEDBACK-20260819-004
+  summary: Agent 运行完成或 Waiting 时 UI 缺少强提醒；默认 Left 布局隐藏 tab chip，背景 agent 几乎不可见。
+  status: implemented
+  priority: high
+  area: agent_attention_banner
+  decision: 提升为 UI-AGENT-ATTENTION-BANNER-46 + AGENT-EXECUTION-STATE-SYSTEM-12 扩展；workspace banner + navigator execution pill。
+  next_action: None — attention banner and navigator pills landed.
+  promoted_to:
+    spec: UI-AGENT-ATTENTION-BANNER-46
+    traceability: UI-AGENT-ATTENTION-BANNER-092
+- id: FEEDBACK-20260819-003
+  summary: Session discovery/refresh 与 live binding 竞态导致同一逻辑会话映射到两个 Navigator 行或两个 tab。
+  status: implemented
+  priority: high
+  area: session_authority_duplicate_mapping
+  decision: 提升为 SESSION-AUTHORITY-REDUCER-45；pre-merge row_id + activate dedup。
+  next_action: None — pre-merge row_id and activate dedup landed.
+  promoted_to:
+    spec: SESSION-AUTHORITY-REDUCER-45
+    traceability: SESSION-AUTHORITY-REDUCER-090
+- id: FEEDBACK-20260819-002
+  summary: 参考 refs/ashide 适配 Cursor CLI，Session Navigator 需支持 cursor-agent 会话发现、标题/cwd 解析与 resume。
+  status: implemented
+  priority: high
+  area: cursor_cli_session_discovery_and_resume
+  decision: 提升为 SESSION-CURSOR-DISCOVERY-35；主 transcript 路径 UUID 作为 sessionId，跳过 subagents，typed
+    `cursor-agent --resume <uuid>`；ashide 因旧 store.db 映射禁用 resume，当前 cursor-agent CLI 接受 transcript UUID。
+  next_action: None — discovery/resume wired with focused tests and session-navigator gate.
+  promoted_to:
+    spec: SESSION-CURSOR-DISCOVERY-35
+    traceability: SESSION-CURSOR-DISCOVERY-081
+- id: FEEDBACK-20260819-001
+  summary: 默认 Left 布局下标题栏 New Tab 旁出现无意义的溢出数字；水平 tab 条隐藏后溢出计数与 ⌘1–9 提示都应停用。
+  status: implemented
+  priority: medium
+  area: titlebar_tab_overflow_orphan_ui
+  decision: 提升为 UI-TAB-OVERFLOW-05 扩展约束；overflow affordance、chip 容器与 held-modifier tab-number hint 仅在
+    horizontal_tab_chips_visible 时启用；Left rail 只保留 Environment Indicator 与 New Tab Plus。
+  next_action: None — gated in tab_strip/hints with static check and focused source test.
+  promoted_to:
+    spec: UI-TAB-OVERFLOW-05
+    traceability: UI-TAB-OVERFLOW-HIDDEN-075
 - id: FEEDBACK-20260816-001
   summary: 从环境切换菜单首次点击远程环境没有可见反应，必须重新展开菜单并点击第二次才会创建、聚焦或进入该环境。
   status: implemented
@@ -1288,7 +1380,7 @@ feedback:
     non-interactive "暂无 Agent 活动" bar'
   - activity_bar_toggles_composer_without_mutating_mode passes; toggle is pane-scoped
     and keeps persisted composer_mode unchanged
-  - 2026-08-16 composer_activity_bar_click_round_trips_draft_and_focus passed against
+  - 2026-08-16 composer_footer_toggle_round_trips_draft_and_focus passed against
     the production Activity Bar, terminal focus, exact draft, and replacement Input
     focus
   next_action: None — production click-release and pane-scoped state tests are both
@@ -4355,7 +4447,7 @@ milestones:
     - src/ui/app.rs
     tests:
     - activity_bar_toggles_composer_without_mutating_mode
-    - composer_activity_bar_click_round_trips_draft_and_focus
+    - composer_footer_toggle_round_trips_draft_and_focus
     red_test_evidence: 2026-08-09 the focused pane-scoped toggle test was promoted
       before implementation.
     evidence: 2026-08-16 the production Activity Bar click-release E2E and pane-scoped

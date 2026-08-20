@@ -108,6 +108,25 @@ rg -q 'TabChipWindow' src/ui/tab_strip.rs
 rg -q 'OVERFLOW_CHIP_W' src/ui/tab_strip.rs
 rg -q 'tab_chip_window_keeps_active_tab_visible' src/ui/tab_strip.rs
 rg -q 'tab_chip_window_compresses_before_overflowing' src/ui/tab_strip.rs
+rg -q 'horizontal_chip_strip_only_enables_overflow_and_mod_hints' src/ui/tab_strip.rs
+rg -q 'horizontal_tab_chips_visible' src/ui/app.rs src/ui/hints.rs
+prod_tab_strip=$(awk 'BEGIN{p=1} /^#\[cfg\(test\)\]/{p=0} p' src/ui/tab_strip.rs)
+if ! printf '%s\n' "$prod_tab_strip" | rg 'show_chips && !render_all && chip_window.leading_hidden' >/dev/null; then
+  echo '[ui-visual] leading overflow must be gated on show_chips' >&2
+  exit 1
+fi
+if ! printf '%s\n' "$prod_tab_strip" | rg 'show_chips && !render_all && chip_window.trailing_hidden' >/dev/null; then
+  echo '[ui-visual] trailing overflow must be gated on show_chips' >&2
+  exit 1
+fi
+if ! printf '%s\n' "$prod_tab_strip" | rg 'show_chips && self.mod_hint_badges' >/dev/null; then
+  echo '[ui-visual] mod-hint badges must be gated on show_chips' >&2
+  exit 1
+fi
+if ! printf '%s\n' "$prod_tab_strip" | rg '\.when\(show_chips, \|this\| this\.child\(chips\)\)' >/dev/null; then
+  echo '[ui-visual] chip container must not render when horizontal strip is hidden' >&2
+  exit 1
+fi
 if rg -n 'min_w\(px\(100\.\)\)' src/ui/tab_strip.rs; then
   echo '[ui-visual] chip minimum width must come from tab_chip_window, not a hardcoded literal' >&2
   exit 1
@@ -254,16 +273,32 @@ if ! rg -n 'Scrollbar::vertical' -A 3 src/ui/scrollbar.rs | rg 'scrollbar_show\(
   exit 1
 fi
 
-# The Agent Activity Bar is the canonical compact handle for Composer visibility.
-rg -q 'INPUT-COMPOSER-ACTIVITY-BAR-07' docs/specs/INPUT_EXPERIENCE_SPEC.yaml
-rg -q 'fn toggle_composer_from_activity_bar' src/ui/composer.rs
+# Composer dock: split-aware in-flow layout and context footer (replaces Activity Bar).
+rg -q 'INPUT-COMPOSER-SPLIT-DOCK-15' docs/specs/INPUT_EXPERIENCE_SPEC.yaml
+rg -q 'INPUT-COMPOSER-CONTEXT-FOOTER-16' docs/specs/INPUT_EXPERIENCE_SPEC.yaml
+rg -q 'fn render_pane_with_docks' src/ui/composer_dock.rs
+rg -q 'render_resizable_split' src/ui/composer_dock.rs src/ui/pane.rs
+rg -q 'horizontal_split_dock_reuses_resizable_split_divider' src/ui/composer_dock.rs
+rg -q 'fn render_composer_context_footer' src/ui/composer_context_footer.rs
+rg -q 'fn toggle_composer_from_footer' src/ui/composer.rs
 rg -q 'activity_bar_toggles_composer_without_mutating_mode' src/ui/composer.rs
-rg -q 'composer_activity_bar_click_round_trips_draft_and_focus' src/ui/composer.rs
-rg -q 'AGENT_ACTIVITY_COMPOSER_TOGGLE' src/ui/activity_bar.rs
-rg -q 'composer.toggle.expand' src/ui/activity_bar.rs assets/i18n/en-US.yaml assets/i18n/zh-CN.yaml
-rg -q 'composer.toggle.collapse' src/ui/activity_bar.rs assets/i18n/en-US.yaml assets/i18n/zh-CN.yaml
-rg -q 'toggle_composer_from_activity_bar' src/ui/activity_bar.rs
+rg -q 'composer_footer_toggle_round_trips_draft_and_focus' src/ui/composer.rs
+rg -q 'composer_footer_model_includes_environment_and_cwd' src/ui/composer_context_footer.rs
+rg -q 'COMPOSER_CONTEXT_FOOTER_TOGGLE' src/ui/composer_context_footer.rs
+rg -q 'composer.footer.environment' src/ui/composer_context_footer.rs assets/i18n/en-US.yaml assets/i18n/zh-CN.yaml
+rg -q 'composer.toggle.expand' src/ui/composer_context_footer.rs assets/i18n/en-US.yaml assets/i18n/zh-CN.yaml
+rg -q 'composer.toggle.collapse' src/ui/composer_context_footer.rs assets/i18n/en-US.yaml assets/i18n/zh-CN.yaml
 bash script/tests/composer_dock_reflow_contract.sh
 bash script/tests/composer_native_rich_area_contract.sh
+
+rg -q 'UI-AGENT-ATTENTION-BANNER-46' docs/specs/UI_VISUAL_SYSTEM_SPEC.yaml
+rg -q 'mod agent_attention' src/ui/mod.rs
+rg -q 'fn workspace_attention' src/ui/agent_attention.rs
+rg -q 'fn render_agent_attention_banner' src/ui/agent_attention.rs
+rg -q 'attention.banner.waiting' assets/i18n/en-US.yaml assets/i18n/zh-CN.yaml
+rg -q 'attention.banner.done_unread' assets/i18n/en-US.yaml assets/i18n/zh-CN.yaml
+rg -q 'attention.banner.action.go_to_session' assets/i18n/en-US.yaml assets/i18n/zh-CN.yaml
+rg -q 'session.execution_pill_waiting' assets/i18n/en-US.yaml assets/i18n/zh-CN.yaml
+rg -q 'session.execution_pill_done_unread' assets/i18n/en-US.yaml assets/i18n/zh-CN.yaml
 
 echo "ui visual system checks passed"

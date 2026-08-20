@@ -10,6 +10,7 @@ use gpui_component::{
     ActiveTheme as _, IndexPath, InteractiveElementExt as _, TitleBar, WindowExt as _,
 };
 use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -26,6 +27,7 @@ use crate::core::ssh_config;
 use crate::core::window_state::{WindowGeometry as _, WindowState};
 use crate::daemon::protocol::{RemoteContext, ShellSpec, ssh_option_takes_value};
 use crate::terminal::view::{ChildExited, TerminalView};
+use crate::ui::composer::{ComposerState, PaneIdentity};
 use crate::ui::host_registry::HostId;
 use crate::ui::palette::{
     ChromeState, Command, CommandGroup, CommandKind, PaletteEvent, PaletteView,
@@ -306,6 +308,21 @@ impl Tab {
         }
     }
 
+    pub(crate) fn last_focused_entity(&self) -> Option<gpui::EntityId> {
+        self.last_focused
+    }
+
+    pub(crate) fn last_focused_entity_in_subtree(
+        &self,
+        pane: &Pane<PaneSlot>,
+    ) -> Option<gpui::EntityId> {
+        self.last_focused.filter(|id| {
+            pane.leaves()
+                .into_iter()
+                .any(|slot| slot.entity_id() == *id)
+        })
+    }
+
     pub(crate) fn detail_pane(
         &self,
         window: &Window,
@@ -476,6 +493,8 @@ pub struct AgenttyApp {
     pub(crate) sidebar_search: Entity<InputState>,
     pub(crate) session_keyboard_cursor: crate::ui::session_navigator::SessionKeyboardCursor,
     pub(crate) session_navigator: agentty_core::agent_runtime::SessionNavigator,
+    /// Last committed rebuild input fingerprint (SESSION-PROJECTION-PAINT-GATE-53).
+    pub(crate) session_navigator_input_fingerprint: Option<u64>,
     pub(crate) session_history: Vec<agentty_core::agent_runtime::AgentSessionRecord>,
     pub(crate) session_history_environment: Option<agentty_core::core::environment::EnvironmentId>,
     pub(crate) session_refresh: crate::ui::session_navigator::SessionRefreshState,
@@ -485,17 +504,19 @@ pub struct AgenttyApp {
     pub(crate) session_user_state_path: Option<std::path::PathBuf>,
     pub(crate) session_store_roots: Option<agentty_core::agent_runtime::AgentStoreRoots>,
     pub(crate) session_alias_environment: Option<agentty_core::core::environment::EnvironmentId>,
+    /// Stashed Navigator projections for Environments this window has visited
+    /// (ENV-SINGLE-WINDOW-RAIL-47). Not remote authority — client UI cache only.
+    pub(crate) environment_navigator_cache:
+        crate::ui::environment_navigator_cache::EnvironmentNavigatorCache,
     pub(crate) session_alias_edit: Option<SessionAliasEdit>,
     /// When true, session-row HoverCards are unmounted so the context menu owns priority.
     pub(crate) session_row_menu_open: Rc<Cell<bool>>,
     /// Bumped when a row menu opens so remounted HoverCards start from a closed keyed state.
     pub(crate) session_hover_epoch: Rc<Cell<u64>>,
     pub(crate) session_row_menu_dismiss: Option<Subscription>,
-    pub(crate) composer: Option<crate::ui::composer::ComposerState>,
+    pub(crate) composers: HashMap<PaneIdentity, ComposerState>,
     pub(crate) composer_drafts: crate::ui::composer::ComposerDraftStore,
     pub(crate) composer_visibility: crate::ui::composer::ComposerVisibilityOverrides,
-    pub(crate) composer_completion: Option<crate::ui::completion_surface::ComposerCompletionState>,
-    pub(crate) composer_completion_generation: u64,
     pub(crate) file_search: Entity<InputState>,
     _sidebar_search_sub: Subscription,
     _file_search_sub: Subscription,
@@ -844,6 +865,7 @@ impl AgenttyApp {
             sidebar_search,
             session_keyboard_cursor: Default::default(),
             session_navigator: agentty_core::agent_runtime::SessionNavigator::default(),
+            session_navigator_input_fingerprint: None,
             session_history: Vec::new(),
             session_history_environment: None,
             session_refresh: Default::default(),
@@ -853,15 +875,14 @@ impl AgenttyApp {
             session_user_state_path: None,
             session_store_roots: None,
             session_alias_environment: None,
+            environment_navigator_cache: Default::default(),
             session_alias_edit: None,
             session_row_menu_open: Rc::new(Cell::new(false)),
             session_hover_epoch: Rc::new(Cell::new(0)),
             session_row_menu_dismiss: None,
-            composer: None,
+            composers: HashMap::new(),
             composer_drafts: Default::default(),
             composer_visibility: Default::default(),
-            composer_completion: None,
-            composer_completion_generation: 0,
             _sidebar_search_sub: sidebar_search_sub,
             file_search,
             _file_search_sub: file_search_sub,
@@ -1085,11 +1106,38 @@ impl AgenttyApp {
             let _ = handle.update(cx, |_, other, _| other.activate_window());
             return;
         }
-        if self.tabs.is_empty() {
-            self.switch_workspace(id, window, cx);
-        } else {
-            crate::ui::windows::open(cx, Some(id));
+        self.switch_workspace(id, window, cx);
+    }
+
+    /// Switch the content column to another Environment authority in this window.
+    /// Replaces multi-window open-or-focus for the environment indicator menu.
+    pub(crate) fn select_environment(
+        &mut self,
+        target: Option<crate::core::session::RemoteTarget>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        use agentty_core::core::environment::EnvironmentId;
+        let environment = target
+            .as_ref()
+            .map(EnvironmentId::for_remote)
+            .unwrap_or_default();
+        let current = crate::core::session::WorkspaceStore::environment_id(cx, self.workspace);
+        if environment == current {
+            return;
         }
+        let workspace = crate::ui::windows::resolve_workspace_for_environment(cx, target);
+        self.switch_workspace(workspace, window, cx);
+    }
+
+    pub(crate) fn remote_session_discovery_ready(&self, cx: &gpui::App) -> bool {
+        let Some(_) = crate::core::session::WorkspaceStore::remote_ref(cx, self.workspace) else {
+            return true;
+        };
+        matches!(
+            crate::ui::remote_workspace::RemoteLinks::status_of(cx, self.workspace),
+            Some(crate::ui::remote_workspace::RemoteStatus::Attached)
+        )
     }
 
     pub(crate) fn switch_workspace(
@@ -1102,6 +1150,11 @@ impl AgenttyApp {
         if previous == id {
             return;
         }
+        // Stash the departing Environment's committed Navigator before wipe so
+        // the left-rail can restore counts and rows when switching back.
+        let previous_environment =
+            crate::core::session::WorkspaceStore::environment_id(cx, previous);
+        self.stash_environment_navigator(previous_environment);
         // Invalidate the old Navigator scope before any asynchronous Host
         // completion can land while this window is being rebound. The new
         // workspace must never inherit rows, alias paths, or in-flight scan
@@ -1124,11 +1177,15 @@ impl AgenttyApp {
         crate::ui::windows::WindowRegistry::rebind(cx, previous, claimed);
         crate::ui::remote_workspace::RemoteLinks::supervise(cx, claimed);
         self.adopt_workspace(claimed, Session::default(), window, cx);
+        let next_environment = crate::core::session::WorkspaceStore::environment_id(cx, claimed);
+        let _ = self.restore_environment_navigator(&next_environment);
         self.rebuild_session_navigator(cx);
-        self.refresh_session_navigator_for(
-            crate::ui::session_navigator::SessionRefreshIntent::InitialTargetReady,
-            cx,
-        );
+        if self.remote_session_discovery_ready(cx) {
+            self.refresh_session_navigator_for(
+                crate::ui::session_navigator::SessionRefreshIntent::InitialTargetReady,
+                cx,
+            );
+        }
         crate::ui::tree_sync::hydrate_window_from_tree(cx, claimed);
     }
 
@@ -2234,6 +2291,13 @@ impl AgenttyApp {
         matches!(cx.global::<Config>().tab_bar_position, TabBarPosition::Left)
             && !self.sidebar_collapsed
             && !self.tabs.is_empty()
+    }
+
+    /// Horizontal title-bar tab chips (UI-TAB-OVERFLOW-05). False when the left
+    /// Session Navigator rail owns tab navigation and chips are hidden.
+    pub(crate) fn horizontal_tab_chips_visible(&self, cx: &gpui::App) -> bool {
+        !matches!(cx.global::<Config>().tab_bar_position, TabBarPosition::Left)
+            || self.tabs.is_empty()
     }
 
     pub(crate) fn set_notify_mode(
@@ -5570,44 +5634,56 @@ pub(crate) mod render_probe {
 }
 
 impl AgenttyApp {
-    fn render_remote_workspace_strip(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
+    fn render_remote_disconnect_strip(&self, cx: &mut Context<Self>) -> Option<gpui::AnyElement> {
         if self.tabs.is_empty() {
             return None;
         }
         let status = self.remote_status(cx)?;
+        if matches!(status, crate::ui::remote_workspace::RemoteStatus::Attached) {
+            return None;
+        }
         let machine = self.remote_machine_label(cx);
-        let message = status.strip_message(&machine, cx)?;
+        let message = status.strip_message(&machine, cx).or_else(|| {
+            Some(crate::core::i18n::current_format(
+                cx,
+                "environment.disconnected_detail",
+                &[("machine", &machine)],
+            ))
+        })?;
         let action = status.action_label(cx);
+        let severity = crate::ui::notice::NoticeSeverity::Warning;
         let theme = cx.theme();
-        let severity = crate::ui::notice::NoticeSeverity::Info;
-        let bar = crate::ui::notice::notice_surface(severity, cx)
-            .child(crate::ui::notice::notice_icon(severity, cx))
-            .child(
-                div()
-                    .font_weight(gpui::FontWeight::MEDIUM)
-                    .text_color(theme.foreground)
-                    .child(message),
-            )
-            .when_some(action, |this, label| {
-                use gpui_component::Sizable as _;
-                use gpui_component::button::ButtonVariants as _;
-                this.child(
-                    gpui_component::button::Button::new("remote-status-action")
-                        .label(label)
-                        .primary()
-                        .small()
-                        .on_click(cx.listener(|this, _, _window, cx| this.remote_retry(cx))),
-                )
-            });
         Some(
-            div()
-                .absolute()
-                .top_2()
-                .left_0()
-                .right_0()
-                .flex()
-                .justify_center()
-                .child(bar)
+            crate::ui::notice::notice_surface(severity, cx)
+                .w_full()
+                .flex_shrink_0()
+                .rounded_none()
+                .shadow_none()
+                .border_t_1()
+                .border_b_1()
+                .px_4()
+                .py_2()
+                .child(crate::ui::notice::notice_icon(severity, cx))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .font_weight(gpui::FontWeight::MEDIUM)
+                        .text_color(theme.foreground)
+                        .child(message),
+                )
+                .when_some(action, |this, label| {
+                    use gpui_component::Sizable as _;
+                    use gpui_component::button::ButtonVariants as _;
+                    this.child(
+                        gpui_component::button::Button::new("remote-disconnect-strip-action")
+                            .label(label)
+                            .primary()
+                            .small()
+                            .on_click(cx.listener(|this, _, _window, cx| this.remote_retry(cx))),
+                    )
+                })
                 .into_any_element(),
         )
     }
@@ -5903,7 +5979,7 @@ impl Render for AgenttyApp {
                     None => {
                         let dim_inactive = active_tab.pane.leaves().len() > 1
                             && cx.global::<Config>().dim_inactive_panes;
-                        active_tab.pane.render(dim_inactive, window, cx)
+                        self.render_pane_with_docks(self.active, dim_inactive, window, cx)
                     }
                 }
             }
@@ -5926,9 +6002,6 @@ impl Render for AgenttyApp {
                 this.child(el)
             })
             .when_some(ssh_status, |this, el| this.child(el))
-            .when_some(self.render_remote_workspace_strip(cx), |this, el| {
-                this.child(el)
-            })
             .when_some(self.render_remote_input_notice(cx), |this, el| {
                 this.child(el)
             })
@@ -5978,7 +6051,6 @@ impl Render for AgenttyApp {
             (overlays, Vec::new())
         };
         let panel_px = self.right_panel_px(window, cx);
-        let activity_bar = self.render_activity_bar(window, cx);
         let terminal_column = div()
             .flex_1()
             .min_w_0()
@@ -5986,9 +6058,14 @@ impl Render for AgenttyApp {
             .flex_col()
             .relative()
             .when_some(column_title_bar, |this, bar| this.child(bar))
+            .when_some(self.render_remote_disconnect_strip(cx), |this, bar| {
+                this.child(bar)
+            })
+            .when_some(
+                self.render_agent_attention_banner(window, cx),
+                |this, bar| this.child(bar),
+            )
             .child(body_area)
-            .when_some(self.render_composer(window, cx), |this, el| this.child(el))
-            .when_some(activity_bar, |this, bar| this.child(bar))
             .children(column_overlays);
         let panel_row = div()
             .flex_1()
@@ -6241,6 +6318,11 @@ impl Render for AgenttyApp {
                 .on_action(cx.listener(|this, _: &ShowRightPanelFiles, _window, cx| {
                     this.set_right_panel_tab(crate::core::config::RightPanelTab::Files, cx)
                 }))
+                .on_action(
+                    cx.listener(|this, _: &ShowRightPanelActivity, _window, cx| {
+                        this.set_right_panel_tab(crate::core::config::RightPanelTab::Activity, cx)
+                    }),
+                )
                 .on_action(cx.listener(|this, _: &OpenSettings, window, cx| {
                     this.toggle_settings(window, cx)
                 }))

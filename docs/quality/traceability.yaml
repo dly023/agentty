@@ -429,7 +429,7 @@ entries:
   - script/tests/composer_native_rich_area_contract.sh
   tests:
   - composer_auto_mode_is_available_for_plain_terminals
-  verification: cargo test --bin agentty-app composer_auto_mode_is_available_for_plain_terminals
+  verification: cargo test --bin agentty-app composer_auto_mode_is_available_for_plain_terminals --locked
     --locked && cargo test --bin agentty-app composer_ --locked && ./script/presubmit
     quick
   evidence: User visual acceptance identified a nested Composer frame and requested
@@ -1063,6 +1063,20 @@ entries:
     and fail-closed static gate; stable unit projection, variable-height lazy list,
     split-group filtering, RowId keyboard routing, projected reorder bounds, and quick
     presubmit passed'
+- id: SESSION-PROJECTION-PAINT-GATE-100
+  spec: SESSION-PROJECTION-PAINT-GATE-53
+  source:
+  - docs/specs/SESSION_NAVIGATOR_SPEC.yaml
+  - src/ui/session_navigator.rs
+  - src/ui/tab_sidebar.rs
+  - src/ui/app.rs
+  static_check: script/check_session_navigator
+  tests:
+  - identical_projection_inputs_share_fingerprint
+  - live_execution_change_updates_fingerprint
+  - rebuild_session_navigator_gates_on_input_fingerprint
+  verification: cargo test --bin agentty-app identical_projection_inputs live_execution_change_updates rebuild_session_navigator_gates --locked && ./script/check_session_navigator
+  evidence: Sidebar paint skips SessionNavigator::refresh when live/history/user-state fingerprint is unchanged.
 - id: SESSION-GLOBAL-SEARCH-056
   spec: SESSION-GLOBAL-SEARCH-22
   source:
@@ -1200,6 +1214,22 @@ entries:
     cache starvation at budget 8; Cursor now walks only project entries plus agent-transcripts
     subtrees, the red test passes, and real standard discovery again commits 40 rows
     including Omp when present.'
+- id: SESSION-CURSOR-DISCOVERY-081
+  spec: SESSION-CURSOR-DISCOVERY-35
+  source:
+  - docs/specs/SESSION_NAVIGATOR_SPEC.yaml
+  - crates/agentty-core/src/agent_runtime/parse.rs
+  - crates/agentty-core/src/agent_runtime/service.rs
+  - crates/agentty-core/src/agent_runtime/provider.rs
+  static_check: script/check_session_navigator
+  tests:
+  - cursor_main_transcript_identity_comes_from_path_and_user_query_text
+  - cursor_discovery_uses_native_transcript_shape_and_skips_subagents
+  verification: cargo test -p agentty-core cursor_main_transcript_identity_comes_from_path_and_user_query_text
+    cursor_discovery_uses_native_transcript_shape_and_skips_subagents --locked && ./script/check_session_navigator
+  evidence: '2026-08-19: real Cursor agent-transcripts omit sessionId; discovery now derives
+    UUID identity from main transcript paths, strips <user_query> titles, decodes project
+    slug cwd, skips subagents, and resumes through cursor-agent --resume <uuid>.'
 - id: SESSION-SIDEBAR-SURFACE-HIERARCHY-062
   spec: SESSION-SIDEBAR-SURFACE-HIERARCHY-25
   source:
@@ -1471,6 +1501,21 @@ entries:
     the strip renders an active-tab-containing window with leading/trailing overflow
     affordances that page on click; an exhaustive avail×count×active sweep proves
     the active tab is never hidden; quick presubmit passed.'
+- id: UI-TAB-OVERFLOW-HIDDEN-075
+  spec: UI-TAB-OVERFLOW-05
+  source:
+  - docs/specs/UI_VISUAL_SYSTEM_SPEC.yaml
+  - src/ui/tab_strip.rs
+  - src/ui/hints.rs
+  - src/ui/app.rs
+  static_check: script/check_ui_visual_system
+  tests:
+  - horizontal_chip_strip_only_enables_overflow_and_mod_hints
+  verification: cargo test --bin agentty-app horizontal_chip_strip_only_enables_overflow_and_mod_hints
+    --locked && ./script/check_ui_visual_system
+  evidence: '2026-08-19: left-rail layout hid horizontal chips but still rendered orphan
+    overflow counts and armed modifier tab-number hints beside New Tab; overflow,
+    chip container, and mod-hint arming are now gated on horizontal_tab_chips_visible.'
 - id: UI-TITLEBAR-CHROME-074
   spec: UI-TITLEBAR-CHROME-06
   source:
@@ -2436,8 +2481,8 @@ entries:
   static_check: script/check_ui_visual_system
   tests:
   - activity_bar_toggles_composer_without_mutating_mode
-  - composer_activity_bar_click_round_trips_draft_and_focus
-  verification: cargo test --bin agentty-app composer_activity_bar_click_round_trips_draft_and_focus
+  - composer_footer_toggle_round_trips_draft_and_focus
+  verification: cargo test --bin agentty-app composer_footer_toggle_round_trips_draft_and_focus
     --locked && cargo test --bin agentty-app activity_bar_toggles_composer_without_mutating_mode
     --locked && ./script/check_ui_visual_system && ./script/presubmit quick
   red_test_evidence: 2026-08-16 audit found activity_bar_toggles_composer_without_mutating_mode
@@ -3348,3 +3393,148 @@ entries:
     environment_session_context --locked
   evidence: '2026-08-17: immutable target roots snapshot for hooks and user state
     verified.'
+- id: SESSION-AUTHORITY-REDUCER-090
+  spec: SESSION-AUTHORITY-REDUCER-45
+  source:
+  - docs/specs/SESSION_NAVIGATOR_SPEC.yaml
+  - crates/agentty-core/src/agent_runtime/navigator.rs
+  static_check: script/check_session_navigator
+  tests:
+  - history_committed_while_live_still_unbound_does_not_duplicate_row
+  - history_committed_with_stamped_binding_merges_into_container_row
+  - virtual_row_consumed_when_live_with_same_provider_key_exists
+  verification: cargo test -p agentty-core history_committed_while_live history_committed_with_stamped_binding virtual_row_consumed_when_live --locked
+  evidence: Pre-merge row_id resolution prevents virtual/live duplicate rows during discovery races.
+- id: SESSION-ACTIVATE-DEDUP-091
+  spec: SESSION-ROW-ACTIVATION-30
+  source:
+  - docs/specs/SESSION_NAVIGATOR_SPEC.yaml
+  - src/ui/session_navigator.rs
+  static_check: script/check_session_navigator
+  tests:
+  - activate_virtual_while_live_exists_focuses_existing_tab
+  verification: cargo test --bin agentty-app activate_virtual_while_live_exists_focuses_existing_tab --locked
+  evidence: Virtual activation focuses existing live carrier instead of inserting duplicate tab.
+- id: UI-AGENT-ATTENTION-BANNER-092
+  spec: UI-AGENT-ATTENTION-BANNER-46
+  source:
+  - docs/specs/UI_VISUAL_SYSTEM_SPEC.yaml
+  - docs/specs/SESSION_NAVIGATOR_SPEC.yaml
+  - src/ui/agent_attention.rs
+  - src/ui/app.rs
+  - src/ui/tab_sidebar.rs
+  - src/ui/activity_bar.rs
+  static_check: script/check_ui_visual_system
+  tests:
+  - waiting_beats_done_unread_in_workspace_attention
+  - focused_done_read_does_not_surface_banner
+  verification: cargo test --bin agentty-app workspace_attention waiting_beats focused_done --locked
+  evidence: Workspace attention banner and navigator execution pills surface Waiting and Done-unread explicitly.
+- id: ENV-DISCONNECT-SURFACE-093
+  spec: ENV-DISCONNECT-SURFACE-50
+  source:
+  - docs/specs/ENVIRONMENT_MODEL_SPEC.yaml
+  - src/ui/tab_strip.rs
+  - src/ui/remote_workspace.rs
+  static_check: script/check_environment_boundary
+  tests:
+  - environment_menu_exposes_reconnect_and_disconnect_for_remote
+  verification: cargo test --bin agentty-app environment_menu_exposes_reconnect --locked
+  evidence: Remote environment indicator menu and persistent disconnect strip expose explicit reconnect/disconnect.
+- id: ENV-EXPLICIT-CONNECT-094A
+  spec: ENV-EXPLICIT-CONNECT-51
+  source:
+  - docs/specs/ENVIRONMENT_MODEL_SPEC.yaml
+  - src/ui/remote_workspace.rs
+  - src/ui/app.rs
+  - src/ui/session_navigator.rs
+  static_check: script/check_environment_boundary
+  tests:
+  - remote_supervise_defers_connect_until_explicit
+  - remote_session_discovery_waits_for_attach
+  verification: cargo test --bin agentty-app remote_supervise remote_session_discovery --locked
+  evidence: Remote workspaces open suspended; discovery waits for Attached.
+- id: ENV-SINGLE-WINDOW-RAIL-094
+  spec: ENV-SINGLE-WINDOW-RAIL-47
+  source:
+  - docs/specs/ENVIRONMENT_MODEL_SPEC.yaml
+  - src/ui/app.rs
+  - src/ui/tab_strip.rs
+  - src/ui/windows.rs
+  - src/ui/environment_navigator_cache.rs
+  - src/ui/session_navigator.rs
+  static_check: script/check_environment_boundary
+  tests:
+  - environment_menu_selects_environment_in_current_window
+  - session_history_is_cleared_when_workspace_scope_changes
+  - stash_and_take_round_trips_counts
+  verification: cargo test --bin agentty-app environment_menu_selects session_history_is_cleared stash_and_take --locked
+  evidence: In-window select_environment stashes and restores per-Environment Navigator projections via EnvironmentNavigatorCache.
+- id: ENV-PIN-095
+  spec: ENV-PIN-48
+  source:
+  - docs/specs/ENVIRONMENT_MODEL_SPEC.yaml
+  - crates/agentty-core/src/core/config.rs
+  - src/ui/environment_rail.rs
+  - src/ui/tab_strip.rs
+  static_check: script/check_environment_boundary
+  tests:
+  - pinned_remote_defaults_expanded
+  - environment_menu_exposes_environment_pin_toggle
+  verification: cargo test --bin agentty-app pinned_remote environment_menu_exposes_environment_pin --locked && cargo test -p agentty-core environment_rail --locked
+  evidence: Environment pin preference persists in config and surfaces in indicator menu plus rail ordering.
+- id: ENV-RAIL-COLLAPSE-096
+  spec: ENV-RAIL-COLLAPSE-49
+  source:
+  - docs/specs/ENVIRONMENT_MODEL_SPEC.yaml
+  - src/ui/environment_rail.rs
+  - src/ui/tab_sidebar.rs
+  static_check: script/check_environment_boundary
+  tests:
+  - unpinned_remote_defaults_collapsed
+  - collapse_override_round_trips
+  - environment_rail_renders_above_session_list
+  - rail_summary_omits_counts_when_empty
+  verification: cargo test --bin agentty-app unpinned_remote collapse_override environment_rail_renders rail_summary --locked
+  evidence: Left-rail environment headers collapse to connection + session-count summaries and gate the session list for the current authority.
+- id: ENV-RAIL-TREE-099
+  spec: ENV-RAIL-TREE-52
+  source:
+  - docs/specs/ENVIRONMENT_MODEL_SPEC.yaml
+  - src/ui/environment_rail.rs
+  - src/ui/environment_navigator_cache.rs
+  static_check: script/check_environment_boundary
+  tests:
+  - expanded_non_current_emits_preview_rows
+  - current_environment_never_emits_rail_preview_rows
+  - collapsed_non_current_omits_preview_rows
+  verification: cargo test --bin agentty-app expanded_non_current_emits current_environment_never_emits collapsed_non_current_omits --locked
+  evidence: Expanded non-current rail sections show indented cache preview rows; activation is select_environment only.
+- id: INPUT-COMPOSER-SPLIT-DOCK-097
+  spec: INPUT-COMPOSER-SPLIT-DOCK-15
+  source:
+  - docs/specs/INPUT_EXPERIENCE_SPEC.yaml
+  - src/ui/composer_dock.rs
+  - src/ui/composer.rs
+  - src/ui/pane.rs
+  static_check: script/check_ui_visual_system
+  tests:
+  - composer_input_focus_does_not_retarget_to_first_leaf
+  - vertical_split_composer_submits_to_focused_pane
+  - horizontal_split_composer_submits_to_own_column
+  - horizontal_split_dock_reuses_resizable_split_divider
+  verification: cargo test --bin agentty-app composer_input_focus vertical_split_composer horizontal_split_composer horizontal_split_dock_reuses --locked
+  evidence: Split-aware composer dock columns, focus-stable delivery, and shared resizable H-split divider.
+- id: INPUT-COMPOSER-CONTEXT-FOOTER-098
+  spec: INPUT-COMPOSER-CONTEXT-FOOTER-16
+  source:
+  - docs/specs/INPUT_EXPERIENCE_SPEC.yaml
+  - src/ui/composer_context_footer.rs
+  - src/ui/composer.rs
+  static_check: script/check_ui_visual_system
+  tests:
+  - composer_footer_model_includes_environment_and_cwd
+  - footer_omits_inferred_trust_badge
+  - composer_footer_toggle_round_trips_draft_and_focus
+  verification: cargo test --bin agentty-app composer_footer footer_omits composer_footer_toggle --locked
+  evidence: Environment context footer replaces heuristic activity bar under composer dock.

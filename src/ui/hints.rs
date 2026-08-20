@@ -21,6 +21,11 @@ impl AgenttyApp {
         }
         self.set_link_modifier(m.secondary(), cx);
 
+        if !self.horizontal_tab_chips_visible(cx) {
+            self.dismiss_mod_hint(cx);
+            return;
+        }
+
         let extra_platform = if cfg!(target_os = "macos") {
             m.control
         } else {

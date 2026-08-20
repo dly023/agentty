@@ -1156,11 +1156,23 @@ impl RemoteLinks {
             return;
         };
         remote_connect::register(cx);
+        let host_id = host.host_id();
         log::info!(
             "supervising {} for a workspace that just opened",
             host.target
         );
+        let already_connected = remote_connect::HostLinks::get(cx, host_id)
+            .is_some_and(|link| link.client().is_connected());
+        if !already_connected {
+            RemoteLinks::defer_until_explicit_connect(cx, host_id);
+        }
         RemoteLinks::ensure_running(cx);
+    }
+
+    /// Hold a newly opened remote workspace offline until the user explicitly
+    /// reconnects or connects from the environment menu / disconnect strip.
+    pub(crate) fn defer_until_explicit_connect(cx: &mut gpui::App, host: HostId) {
+        cx.default_global::<RemoteLinks>().suspended.insert(host);
     }
 
     pub(crate) fn status_of(cx: &gpui::App, workspace: WorkspaceId) -> Option<RemoteStatus> {
@@ -2544,6 +2556,15 @@ mod tests {
             vec![build],
             "closing one machine's window must not resume another"
         );
+    }
+
+    #[test]
+    fn remote_supervise_defers_connect_until_explicit() {
+        let source = include_str!("remote_workspace.rs");
+        let prod = source.split("#[cfg(test)]").next().unwrap_or(source);
+        assert!(prod.contains("defer_until_explicit_connect"));
+        assert!(prod.contains("already_connected"));
+        assert!(prod.contains("suspended.insert(host)"));
     }
 
     #[gpui::test]

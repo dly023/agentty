@@ -15,6 +15,9 @@ activity.structured: 结构化事件
 activity.title: Agent 活动
 activity.waiting: Agent 正在等待输入
 activity.working: Agent 正在工作
+attention.banner.action.go_to_session: 前往会话
+attention.banner.done_unread: "{agent} 已完成 — 请查看并继续"
+attention.banner.waiting: "{agent} 需要输入 — {detail}"
 app.name: Agentty
 common.abort: 中止
 common.cancel: 取消
@@ -55,6 +58,10 @@ composer.mode_switched: Composer 模式 — {mode}
 composer.placeholder: 输入提示词…  Shift+Enter 换行
 composer.toggle.collapse: 收起 Composer
 composer.toggle.expand: 展开 Composer
+composer.footer.environment: 环境
+composer.footer.cwd: 目录
+composer.footer.branch: 分支
+composer.footer.agent: Agent
 composer.target_missing: Composer 目标已不存在，草稿已保留。
 daemon.keep_shells: 保留 Shell
 daemon.mismatch_detail_unknown: 托管你 shell 的服务来自较旧版本的应用。可以继续使用且 shell 会保留，但新功能在重启前可能异常。重启会启动干净服务：标签以新 shell 重新打开，其中正在运行的进程会被终止。
@@ -90,7 +97,15 @@ editor.unsaved_changes: “{name}” 有未保存的更改
 environment.auth_error: 认证失败——{error}
 environment.connecting: 正在连接
 environment.disconnected: 已断开
+environment.disconnected_detail: "{machine} 已断开 — 重新连接以继续"
 environment.execution: 执行环境
+environment.rail.connected: 已连接
+environment.rail.pin: 固定环境
+environment.rail.preempted: 已被抢占
+environment.rail.reconnecting: 正在重连
+environment.rail.preview_overflow: "另有 {count} 个"
+environment.rail.session_counts: "{live} 活动 · {total} 会话"
+environment.rail.unpin: 取消固定环境
 environment.local.detail: 本地环境
 environment.local.label: 本机
 environment.remote.detail: 远程环境
@@ -427,6 +442,8 @@ session.details_provider: 提供商
 session.details_session_id: 会话 ID
 session.details_title: 会话详情
 session.details_updated: 更新时间
+session.execution_pill_done_unread: 已完成
+session.execution_pill_waiting: 等待输入
 session.details_working_directory: 工作目录
 session.discovering: 正在发现 Agent 会话…
 session.empty: 当前环境中没有发现 Codex 或 Claude 会话。
@@ -437,6 +454,7 @@ session.refresh: 刷新 Agent 会话
 session.restoring: 正在恢复…
 session.resume: 恢复
 session.search_placeholder: 搜索会话…
+settings.about_releases_link: github.com/dly023/agentty/releases/latest
 settings.about_stack: 纯 Rust 开发 · 基于 gpui 的 GPU 渲染 · 来自 Alacritty 的 VT 内核
 settings.about_tagline: 本地优先的终端工作区：shell、会话、远程 SSH 与 coding agent。
 settings.add_rule: + 添加规则

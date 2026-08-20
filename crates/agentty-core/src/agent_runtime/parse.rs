@@ -596,6 +596,76 @@ fn excerpt(text: &str) -> Option<String> {
     })
 }
 
+/// Cursor CLI stores one main transcript at
+/// `~/.cursor/projects/<slug>/agent-transcripts/<uuid>/<uuid>.jsonl`.
+/// Subagent transcripts live under `subagents/` and must not become rows.
+pub fn is_cursor_main_transcript(path: &std::path::Path) -> bool {
+    if path.extension().and_then(|ext| ext.to_str()) != Some("jsonl") {
+        return false;
+    }
+    let components: Vec<_> = path
+        .components()
+        .map(|component| component.as_os_str())
+        .collect();
+    if !components
+        .iter()
+        .any(|component| *component == "agent-transcripts")
+    {
+        return false;
+    }
+    if components.iter().any(|component| *component == "subagents") {
+        return false;
+    }
+    let Some(file_stem) = path.file_stem().and_then(|stem| stem.to_str()) else {
+        return false;
+    };
+    path.parent()
+        .and_then(std::path::Path::file_name)
+        .and_then(|name| name.to_str())
+        .is_some_and(|parent| parent == file_stem)
+}
+
+pub fn cursor_session_id_from_path(path: &std::path::Path) -> Option<String> {
+    if !is_cursor_main_transcript(path) {
+        return None;
+    }
+    path.file_stem()
+        .map(|stem| stem.to_string_lossy().into_owned())
+}
+
+pub fn cursor_project_cwd_from_path(
+    projects_root: &std::path::Path,
+    transcript_path: &std::path::Path,
+) -> Option<String> {
+    let relative = transcript_path.strip_prefix(projects_root).ok()?;
+    let slug = relative.components().next()?.as_os_str().to_str()?;
+    cursor_slug_to_unix_path(slug)
+}
+
+fn cursor_slug_to_unix_path(slug: &str) -> Option<String> {
+    let slug = slug.trim();
+    if slug.is_empty() {
+        return None;
+    }
+    let parts: Vec<&str> = slug.split('-').collect();
+    let path = match parts.first().copied()? {
+        "Users" if parts.len() > 1 => format!("/Users/{}", parts[1..].join("/")),
+        "home" if parts.len() > 1 => format!("/home/{}", parts[1..].join("/")),
+        _ => format!("/{}", parts.join("/")),
+    };
+    Some(path)
+}
+
+pub fn strip_cursor_user_query(text: &str) -> Option<String> {
+    let trimmed = text.trim();
+    let inner = trimmed
+        .strip_prefix("<user_query>")
+        .and_then(|rest| rest.strip_suffix("</user_query>"))
+        .map(str::trim)
+        .unwrap_or(trimmed);
+    first_user_title_candidate(inner)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -941,5 +1011,33 @@ mod tests {
             metadata.resolved_title(),
             Some("Investigate the remote reconnect")
         );
+    }
+
+    #[test]
+    fn cursor_main_transcript_identity_comes_from_path_and_user_query_text() {
+        let path = std::path::Path::new(
+            "/home/alice/.cursor/projects/Users-admin-agentty/agent-transcripts/d40014ce-6a82-443d-ab66-5018cd63e4d6/d40014ce-6a82-443d-ab66-5018cd63e4d6.jsonl",
+        );
+        assert!(is_cursor_main_transcript(path));
+        assert_eq!(
+            cursor_session_id_from_path(path).as_deref(),
+            Some("d40014ce-6a82-443d-ab66-5018cd63e4d6")
+        );
+        assert_eq!(
+            cursor_project_cwd_from_path(
+                std::path::Path::new("/home/alice/.cursor/projects"),
+                path,
+            )
+            .as_deref(),
+            Some("/Users/admin/agentty")
+        );
+        assert_eq!(
+            strip_cursor_user_query("<user_query>\nFix the flaky gate\n</user_query>").as_deref(),
+            Some("Fix the flaky gate")
+        );
+        let subagent = std::path::Path::new(
+            "/home/alice/.cursor/projects/repo/agent-transcripts/parent/subagents/child.jsonl",
+        );
+        assert!(!is_cursor_main_transcript(subagent));
     }
 }

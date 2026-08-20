@@ -8,9 +8,138 @@ use gpui_component::ActiveTheme as _;
 use crate::terminal::view::TerminalView;
 use crate::ui::pending_pane::PendingPane;
 
-const MIN_RATIO: f32 = 0.1;
-const MAX_RATIO: f32 = 0.9;
-const DIVIDER_THICKNESS: f32 = 5.;
+pub(crate) const MIN_RATIO: f32 = 0.1;
+pub(crate) const MAX_RATIO: f32 = 0.9;
+pub(crate) const DIVIDER_THICKNESS: f32 = 5.;
+
+/// Canonical resizable split chrome shared by Pane::render and Composer dock
+/// column wrapping (INPUT-COMPOSER-SPLIT-DOCK-15). Owns the ratio Cell drag
+/// handlers; callers supply the two child surfaces.
+pub(crate) fn render_resizable_split(
+    axis: Axis,
+    ratio: Rc<Cell<f32>>,
+    dragging: Rc<Cell<bool>>,
+    first: gpui::AnyElement,
+    second: gpui::AnyElement,
+    cx: &App,
+) -> gpui::AnyElement {
+    let row = axis == Axis::Horizontal;
+    let r = ratio.get().clamp(MIN_RATIO, MAX_RATIO);
+    let idle = cx.theme().border;
+    let active = cx.theme().drag_border;
+    let container: Rc<Cell<Option<Bounds<Pixels>>>> = Rc::new(Cell::new(None));
+
+    let backing = canvas(
+        {
+            let container = container.clone();
+            move |bounds, _window, _cx| container.set(Some(bounds))
+        },
+        {
+            let container = container.clone();
+            let ratio = ratio.clone();
+            let dragging = dragging.clone();
+            move |_bounds, _state, window, _cx| {
+                window.on_mouse_event({
+                    let container = container.clone();
+                    let ratio = ratio.clone();
+                    let dragging = dragging.clone();
+                    move |ev: &MouseMoveEvent, _phase, window, _cx| {
+                        if !dragging.get() {
+                            return;
+                        }
+                        let Some(b) = container.get() else {
+                            return;
+                        };
+                        let span = if row { b.size.width } else { b.size.height };
+                        if span.as_f32() <= 0.0 {
+                            return;
+                        }
+                        let offset = if row {
+                            ev.position.x - b.origin.x
+                        } else {
+                            ev.position.y - b.origin.y
+                        };
+                        let new_ratio = offset / span;
+                        ratio.set(new_ratio.clamp(MIN_RATIO, MAX_RATIO));
+                        window.refresh();
+                    }
+                });
+                window.on_mouse_event({
+                    let dragging = dragging.clone();
+                    move |_ev: &MouseUpEvent, _phase, window, cx| {
+                        if dragging.get() {
+                            dragging.set(false);
+                            if let Some(app) =
+                                crate::ui::windows::WindowRegistry::app_in(cx, window)
+                            {
+                                app.update(cx, |app, cx| app.save_session(cx));
+                            }
+                            window.refresh();
+                        }
+                    }
+                });
+            }
+        },
+    )
+    .absolute()
+    .size_full();
+
+    let line_color = if dragging.get() { active } else { idle };
+    let divider = div()
+        .group("split-divider")
+        .flex_none()
+        .flex()
+        .items_center()
+        .justify_center()
+        .when(row, |d| {
+            d.w(px(DIVIDER_THICKNESS)).h_full().cursor_col_resize()
+        })
+        .when(!row, |d| {
+            d.h(px(DIVIDER_THICKNESS)).w_full().cursor_row_resize()
+        })
+        .child(
+            div()
+                .when(row, |d| d.w(px(1.)).h_full())
+                .when(!row, |d| d.h(px(1.)).w_full())
+                .bg(line_color)
+                .group_hover("split-divider", |s| s.bg(active)),
+        )
+        .on_mouse_down(MouseButton::Left, {
+            let dragging = dragging.clone();
+            move |_ev, window, _cx| {
+                dragging.set(true);
+                window.refresh();
+            }
+        });
+
+    div()
+        .size_full()
+        .relative()
+        .flex()
+        .when(row, |d| d.flex_row())
+        .when(!row, |d| d.flex_col())
+        .child(backing)
+        .child(
+            div()
+                .flex_grow(r)
+                .flex_shrink(1.)
+                .flex_basis(px(0.))
+                .min_w_0()
+                .min_h_0()
+                .child(first),
+        )
+        .child(divider)
+        .child(
+            div()
+                .flex_grow(1. - r)
+                .flex_shrink(1.)
+                .flex_basis(px(0.))
+                .min_w_0()
+                .min_h_0()
+                .child(second),
+        )
+        .into_any_element()
+}
 
 #[derive(Clone)]
 pub enum PaneSlot {
@@ -97,6 +226,28 @@ pub enum CloseOutcome {
     NotFound,
     Collapsed,
     RemoveSelf,
+}
+
+impl<L: Clone> Clone for Pane<L> {
+    fn clone(&self) -> Self {
+        match self {
+            Pane::Leaf(v) => Pane::Leaf(v.clone()),
+            Pane::Split {
+                axis,
+                a,
+                b,
+                ratio,
+                dragging,
+            } => Pane::Split {
+                axis: *axis,
+                a: Box::new(a.as_ref().clone()),
+                b: Box::new(b.as_ref().clone()),
+                ratio: ratio.clone(),
+                dragging: dragging.clone(),
+            },
+            Pane::Empty => Pane::Empty,
+        }
+    }
 }
 
 impl<L: Clone> Pane<L> {
@@ -486,126 +637,14 @@ impl Pane<PaneSlot> {
                 b,
                 ratio,
                 dragging,
-            } => {
-                let row = *axis == Axis::Horizontal;
-                let r = ratio.get().clamp(MIN_RATIO, MAX_RATIO);
-
-                let idle = cx.theme().border;
-                let active = cx.theme().drag_border;
-
-                let container: Rc<Cell<Option<Bounds<Pixels>>>> = Rc::new(Cell::new(None));
-
-                let backing = canvas(
-                    {
-                        let container = container.clone();
-                        move |bounds, _window, _cx| container.set(Some(bounds))
-                    },
-                    {
-                        let container = container.clone();
-                        let ratio = ratio.clone();
-                        let dragging = dragging.clone();
-                        move |_bounds, _state, window, _cx| {
-                            window.on_mouse_event({
-                                let container = container.clone();
-                                let ratio = ratio.clone();
-                                let dragging = dragging.clone();
-                                move |ev: &MouseMoveEvent, _phase, window, _cx| {
-                                    if !dragging.get() {
-                                        return;
-                                    }
-                                    let Some(b) = container.get() else {
-                                        return;
-                                    };
-                                    let span = if row { b.size.width } else { b.size.height };
-                                    if span.as_f32() <= 0.0 {
-                                        return;
-                                    }
-                                    let offset = if row {
-                                        ev.position.x - b.origin.x
-                                    } else {
-                                        ev.position.y - b.origin.y
-                                    };
-                                    let new_ratio = offset / span;
-                                    ratio.set(new_ratio.clamp(MIN_RATIO, MAX_RATIO));
-                                    window.refresh();
-                                }
-                            });
-                            window.on_mouse_event({
-                                let dragging = dragging.clone();
-                                move |_ev: &MouseUpEvent, _phase, window, cx| {
-                                    if dragging.get() {
-                                        dragging.set(false);
-                                        if let Some(app) =
-                                            crate::ui::windows::WindowRegistry::app_in(cx, window)
-                                        {
-                                            app.update(cx, |app, cx| app.save_session(cx));
-                                        }
-                                        window.refresh();
-                                    }
-                                }
-                            });
-                        }
-                    },
-                )
-                .absolute()
-                .size_full();
-
-                let line_color = if dragging.get() { active } else { idle };
-                let divider = div()
-                    .group("split-divider")
-                    .flex_none()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .when(row, |d| {
-                        d.w(px(DIVIDER_THICKNESS)).h_full().cursor_col_resize()
-                    })
-                    .when(!row, |d| {
-                        d.h(px(DIVIDER_THICKNESS)).w_full().cursor_row_resize()
-                    })
-                    .child(
-                        div()
-                            .when(row, |d| d.w(px(1.)).h_full())
-                            .when(!row, |d| d.h(px(1.)).w_full())
-                            .bg(line_color)
-                            .group_hover("split-divider", |s| s.bg(active)),
-                    )
-                    .on_mouse_down(MouseButton::Left, {
-                        let dragging = dragging.clone();
-                        move |_ev, window, _cx| {
-                            dragging.set(true);
-                            window.refresh();
-                        }
-                    });
-
-                div()
-                    .size_full()
-                    .relative()
-                    .flex()
-                    .when(row, |d| d.flex_row())
-                    .when(!row, |d| d.flex_col())
-                    .child(backing)
-                    .child(
-                        div()
-                            .flex_grow(r)
-                            .flex_shrink(1.)
-                            .flex_basis(px(0.))
-                            .min_w_0()
-                            .min_h_0()
-                            .child(a.render(dim_inactive, window, cx)),
-                    )
-                    .child(divider)
-                    .child(
-                        div()
-                            .flex_grow(1. - r)
-                            .flex_shrink(1.)
-                            .flex_basis(px(0.))
-                            .min_w_0()
-                            .min_h_0()
-                            .child(b.render(dim_inactive, window, cx)),
-                    )
-                    .into_any_element()
-            }
+            } => render_resizable_split(
+                *axis,
+                ratio.clone(),
+                dragging.clone(),
+                a.render(dim_inactive, window, cx).into_any_element(),
+                b.render(dim_inactive, window, cx).into_any_element(),
+                cx,
+            ),
         }
     }
 }

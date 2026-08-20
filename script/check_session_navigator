@@ -356,6 +356,10 @@ fi
 rg -q 'SESSION-PROVIDER-REGISTRY-19' docs/specs/SESSION_NAVIGATOR_SPEC.yaml
 rg -q 'SESSION-STORE-ROOT-CONTEXT-20' docs/specs/SESSION_NAVIGATOR_SPEC.yaml
 rg -q 'SESSION-VIEWPORT-PROJECTION-21' docs/specs/SESSION_NAVIGATOR_SPEC.yaml
+rg -q 'SESSION-PROJECTION-PAINT-GATE-53' docs/specs/SESSION_NAVIGATOR_SPEC.yaml
+rg -q 'session_navigator_input_fingerprint' src/ui/session_navigator.rs
+rg -q 'rebuild_session_navigator_gates_on_input_fingerprint' src/ui/session_navigator.rs
+rg -q 'identical_projection_inputs_share_fingerprint' src/ui/session_navigator.rs
 rg -q 'SessionViewportProjection' src/ui/session_navigator.rs src/ui/tab_sidebar.rs
 rg -q 'gpui::ListState' src/ui/app.rs
 rg -q 'gpui::list' src/ui/tab_sidebar.rs
@@ -459,6 +463,9 @@ if rg -n 'session\.navigator_title' src/ui/tab_sidebar.rs assets/i18n/en-US.yaml
   exit 1
 fi
 rg -q 'cursor_scanner_ignores_unrelated_project_cache_nodes' crates/agentty-core/src/agent_runtime/service.rs
+rg -q 'cursor_discovery_uses_native_transcript_shape_and_skips_subagents' crates/agentty-core/src/agent_runtime/service.rs
+rg -q 'is_cursor_main_transcript' crates/agentty-core/src/agent_runtime/parse.rs
+rg -q 'SESSION-CURSOR-DISCOVERY-35' docs/specs/SESSION_NAVIGATOR_SPEC.yaml
 rg -q 'collect_cursor_jsonl' crates/agentty-core/src/agent_runtime/service.rs
 rg -q 'session\.search_placeholder' src/ui/app.rs assets/i18n/en-US.yaml assets/i18n/zh-CN.yaml
 rg -q 'session\.discovering' src/ui/tab_sidebar.rs
@@ -624,4 +631,11 @@ if rg -n '\|[[:space:]]+rg[[:space:]]+-[^ ]*q([[:space:]]|$)' "$0"; then
   echo '[session-navigator] piped searches must consume input; rg -q races pipefail via SIGPIPE' >&2
   exit 1
 fi
+rg -q 'SESSION-AUTHORITY-REDUCER-45' docs/specs/SESSION_NAVIGATOR_SPEC.yaml
+rg -q 'resolve_refresh_row_id' crates/agentty-core/src/agent_runtime/navigator.rs
+rg -q 'history_committed_while_live_still_unbound_does_not_duplicate_row' crates/agentty-core/src/agent_runtime/navigator.rs
+rg -q 'virtual_row_consumed_when_live_with_same_provider_key_exists' crates/agentty-core/src/agent_runtime/navigator.rs
+rg -q 'activate_virtual_while_live_exists_opens_duplicate_tab' docs/specs/SESSION_NAVIGATOR_SPEC.yaml
+rg -q 'activate_virtual_while_live_exists_focuses_existing_tab' src/ui/session_navigator.rs
+rg -q 'execution_attention_relying_on_dot_alone_for_waiting_or_completed_unread' docs/specs/SESSION_NAVIGATOR_SPEC.yaml
 echo 'session navigator checks passed'

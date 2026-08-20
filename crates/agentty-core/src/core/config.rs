@@ -236,6 +236,74 @@ pub struct Config {
     pub agent_commands: HashMap<String, String>,
     #[serde(default = "default_true")]
     pub restore_agent_sessions: bool,
+
+    /// Client UI preferences for the left-rail environment tree (ENV-PIN-48,
+    /// ENV-RAIL-COLLAPSE-49). Distinct from session pin Host state.
+    #[serde(default)]
+    pub environment_rail: EnvironmentRailPreferences,
+}
+
+/// Persisted expand/collapse and pin order for the left environment rail.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(default)]
+pub struct EnvironmentRailPreferences {
+    /// EnvironmentId keys in top-to-bottom pin order.
+    #[serde(default)]
+    pub pinned: Vec<String>,
+    /// Explicit collapse overrides keyed by EnvironmentId. Absent keys use the
+    /// product default: local and pinned environments expanded, unpinned remotes
+    /// collapsed.
+    #[serde(default)]
+    pub collapse_overrides: HashMap<String, bool>,
+}
+
+impl EnvironmentRailPreferences {
+    pub fn is_pinned(&self, id: &crate::core::environment::EnvironmentId) -> bool {
+        self.pinned.iter().any(|entry| entry == id.as_str())
+    }
+
+    pub fn toggle_pin(&mut self, id: &crate::core::environment::EnvironmentId) {
+        let key = id.as_str().to_string();
+        if let Some(index) = self.pinned.iter().position(|entry| entry == &key) {
+            self.pinned.remove(index);
+        } else {
+            self.pinned.push(key);
+        }
+    }
+
+    pub fn default_collapsed(
+        &self,
+        id: &crate::core::environment::EnvironmentId,
+        is_remote: bool,
+    ) -> bool {
+        is_remote && !self.is_pinned(id)
+    }
+
+    pub fn is_collapsed(
+        &self,
+        id: &crate::core::environment::EnvironmentId,
+        is_remote: bool,
+    ) -> bool {
+        self.collapse_overrides
+            .get(id.as_str())
+            .copied()
+            .unwrap_or_else(|| self.default_collapsed(id, is_remote))
+    }
+
+    pub fn set_collapsed(
+        &mut self,
+        id: &crate::core::environment::EnvironmentId,
+        is_remote: bool,
+        collapsed: bool,
+    ) {
+        let key = id.as_str().to_string();
+        let default = self.default_collapsed(id, is_remote);
+        if collapsed == default {
+            self.collapse_overrides.remove(&key);
+        } else {
+            self.collapse_overrides.insert(key, collapsed);
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
@@ -488,6 +556,7 @@ impl Default for Config {
             command_frecency: HashMap::new(),
             agent_commands: HashMap::new(),
             restore_agent_sessions: true,
+            environment_rail: EnvironmentRailPreferences::default(),
         }
     }
 }
@@ -1293,5 +1362,17 @@ mod tests {
         let p = config_path("config.json").expect("config path resolves");
         assert!(p.ends_with("config.json"));
         assert_eq!(p.parent(), config_dir_path().as_deref());
+    }
+
+    #[test]
+    fn environment_rail_preferences_default_and_pin() {
+        let mut prefs = EnvironmentRailPreferences::default();
+        let remote = crate::core::environment::EnvironmentId::for_remote(
+            &crate::core::session::RemoteTarget::direct("dev", "build.example", 22),
+        );
+        assert!(prefs.is_collapsed(&remote, true));
+        prefs.toggle_pin(&remote);
+        assert!(prefs.is_pinned(&remote));
+        assert!(!prefs.is_collapsed(&remote, true));
     }
 }

@@ -68,6 +68,10 @@ impl ComposerVisibilityOverrides {
         expanded
     }
 
+    pub fn has_override(&self, target: &PaneIdentity) -> bool {
+        self.overrides.contains_key(target)
+    }
+
     pub fn clear(&mut self) {
         self.overrides.clear();
     }
@@ -145,14 +149,61 @@ use gpui_component::{ActiveTheme as _, WindowExt as _};
 pub struct ComposerState {
     pub target: PaneIdentity,
     pub input: Entity<InputState>,
+    pub completion: Option<crate::ui::completion_surface::ComposerCompletionState>,
+    pub completion_generation: u64,
     // The callback belongs to this exact Input instance. Dropping ComposerState
     // cancels it before a replacement Composer can become observable.
     _input_subscription: gpui::Subscription,
 }
 
 impl crate::ui::app::AgenttyApp {
-    fn focused_has_cli_agent(&self, window: &Window, cx: &gpui::App) -> bool {
-        let Some(terminal) = self.focused_leaf(window, cx) else {
+    pub(crate) fn focused_terminal_leaf(
+        &self,
+        window: &Window,
+        cx: &gpui::App,
+    ) -> Option<Entity<crate::terminal::view::TerminalView>> {
+        self.tabs
+            .get(self.active)?
+            .pane
+            .focused_leaf(window, cx)
+            .and_then(|slot| slot.terminal().cloned())
+    }
+
+    fn composer_input_focused_target(
+        &self,
+        window: &Window,
+        cx: &gpui::App,
+    ) -> Option<PaneIdentity> {
+        for state in self.composers.values() {
+            if state
+                .input
+                .read(cx)
+                .focus_handle(cx)
+                .contains_focused(window, cx)
+            {
+                return Some(state.target.clone());
+            }
+        }
+        None
+    }
+
+    fn composer_target_identity(&self, window: &Window, cx: &gpui::App) -> Option<PaneIdentity> {
+        if let Some(target) = self.composer_input_focused_target(window, cx) {
+            return Some(target);
+        }
+        let terminal = self.focused_terminal_leaf(window, cx)?;
+        Some(PaneIdentity {
+            environment: crate::core::session::WorkspaceStore::environment_id(cx, self.workspace),
+            pane_id: terminal.read(cx).pane_id(),
+        })
+    }
+
+    fn focused_composer_target(&self, window: &Window, cx: &gpui::App) -> Option<PaneIdentity> {
+        self.composer_target_identity(window, cx)
+    }
+
+    fn has_cli_agent_for(&self, target: &PaneIdentity, cx: &gpui::App) -> bool {
+        let Some(terminal) = self.target_terminal(target, cx).ok() else {
             return false;
         };
         let view = terminal.read(cx);
@@ -161,52 +212,67 @@ impl crate::ui::app::AgenttyApp {
             || view.agent_session().is_some()
     }
 
-    fn focused_composer_target(&self, window: &Window, cx: &gpui::App) -> Option<PaneIdentity> {
-        let terminal = self.focused_leaf(window, cx)?;
-        Some(PaneIdentity {
-            environment: crate::core::session::WorkspaceStore::environment_id(cx, self.workspace),
-            pane_id: terminal.read(cx).pane_id(),
-        })
-    }
-
-    fn close_composer(&mut self, window: &mut Window, cx: &mut gpui::Context<Self>) {
-        if let Some(state) = self.composer.take() {
-            let draft = state.input.read(cx).value().to_string();
-            self.composer_drafts.set(state.target, draft);
-            self.composer_completion_close(cx);
-        }
-        self.focus_active(window, cx);
-    }
-
-    pub(crate) fn composer_expanded_for(&self, target: &PaneIdentity) -> bool {
-        self.composer
+    fn focused_has_cli_agent(&self, window: &Window, cx: &gpui::App) -> bool {
+        self.composer_target_identity(window, cx)
             .as_ref()
-            .is_some_and(|state| state.target == *target)
+            .is_some_and(|target| self.has_cli_agent_for(target, cx))
     }
 
-    pub(crate) fn toggle_composer_from_activity_bar(
+    pub(crate) fn composer_footer_visible(&self, target: &PaneIdentity, cx: &gpui::App) -> bool {
+        let mode = cx.global::<crate::core::config::Config>().composer_mode;
+        if mode == ComposerMode::Off && !self.composer_visibility.has_override(target) {
+            return false;
+        }
+        let has_agent = self.has_cli_agent_for(target, cx);
+        self.composer_visibility.has_override(target) || composer_should_dock(mode, has_agent)
+    }
+
+    pub(crate) fn composer_dock_expanded(&self, target: &PaneIdentity, cx: &gpui::App) -> bool {
+        let mode = cx.global::<crate::core::config::Config>().composer_mode;
+        let has_agent = self.has_cli_agent_for(target, cx);
+        self.composer_visibility.resolve(target, mode, has_agent)
+            && self.composers.contains_key(target)
+    }
+
+    fn close_composer_for(
         &mut self,
+        target: &PaneIdentity,
         window: &mut Window,
         cx: &mut gpui::Context<Self>,
     ) {
-        let Some(target) = self.focused_composer_target(window, cx) else {
-            return;
-        };
+        if let Some(state) = self.composers.remove(target) {
+            let draft = state.input.read(cx).value().to_string();
+            self.composer_drafts.set(state.target, draft);
+        }
+        if self.composers.is_empty() {
+            self.focus_active(window, cx);
+        }
+    }
+
+    pub(crate) fn composer_expanded_for(&self, target: &PaneIdentity) -> bool {
+        self.composers.contains_key(target)
+    }
+
+    pub(crate) fn toggle_composer_from_footer(
+        &mut self,
+        target: &PaneIdentity,
+        window: &mut Window,
+        cx: &mut gpui::Context<Self>,
+    ) {
         let mode = cx.global::<crate::core::config::Config>().composer_mode;
-        let has_agent = self.focused_has_cli_agent(window, cx);
-        if self.composer_visibility.toggle(&target, mode, has_agent) {
-            self.ensure_composer_open(window, cx);
-            if let Some(state) = self.composer.as_ref() {
+        let has_agent = self.has_cli_agent_for(target, cx);
+        if self.composer_visibility.toggle(target, mode, has_agent) {
+            self.ensure_composer_for(target.clone(), window, cx);
+            if let Some(state) = self.composers.get(target) {
                 let focus = state.input.read(cx).focus_handle(cx);
                 window.focus(&focus, cx);
             }
         } else {
-            self.close_composer(window, cx);
+            self.close_composer_for(target, window, cx);
         }
         cx.notify();
     }
 
-    /// Cycle persisted composer_mode (auto → always → off → auto) and sync dock.
     pub(crate) fn toggle_composer(&mut self, window: &mut Window, cx: &mut gpui::Context<Self>) {
         let next = cx
             .global::<crate::core::config::Config>()
@@ -224,106 +290,130 @@ impl crate::ui::app::AgenttyApp {
         cx.notify();
     }
 
-    /// Re-evaluate dock visibility from preference + focused agent.
-    /// Returns true when composer presence changed (caller may notify).
     pub(crate) fn sync_composer_dock(
         &mut self,
         window: &mut Window,
         cx: &mut gpui::Context<Self>,
     ) -> bool {
-        let mode = cx.global::<crate::core::config::Config>().composer_mode;
-        let target = self.focused_composer_target(window, cx);
-        let has_agent = self.focused_has_cli_agent(window, cx);
-        let should = target
-            .as_ref()
-            .is_some_and(|target| self.composer_visibility.resolve(target, mode, has_agent));
-        let was_open = self.composer.is_some();
-        if should {
-            self.ensure_composer_open(window, cx);
-        } else {
-            self.close_composer(window, cx);
-        }
-        was_open != self.composer.is_some()
+        let Some(tab) = self.tabs.get(self.active) else {
+            return false;
+        };
+        let slots = crate::ui::composer_dock::dock_slots_for_tab(tab, self, window, cx);
+        self.sync_composer_docks(&slots, window, cx)
     }
 
-    fn ensure_composer_open(&mut self, window: &mut Window, cx: &mut gpui::Context<Self>) {
-        let Some(terminal) = self.focused_leaf(window, cx) else {
-            return;
-        };
-        let target = PaneIdentity {
-            environment: crate::core::session::WorkspaceStore::environment_id(cx, self.workspace),
-            pane_id: terminal.read(cx).pane_id(),
-        };
-        if let Some(state) = self.composer.as_ref() {
-            if state.target == target {
-                return;
+    pub(crate) fn sync_composer_docks(
+        &mut self,
+        slots: &[PaneIdentity],
+        window: &mut Window,
+        cx: &mut gpui::Context<Self>,
+    ) -> bool {
+        let mode = cx.global::<crate::core::config::Config>().composer_mode;
+        let slot_set: std::collections::HashSet<_> = slots.iter().cloned().collect();
+        let before = !self.composers.is_empty();
+        self.composers.retain(|target, state| {
+            if slot_set.contains(target) {
+                return true;
             }
             let draft = state.input.read(cx).value().to_string();
-            self.composer_drafts.set(state.target.clone(), draft);
-            self.composer = None;
-            self.composer_completion = None;
+            self.composer_drafts.set(target.clone(), draft);
+            false
+        });
+        for target in slots {
+            let has_agent = self.has_cli_agent_for(target, cx);
+            if self.composer_visibility.resolve(target, mode, has_agent) {
+                self.ensure_composer_for(target.clone(), window, cx);
+            } else {
+                self.close_composer_for(target, window, cx);
+            }
+        }
+        before != !self.composers.is_empty()
+    }
+
+    pub(crate) fn ensure_composer_open(
+        &mut self,
+        window: &mut Window,
+        cx: &mut gpui::Context<Self>,
+    ) {
+        let Some(target) = self.composer_target_identity(window, cx) else {
+            return;
+        };
+        self.ensure_composer_for(target, window, cx);
+    }
+
+    pub(crate) fn close_composer(&mut self, window: &mut Window, cx: &mut gpui::Context<Self>) {
+        let Some(target) = self.composer_target_identity(window, cx) else {
+            return;
+        };
+        self.close_composer_for(&target, window, cx);
+    }
+
+    fn ensure_composer_for(
+        &mut self,
+        target: PaneIdentity,
+        window: &mut Window,
+        cx: &mut gpui::Context<Self>,
+    ) {
+        if self.composers.contains_key(&target) {
+            return;
         }
         let initial = self.composer_drafts.get(&target).to_owned();
         let input = cx.new(|cx| {
             InputState::new(window, cx)
-                // Keep this explicit. `auto_grow` is a bounded layout policy,
-                // while multiline is the editing contract for Shift+Enter.
                 .multi_line(true)
                 .auto_grow(2, 8)
                 .submit_on_enter(true)
                 .placeholder(crate::core::i18n::current(cx, "composer.placeholder"))
                 .default_value(initial)
         });
+        let target_for_callback = target.clone();
         let input_subscription =
             cx.subscribe_in(&input, window, move |this, source, event, window, cx| {
-                let source_is_current = this
-                    .composer
-                    .as_ref()
-                    .is_some_and(|composer| composer.input.entity_id() == source.entity_id());
+                let source_is_current = this.composers.values().any(|composer| {
+                    composer.input.entity_id() == source.entity_id()
+                        && composer.target == target_for_callback
+                });
                 if !source_is_current {
                     return;
                 }
                 match event {
                     gpui_component::input::InputEvent::PressEnter { shift: false, .. } => {
                         let completion_has_selection = this
-                            .composer_completion
-                            .as_ref()
+                            .composers
+                            .get(&target_for_callback)
+                            .and_then(|state| state.completion.as_ref())
                             .and_then(|state| state.session.selected())
                             .is_some();
                         if completion_has_selection {
-                            this.composer_completion_accept(window, cx);
+                            this.composer_completion_accept_for(&target_for_callback, window, cx);
                         } else {
-                            // An empty completion state has no rendered menu and
-                            // therefore must not swallow the normal submit path.
-                            this.composer_completion_close(cx);
-                            this.submit_composer(window, cx);
+                            this.composer_completion_close_for(&target_for_callback, cx);
+                            this.submit_composer_for(&target_for_callback, window, cx);
                         }
                     }
                     gpui_component::input::InputEvent::Change => {
-                        this.composer_completion_refilter(cx);
+                        this.composer_completion_refilter_for(&target_for_callback, cx);
                     }
                     _ => {}
                 }
             });
-        self.composer = Some(ComposerState {
-            target,
-            input,
-            _input_subscription: input_subscription,
-        });
+        self.composers.insert(
+            target.clone(),
+            ComposerState {
+                target,
+                input,
+                completion: None,
+                completion_generation: 0,
+                _input_subscription: input_subscription,
+            },
+        );
         cx.notify();
     }
 
     pub(crate) fn composer_input_focused(&self, window: &Window, cx: &gpui::App) -> bool {
-        self.composer.as_ref().is_some_and(|state| {
-            state
-                .input
-                .read(cx)
-                .focus_handle(cx)
-                .contains_focused(window, cx)
-        })
+        self.composer_input_focused_target(window, cx).is_some()
     }
 
-    /// Route Tab to the focused editable surface (INPUT-COMPLETION-EDITOR-SURFACE-06).
     pub(crate) fn complete_focused_surface(
         &mut self,
         forward: bool,
@@ -331,7 +421,7 @@ impl crate::ui::app::AgenttyApp {
         cx: &mut gpui::Context<Self>,
     ) {
         let composer_focused = self.composer_input_focused(window, cx);
-        let terminal = self.focused_leaf(window, cx);
+        let terminal = self.focused_terminal_leaf(window, cx);
         let terminal_active = terminal
             .as_ref()
             .is_some_and(|leaf| leaf.read(cx).input_active_for_completion());
@@ -340,7 +430,9 @@ impl crate::ui::app::AgenttyApp {
             terminal_active,
         ) {
             Some(crate::ui::completion_surface::CompletionFocusOwner::Composer) => {
-                self.composer_complete_tab(forward, window, cx);
+                if let Some(target) = self.composer_input_focused_target(window, cx) {
+                    self.composer_complete_tab_for(&target, forward, window, cx);
+                }
             }
             Some(crate::ui::completion_surface::CompletionFocusOwner::Terminal) => {
                 if let Some(leaf) = terminal {
@@ -351,8 +443,9 @@ impl crate::ui::app::AgenttyApp {
         }
     }
 
-    pub(crate) fn composer_complete_tab(
+    pub(crate) fn composer_complete_tab_for(
         &mut self,
+        target: &PaneIdentity,
         forward: bool,
         window: &mut Window,
         cx: &mut gpui::Context<Self>,
@@ -360,18 +453,19 @@ impl crate::ui::app::AgenttyApp {
         if !cx.global::<crate::core::config::Config>().tab_completion {
             return;
         }
-        if self.composer_completion.is_some() {
-            if let Some(state) = self.composer_completion.as_mut() {
+        let Some(composer) = self.composers.get_mut(target) else {
+            return;
+        };
+        if composer.completion.is_some() {
+            if let Some(state) = composer.completion.as_mut() {
                 state.session.select(forward);
             }
             cx.notify();
             return;
         }
-        let Some(composer) = self.composer.as_ref() else {
-            return;
-        };
-        let target = composer.target.clone();
         let input = composer.input.clone();
+        let completion_generation = composer.completion_generation;
+        drop(composer);
         let (line, cursor_chars) = {
             let state = input.read(cx);
             let line = state.value().to_string();
@@ -379,7 +473,7 @@ impl crate::ui::app::AgenttyApp {
                 crate::ui::completion_surface::byte_offset_to_char_index(&line, state.cursor());
             (line, cursor_chars)
         };
-        let Ok(terminal) = self.target_terminal(&target, cx) else {
+        let Ok(terminal) = self.target_terminal(target, cx) else {
             return;
         };
         let (host, cwd, history, paths_local) = {
@@ -420,13 +514,13 @@ impl crate::ui::app::AgenttyApp {
             } else {
                 agentty_core::agent_runtime::AuthorityKind::Remote
             };
-            let generation = self.composer_completion_generation.wrapping_add(1);
+            let generation = completion_generation.wrapping_add(1);
             let request = agentty_core::agent_runtime::CompletionRequest {
                 operation: agentty_core::agent_runtime::OperationId(generation),
                 generation: agentty_core::agent_runtime::CompletionGeneration(generation),
                 authority,
                 cwd: cwd.map(|p| p.to_string_lossy().into_owned()),
-                input: line.clone(),
+                input: line.to_string(),
                 cursor: cursor_bytes,
                 limit: 400,
                 history,
@@ -479,23 +573,25 @@ impl crate::ui::app::AgenttyApp {
             .skip(word_start)
             .take(cursor_chars.saturating_sub(word_start))
             .collect();
-        self.composer_completion_generation = self.composer_completion_generation.wrapping_add(1);
-        let generation = self.composer_completion_generation;
-        self.composer_completion =
-            Some(crate::ui::completion_surface::ComposerCompletionState::new(
-                generation,
-                crate::terminal::completion::CompletionSession::new(
-                    word_start,
-                    word,
-                    gui.candidates,
-                ),
-            ));
+        let Some(composer) = self.composers.get_mut(target) else {
+            return;
+        };
+        composer.completion_generation = composer.completion_generation.wrapping_add(1);
+        let generation = composer.completion_generation;
+        composer.completion = Some(crate::ui::completion_surface::ComposerCompletionState::new(
+            generation,
+            crate::terminal::completion::CompletionSession::new(word_start, word, gui.candidates),
+        ));
         let _ = window;
         cx.notify();
     }
 
-    fn composer_completion_refilter(&mut self, cx: &mut gpui::Context<Self>) {
-        let Some(composer) = self.composer.as_ref() else {
+    fn composer_completion_refilter_for(
+        &mut self,
+        target: &PaneIdentity,
+        cx: &mut gpui::Context<Self>,
+    ) {
+        let Some(composer) = self.composers.get_mut(target) else {
             return;
         };
         let line = composer.input.read(cx).value().to_string();
@@ -503,7 +599,7 @@ impl crate::ui::app::AgenttyApp {
             &line,
             composer.input.read(cx).cursor(),
         );
-        let Some(state) = self.composer_completion.as_mut() else {
+        let Some(state) = composer.completion.as_mut() else {
             return;
         };
         let word: String = line
@@ -512,18 +608,27 @@ impl crate::ui::app::AgenttyApp {
             .take(cursor_chars.saturating_sub(state.session.word_start))
             .collect();
         if !state.session.refilter(&word) {
-            self.composer_completion = None;
+            composer.completion = None;
         }
         cx.notify();
     }
 
-    fn composer_completion_accept(&mut self, window: &mut Window, cx: &mut gpui::Context<Self>) {
-        let Some(composer) = self.composer.as_ref() else {
+    fn composer_completion_accept_for(
+        &mut self,
+        target: &PaneIdentity,
+        window: &mut Window,
+        cx: &mut gpui::Context<Self>,
+    ) {
+        let Some(composer) = self.composers.get(target) else {
             return;
         };
         let input = composer.input.clone();
         let draft = input.read(cx).value().to_string();
-        let Some(state) = self.composer_completion.as_ref() else {
+        let Some(state) = self
+            .composers
+            .get(target)
+            .and_then(|composer| composer.completion.as_ref())
+        else {
             return;
         };
         let Some(accepted) =
@@ -531,7 +636,6 @@ impl crate::ui::app::AgenttyApp {
         else {
             return;
         };
-        debug_assert!(!accepted.submit);
         let position = crate::ui::completion_surface::char_index_to_position(
             &accepted.text,
             accepted.cursor_chars,
@@ -540,18 +644,31 @@ impl crate::ui::app::AgenttyApp {
             state.set_value(&accepted.text, window, cx);
             state.set_cursor_position(position, window, cx);
         });
-        self.composer_completion = None;
+        if let Some(composer) = self.composers.get_mut(target) {
+            composer.completion = None;
+        }
         cx.notify();
     }
 
-    fn composer_completion_close(&mut self, cx: &mut gpui::Context<Self>) {
-        if crate::ui::completion_surface::clear_composer_completion(&mut self.composer_completion) {
+    fn composer_completion_close_for(
+        &mut self,
+        target: &PaneIdentity,
+        cx: &mut gpui::Context<Self>,
+    ) {
+        let Some(composer) = self.composers.get_mut(target) else {
+            return;
+        };
+        if crate::ui::completion_surface::clear_composer_completion(&mut composer.completion) {
             cx.notify();
         }
     }
 
-    fn render_composer_completion_menu(&self, cx: &gpui::App) -> Option<impl IntoElement + use<>> {
-        let state = self.composer_completion.as_ref()?;
+    fn render_composer_completion_menu_for(
+        &self,
+        target: &PaneIdentity,
+        cx: &gpui::App,
+    ) -> Option<impl IntoElement + use<>> {
+        let state = self.composers.get(target)?.completion.as_ref()?;
         let items: Vec<&crate::terminal::completion::Candidate> = state
             .session
             .filtered
@@ -562,10 +679,8 @@ impl crate::ui::app::AgenttyApp {
             return None;
         }
         const MAX_ROWS: usize = 8;
-        let first = 0usize;
-        let visible = items.len().min(MAX_ROWS);
         let theme = cx.theme();
-        let rows: Vec<_> = (first..first + visible)
+        let rows: Vec<_> = (0..items.len().min(MAX_ROWS))
             .map(|i| {
                 let cand = items[i];
                 let selected = state.session.index == Some(i);
@@ -606,7 +721,7 @@ impl crate::ui::app::AgenttyApp {
         )
     }
 
-    fn target_terminal(
+    pub(crate) fn target_terminal(
         &self,
         target: &PaneIdentity,
         cx: &gpui::App,
@@ -622,32 +737,33 @@ impl crate::ui::app::AgenttyApp {
             .ok_or(DeliveryOutcome::TargetMissing)
     }
 
-    fn submit_composer(&mut self, window: &mut Window, cx: &mut gpui::Context<Self>) {
-        let Some(state) = self.composer.as_ref() else {
+    fn submit_composer_for(
+        &mut self,
+        target: &PaneIdentity,
+        window: &mut Window,
+        cx: &mut gpui::Context<Self>,
+    ) {
+        let Some(state) = self.composers.get(target) else {
             return;
         };
-        let target = state.target.clone();
         let draft = state.input.read(cx).value().to_string();
         if draft.trim().is_empty() {
             return;
         }
         self.composer_drafts.set(target.clone(), draft.clone());
-        let outcome = match self.target_terminal(&target, cx) {
+        let outcome = match self.target_terminal(target, cx) {
             Ok(terminal) => self.deliver_agent_prompt_to(terminal, &draft, window, cx),
             Err(outcome) => outcome,
         };
         match outcome {
             DeliveryOutcome::Delivered => {
-                self.composer_drafts.clear(&target);
-                if let Some(state) = self.composer.as_ref() {
+                self.composer_drafts.clear(target);
+                if let Some(state) = self.composers.get(target) {
                     state.input.update(cx, |input, cx| {
                         input.set_value("", window, cx);
                     });
                 }
                 self.save_session(cx);
-                // Do not tear down ComposerState (and its active callback) from
-                // inside that callback. The next render's sync_composer_dock
-                // applies Off mode after event delivery has returned.
                 self.focus_active(window, cx);
             }
             DeliveryOutcome::TargetMissing => window.push_notification(
@@ -664,22 +780,16 @@ impl crate::ui::app::AgenttyApp {
         cx.notify();
     }
 
-    pub(crate) fn render_composer(
-        &mut self,
-        _window: &mut Window,
+    pub(crate) fn render_composer_for(
+        &self,
+        target: &PaneIdentity,
         cx: &mut gpui::Context<Self>,
     ) -> Option<impl IntoElement + use<>> {
-        let state = self.composer.as_ref()?;
-        let menu = self.render_composer_completion_menu(cx);
+        let state = self.composers.get(target)?;
+        let menu = self.render_composer_completion_menu_for(target, cx);
         Some(
             div()
                 .debug_selector(|| "COMPOSER_RICH_INPUT_DOCK".into())
-                // gpui-component intentionally propagates a submit-on-enter
-                // action. Stop that action at the Composer boundary so GPUI
-                // does not fall through to the simulated/native text input
-                // handler and commit the Enter key's `\n` after PressEnter.
-                // Shift+Enter is consumed by InputState itself and never
-                // reaches this listener, preserving the multiline edit path.
                 .on_action(
                     cx.listener(|_, action: &gpui_component::input::Enter, _, cx| {
                         if !action.shift {
@@ -695,14 +805,10 @@ impl crate::ui::app::AgenttyApp {
                 .border_t_1()
                 .border_color(cx.theme().border)
                 .children(menu)
-                // The dock's top divider is the only Composer frame. The input
-                // control must stay borderless so it reads as one continuous
-                // rich-input area rather than a box inside a box.
                 .child(Input::new(&state.input).appearance(false)),
         )
     }
 }
-
 fn mode_i18n_key(mode: ComposerMode) -> &'static str {
     match mode {
         ComposerMode::Auto => "composer.mode.auto",
@@ -716,12 +822,31 @@ mod gpui_tests {
     use super::*;
     use crate::daemon::protocol::{ClientMsg, DaemonMsg};
     use crate::terminal::completion::{Candidate, CandidateKind, CompletionSession};
+    use crate::terminal::view::quiet_test_pane;
     use crate::ui::app::{AgenttyApp, test_window::harness_with_pane};
-    use gpui::{Entity, MouseButton, TestAppContext, VisualTestContext};
+    use crate::ui::pane::{Pane, PaneSlot};
+    use gpui::{Axis, Entity, MouseButton, TestAppContext, VisualTestContext};
     use gpui_component::input::InputEvent;
     use std::io::ErrorKind;
     use std::os::unix::net::UnixStream;
     use std::time::Duration;
+
+    fn set_composer_mode(cx: &mut VisualTestContext, mode: ComposerMode) {
+        cx.update(|_, cx| {
+            let mut cfg = cx.global::<crate::core::config::Config>().clone();
+            cfg.composer_mode = mode;
+            cx.set_global(cfg);
+        });
+    }
+
+    fn composer_input(app: &AgenttyApp) -> Entity<InputState> {
+        app.composers
+            .values()
+            .next()
+            .expect("expected a composer instance")
+            .input
+            .clone()
+    }
 
     fn open_and_focus_composer(
         app: &Entity<AgenttyApp>,
@@ -729,12 +854,7 @@ mod gpui_tests {
     ) -> Entity<InputState> {
         let input = app.update_in(cx, |app, window, cx| {
             app.ensure_composer_open(window, cx);
-            let input = app
-                .composer
-                .as_ref()
-                .expect("the pane owns a composer")
-                .input
-                .clone();
+            let input = composer_input(app);
             input.update(cx, |input, cx| input.focus(window, cx));
             cx.notify();
             input
@@ -858,12 +978,17 @@ mod gpui_tests {
         let (app, mut cx, mut pane_stream) = harness_with_pane(cx);
         let input = open_and_focus_composer(&app, &mut cx);
         set_draft(&app, &input, "git ch", &mut cx);
-        app.update_in(&mut cx, |app, _, cx| {
-            app.composer_completion =
-                Some(crate::ui::completion_surface::ComposerCompletionState::new(
-                    1,
-                    CompletionSession::new(4, "ch".into(), vec![candidate("checkout", 4, 6)]),
-                ));
+        app.update_in(&mut cx, |app, window, cx| {
+            let target = app
+                .composer_target_identity(window, cx)
+                .expect("composer owns a stable target");
+            if let Some(state) = app.composers.get_mut(&target) {
+                state.completion =
+                    Some(crate::ui::completion_surface::ComposerCompletionState::new(
+                        1,
+                        CompletionSession::new(4, "ch".into(), vec![candidate("checkout", 4, 6)]),
+                    ));
+            }
             cx.notify();
         });
         cx.run_until_parked();
@@ -875,9 +1000,15 @@ mod gpui_tests {
         cx.simulate_keystrokes("enter");
 
         assert_eq!(input_value(&input, &mut cx), "git checkout");
-        app.update_in(&mut cx, |app, _, _| {
+        app.update_in(&mut cx, |app, window, cx| {
+            let target = app
+                .composer_target_identity(window, cx)
+                .expect("composer target");
             assert!(
-                app.composer_completion.is_none(),
+                app.composers
+                    .get(&target)
+                    .and_then(|state| state.completion.as_ref())
+                    .is_none(),
                 "accept closes the completion menu"
             );
         });
@@ -954,16 +1085,19 @@ mod gpui_tests {
     }
 
     #[gpui::test]
-    fn composer_activity_bar_click_round_trips_draft_and_focus(cx: &mut TestAppContext) {
+    fn composer_footer_toggle_round_trips_draft_and_focus(cx: &mut TestAppContext) {
         let (app, mut cx, mut pane_stream) = harness_with_pane(cx);
         report_agent_session(&app, &mut pane_stream, &mut cx);
         let input = open_and_focus_composer(&app, &mut cx);
         set_draft(&app, &input, "draft survives collapse", &mut cx);
         let target = app.update_in(&mut cx, |app, window, cx| {
             let composer = app
-                .composer
-                .as_ref()
-                .expect("open Composer owns a stable target");
+                .composers
+                .get(
+                    &app.composer_target_identity(window, cx)
+                        .expect("open Composer owns a stable target"),
+                )
+                .expect("composer state exists");
             assert!(
                 composer
                     .input
@@ -979,19 +1113,22 @@ mod gpui_tests {
             "expanded state paints the production Composer dock"
         );
 
-        click_debug_selector("AGENT_ACTIVITY_COMPOSER_TOGGLE", &mut cx);
+        click_debug_selector("COMPOSER_CONTEXT_FOOTER_TOGGLE", &mut cx);
 
         assert!(
             cx.debug_bounds("COMPOSER_RICH_INPUT_DOCK").is_none(),
             "collapse removes the production Composer dock"
         );
         assert!(
-            cx.debug_bounds("AGENT_ACTIVITY_COMPOSER_TOGGLE").is_some(),
-            "the Activity Bar remains visible while Composer is collapsed"
+            cx.debug_bounds("COMPOSER_CONTEXT_FOOTER_TOGGLE").is_some(),
+            "the context footer remains visible while Composer is collapsed"
         );
 
         app.update_in(&mut cx, |app, window, cx| {
-            assert!(app.composer.is_none(), "first click collapses the Composer");
+            assert!(
+                !app.composers.contains_key(&target),
+                "first click collapses the Composer"
+            );
             assert_eq!(
                 app.composer_drafts.get(&target),
                 "draft survives collapse",
@@ -1012,21 +1149,21 @@ mod gpui_tests {
             );
         });
 
-        click_debug_selector("AGENT_ACTIVITY_COMPOSER_TOGGLE", &mut cx);
+        click_debug_selector("COMPOSER_CONTEXT_FOOTER_TOGGLE", &mut cx);
 
         assert!(
             cx.debug_bounds("COMPOSER_RICH_INPUT_DOCK").is_some(),
             "expand restores the production Composer dock"
         );
         assert!(
-            cx.debug_bounds("AGENT_ACTIVITY_COMPOSER_TOGGLE").is_some(),
-            "the Activity Bar remains visible after expand"
+            cx.debug_bounds("COMPOSER_CONTEXT_FOOTER_TOGGLE").is_some(),
+            "the context footer remains visible after expand"
         );
 
         app.update_in(&mut cx, |app, window, cx| {
             let restored = app
-                .composer
-                .as_ref()
+                .composers
+                .get(&target)
                 .expect("second click restores the Composer");
             assert_eq!(
                 restored.input.read(cx).value().to_string(),
@@ -1060,6 +1197,137 @@ mod gpui_tests {
     }
 
     #[gpui::test]
+    fn composer_input_focus_does_not_retarget_to_first_leaf(cx: &mut TestAppContext) {
+        let (app, mut cx, _left_stream) = harness_with_pane(cx);
+        set_composer_mode(&mut cx, ComposerMode::Always);
+        let right_pane_id = app.update_in(&mut cx, |app, window, cx| {
+            let (view2, _stream2) = quiet_test_pane(2, window, cx);
+            let right_id = view2.read(cx).pane_id();
+            let existing = std::mem::replace(&mut app.tabs[0].pane, Pane::Empty);
+            app.tabs[0].pane = Pane::split_node(
+                Axis::Horizontal,
+                0.5,
+                existing,
+                Pane::leaf(PaneSlot::Ready(view2.clone())),
+            );
+            view2.update(cx, |view, cx| view.focus_handle.focus(window, cx));
+            app.sync_composer_dock(window, cx);
+            right_id
+        });
+        cx.run_until_parked();
+
+        let _input = open_and_focus_composer(&app, &mut cx);
+        app.update_in(&mut cx, |app, window, cx| {
+            assert!(
+                app.composer_input_focused(window, cx),
+                "composer input keeps focus without retargeting"
+            );
+            let target = app
+                .composers
+                .keys()
+                .find(|target| target.pane_id == right_pane_id)
+                .cloned()
+                .expect("composer stays bound to the focused column");
+            assert_eq!(
+                target.pane_id, right_pane_id,
+                "composer focus must not retarget to the DFS-first leaf"
+            );
+        });
+    }
+
+    #[gpui::test]
+    fn vertical_split_composer_submits_to_focused_pane(cx: &mut TestAppContext) {
+        let (app, mut cx, mut top_stream) = harness_with_pane(cx);
+        set_composer_mode(&mut cx, ComposerMode::Always);
+        let mut bottom_stream = app.update_in(&mut cx, |app, window, cx| {
+            let (view2, stream2) = quiet_test_pane(2, window, cx);
+            let existing = std::mem::replace(&mut app.tabs[0].pane, Pane::Empty);
+            app.tabs[0].pane = Pane::split_node(
+                Axis::Vertical,
+                0.5,
+                existing,
+                Pane::leaf(PaneSlot::Ready(view2.clone())),
+            );
+            view2.update(cx, |view, cx| view.focus_handle.focus(window, cx));
+            app.sync_composer_dock(window, cx);
+            stream2
+        });
+        cx.run_until_parked();
+
+        let input = open_and_focus_composer(&app, &mut cx);
+        set_draft(&app, &input, "bottom pane prompt", &mut cx);
+        cx.simulate_keystrokes("enter");
+
+        assert_eq!(
+            next_input_until_timeout(&mut top_stream),
+            None,
+            "vertical split delivery must not reach the unfocused pane"
+        );
+        assert_eq!(
+            next_input_until_timeout(&mut bottom_stream),
+            Some(crate::core::agent_prompt::submit_bytes(
+                "bottom pane prompt"
+            )),
+            "vertical split submits to the focused terminal leaf"
+        );
+    }
+
+    #[gpui::test]
+    fn horizontal_split_composer_submits_to_own_column(cx: &mut TestAppContext) {
+        let (app, mut cx, mut left_stream) = harness_with_pane(cx);
+        set_composer_mode(&mut cx, ComposerMode::Always);
+        let (mut right_stream, right_target) = app.update_in(&mut cx, |app, window, cx| {
+            let (view2, stream2) = quiet_test_pane(2, window, cx);
+            let target = PaneIdentity {
+                environment: crate::core::session::WorkspaceStore::environment_id(
+                    cx,
+                    app.workspace,
+                ),
+                pane_id: view2.read(cx).pane_id(),
+            };
+            let existing = std::mem::replace(&mut app.tabs[0].pane, Pane::Empty);
+            app.tabs[0].pane = Pane::split_node(
+                Axis::Horizontal,
+                0.5,
+                existing,
+                Pane::leaf(PaneSlot::Ready(view2.clone())),
+            );
+            view2.update(cx, |view, cx| view.focus_handle.focus(window, cx));
+            app.sync_composer_dock(window, cx);
+            (stream2, target)
+        });
+        cx.run_until_parked();
+
+        let right_input = app.update_in(&mut cx, |app, window, cx| {
+            let input = app
+                .composers
+                .get(&right_target)
+                .expect("right column owns a composer after dock sync")
+                .input
+                .clone();
+            input.update(cx, |input, cx| input.focus(window, cx));
+            cx.notify();
+            input
+        });
+        cx.run_until_parked();
+        set_draft(&app, &right_input, "right column prompt", &mut cx);
+        cx.simulate_keystrokes("enter");
+
+        assert_eq!(
+            next_input_until_timeout(&mut left_stream),
+            None,
+            "right-column submit must not reach the left pane"
+        );
+        assert_eq!(
+            next_input_until_timeout(&mut right_stream),
+            Some(crate::core::agent_prompt::submit_bytes(
+                "right column prompt"
+            )),
+            "horizontal split submits through the column-local composer"
+        );
+    }
+
+    #[gpui::test]
     fn stale_composer_input_callback_cannot_submit_replacement(cx: &mut TestAppContext) {
         let (app, mut cx, mut pane_stream) = harness_with_pane(cx);
         let stale_input = open_and_focus_composer(&app, &mut cx);
@@ -1067,12 +1335,7 @@ mod gpui_tests {
         let replacement_input = app.update_in(&mut cx, |app, window, cx| {
             app.close_composer(window, cx);
             app.ensure_composer_open(window, cx);
-            let input = app
-                .composer
-                .as_ref()
-                .expect("composer reopens for the same pane")
-                .input
-                .clone();
+            let input = composer_input(app);
             let position = crate::ui::completion_surface::char_index_to_position(
                 "replacement draft",
                 "replacement draft".chars().count(),

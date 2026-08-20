@@ -3,11 +3,12 @@ updated: 2026-08-17
 domain: environment_and_window_model
 contracts:
   - id: ENV-WINDOW-BOUNDARY-01
-    rule: Every application window is bound to exactly one managed execution Environment. One Environment may own multiple application windows, and each window may contain many repositories, tabs, panes, and Agent sessions. Creating a peer window preserves EnvironmentId and creates a distinct daemon workspace collection for that window.
-    migration: Replace user-facing workspace switching with open_or_focus_environment_window. WorkspaceId may remain temporarily as daemon collection identity but must not define the product model.
+    rule: Every application window is bound to exactly one managed execution Environment at a time. One Environment may own multiple application windows (peer windows via open_or_focus_environment), and each window may contain many repositories, tabs, panes, and Agent sessions. Explicit select_environment in an invoking window may rebind that window's EnvironmentId and WorkspaceId collection in place; this is the primary GUI path and does not open a peer window.
+    migration: Primary GUI environment switching uses select_environment. open_or_focus_environment remains for CLI/headless entry and peer-window creation. WorkspaceId remains daemon collection identity and must not define the product model.
     forbidden:
-      - retargeting_an_existing_window_to_another_environment
-      - mixing_multiple_environment_authorities_in_one_window
+      - retargeting_window_environment_without_explicit_select_or_open_or_focus
+      - mixing_multiple_environment_authorities_in_one_content_column
+      - mixing_local_and_remote_panes_in_one_content_column
   - id: ENV-EXECUTION-AUTHORITY-02
     rule: Environment is the canonical execution authority for process launch, filesystem, completion, sessions, Composer delivery, and activity events.
     kinds:
@@ -122,3 +123,33 @@ contracts:
       - remote_user_state_rederiving_home_config_path
       - mutable_or_callsite_specific_hook_root_resolution
       - wire_dialect_bump_for_additive_hello_root_fields
+  - id: ENV-SINGLE-WINDOW-RAIL-47
+    rule: One primary application window switches Environment authority through AgenttyApp::select_environment when the user picks an environment from the indicator menu or left-rail row. The content column saves the prior Environment session, rebinds WorkspaceId authority, and loads the target Environment tabs without opening a peer window. Before wipe, the departing Environment's committed SessionNavigator projection is stashed in EnvironmentNavigatorCache keyed by EnvironmentId; switching back restores that stash then refreshes when discovery is ready. Multi-window open_or_focus_environment remains for entry points that lack an invoking window (CLI, connect flow). The left-rail environment tree extends the same select_environment primitive.
+    forbidden:
+      - mixing_local_and_remote_panes_in_one_content_column
+      - retargeting_environment_authority_without_explicit_selection
+      - environment_menu_opening_peer_window_when_invoking_app_is_available
+      - promoting_stashed_navigator_cache_as_remote_authority
+  - id: ENV-PIN-48
+    rule: Environment pin preference is stored as client UI state in Config.environment_rail.pinned, distinct from session pin Host state. Pinned environments render at the top of the left environment rail; unpinned remotes default collapsed until explicitly expanded.
+  - id: ENV-RAIL-COLLAPSE-49
+    rule: Left-rail environment sections support independent manual expand/collapse persisted in Config.environment_rail.collapse_overrides per EnvironmentId. Collapsed sections and non-current environment rows show a one-line summary of connection state plus live/total session counts from the current Navigator or EnvironmentNavigatorCache; the current environment session list hides while its section is collapsed.
+  - id: ENV-RAIL-TREE-52
+    rule: Expanded non-current Environment sections render indented session preview rows sourced only from EnvironmentNavigatorCache. Clicking a preview row routes through select_environment for that EnvironmentId and never resumes, focuses, or delivers into a session under a different content-column authority. Current-environment sessions continue to render exclusively through the canonical Session Navigator list below the rail headers and must not be duplicated as rail preview children.
+    forbidden:
+      - activating_cached_preview_without_select_environment
+      - duplicating_current_environment_sessions_under_rail_header
+      - treating_preview_rows_as_remote_authority
+  - id: ENV-DISCONNECT-SURFACE-50
+    rule: A managed remote Environment exposes explicit disconnect and reconnect actions on the Environment Indicator menu for the current window authority, plus a persistent disconnect strip below the title bar while Disconnected, Reconnecting, or Failed. Actions route through RemoteLinks disconnect and retry_now or connect_to_host; fail-closed remote authority is preserved and local rows never substitute. The strip remains visible until Connected or the environment is no longer remote-managed.
+    forbidden:
+      - reconnect_only_in_switcher_context_menu
+      - disconnect_without_visible_current_environment_action
+      - local_fallback_rows_on_remote_disconnect
+  - id: ENV-EXPLICIT-CONNECT-51
+    rule: Selecting or opening a remote Environment does not auto-start transport while the host is offline. RemoteLinks::defer_until_explicit_connect marks the host suspended until the user explicitly reconnects or connects from the environment menu, disconnect strip, or connect flow. Session Navigator discovery for a remote Environment waits until RemoteStatus is Attached; RemoteLinkUp remains the canonical post-connect discovery transition.
+    forbidden:
+      - auto_connect_on_remote_workspace_supervise
+      - initial_target_discovery_while_remote_disconnected
+      - pin_or_environment_select_implicit_connect
+status: in_progress

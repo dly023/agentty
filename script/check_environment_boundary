@@ -49,3 +49,32 @@ if rg -n 'switch_workspace\(id, window, cx\)' src/ui/remote_workspace.rs; then
 fi
 
 echo 'environment boundary checks passed'
+rg -q 'ENV-DISCONNECT-SURFACE-50' docs/specs/ENVIRONMENT_MODEL_SPEC.yaml
+rg -q 'ENV-EXPLICIT-CONNECT-51' docs/specs/ENVIRONMENT_MODEL_SPEC.yaml
+rg -q 'ENV-SINGLE-WINDOW-RAIL-47' docs/specs/ENVIRONMENT_MODEL_SPEC.yaml
+rg -q 'defer_until_explicit_connect' src/ui/remote_workspace.rs
+rg -q 'remote_session_discovery_ready' src/ui/app.rs
+rg -q 'select_environment' src/ui/app.rs
+rg -q 'select_environment' src/ui/tab_strip.rs
+rg -q 'render_remote_disconnect_strip' src/ui/app.rs
+rg -q 'common.reconnect' src/ui/tab_strip.rs
+rg -q 'menu.disconnect' src/ui/tab_strip.rs
+rg -q 'environment_menu_exposes_reconnect_and_disconnect_for_remote' src/ui/tab_strip.rs
+rg -q 'environment_menu_selects_environment_in_current_window' src/ui/tab_strip.rs
+rg -q 'EnvironmentRailPreferences' crates/agentty-core/src/core/config.rs
+rg -q 'render_environment_rail' src/ui/environment_rail.rs src/ui/tab_sidebar.rs
+rg -q 'toggle_environment_pin' src/ui/environment_rail.rs src/ui/tab_strip.rs
+rg -q 'environment_menu_exposes_environment_pin_toggle' src/ui/tab_strip.rs
+rg -q 'environment_rail_renders_above_session_list' src/ui/tab_sidebar.rs
+rg -q 'EnvironmentNavigatorCache' src/ui/environment_navigator_cache.rs
+rg -q 'stash_environment_navigator' src/ui/session_navigator.rs src/ui/app.rs
+rg -q 'restore_environment_navigator' src/ui/session_navigator.rs src/ui/app.rs
+rg -q 'environment.rail.session_counts' assets/i18n/en-US.yaml assets/i18n/zh-CN.yaml
+rg -q 'stash_and_take_round_trips_counts' src/ui/environment_navigator_cache.rs
+rg -q 'session_history_is_cleared_when_workspace_scope_changes' src/ui/session_navigator.rs
+rg -q 'ENV-RAIL-TREE-52' docs/specs/ENVIRONMENT_MODEL_SPEC.yaml
+rg -q 'rail_preview_rows_for_section' src/ui/environment_rail.rs
+rg -q 'expanded_non_current_emits_preview_rows' src/ui/environment_rail.rs
+rg -q 'current_environment_never_emits_rail_preview_rows' src/ui/environment_rail.rs
+rg -q 'select_environment' src/ui/environment_rail.rs
+rg -q 'environment-rail-preview' src/ui/environment_rail.rs

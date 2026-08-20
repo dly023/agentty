@@ -1,5 +1,5 @@
 version: 1
-updated: 2026-08-16
+updated: 2026-08-19
 domain: terminal_input_experience
 contracts:
   - id: INPUT-COMPOSER-NATIVE-RICH-AREA-13
@@ -34,20 +34,33 @@ contracts:
       - auto_submit_or_pty_write_on_completion_accept
       - dual_tab_handlers_writing_both_buffers
   - id: INPUT-COMPOSER-ACTIVITY-BAR-07
-    rule: On an Agent pane, the always-visible production Agent Activity Bar is the compact Composer handle. A stationary primary-button click-release on that rendered bar toggles only the focused PaneIdentity without changing the persisted composer_mode preference. Collapse snapshots the exact draft before dropping the Composer state and returns focus to the same terminal. A second click recreates the Composer, restores the exact pane-isolated draft, and focuses its Input. The activity summary and trust presentation remain visible in both states, and the trailing direction affordance communicates the next action.
-    forbidden:
-      - activity_bar_without_composer_toggle_on_agent_panes
-      - changing_persisted_composer_mode_when_collapsing_the_dock
-      - discarding_the_draft_when_collapsing_from_the_activity_bar
-      - collapse_leaving_focus_on_dropped_composer_input
-      - expand_without_restoring_composer_focus
-      - hiding_the_activity_summary_together_with_the_composer
+    status: superseded
+    superseded_by: INPUT-COMPOSER-CONTEXT-FOOTER-16
+    rule: Superseded. Composer collapse/expand and draft round-trip now live on INPUT-COMPOSER-CONTEXT-FOOTER-16; heuristic activity summary and inferred/rich trust badges are removed from the composer dock region.
   - id: INPUT-COMPOSER-DOCK-REFLOW-11
-    rule: The expanded Composer is a compact in-flow dock below the terminal viewport and above the Agent Activity Bar. Opening or growing it reduces the terminal viewport so the terminal's bottom content remains visible above the dock; it never absolutely overlays terminal cells. The dock avoids a redundant title/mode header because the persistent Activity Bar owns status and the expand/collapse affordance. Input subscriptions mutate AgenttyApp through the callback's existing entity lease and never reacquire the same entity during GPUI effect delivery.
+    rule: The expanded Composer is a compact in-flow dock below the terminal viewport and above the Composer Context Footer. Opening or growing it reduces the terminal viewport so the terminal's bottom content remains visible above the dock; it never absolutely overlays terminal cells. The dock avoids a redundant title/mode header because the persistent Context Footer owns environment chips and the expand/collapse affordance. Input subscriptions mutate AgenttyApp through the callback's existing entity lease and never reacquire the same entity during GPUI effect delivery.
     forbidden:
       - absolute_composer_over_terminal_cells
-      - redundant_composer_header_above_activity_bar
+      - redundant_composer_header_above_context_footer
       - composer_input_callback_reacquiring_agentty_app
+  - id: INPUT-COMPOSER-SPLIT-DOCK-15
+    rule: A horizontal Axis::Horizontal split renders an independent in-flow Composer dock and Context Footer at the bottom of each split column, reflowing only that column's terminal viewport. Horizontal column wrapping must reuse the canonical Pane split divider (render_resizable_split) so the shared ratio Cell remains draggable. A vertical Axis::Vertical split shares one Composer dock and Context Footer at the subtree bottom; delivery targets the focused terminal in that subtree, or the locked PaneIdentity when a Composer Input in that subtree holds focus. Nested splits compose these rules depth-first.
+    forbidden:
+      - composer_target_from_focused_or_first_while_composer_input_focused
+      - full_width_composer_under_horizontal_split
+      - horizontal_split_column_without_matching_dock
+      - composer_submit_to_wrong_pane_in_split
+      - horizontal_split_dock_wrapper_dropping_divider_drag
+  - id: INPUT-COMPOSER-CONTEXT-FOOTER-16
+    rule: When a Composer dock slot is active for a PaneIdentity, a compact Context Footer renders below the Composer input (or alone when collapsed). Chips use canonical Environment label and connection state, pane cwd, cached git branch, and agent name when present. Structured provider messages may appear as one optional detail line when rich and actionable. A trailing affordance toggles Composer expand/collapse for that PaneIdentity without changing persisted composer_mode; collapse snapshots the draft and returns focus to the terminal. Forbidden as primary footer content — terminal-text heuristic agent status labels and activity.inferred/activity.rich trust badges.
+    forbidden:
+      - activity_inferred_rich_trust_badge_in_composer_footer
+      - heuristic_agent_status_as_primary_footer_label
+      - footer_without_environment_chip_when_docked
+      - changing_persisted_composer_mode_when_collapsing_the_dock
+      - discarding_the_draft_when_collapsing_from_the_footer
+      - collapse_leaving_focus_on_dropped_composer_input
+      - expand_without_restoring_composer_focus
   - id: INPUT-COMPOSER-RICH-INPUT-12
     rule: The expanded Composer is a stable rich multiline input surface. Shift+Enter inserts exactly one newline without submission. Enter with a visible completion selection accepts that selection into the draft without PTY delivery; Enter with the completion menu closed submits the draft through the canonical delivery path. The editable area starts at two rows, grows with its content, and clamps at eight rows while the in-flow dock reflows the terminal above it. Each Input callback subscription is owned by the exact Composer state that created it, is cancelled before that state can be replaced, uses the callback's existing App entity lease, and cannot submit or mutate a newer Composer after teardown.
     forbidden:

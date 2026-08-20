@@ -30,11 +30,13 @@ contracts:
       - bare_text_key_hints_on_the_welcome_page
       - unframed_shortcut_list_touching_window_chrome
   - id: UI-TAB-OVERFLOW-05
-    rule: When tabs exceed strip capacity, chips compress from the natural minimum to an explicit floor, and beyond the floor the strip renders a window of chips that always contains the active tab. Hidden tabs are represented by leading and trailing overflow affordances showing the hidden count, and activating an overflow affordance pages the window toward the hidden tabs. Tabs are never silently clipped without an affordance, and all capacity math comes from one pure mapping.
+    rule: When tabs exceed strip capacity, chips compress from the natural minimum to an explicit floor, and beyond the floor the strip renders a window of chips that always contains the active tab. Hidden tabs are represented by leading and trailing overflow affordances showing the hidden count, and activating an overflow affordance pages the window toward the hidden tabs. Tabs are never silently clipped without an affordance, and all capacity math comes from one pure mapping. Overflow affordances and held-modifier tab-number hints apply only while the horizontal chip strip is rendered (TabBarPosition::Top or zero tabs); when the left Session Navigator rail hides chips, neither overflow counts nor modifier badges may render in the title bar.
     forbidden:
       - silent_tab_clipping_without_overflow_affordance
       - active_tab_outside_the_rendered_chip_window
       - chip_floor_defined_per_callsite
+      - overflow_affordances_when_horizontal_chips_hidden
+      - modifier_tab_number_hints_when_horizontal_chips_hidden
   - id: UI-TITLEBAR-CHROME-06
     rule: The content-column title bar (middle column) anchors the Environment Indicator on the leading edge and a Command Palette icon affordance on the trailing edge — one left, one right. When the left Session Navigator rail is open (TabBarPosition::Left, chips hidden), a New Tab Plus affordance still sits beside the Environment Indicator via the same attach_new_tab_menu path used on the horizontal chip strip — left-rail layout must not hide New Tab. The overflow ellipsis app menu is removed; Settings is a direct icon tile in window chrome (right-panel title bar when that panel owns the trailing chrome, otherwise beside the right-panel toggle). Command Palette and Settings must not be nested together under a "…" dropdown.
     placement:
@@ -47,6 +49,7 @@ contracts:
       - command_palette_only_inside_nested_menu
       - settings_only_inside_nested_menu
       - left_rail_open_without_new_tab_affordance
+      - orphan_overflow_counts_beside_new_tab_when_chips_hidden
   - id: UI-AGENT-BRAND-ICON-07
     rule: Branded CLIAgents use the bundled currentColor SVG silhouettes under assets/icons/agents. Every mark renders through one shared badge helper as a contrasting glyph on the agent's accent rounded plate so the silhouette stays visible at sidebar and tab density — white on dark accents by default; light-accent agents (Omp's omp.sh hero plate) use a dark or brand-purple glyph instead of white-on-light. Agents without a bundled mark use icons/bot.svg. Unbranded terminal tab avatars use the same rounded-rectangle plate radius band (unbranded_avatar_radius), never a circle. Orca/kooky raster or brand-filled marks that require color preservation are forbidden after they failed visibility at small sizes. Brand silhouettes must reach comparable optical fill inside the shared badge — lace or ring marks (Codex blossom) are cropped or scaled so they do not read significantly smaller than dense siblings; per-agent glyph_size overrides at call sites are forbidden.
     forbidden:
@@ -87,4 +90,10 @@ contracts:
       - always_visible_side_panel_scrollbar
       - theme_always_scrollbar_overriding_side_panel_auto_hide
       - overflow_without_bottom_fade_hint_when_more_below
+  - id: UI-AGENT-ATTENTION-BANNER-46
+    rule: When any pane in the workspace owns a canonical AgentSessionState that requires user attention, the content column renders one persistent attention banner between the title bar and terminal body. Precedence is Waiting over Done-with-unread over no banner. The banner shows the agent display name, a localized summary, and one primary action that focuses the owning tab and pane. Waiting uses warning severity; Done-with-unread uses accent severity. The banner derives only from live terminal AgentSessionState and agent_result_unread; it must not sniff stdout or use cached mirrors. A focused pane whose Done result is already read must not surface Done-with-unread banner; Waiting always surfaces until cleared by status change.
+    forbidden:
+      - attention_banner_from_non_canonical_sniffing
+      - done_unread_banner_while_focused_and_read
+      - multiple_competing_attention_banners
 status: in_progress

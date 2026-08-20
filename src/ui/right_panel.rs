@@ -360,6 +360,28 @@ impl AgenttyApp {
         let mut pane_id: Option<u64> = None;
         let mut forwards_pane: Option<u64> = None;
 
+        {
+            use crate::core::i18n::ResolveLocale;
+            let locale = cx.global::<crate::core::config::Config>().locale.resolve();
+            let remote = crate::core::session::WorkspaceStore::remote_ref(cx, self.workspace);
+            let status = remote.as_ref().and_then(|_| {
+                crate::ui::remote_workspace::RemoteLinks::status_of(cx, self.workspace)
+            });
+            let remote_label = remote
+                .as_ref()
+                .map(|remote| crate::ui::remote_connect::label_for(&remote.target, cx));
+            let (environment_label, environment_detail, _, _) = Self::environment_indicator_state(
+                remote.as_ref(),
+                remote_label.as_deref(),
+                status.as_ref(),
+                locale,
+            );
+            rows.push((
+                "environment",
+                format!("{environment_label} · {environment_detail}"),
+            ));
+        }
+
         if let Some(tab) = self.tabs.get(self.active) {
             if let Some(leaf) = tab.detail_pane(window, cx) {
                 let view = leaf.read(cx);

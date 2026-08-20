@@ -15,6 +15,11 @@ impl NavigatorRowId {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    #[cfg(test)]
+    pub fn test(id: impl Into<String>) -> Self {
+        Self(id.into())
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -268,6 +273,28 @@ pub struct SessionNavigator {
     next_order: u64,
 }
 
+fn identity_aliases_for_live(session: &LiveSession) -> Vec<SessionIdentity> {
+    let mut identities = vec![session.identity.clone()];
+    match &session.identity {
+        SessionIdentity::Durable(container_id) => {
+            if let Some(session_id) = session.session_id.as_deref() {
+                identities.push(SessionIdentity::Provider(AgentSessionKey {
+                    provider: session.agent.slug().into(),
+                    session_id: session_id.into(),
+                }));
+            } else {
+                let _ = container_id;
+            }
+        }
+        SessionIdentity::Provider(_) => {
+            identities.push(SessionIdentity::Durable(
+                session.carrier.container_id.clone(),
+            ));
+        }
+    }
+    identities
+}
+
 impl SessionNavigator {
     pub fn rows(&self) -> &[NavigatorRow] {
         &self.rows
@@ -344,16 +371,19 @@ impl SessionNavigator {
             if self.deleted_identities.contains(&identity) {
                 continue;
             }
-            let row_id = live
-                .iter()
-                .find(|live| live.identity == identity)
-                .and_then(|live| self.container_rows.get(&live.carrier.container_id).cloned())
-                .unwrap_or_else(|| self.row_id_for(identity.clone()));
+            let Some(row_id) = self.row_id_for_history(
+                identity.clone(),
+                &session.key.session_id,
+                session.agent,
+                live,
+            ) else {
+                continue;
+            };
             observed.insert(row_id.clone());
             seen.insert(row_id.clone());
             self.upsert(
-                row_id,
-                identity,
+                row_id.clone(),
+                identity.clone(),
                 session.agent,
                 Some(session.key.session_id.clone()),
                 session.title.clone(),
@@ -367,22 +397,19 @@ impl SessionNavigator {
                 None,
                 None,
             );
+            self.bind_row_identities(&row_id, [identity]);
         }
         for session in live {
             if self.deleted_identities.contains(&session.identity) {
                 continue;
             }
-            let row_id = self
-                .container_rows
-                .get(&session.carrier.container_id)
-                .cloned()
-                .unwrap_or_else(|| self.row_id_for(session.identity.clone()));
+            let row_id = self.row_id_for_live(session, live);
             self.container_rows
                 .insert(session.carrier.container_id.clone(), row_id.clone());
             observed.insert(row_id.clone());
             seen.insert(row_id.clone());
             self.upsert(
-                row_id,
+                row_id.clone(),
                 session.identity.clone(),
                 session.agent,
                 session.session_id.clone(),
@@ -397,6 +424,7 @@ impl SessionNavigator {
                 Some(session.carrier.clone()),
                 session.execution.clone(),
             );
+            self.bind_row_identities(&row_id, identity_aliases_for_live(session));
         }
         self.closed_carrier_handoffs
             .retain(|row_id, _| !observed.contains(row_id));
@@ -826,6 +854,112 @@ impl SessionNavigator {
         id
     }
 
+    fn resolve_refresh_row_id(
+        &self,
+        identity: &SessionIdentity,
+        session_id: Option<&str>,
+        agent: CLIAgent,
+        live: &[LiveSession],
+    ) -> Option<NavigatorRowId> {
+        if let Some(row_id) = live
+            .iter()
+            .find(|live| &live.identity == identity)
+            .and_then(|live| self.container_rows.get(&live.carrier.container_id))
+        {
+            return Some(row_id.clone());
+        }
+        if let Some(session_id) = session_id {
+            if let Some(row_id) = live
+                .iter()
+                .find(|live| live.session_id.as_deref() == Some(session_id))
+                .and_then(|live| self.container_rows.get(&live.carrier.container_id))
+            {
+                return Some(row_id.clone());
+            }
+            if let Some(row) = self
+                .rows
+                .iter()
+                .find(|row| row.session_id.as_deref() == Some(session_id))
+            {
+                return Some(row.row_id.clone());
+            }
+        }
+        if let Some(row_id) = self.identity_rows.get(identity) {
+            return Some(row_id.clone());
+        }
+        let _ = agent;
+        None
+    }
+
+    fn should_defer_orphan_history(
+        &self,
+        identity: &SessionIdentity,
+        agent: CLIAgent,
+        session_id: &str,
+        live: &[LiveSession],
+    ) -> bool {
+        if self
+            .resolve_refresh_row_id(identity, Some(session_id), agent, live)
+            .is_some()
+        {
+            return false;
+        }
+        matches!(identity, SessionIdentity::Provider(_))
+            && live.iter().any(|live| {
+                matches!(live.identity, SessionIdentity::Durable(_))
+                    && live.session_id.is_none()
+                    && live.agent == agent
+            })
+    }
+
+    fn row_id_for_history(
+        &mut self,
+        identity: SessionIdentity,
+        session_id: &str,
+        agent: CLIAgent,
+        live: &[LiveSession],
+    ) -> Option<NavigatorRowId> {
+        if let Some(row_id) = self.resolve_refresh_row_id(&identity, Some(session_id), agent, live)
+        {
+            return Some(row_id);
+        }
+        if self.should_defer_orphan_history(&identity, agent, session_id, live) {
+            return None;
+        }
+        Some(self.row_id_for(identity))
+    }
+
+    fn row_id_for_live(&mut self, session: &LiveSession, live: &[LiveSession]) -> NavigatorRowId {
+        if let Some(row_id) = self
+            .container_rows
+            .get(&session.carrier.container_id)
+            .cloned()
+        {
+            return row_id;
+        }
+        if let Some(session_id) = session.session_id.as_deref() {
+            if let Some(row_id) = self.resolve_refresh_row_id(
+                &session.identity,
+                Some(session_id),
+                session.agent,
+                live,
+            ) {
+                return row_id;
+            }
+        }
+        self.row_id_for(session.identity.clone())
+    }
+
+    fn bind_row_identities(
+        &mut self,
+        row_id: &NavigatorRowId,
+        identities: impl IntoIterator<Item = SessionIdentity>,
+    ) {
+        for identity in identities {
+            self.identity_rows.insert(identity, row_id.clone());
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn upsert(
         &mut self,
@@ -844,7 +978,6 @@ impl SessionNavigator {
         carrier: Option<LiveCarrier>,
         execution: Option<LiveExecutionState>,
     ) {
-        self.identity_rows.retain(|_, existing| existing != &row_id);
         self.identity_rows.insert(identity.clone(), row_id.clone());
         let mut incoming_candidates = SessionTitleCandidates::from_raw(
             title_candidates.provider_title.as_deref(),
@@ -872,8 +1005,12 @@ impl SessionNavigator {
             row.source_path = source_path.or_else(|| row.source_path.clone());
             row.updated_at_unix_ms = updated_at_unix_ms.or(row.updated_at_unix_ms);
             row.created_at_unix_ms = created_at_unix_ms.or(row.created_at_unix_ms);
-            row.lifecycle = lifecycle;
-            row.carrier = carrier;
+            if lifecycle == RowLifecycle::Live || row.lifecycle != RowLifecycle::Live {
+                row.lifecycle = lifecycle;
+            }
+            if carrier.is_some() {
+                row.carrier = carrier;
+            }
             if execution.as_ref().is_none_or(|incoming| {
                 row.execution
                     .as_ref()
@@ -1021,6 +1158,79 @@ mod tests {
         assert_eq!(model.rows.len(), 1);
         assert_eq!(model.rows[0].row_id, row_id);
         assert_eq!(model.rows[0].session_id.as_deref(), Some("s1"));
+    }
+
+    #[test]
+    fn history_committed_while_live_still_unbound_does_not_duplicate_row() {
+        let mut model = SessionNavigator::default();
+        let temporary = LiveSession {
+            identity: SessionIdentity::Durable("carrier-1".into()),
+            agent: CLIAgent::Codex,
+            session_id: None,
+            title: None,
+            title_candidates: SessionTitleCandidates::default(),
+            cwd: None,
+            launch_argv: vec![],
+            carrier: LiveCarrier {
+                container_id: "carrier-1".into(),
+                tab_id: Some("tab".into()),
+                pane_id: Some(1),
+            },
+            execution: None,
+        };
+        model.refresh(&[], &[temporary.clone()]);
+        model.refresh(&[history("s1")], &[temporary]);
+        assert_eq!(model.rows.len(), 1);
+        assert_eq!(model.rows[0].lifecycle, RowLifecycle::Live);
+        assert_eq!(
+            model.rows[0].identity,
+            SessionIdentity::Durable("carrier-1".into())
+        );
+    }
+
+    #[test]
+    fn history_committed_with_stamped_binding_merges_into_container_row() {
+        let mut model = SessionNavigator::default();
+        let mut temporary = LiveSession {
+            identity: SessionIdentity::Durable("carrier-1".into()),
+            agent: CLIAgent::Codex,
+            session_id: Some("s1".into()),
+            title: None,
+            title_candidates: SessionTitleCandidates::default(),
+            cwd: None,
+            launch_argv: vec![],
+            carrier: LiveCarrier {
+                container_id: "carrier-1".into(),
+                tab_id: Some("tab".into()),
+                pane_id: Some(1),
+            },
+            execution: None,
+        };
+        model.refresh(&[], &[temporary.clone()]);
+        let row_id = model.rows[0].row_id.clone();
+        temporary.identity = SessionIdentity::Provider(history("s1").key);
+        model.refresh(&[history("s1")], &[temporary]);
+        assert_eq!(model.rows.len(), 1);
+        assert_eq!(model.rows[0].row_id, row_id);
+        assert_eq!(model.rows[0].lifecycle, RowLifecycle::Live);
+        assert_eq!(model.rows[0].session_id.as_deref(), Some("s1"));
+        assert_eq!(
+            model.rows[0].identity,
+            SessionIdentity::Provider(history("s1").key)
+        );
+    }
+
+    #[test]
+    fn virtual_row_consumed_when_live_with_same_provider_key_exists() {
+        let mut model = SessionNavigator::default();
+        model.refresh(&[history("s1")], &[]);
+        assert_eq!(model.rows.len(), 1);
+        assert_eq!(model.rows[0].lifecycle, RowLifecycle::Virtual);
+        let row_id = model.rows[0].row_id.clone();
+        model.refresh(&[history("s1")], &[live("s1", "tab", 1)]);
+        assert_eq!(model.rows.len(), 1);
+        assert_eq!(model.rows[0].row_id, row_id);
+        assert_eq!(model.rows[0].lifecycle, RowLifecycle::Live);
     }
 
     #[test]
