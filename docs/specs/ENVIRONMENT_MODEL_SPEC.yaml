@@ -83,9 +83,10 @@ contracts:
       - retargeting_current_window_in_place
       - opening_a_window_without_environment_authority
   - id: ENV-WINDOW-DRAG-BOUNDARY-18
-    rule: A primary-button tab drag is scoped to the active application window and its single Environment. Pointer movement across another application window or outside the strip never transfers, rebinds, or retargets a tab; the source window and Environment remain unchanged. Moving a tab to a new window is an explicit context-menu/command action that creates a peer bound to the same Environment and uses the canonical atomic tree transfer. The explicit action is not inferred from a drag leaving the window.
+    rule: A primary-button tab or Session Navigator drag is scoped to the active application window and a single Environment authority. Pointer movement across another application window, outside the strip/navigator, or onto a different Environment rail section never transfers, rebinds, merges, or reorders sessions across Environment boundaries; the source window and Environment remain unchanged. Moving a tab to a new window is an explicit context-menu/command action that creates a peer bound to the same Environment and uses the canonical atomic tree transfer. The explicit action is not inferred from a drag leaving the window.
     forbidden:
       - cross_environment_pointer_drop
+      - cross_environment_rail_section_merge_or_reorder
       - cross_window_pointer_transfer
       - drag_outside_strip_implicitly_detaching_a_tab
       - retargeting_the_source_window_environment
@@ -124,32 +125,82 @@ contracts:
       - mutable_or_callsite_specific_hook_root_resolution
       - wire_dialect_bump_for_additive_hello_root_fields
   - id: ENV-SINGLE-WINDOW-RAIL-47
-    rule: One primary application window switches Environment authority through AgenttyApp::select_environment when the user picks an environment from the indicator menu or left-rail row. The content column saves the prior Environment session, rebinds WorkspaceId authority, and loads the target Environment tabs without opening a peer window. Before wipe, the departing Environment's committed SessionNavigator projection is stashed in EnvironmentNavigatorCache keyed by EnvironmentId; switching back restores that stash then refreshes when discovery is ready. Multi-window open_or_focus_environment remains for entry points that lack an invoking window (CLI, connect flow). The left-rail environment tree extends the same select_environment primitive.
+    rule: One primary application window switches Environment authority through AgenttyApp::select_environment when the user picks an environment from the Environment Indicator menu (title-bar launcher) or equivalent connect flow. The content column saves the prior Environment session, rebinds WorkspaceId authority, and loads the target Environment tabs without opening a peer window. Before wipe, the departing Environment's committed SessionNavigator projection is stashed in EnvironmentNavigatorCache keyed by EnvironmentId; switching back restores that stash then refreshes when discovery is ready. Multi-window open_or_focus_environment remains for entry points that lack an invoking window (CLI, connect flow).
     forbidden:
       - mixing_local_and_remote_panes_in_one_content_column
       - retargeting_environment_authority_without_explicit_selection
       - environment_menu_opening_peer_window_when_invoking_app_is_available
       - promoting_stashed_navigator_cache_as_remote_authority
+  - id: ENV-SESSION-FIRST-RAIL-56
+    rule: The left Session Navigator chrome stays mounted across Environment switches and never unloads on select_environment. It lists Local plus each Environment in Config.environment_rail.sidebar_members (append on explicit Connect success and on pin membership; never the full SSH catalog). Each Environment section header is a single identity row — chevron, short label, optional pin glyph, compact trailing session count (`N` or `live·total` when live > 0), and status dot — never a dense second subtitle packing connection prose with live/total wording. Every Environment identity row uses one resting elevated pill chrome (rounded fill); current authority is not expressed by a bare vs filled two-state header — only light cues such as label weight and the status dot. The current Environment section is expanded and nests the canonical Session Navigator list for that authority (including SESSION-PIN-BUSINESS-MODEL-16 pins). Non-current member sections default to that same one-line header; expanding them may show EnvironmentNavigatorCache preview rows (client stash only, not remote authority); clicking a section or preview calls select_environment. The title-bar Environment Indicator remains the full host catalog plus Connect/Disconnect launcher. The content column remains single Environment authority.
+    forbidden:
+      - wiping_left_rail_chrome_on_environment_switch
+      - ssh_host_catalog_as_left_rail_sections
+      - auto_append_disconnected_unpinned_catalog_hosts
+      - mixing_local_and_remote_panes_in_one_content_column
+      - dense_two_line_environment_header_subtitle
+      - packing_connection_prose_into_collapsed_env_header
+      - bare_vs_filled_two_state_environment_identity_chrome
   - id: ENV-PIN-48
-    rule: Environment pin preference is stored as client UI state in Config.environment_rail.pinned, distinct from session pin Host state. Pinned environments render at the top of the left environment rail; unpinned remotes default collapsed until explicitly expanded.
+    rule: Environment pin preference is stored as client UI state in Config.environment_rail.pinned, distinct from session pin Host state. Pin order ranks Indicator menu entries and left-rail member order among pinned remotes. A pinned remote is always a left-rail member; on application open Agentty appends it to sidebar_members and starts an explicit Connect for that host. Unpinning does not disconnect immediately; an unpinned remote leaves the rail when Disconnect succeeds. Pin is the only auto-connect-on-open exception to ENV-EXPLICIT-CONNECT-51; selecting an unpinned offline host still does not connect.
+    forbidden:
+      - pin_without_startup_rail_membership
+      - pinned_remote_requiring_manual_connect_every_launch
+  - id: ENV-RAIL-MEMBERSHIP-53
+    rule: Left-rail membership is Local (always) plus Config.environment_rail.sidebar_members. Members append when Connect succeeds or when a remote is pinned; they never dump the SSH catalog. Unpinned remotes are removed from sidebar_members on Disconnect. Discovery and authority stay fail-closed; Indicator remains the catalog surface.
+    forbidden:
+      - rendering_all_available_hosts_as_rail_sections
+      - wipe_sidebar_members_on_environment_switch
   - id: ENV-RAIL-COLLAPSE-49
-    rule: Left-rail environment sections support independent manual expand/collapse persisted in Config.environment_rail.collapse_overrides per EnvironmentId. Collapsed sections and non-current environment rows show a one-line summary of connection state plus live/total session counts from the current Navigator or EnvironmentNavigatorCache; the current environment session list hides while its section is collapsed.
+    rule: >-
+      Each left-rail Environment section has expand/collapse chrome persisted in
+      Config.environment_rail.collapse_overrides. Product default is expanded for
+      every rail member (Local and sidebar_members/pinned) — switching Environment
+      authority or connecting a new Environment must not auto-collapse other
+      sections. Density is handled by ENV-RAIL-SESSION-CAP-57 (dynamic session
+      viewport layout), not by a global accordion. Only the section chevron toggles
+      collapse; clicking the Environment identity row selects that Environment
+      (or is a no-op when already current) and must never write collapse_overrides.
+      Explicit chevron collapse is the only reason a section stays folded.
   - id: ENV-RAIL-TREE-52
-    rule: Expanded non-current Environment sections render indented session preview rows sourced only from EnvironmentNavigatorCache. Clicking a preview row routes through select_environment for that EnvironmentId and never resumes, focuses, or delivers into a session under a different content-column authority. Current-environment sessions continue to render exclusively through the canonical Session Navigator list below the rail headers and must not be duplicated as rail preview children.
+    rule: Expanded non-current member sections may show EnvironmentNavigatorCache preview rows under the section header. Preview activation only calls select_environment; it never activates a foreign session under the current authority. Cache is not remote authority and must not invent rows on source failure. Current Environment sessions render through the live Session Navigator nested under the current section, never duplicated as preview children. Preview rows must paint through the same session_navigator_row renderer as the current Environment list (single-line title row, icon badge, inline execution pill, text fade); only row activation differs. Preview selection chrome follows the stashed Navigator selected row for that Environment so switching away does not erase which session was active there. Preview rows expose the same delayed SESSION-HOVER-DETAILS-13 card as live rows; hover detail resolves from that Environment's cached Navigator by stable RowId, and preview activate switches Environment instead of resuming under the current authority.
     forbidden:
       - activating_cached_preview_without_select_environment
-      - duplicating_current_environment_sessions_under_rail_header
+      - duplicating_current_environment_sessions_as_rail_preview_children
       - treating_preview_rows_as_remote_authority
+      - parallel_preview_session_row_chrome_after_environment_blur
+      - simplified_preview_row_renderer_instead_of_session_navigator_row
+
+  - id: ENV-RAIL-SESSION-CAP-57
+    rule: >-
+      Environment session viewport height is computed — not a fixed row cap.
+      When only one expanded Environment shows a session list, that viewport
+      fills the remaining left-rail space below search (internal scroll when
+      rows exceed the area). When multiple expanded Environments show session
+      lists, each viewport first receives its natural content height
+      (row_count × row height); if the combined natural height fits the
+      available rail area, sections shrink-wrap to that content. When natural
+      heights overflow the available area, the rail splits the area evenly
+      among those viewports and each section scrolls internally. Users may
+      collapse sections or scroll inside a viewport for more rows. Search may
+      expand the current Environment viewport to fit matches. Empty current
+      lists may expand to show empty-state chrome.
+    forbidden:
+      - global_accordion_only_one_environment_expanded
+      - uncapped_default_session_dump_under_environment_header
+      - overflow_more_affordance_under_environment_sessions
+      - hard_omitting_sessions_without_internal_scroll
+      - fixed_row_cap_instead_of_dynamic_rail_session_layout
   - id: ENV-DISCONNECT-SURFACE-50
-    rule: A managed remote Environment exposes explicit disconnect and reconnect actions on the Environment Indicator menu for the current window authority, plus a persistent disconnect strip below the title bar while Disconnected, Reconnecting, or Failed. Actions route through RemoteLinks disconnect and retry_now or connect_to_host; fail-closed remote authority is preserved and local rows never substitute. The strip remains visible until Connected or the environment is no longer remote-managed.
+    rule: A managed remote Environment exposes explicit disconnect and reconnect actions on the Environment Indicator menu for the current window authority, plus a persistent disconnect strip below the title bar while Disconnected, Reconnecting, or Failed. Actions route through RemoteLinks disconnect and retry_now or connect_to_host; fail-closed remote authority is preserved and local rows never substitute. The strip remains visible until Connected or the environment is no longer remote-managed. Disconnect removes an unpinned remote from sidebar_members; pinned remotes remain as rail members awaiting reconnect.
     forbidden:
       - reconnect_only_in_switcher_context_menu
       - disconnect_without_visible_current_environment_action
       - local_fallback_rows_on_remote_disconnect
   - id: ENV-EXPLICIT-CONNECT-51
-    rule: Selecting or opening a remote Environment does not auto-start transport while the host is offline. RemoteLinks::defer_until_explicit_connect marks the host suspended until the user explicitly reconnects or connects from the environment menu, disconnect strip, or connect flow. Session Navigator discovery for a remote Environment waits until RemoteStatus is Attached; RemoteLinkUp remains the canonical post-connect discovery transition.
+    rule: Selecting or opening an unpinned remote Environment does not auto-start transport while the host is offline. RemoteLinks::defer_until_explicit_connect marks the host suspended until the user explicitly reconnects or connects from the environment menu, disconnect strip, or connect flow. Pinned remotes are the sole startup auto-connect exception per ENV-PIN-48. Session Navigator discovery for a remote Environment waits until RemoteStatus is Attached; RemoteLinkUp remains the canonical post-connect discovery transition.
     forbidden:
       - auto_connect_on_remote_workspace_supervise
       - initial_target_discovery_while_remote_disconnected
-      - pin_or_environment_select_implicit_connect
+      - unpinned_environment_select_implicit_connect
 status: in_progress

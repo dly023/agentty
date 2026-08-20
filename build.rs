@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 fn main() {
     validate_i18n_catalogs("assets/i18n");
+    ensure_daemon_sibling_built();
     #[cfg(windows)]
     {
         println!("cargo:rerun-if-changed=assets/favicon.ico");
@@ -109,4 +110,60 @@ fn parse_catalog_keys(path: &Path) -> HashSet<String> {
         keys.insert(key);
     }
     keys
+}
+
+/// Dev/prod GUI builds must place `agentty-server` beside `agentty-app` in the
+/// active target profile (LOCAL-RUNTIME-EXECUTABLE-02). `cargo run --bin agentty-app`
+/// only compiles the GUI crate; seed the sibling from an existing release build or
+/// warn to run `cargo build -p agentty-server --locked`.
+fn ensure_daemon_sibling_built() {
+    let manifest_dir =
+        PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
+    let target_dir = PathBuf::from(
+        std::env::var("CARGO_TARGET_DIR")
+            .unwrap_or_else(|_| manifest_dir.join("target").display().to_string()),
+    );
+    let profile = std::env::var("PROFILE").unwrap_or_else(|_| "debug".into());
+    let server_name = if cfg!(windows) {
+        "agentty-server.exe"
+    } else {
+        "agentty-server"
+    };
+    let server_path = target_dir.join(&profile).join(server_name);
+
+    println!("cargo:rerun-if-changed=crates/agentty-server/src");
+    println!("cargo:rerun-if-changed=crates/agentty-server/Cargo.toml");
+    println!(
+        "cargo:rerun-if-changed={}",
+        target_dir.join("release").join(server_name).display()
+    );
+
+    if server_path.is_file() {
+        return;
+    }
+
+    let release_path = target_dir.join("release").join(server_name);
+    if release_path.is_file() {
+        if let Some(parent) = server_path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        fs::copy(&release_path, &server_path).unwrap_or_else(|e| {
+            panic!(
+                "failed to copy {} -> {}: {e}",
+                release_path.display(),
+                server_path.display()
+            );
+        });
+        eprintln!(
+            "seeded sibling {} from {}",
+            server_path.display(),
+            release_path.display()
+        );
+        return;
+    }
+
+    println!(
+        "cargo:warning=agentty-server is missing beside agentty-app; \
+         run `cargo build -p agentty-server --locked` (or `cargo app`) before opening terminals"
+    );
 }

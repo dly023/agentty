@@ -99,12 +99,7 @@ environment.connecting: 正在连接
 environment.disconnected: 已断开
 environment.disconnected_detail: "{machine} 已断开 — 重新连接以继续"
 environment.execution: 执行环境
-environment.rail.connected: 已连接
 environment.rail.pin: 固定环境
-environment.rail.preempted: 已被抢占
-environment.rail.reconnecting: 正在重连
-environment.rail.preview_overflow: "另有 {count} 个"
-environment.rail.session_counts: "{live} 活动 · {total} 会话"
 environment.rail.unpin: 取消固定环境
 environment.local.detail: 本地环境
 environment.local.label: 本机
@@ -125,6 +120,7 @@ home.shortcut.split_down: 向下分屏
 home.shortcut.split_right: 向右分屏
 home.shortcut.switch_workspace: 切换工作区
 home.tagline: 终端优先的 Agent 工作台
+home.restoring: 正在恢复工作区…
 local_runtime.quit_detail: 仍有 {count} 个本地 shell 正在运行。保留会让它们继续由后台服务托管；停止会先终止它们再退出 Agentty。
 local_runtime.quit_keep: 保留运行
 local_runtime.quit_stop: 停止并退出
@@ -442,6 +438,11 @@ session.details_provider: 提供商
 session.details_session_id: 会话 ID
 session.details_title: 会话详情
 session.details_updated: 更新时间
+session.details_transcript: 记录文件
+session.details_resume_command: 恢复命令
+session.hover_switch_environment: 切换到此环境
+session.hover_unavailable: 会话详情已不可用。
+session.hover_waiting_message: 等待输入
 session.execution_pill_done_unread: 已完成
 session.execution_pill_waiting: 等待输入
 session.details_working_directory: 工作目录

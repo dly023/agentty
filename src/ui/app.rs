@@ -481,6 +481,8 @@ pub struct AgenttyApp {
     pub(crate) file_tree: crate::ui::file_tree::FileTreeState,
     pub(crate) editor: crate::ui::code_editor::EditorPanelState,
     pub(crate) sidebar_width: Rc<Cell<f32>>,
+    /// Clamped live sidebar panel width for this frame (SESSION-HOVER-DETAILS-13 sidecar).
+    pub(crate) sidebar_hover_panel_width: Rc<Cell<f32>>,
     pub(crate) sidebar_dragging: Rc<Cell<bool>>,
     pub(crate) right_panel_width: Rc<Cell<f32>>,
     pub(crate) right_panel_dragging: Rc<Cell<bool>>,
@@ -629,6 +631,9 @@ impl AgenttyApp {
         crate::ui::remote_connect::sweep_wsl(cx);
         app.prompt_remote_daemon_mismatch(window, cx);
         app.reopen_remote_at_startup(cx);
+        if !hydrate {
+            app.ensure_default_terminal(window, cx);
+        }
         app
     }
 
@@ -853,6 +858,7 @@ impl AgenttyApp {
             file_tree,
             editor,
             sidebar_width: Rc::new(Cell::new(sidebar_width)),
+            sidebar_hover_panel_width: Rc::new(Cell::new(sidebar_width)),
             sidebar_dragging: Rc::new(Cell::new(false)),
             right_panel_width: Rc::new(Cell::new(right_panel_width)),
             right_panel_dragging: Rc::new(Cell::new(false)),
@@ -1126,8 +1132,36 @@ impl AgenttyApp {
         if environment == current {
             return;
         }
-        let workspace = crate::ui::windows::resolve_workspace_for_environment(cx, target);
+        let workspace = crate::ui::windows::resolve_workspace_for_environment(cx, target.clone());
         self.switch_workspace(workspace, window, cx);
+        // ENV-PIN-48: selecting a pinned remote clears defer-suspend and Connects.
+        let Some(target) = target else {
+            return;
+        };
+        let pinned = cx
+            .global::<crate::core::config::Config>()
+            .environment_rail
+            .is_pinned(&environment);
+        if !pinned {
+            return;
+        }
+        let Some(choice) = crate::ui::remote_connect::available_hosts(cx)
+            .into_iter()
+            .find(|host| host.target == target)
+        else {
+            return;
+        };
+        let status =
+            crate::ui::remote_workspace::RemoteLinks::status_for_host(cx, choice.target.host_id());
+        if matches!(
+            status,
+            crate::ui::remote_workspace::RemoteStatus::Attached
+                | crate::ui::remote_workspace::RemoteStatus::Connecting
+                | crate::ui::remote_workspace::RemoteStatus::Reconnecting { .. }
+        ) {
+            return;
+        }
+        self.connect_to_host(choice, cx);
     }
 
     pub(crate) fn remote_session_discovery_ready(&self, cx: &gpui::App) -> bool {
@@ -2290,14 +2324,32 @@ impl AgenttyApp {
     pub(crate) fn left_panel_open(&self, cx: &gpui::App) -> bool {
         matches!(cx.global::<Config>().tab_bar_position, TabBarPosition::Left)
             && !self.sidebar_collapsed
-            && !self.tabs.is_empty()
     }
 
     /// Horizontal title-bar tab chips (UI-TAB-OVERFLOW-05). False when the left
-    /// Session Navigator rail owns tab navigation and chips are hidden.
+    /// Session Navigator rail owns tab navigation — including with zero tabs
+    /// (UI-LEFT-RAIL-DEFAULT-54).
     pub(crate) fn horizontal_tab_chips_visible(&self, cx: &gpui::App) -> bool {
         !matches!(cx.global::<Config>().tab_bar_position, TabBarPosition::Left)
-            || self.tabs.is_empty()
+            || self.sidebar_collapsed
+    }
+
+    /// Opens one default terminal when the workspace is empty and spawn is allowed
+    /// (UI-STARTUP-TERMINAL-55). No-op when tabs already exist or spawn is blocked.
+    /// Does not push a notification when spawn is blocked — welcome/connect chrome
+    /// remains the fail-closed surface.
+    pub(crate) fn ensure_default_terminal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.tabs.is_empty() {
+            return;
+        }
+        let can_spawn = self.can_spawn_locally(cx)
+            || self
+                .window_workspace(cx)
+                .is_some_and(|ws| ws.route_header().is_ok());
+        if !can_spawn {
+            return;
+        }
+        self.new_tab(window, cx);
     }
 
     pub(crate) fn set_notify_mode(
@@ -3448,6 +3500,9 @@ impl AgenttyApp {
         self.tabs.remove(index);
         if self.tabs.is_empty() {
             self.active = 0;
+            // UI-STARTUP-TERMINAL-55: closing the last tab must not dump the user
+            // onto an empty welcome first screen when spawn is allowed.
+            self.ensure_default_terminal(window, cx);
         } else if self.active >= self.tabs.len() {
             self.active = self.tabs.len() - 1;
         } else if index < self.active {
@@ -5940,9 +5995,15 @@ impl Render for AgenttyApp {
                         crate::ui::reorder::TabDragIntent::Merge,
                     ) => self.apply_tab_strip_split_right(order, window, cx),
                 },
-                crate::ui::reorder::Surface::Navigator => {
-                    self.apply_session_reorder(&order.order, window, cx)
-                }
+                crate::ui::reorder::Surface::Navigator => match order.intent {
+                    crate::ui::reorder::ReorderIntent::Reorder
+                    | crate::ui::reorder::ReorderIntent::Tab(
+                        crate::ui::reorder::TabDragIntent::Reorder,
+                    ) => self.apply_session_reorder(&order.order, window, cx),
+                    crate::ui::reorder::ReorderIntent::Tab(
+                        crate::ui::reorder::TabDragIntent::Merge,
+                    ) => self.apply_tab_strip_split_right(order, window, cx),
+                },
             }
         }
         if self.reorder.borrow().is_some()
@@ -5950,10 +6011,9 @@ impl Render for AgenttyApp {
         {
             cx.set_active_drag_cursor_style(gpui::CursorStyle::ClosedHand, window);
         }
-        let vertical = matches!(cx.global::<Config>().tab_bar_position, TabBarPosition::Left)
-            && !self.tabs.is_empty();
+        let vertical = matches!(cx.global::<Config>().tab_bar_position, TabBarPosition::Left);
         let rail = vertical && !self.sidebar_collapsed;
-        let strip = self.tab_strip(!vertical, window, cx);
+        let strip = self.tab_strip(self.horizontal_tab_chips_visible(cx), window, cx);
         let sidebar = rail.then(|| self.tab_sidebar(window, cx));
         let ssh_status = self
             .tabs
@@ -5961,7 +6021,13 @@ impl Render for AgenttyApp {
             .and_then(|t| t.pane.focused_or_first(window, cx))
             .and_then(|leaf| self.render_ssh_status_strip(&leaf, cx));
         let body = match self.tabs.get(self.active) {
-            None => self.render_home(cx).into_any_element(),
+            None => {
+                if crate::ui::tree_sync::window_is_tree_hydrating(cx, self.workspace) {
+                    self.render_restoring_surface(cx).into_any_element()
+                } else {
+                    self.render_home(cx).into_any_element()
+                }
+            }
             Some(active_tab) => {
                 let maximized = self.maximized.as_ref().filter(|leaf| {
                     active_tab
@@ -7328,6 +7394,56 @@ mod tests {
             "sidebar-open lead must not reserve the traffic-light inset"
         );
         assert_eq!(title_bar_content_lead(false), TITLE_BAR_LEAD);
+    }
+
+    #[test]
+    fn left_panel_open_ignores_empty_tab_count() {
+        let source = include_str!("app.rs");
+        let body = source
+            .split("pub(crate) fn left_panel_open(")
+            .nth(1)
+            .and_then(|tail| {
+                tail.split("pub(crate) fn horizontal_tab_chips_visible")
+                    .next()
+            })
+            .expect("left_panel_open body");
+        assert!(
+            !body.contains("tabs.is_empty"),
+            "UI-LEFT-RAIL-DEFAULT-54: left rail must not gate on non-empty tabs: {body}"
+        );
+        assert!(body.contains("sidebar_collapsed"));
+    }
+
+    #[test]
+    fn horizontal_chips_follow_left_layout_not_empty_tabs() {
+        let source = include_str!("app.rs");
+        let body = source
+            .split("pub(crate) fn horizontal_tab_chips_visible(")
+            .nth(1)
+            .and_then(|tail| tail.split("pub(crate) fn ensure_default_terminal").next())
+            .expect("horizontal_tab_chips_visible body");
+        assert!(
+            !body.contains("tabs.is_empty"),
+            "zero tabs must not force horizontal chips under Left layout: {body}"
+        );
+        assert!(body.contains("TabBarPosition::Left"));
+        assert!(body.contains("sidebar_collapsed"));
+    }
+
+    #[test]
+    fn startup_avoids_vacuous_welcome_while_hydrating() {
+        let app = include_str!("app.rs");
+        assert!(app.contains("ensure_default_terminal"));
+        assert!(app.contains("window_is_tree_hydrating"));
+        assert!(app.contains("render_restoring_surface"));
+        let home = include_str!("home.rs");
+        assert!(home.contains("home.restoring"));
+        let sync = include_str!("tree_sync.rs");
+        assert!(sync.contains("window_is_tree_hydrating"));
+        assert!(
+            sync.contains("ensure_default_terminal"),
+            "empty hydrate must open a default terminal"
+        );
     }
 
     #[test]

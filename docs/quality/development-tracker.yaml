@@ -42,6 +42,319 @@ feedback_policy:
   retention_rule: Never delete feedback silently; declined or superseded entries retain
     the reason and replacement ID when one exists.
 feedback:
+- id: FEEDBACK-20260821-026
+  summary: 会话 hover 详情卡片很多时候看不到；侧栏较窄或窗口较小时卡片被推到屏幕外，或 stale 解析时卡片为空。
+  status: implemented
+  priority: high
+  area: session_hover_visibility
+  decision: SESSION-HOVER-DETAILS-13 sidecar 用 clamp 后的 sidebar_hover_panel_width 与 rail 行 inset 计算；open delay 120ms；stale 显示 session.hover_unavailable。
+  next_action: Visual verify hover on narrow window and preview env rows.
+  promoted_to:
+    spec: SESSION-HOVER-DETAILS-13
+- id: FEEDBACK-20260820-025
+  summary: 所有已展开环境的会话行都应能 hover 出详情卡片，不应仅限当前焦点环境。
+  status: implemented
+  priority: high
+  area: rail_preview_session_hover
+  decision: SESSION-HOVER-DETAILS-13 + ENV-RAIL-TREE-52 preview 行挂载 HoverCard，从 EnvironmentNavigatorCache 解析；preview activate 切环境。
+  next_action: Visual verify hover on local + remote preview sections.
+  promoted_to:
+    spec: SESSION-HOVER-DETAILS-13
+    also: ENV-RAIL-TREE-52
+- id: FEEDBACK-20260820-024
+  summary: 本地和远程终端都连不上；dev 下 cargo run agentty-app 未构建同目录 agentty-server，ensure_running 无法启动 daemon。
+  status: implemented
+  priority: critical
+  area: local_runtime_dev_sibling_build
+  decision: LOCAL-RUNTIME-EXECUTABLE-02 GUI build.rs 在 sibling 缺失时构建 agentty-server；终端 materialization 依赖该 daemon。
+  next_action: cargo run agentty-app 后验证本地 shell 与远程 pane 均可 spawn。
+  promoted_to:
+    spec: LOCAL-RUNTIME-EXECUTABLE-02
+- id: FEEDBACK-20260820-023
+  summary: 单行会话标签后 hover 信息应更丰富，承载 cwd 之外被移出侧栏的上下文（等待消息、恢复命令、记录文件等）。
+  status: implemented
+  priority: high
+  area: session_hover_rich_metadata
+  decision: SESSION-HOVER-DETAILS-13 扩展 waiting message callout、resume command、transcript 行；可选字段缺失时省略行。
+  next_action: Visual verify hover card shows waiting prose and historical resume metadata.
+  related:
+  - FEEDBACK-20260820-022
+  promoted_to:
+    spec: SESSION-HOVER-DETAILS-13
+- id: FEEDBACK-20260820-022
+  summary: 会话标签改单行以容纳更多环境；cwd/等待信息不在侧栏占第二行，保留 hover/详情/搜索。
+  status: implemented
+  priority: high
+  area: session_single_line_row
+  decision: SESSION-SIDEBAR-ROW-DENSITY-29 单行 title+inline pill，~28px；SESSION-ROW-INFORMATION-HIERARCHY-08 cwd 移出侧栏行。
+  next_action: Visual verify denser rows with multiple expanded environments.
+  related:
+  - FEEDBACK-20260820-021
+  promoted_to:
+    spec: SESSION-SIDEBAR-ROW-DENSITY-29
+    also: SESSION-ROW-INFORMATION-HIERARCHY-08
+- id: FEEDBACK-20260820-021
+  summary: 左栏会话区不够自由；希望单环境铺满全列表，多环境动态算高度（内容放得下就 shrink-wrap，超出则均分视口、内部滚动或折叠）。
+  status: implemented
+  priority: high
+  area: rail_dynamic_session_viewport_layout
+  decision: ENV-RAIL-SESSION-CAP-57 改为 rail_session_layout_plan——单 slot flex 填满；多 slot 先 natural 后 even split；参考 accordion / VS Code multi-root。
+  next_action: Visual verify single-env full list and two-env even split.
+  related:
+  - FEEDBACK-20260820-020
+  promoted_to:
+    spec: ENV-RAIL-SESSION-CAP-57
+- id: FEEDBACK-20260820-020
+  summary: 每个环境给 10 条会话可视空间；会话行不要条条高亮，只有选中标签才有 pill 高亮。
+  status: implemented
+  priority: high
+  area: rail_ten_row_cap_selected_only_pill
+  decision: ENV-RAIL-SESSION-CAP-57 改为每环境 10 行走高视口；SESSION-SIDEBAR-ROW-DENSITY-29 idle 贴 sidebar.base，仅 selected/cursor 用 elevated fill。
+  next_action: Visual verify 10-row scroll + single selected pill.
+  related:
+  - FEEDBACK-20260820-019
+  - FEEDBACK-20260820-017
+  promoted_to:
+    spec: ENV-RAIL-SESSION-CAP-57
+    also: SESSION-SIDEBAR-ROW-DENSITY-29
+- id: FEEDBACK-20260820-019
+  summary: 统一样式后仍觉别扭——说不上来；疑为当前环境也被压成 5 行、切走丢失选中态、环境头 accent pill 与会话 pill 两套皮。
+  status: superseded
+  superseded_by: FEEDBACK-20260820-020
+  priority: high
+  area: rail_layout_selection_chrome
+  decision: 部分采纳——preview 保留 stash selected；10 行 cap 与 selected-only pill 见 FEEDBACK-20260820-020。
+  next_action: None — superseded by FEEDBACK-20260820-020.
+  related:
+  - FEEDBACK-20260820-018
+  promoted_to:
+    spec: ENV-RAIL-TREE-52
+- id: FEEDBACK-20260820-018
+  summary: 焦点挪到别的环境后，本地（非当前）会话列表样式变了——preview 用了另一套简化渲染，与 live Navigator 不一致且变丑。
+  status: implemented
+  priority: critical
+  area: rail_preview_session_chrome_parity
+  decision: ENV-RAIL-TREE-52 要求 preview 直接走 session_navigator_row 正本渲染，仅 activation 改为 select_environment；删除 parallel preview row skin。
+  next_action: Visual verify local sessions look identical before/after switching current environment.
+  related:
+  - FEEDBACK-20260820-017
+  - FEEDBACK-20260820-015
+  promoted_to:
+    spec: ENV-RAIL-TREE-52
+- id: FEEDBACK-20260820-017
+  summary: 纠正 FEEDBACK-20260820-016——用户说的两态是会话列表（idle 平坦 vs selected 圆角底），不是环境头；喜欢圆角底形态，会话行平常都该是这一形态。
+  status: implemented
+  priority: high
+  area: session_row_resting_pill
+  decision: 会话行 resting 用 elevated pill（Surfaces.sidebar.hover），selected 再用更强 selected 阶；禁止 idle 贴齐 sidebar.base 的平坦两态。
+  next_action: Visual verify all session rows show resting pill.
+  related:
+  - FEEDBACK-20260820-016
+  - FEEDBACK-20260820-010
+  - FEEDBACK-20260820-018
+  promoted_to:
+    spec: SESSION-SIDEBAR-ROW-DENSITY-29
+
+- id: FEEDBACK-20260820-016
+  summary: 环境头不要两态；当前那种圆角底 pill 很好看很高级，平常所有环境头都用这一形态。
+  status: superseded
+  superseded_by: FEEDBACK-20260820-017
+  priority: high
+  area: environment_rail_header_chrome
+  decision: 误读为环境头两态并已统一 pill；用户澄清对象是会话列表，见 FEEDBACK-20260820-017。环境头统一 pill 可保留。
+  next_action: None — superseded by FEEDBACK-20260820-017.
+  related:
+  - FEEDBACK-20260820-010
+  - FEEDBACK-20260820-017
+- id: FEEDBACK-20260820-015
+  summary: 5 条是可视窗口不是硬截断；内部要有滚动条滚看全部。会话行要更紧凑，离左边 padding 太远。远程环境连不上。
+  status: implemented
+  priority: critical
+  area: rail_viewport_scroll_density_connect
+  decision: >-
+    ENV-RAIL-SESSION-CAP-57 改为五行走高可视区+内部滚动保留全量会话；收紧
+    SESSION-SIDEBAR-ROW-DENSITY-29（更矮行、更小左 inset，去掉 rail 嵌套叠 gutter）；
+    begin_manual_attempt 仅在 HostLinks 真正 is_connected 时视为 Attached，避免静默跳过重连。
+  next_action: Visual verify scroll viewport, denser rows, remote reconnect.
+  related:
+  - FEEDBACK-20260820-013
+  - FEEDBACK-20260820-011
+  - FEEDBACK-20260820-017
+  promoted_to:
+    spec: ENV-RAIL-SESSION-CAP-57
+    also: SESSION-SIDEBAR-ROW-DENSITY-29
+- id: FEEDBACK-20260820-014
+  summary: 新连接环境后老环境仍被折叠；不服。根因：点当前环境标题会 toggle collapse 并写入 collapse_overrides；用户配置里 local 与远程均被写成 true。
+  status: implemented
+  priority: critical
+  area: environment_rail_collapse_footgun
+  decision: 只有 chevron 切换折叠；点环境行（含当前）只做选择/聚焦，不改 collapse；清掉错误 overrides；连接新环境不得隐式折叠其它成员。
+  next_action: Visual verify both envs stay expanded after connect/switch.
+  related:
+  - FEEDBACK-20260820-012
+  - FEEDBACK-20260820-015
+  promoted_to:
+    spec: ENV-RAIL-COLLAPSE-49
+- id: FEEDBACK-20260820-013
+  summary: 「另有 N 个」不要；每环境最多 5 个会话后直接接下一个环境头挡住即可，不要 overflow 展开入口。
+  status: implemented
+  priority: high
+  area: environment_rail_session_cap
+  decision: 删除 +N more / 收起；硬截断前 5 行；搜索仍不截断；下一个环境 section 紧挨其后。
+  next_action: Superseded-in-part by FEEDBACK-20260820-015 (viewport scroll, not hard omit).
+  related:
+  - FEEDBACK-20260820-011
+  - FEEDBACK-20260820-015
+  promoted_to:
+    spec: ENV-RAIL-SESSION-CAP-57
+- id: FEEDBACK-20260820-012
+  summary: 用户怒批「这不就是全局只有一个能展开吗」——切走当前环境后，未 pin 成员被 default_collapsed(is_current=false) 自动折回，5 行上限没有消除 accordion。
+  status: implemented
+  priority: critical
+  area: environment_rail_multi_expand
+  decision: 废除「非当前默认折叠」；rail 成员默认全部展开；折叠只来自显式 chevron；密度靠 ENV-RAIL-SESSION-CAP-57 每环境 5 行。切环境不得隐式收起其它 section。
+  next_action: Superseded-in-part by FEEDBACK-20260820-014 click-collapse footgun.
+  related:
+  - FEEDBACK-20260820-011
+  - FEEDBACK-20260820-009
+  - FEEDBACK-20260820-013
+  - FEEDBACK-20260820-014
+  promoted_to:
+    spec: ENV-RAIL-COLLAPSE-49
+- id: FEEDBACK-20260820-011
+  summary: 不必全局只展开一个环境；每个环境展开后最多展示 5 个标签，剩余折叠即可。
+  status: implemented
+  priority: high
+  area: environment_rail_session_cap
+  decision: 每环境 section 展开后最多展示 5 个会话/预览行；超出部分折叠为 overflow 入口（可点开展开/收起）；搜索时不截断；选中项超出前 5 时自动展开。多环境可同时展开。
+  next_action: Overflow affordance removed by FEEDBACK-20260820-013; hard five-row clip remains.
+  related:
+  - FEEDBACK-20260820-006
+  - FEEDBACK-20260820-009
+  - FEEDBACK-20260820-012
+  - FEEDBACK-20260820-013
+  promoted_to:
+    spec: ENV-RAIL-SESSION-CAP-57
+- id: FEEDBACK-20260820-010
+  summary: 环境标识行不够精致——中间大片空白，一点开又变双行，第二行「本地环境 · 0 活动 · 31 会话」过密。
+  status: implemented
+  priority: high
+  area: environment_rail_header_density
+  decision: 环境头改为单行身份条（chevron + 短 label + 可选 pin + 行尾紧凑计数 N / live·total + 状态点）；删除折叠态双行密集 subtitle；远程头只用 host.label，不再拼 detail。
+  next_action: Visual verify Local/remote headers are single-line with trailing count.
+  related:
+  - FEEDBACK-20260820-006
+  - FEEDBACK-20260820-009
+  promoted_to:
+    spec: ENV-SESSION-FIRST-RAIL-56
+- id: FEEDBACK-20260820-009
+  summary: 本地会话不显示；远程连不上；pin 的远程不应默认折叠。对照 Cursor Agents 侧栏：环境头下直接挂会话，简洁展开。
+  status: implemented
+  priority: critical
+  area: left_rail_cursor_style_and_session_visibility
+  decision: 修 flex 高度链（v_flex+overflow_hidden）恢复会话列表；pin 默认展开；pin 启动/选择时 claim workspace 再 Connect；环境头减负贴近 Cursor。
+  next_action: Visual verify local sessions under Local; pinned remotes expanded; pin Connect works.
+  related:
+  - FEEDBACK-20260820-006
+  - FEEDBACK-20260820-007
+  - FEEDBACK-20260820-010
+  - FEEDBACK-20260820-011
+- id: FEEDBACK-20260820-008
+  summary: 标签拖曳合并功能未生效（默认 Left 布局隐藏顶栏 chips，合并只挂在顶栏图标区）；且拖曳合并必须限同环境内部，不得跨环境。
+  status: implemented
+  priority: critical
+  area: same_environment_session_drag_merge
+  decision: 在 Left Session Navigator 补齐与顶栏一致的 icon-Merge / body-Reorder；合并只允许同一 Environment 的 1+1 live tab；跨环境 section 拖放 fail-closed；复用 canonical apply_tab_strip_split_right / PaneMove。
+  next_action: Verify in running Left layout that icon-drag merges two single-pane sessions; then mark verified.
+  promoted_to:
+    spec: WINDOW-SESSION-DRAG-SEMANTICS-08
+    also: ENV-WINDOW-DRAG-BOUNDARY-18
+- id: FEEDBACK-20260820-007
+  summary: 若 pin 了某环境，则每次打开应用都自动在左侧栏加载该环境并 Connect；未 pin 的远程仍需手动 Connect 才进左栏。
+  status: implemented
+  priority: critical
+  area: environment_pin_autoload_connect
+  decision: 修正 ENV-PIN-48：pin 不只是 Indicator 排序，而是启动时 rail membership + auto-connect；未 pin 仍遵守 ENV-EXPLICIT-CONNECT-51（select 不隐式 connect）。
+  next_action: Verify pinned remote appears in left rail and Connects on cold start.
+  promoted_to:
+    spec: ENV-PIN-48
+- id: FEEDBACK-20260820-006
+  summary: 新增/切换环境后左侧栏整栏消失；多环境共存时左栏应稳定，新环境只 append，不得 wipe。实现未对齐已确认设计（缺当前环境标识行；切环境破坏会话栏稳定性）。
+  status: implemented
+  priority: critical
+  area: left_rail_stability_on_environment_switch
+  decision: 用户确认 append-stable 左栏：Local + 已连接/已打开环境 section 常驻；当前环境展开会话；其它折叠一行摘要；Indicator 仍是全量 SSH 目录+Connect；切环境不卸载左栏 chrome。叠加 FEEDBACK-20260820-007 的 pin 自连。
+  next_action: Visual verify before/current/after layout — sessions indented under current header; after headers remain visible below session list.
+  evidence:
+  - '2026-08-20 user: 会话为什么就不能跟着环境标识；随后怒批实现未按确认设计。'
+  - '2026-08-20 layout fix: before/current/after split + indented environment-rail-current-sessions; flat_map flex_1 path deleted.'
+  promoted_to:
+    spec: ENV-SESSION-FIRST-RAIL-56
+  related:
+  - FEEDBACK-20260820-007
+  - FEEDBACK-20260820-008
+  - FEEDBACK-20260820-010
+  - FEEDBACK-20260820-011
+- id: FEEDBACK-20260820-005
+  summary: 左栏正本是跨环境会话管理，不是环境树占满栏。先前「每环境一整棵树」过重，环境列表挤掉会话。目标：左侧环境标识 + 会话列表 + 按需连接；其它环境折叠到紧凑入口，确认设计后再实现。
+  status: superseded
+  superseded_by: FEEDBACK-20260820-006
+  priority: critical
+  area: left_rail_session_first
+  decision: 初版「仅当前环境会话、无左栏环境 chrome」过纠；被 006 的 append-stable 多环境 section 取代，同时保留「不全量 SSH 目录进左栏」与 Indicator 启动器。
+  next_action: None — superseded by FEEDBACK-20260820-006 append-stable design.
+  promoted_to:
+    spec: ENV-SESSION-FIRST-RAIL-56
+  related:
+  - FEEDBACK-20260820-001
+  - FEEDBACK-20260820-003
+  - FEEDBACK-20260820-004
+  - FEEDBACK-20260820-006
+- id: FEEDBACK-20260820-004
+  summary: 每个环境在左栏会话树里都有自己的置顶会话；置顶集合与排序按 Environment 隔离，树下预览也必须显示该环境的 pin。
+  status: superseded
+  superseded_by: FEEDBACK-20260820-005
+  priority: high
+  area: per_environment_session_pins
+  decision: 数据模型 SESSION-PIN-BUSINESS-MODEL-16 仍保留；「每环境整棵预览树」呈现被 FEEDBACK-20260820-005 否决。
+  next_action: None — presentation superseded; pin scoping remains.
+  promoted_to:
+    spec: SESSION-PIN-BUSINESS-MODEL-16
+    also: ENV-RAIL-TREE-52
+    traceability: ENV-RAIL-TREE-099
+- id: FEEDBACK-20260820-003
+  summary: 纠正 FEEDBACK-20260820-001：左栏会话树成员资格以显式连接为准，不是 pin∧连接；已显式 Connect 的远程必须占一棵树且会话挂在树下，pin 只影响排序。
+  status: superseded
+  superseded_by: FEEDBACK-20260820-005
+  priority: critical
+  area: environment_rail_membership
+  decision: 「连接即整树占栏」过重；保留显式连接不变量，改会话优先布局见 FEEDBACK-20260820-005。
+  next_action: None — awaiting redesign confirmation.
+  promoted_to:
+    spec: ENV-RAIL-MEMBERSHIP-53
+    traceability: ENV-RAIL-MEMBERSHIP-100
+- id: FEEDBACK-20260820-002
+  summary: 无法打开终端；进入软件左栏总要手动展开；空空如也的 welcome 第一屏应屏蔽，启动应直接可用。
+  status: implemented
+  priority: critical
+  area: startup_left_rail_and_terminal
+  decision: 提升为 UI-LEFT-RAIL-DEFAULT-54 + UI-STARTUP-TERMINAL-55；Left 布局不因零 tab 隐藏 Navigator；hydrate 空/失败后 ensure_default_terminal；hydrate 进行中不渲染 vacuous welcome。
+  next_action: None — left rail default + restoring surface + ensure_default_terminal landed.
+  promoted_to:
+    spec: UI-LEFT-RAIL-DEFAULT-54
+    traceability: UI-LEFT-RAIL-DEFAULT-101
+    also: UI-STARTUP-TERMINAL-55 / UI-STARTUP-TERMINAL-102
+- id: FEEDBACK-20260820-001
+  summary: 左栏不得把 SSH 里一串远程环境堆成顶栏树头；只有显式 pin 且已连接的环境才占用一棵树，会话直接挂在该树下；其余环境只走 Indicator/Connect，不占左栏。
+  status: superseded
+  superseded_by: FEEDBACK-20260820-003
+  priority: critical
+  area: environment_rail_membership
+  decision: 初版误读为 pin∧连接；正本改为「显式连接即占树」，见 FEEDBACK-20260820-003。
+  next_action: None — superseded.
+  promoted_to:
+    spec: ENV-RAIL-MEMBERSHIP-53
+    traceability: ENV-RAIL-MEMBERSHIP-100
 - id: FEEDBACK-20260819-009
   summary: Composer 底栏「根据终端推断」Activity Bar 价值低；改为环境/路径 factual chips，参考 ashide AgentInputFooter。
   status: implemented
@@ -84,11 +397,12 @@ feedback:
     traceability: ENV-DISCONNECT-SURFACE-093
 - id: FEEDBACK-20260819-005
   summary: 考虑单窗口左栏同时承载环境与 Session；环境 pin、手动多开折叠，替换一环境一窗口模型。
-  status: implemented
+  status: superseded
+  superseded_by: FEEDBACK-20260820-001
   priority: medium
   area: single_window_environment_rail
-  decision: ENV-SINGLE-WINDOW-RAIL-47 + ENV-RAIL-TREE-52；左栏两级树预览行来自 EnvironmentNavigatorCache，点击只走 select_environment。
-  next_action: None — two-level indented preview rows landed; optional virtualized full multi-env lists remain polish.
+  decision: ENV-SINGLE-WINDOW-RAIL-47 保留；「全量 remote 进左栏」被 ENV-RAIL-MEMBERSHIP-53 纠正为 pin+connected 才占树。
+  next_action: None — membership rewrite under FEEDBACK-20260820-001.
   promoted_to:
     spec: ENV-SINGLE-WINDOW-RAIL-47
     traceability: ENV-SINGLE-WINDOW-RAIL-094

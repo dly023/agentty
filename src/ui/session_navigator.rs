@@ -202,6 +202,12 @@ impl SessionViewportProjection {
         self.units.get(index)
     }
 
+    pub(crate) fn truncated(&self, limit: usize) -> Self {
+        Self {
+            units: self.units.iter().take(limit).cloned().collect(),
+        }
+    }
+
     pub(crate) fn unit_index_for_row(&self, row_id: &NavigatorRowId) -> Option<usize> {
         self.units
             .iter()

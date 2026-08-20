@@ -948,6 +948,7 @@ entries:
   spec: LOCAL-RUNTIME-EXECUTABLE-02
   source:
   - docs/specs/LOCAL_RUNTIME_SPEC.yaml
+  - build.rs
   - Cargo.toml
   - crates/agentty-core/src/daemon/spawn.rs
   - crates/agentty-cli/src/server.rs
@@ -962,9 +963,11 @@ entries:
   static_check: script/check_local_runtime
   tests:
   - daemon_executable_is_the_headless_sibling
+  - sibling_daemon_candidates_include_release_fallback_for_debug_gui
   verification: cargo test -p agentty-core daemon_executable_is_the_headless_sibling
-    --lib --locked
-  evidence: '2026-08-03: native agentty-server sibling selection and packaging checks
+    --lib --locked && cargo test -p agentty-core sibling_daemon_candidates_include_release_fallback_for_debug_gui --lib --locked
+  evidence: '2026-08-20: build.rs ensures debug/release sibling agentty-server beside
+    agentty-app when missing (FEEDBACK-20260820-024). 2026-08-03: native agentty-server sibling selection and packaging checks
     passed; workspace default builds include the server; full presubmit passed'
 - id: LOCAL-RUNTIME-DIAGNOSTICS-051
   spec: LOCAL-RUNTIME-DIAGNOSTICS-03
@@ -1279,14 +1282,17 @@ entries:
   - session_row_text_overflow_uses_trailing_fade_not_ellipsis
   - session_row_visual_contract_is_distinct
   - session_row_paint_uses_surfaces_sidebar_not_theme_muted
+  - session_sidebar_rows_are_single_line_title_only
   verification: cargo test --bin agentty-app session_sidebar_surface_metrics_are_explicit
     --locked && cargo test --bin agentty-app session_row_selection_keeps_stable_horizontal_inset
     --locked && cargo test --bin agentty-app session_resume_affordance_overlays_without_flex_slot
     --locked && cargo test --bin agentty-app session_row_text_overflow_uses_trailing_fade_not_ellipsis
     --locked && cargo test --bin agentty-app session_row_visual_contract_is_distinct
     --locked && cargo test --bin agentty-app session_row_paint_uses_surfaces_sidebar_not_theme_muted
+    --locked && cargo test --bin agentty-app session_sidebar_rows_are_single_line_title_only
     --locked && ./script/check_session_navigator
-  evidence: '2026-08-07: row idle/hover/selected/cursor fills and text-fade solids
+  evidence: '2026-08-20: sidebar session rows single-line ~28px title + inline execution
+    pill; cwd/subtitle in hover/details/search only; FEEDBACK-20260820-022. 2026-08-07: row idle/hover/selected/cursor fills and text-fade solids
     use Surfaces.sidebar ladder (not theme muted); outer_gutter equals panel_content_gutter;
     FEEDBACK-20260803-003 code-level contrast contract'
 - id: UI-PANEL-EDGE-GUTTER-076
@@ -1530,6 +1536,30 @@ entries:
     && ./script/check_ui_visual_system
   evidence: '2026-08-05: left-rail open keeps New Tab Plus beside Environment Indicator
     (FEEDBACK-20260805-026); palette/settings placement retained'
+- id: UI-LEFT-RAIL-DEFAULT-101
+  spec: UI-LEFT-RAIL-DEFAULT-54
+  source:
+  - docs/specs/UI_VISUAL_SYSTEM_SPEC.yaml
+  - src/ui/app.rs
+  static_check: script/check_ui_visual_system
+  tests:
+  - left_panel_open_ignores_empty_tab_count
+  - horizontal_chips_follow_left_layout_not_empty_tabs
+  verification: cargo test --bin agentty-app left_panel_open_ignores horizontal_chips_follow --locked
+    && ./script/check_ui_visual_system
+  evidence: Left Session Navigator stays open with zero tabs; chips stay Top-only.
+- id: UI-STARTUP-TERMINAL-102
+  spec: UI-STARTUP-TERMINAL-55
+  source:
+  - docs/specs/UI_VISUAL_SYSTEM_SPEC.yaml
+  - src/ui/app.rs
+  - src/ui/home.rs
+  - src/ui/tree_sync.rs
+  static_check: script/check_ui_visual_system
+  tests:
+  - startup_avoids_vacuous_welcome_while_hydrating
+  verification: cargo test --bin agentty-app startup_avoids_vacuous --locked && ./script/check_ui_visual_system
+  evidence: Hydrate priming shows restoring surface; empty hydrate/failure opens default terminal.
 - id: UI-AGENT-BRAND-ICON-075
   spec: UI-AGENT-BRAND-ICON-07
   source:
@@ -2207,6 +2237,7 @@ entries:
   - docs/specs/SESSION_NAVIGATOR_SPEC.yaml
   - crates/agentty-core/src/agent_runtime/navigator.rs
   - src/ui/tab_sidebar.rs
+  - src/ui/environment_navigator_cache.rs
   - src/ui/home.rs
   static_check: script/check_session_navigator
   tests:
@@ -2214,8 +2245,12 @@ entries:
   - stale_hover_target_closes_fail_closed
   - pointer_safe_region_keeps_detail_open
   - session_hover_sidecar_lead_clears_the_sidebar_split
+  - session_hover_sidecar_uses_rendered_panel_width_not_config
   - session_hover_yields_to_open_context_menu
   - session_hover_delays_stay_in_the_snappy_band
+  - session_hover_detail_includes_rich_metadata
+  - rail_preview_rows_mount_session_hover_cards
+  - detail_row_resolves_from_stashed_navigator
   - format_unix_ms_local_is_readable_not_raw_millis
   - session_updated_display_uses_local_datetime_formatter
   verification: cargo test -p agentty-core hover_target --locked && cargo test --bin
@@ -2223,10 +2258,15 @@ entries:
     agentty-app session_hover_sidecar_lead_clears_the_sidebar_split --locked && cargo
     test --bin agentty-app session_hover_yields_to_open_context_menu --locked && cargo
     test --bin agentty-app session_hover_delays_stay_in_the_snappy_band --locked &&
+    cargo test --bin agentty-app session_hover_detail_includes_rich_metadata --locked &&
+    cargo test --bin agentty-app rail_preview_rows_mount_session_hover_cards --locked &&
+    cargo test --bin agentty-app detail_row_resolves_from_stashed_navigator --locked &&
     cargo test --bin agentty-app format_unix_ms_local_is_readable_not_raw_millis --locked
     && cargo test --bin agentty-app session_updated_display_uses_local_datetime_formatter
     --locked
-  evidence: '2026-08-06: Updated field forbids raw unix millis; local YYYY-MM-DD HH:MM
+  evidence: '2026-08-20: preview Environment rows mount hover cards resolved from
+    EnvironmentNavigatorCache; FEEDBACK-20260820-025. 2026-08-20: hover card adds waiting-message callout, transcript, and resume
+    command rows; FEEDBACK-20260820-023. 2026-08-06: Updated field forbids raw unix millis; local YYYY-MM-DD HH:MM
     via format_unix_ms_local (FEEDBACK-20260806-008); prior 2026-08-05 hover delays/sidecar/menu-priority
     retained'
 - id: SESSION-KEYBOARD-CURSOR-042
@@ -3470,6 +3510,23 @@ entries:
   - stash_and_take_round_trips_counts
   verification: cargo test --bin agentty-app environment_menu_selects session_history_is_cleared stash_and_take --locked
   evidence: In-window select_environment stashes and restores per-Environment Navigator projections via EnvironmentNavigatorCache.
+- id: ENV-SESSION-FIRST-RAIL-103
+  spec: ENV-SESSION-FIRST-RAIL-56
+  source:
+  - docs/specs/ENVIRONMENT_MODEL_SPEC.yaml
+  - src/ui/tab_sidebar.rs
+  - src/ui/environment_rail.rs
+  - src/ui/tab_strip.rs
+  - crates/agentty-core/src/core/config.rs
+  static_check: script/check_environment_boundary
+  tests:
+  - environment_rail_is_append_stable_with_member_sections
+  - append_stable_rail_builds_local_plus_members_not_catalog
+  - environment_rail_uses_before_current_after_layout
+  - rail_trailing_count_stays_compact
+  - environment_rail_preferences_default_and_pin
+  verification: cargo test --bin agentty-app environment_rail_is_append_stable append_stable_rail before_current_after rail_trailing_count --locked && cargo test -p agentty-core environment_rail_preferences --locked
+  evidence: Left sidebar mounts Local plus sidebar_members/pinned; before/current/after keeps later env headers visible; current nests indented live sessions; env headers are single-line with compact trailing counts and one resting elevated pill chrome.
 - id: ENV-PIN-095
   spec: ENV-PIN-48
   source:
@@ -3477,39 +3534,69 @@ entries:
   - crates/agentty-core/src/core/config.rs
   - src/ui/environment_rail.rs
   - src/ui/tab_strip.rs
+  - src/ui/remote_workspace.rs
   static_check: script/check_environment_boundary
   tests:
-  - pinned_remote_defaults_expanded
   - environment_menu_exposes_environment_pin_toggle
-  verification: cargo test --bin agentty-app pinned_remote environment_menu_exposes_environment_pin --locked && cargo test -p agentty-core environment_rail --locked
-  evidence: Environment pin preference persists in config and surfaces in indicator menu plus rail ordering.
+  - environment_rail_preferences_default_and_pin
+  - append_stable_rail_builds_local_plus_members_not_catalog
+  verification: cargo test --bin agentty-app environment_menu_exposes_environment_pin append_stable_rail --locked && cargo test -p agentty-core environment_rail_preferences --locked
+  evidence: Pin ranks Indicator/rail order, appends sidebar membership, and auto-connects pinned remotes on open.
+- id: ENV-RAIL-MEMBERSHIP-100
+  spec: ENV-RAIL-MEMBERSHIP-53
+  source:
+  - docs/specs/ENVIRONMENT_MODEL_SPEC.yaml
+  - src/ui/tab_sidebar.rs
+  - src/ui/environment_rail.rs
+  - crates/agentty-core/src/core/config.rs
+  static_check: script/check_environment_boundary
+  tests:
+  - environment_rail_is_append_stable_with_member_sections
+  - append_stable_rail_builds_local_plus_members_not_catalog
+  verification: cargo test --bin agentty-app environment_rail_is_append_stable append_stable_rail --locked
+  evidence: Rail membership is Local + sidebar_members/pinned; SSH catalog stays in Indicator.
 - id: ENV-RAIL-COLLAPSE-096
   spec: ENV-RAIL-COLLAPSE-49
   source:
   - docs/specs/ENVIRONMENT_MODEL_SPEC.yaml
   - src/ui/environment_rail.rs
-  - src/ui/tab_sidebar.rs
+  - crates/agentty-core/src/core/config.rs
   static_check: script/check_environment_boundary
   tests:
-  - unpinned_remote_defaults_collapsed
-  - collapse_override_round_trips
-  - environment_rail_renders_above_session_list
-  - rail_summary_omits_counts_when_empty
-  verification: cargo test --bin agentty-app unpinned_remote collapse_override environment_rail_renders rail_summary --locked
-  evidence: Left-rail environment headers collapse to connection + session-count summaries and gate the session list for the current authority.
+  - environment_rail_preferences_default_and_pin
+  verification: cargo test -p agentty-core environment_rail_preferences --locked
+  evidence: Rail members default expanded; switching/connecting Environment does not accordion-collapse others; only explicit chevron collapse folds a section; identity-row click never writes collapse_overrides.
 - id: ENV-RAIL-TREE-099
   spec: ENV-RAIL-TREE-52
   source:
   - docs/specs/ENVIRONMENT_MODEL_SPEC.yaml
-  - src/ui/environment_rail.rs
   - src/ui/environment_navigator_cache.rs
+  - src/ui/environment_rail.rs
+  - src/ui/tab_sidebar.rs
   static_check: script/check_environment_boundary
   tests:
-  - expanded_non_current_emits_preview_rows
   - current_environment_never_emits_rail_preview_rows
   - collapsed_non_current_omits_preview_rows
-  verification: cargo test --bin agentty-app expanded_non_current_emits current_environment_never_emits collapsed_non_current_omits --locked
-  evidence: Expanded non-current rail sections show indented cache preview rows; activation is select_environment only.
+  - stash_and_take_round_trips_counts
+  - rail_preview_rows_reuse_session_row_chrome
+  - rail_preview_rows_mount_session_hover_cards
+  verification: cargo test --bin agentty-app current_environment_never_emits collapsed_non_current stash_and_take rail_preview_rows_reuse rail_preview_rows_mount --locked
+  evidence: Non-current expanded sections may show cache previews; activation only select_environment; cache is not remote authority; preview chrome reuses live session row metrics and resting pill fill; preview rows mount hover cards from cache (FEEDBACK-20260820-025).
+
+- id: ENV-RAIL-SESSION-CAP-104
+  spec: ENV-RAIL-SESSION-CAP-57
+  source:
+  - docs/specs/ENVIRONMENT_MODEL_SPEC.yaml
+  - src/ui/environment_rail.rs
+  - src/ui/tab_sidebar.rs
+  - src/ui/app.rs
+  static_check: script/check_environment_boundary
+  tests:
+  - rail_session_layout_plan_single_fill
+  - rail_session_layout_plan_natural_then_even_split
+  - rail_preview_rows_respect_session_cap
+  verification: cargo test --bin agentty-app rail_session_layout_plan rail_preview_rows_respect --locked
+  evidence: Single expanded env fills rail; multi-env uses natural height when content fits else even split with internal scroll.
 - id: INPUT-COMPOSER-SPLIT-DOCK-097
   spec: INPUT-COMPOSER-SPLIT-DOCK-15
   source:

@@ -239,6 +239,27 @@ impl AgenttyApp {
             )
     }
 
+    /// Quiet content-column placeholder while machine tree hydrate is priming
+    /// (UI-STARTUP-TERMINAL-55). Never the vacuous welcome logo page.
+    pub(crate) fn render_restoring_surface(
+        &self,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement + use<> {
+        let muted = cx.theme().muted_foreground;
+        v_flex()
+            .id("restoring-surface")
+            .size_full()
+            .items_center()
+            .justify_center()
+            .gap_2()
+            .child(
+                div()
+                    .text_sm()
+                    .text_color(muted)
+                    .child(crate::core::i18n::current(cx, "home.restoring")),
+            )
+    }
+
     fn render_remote_status_strip(
         &self,
         cx: &mut Context<Self>,

@@ -301,4 +301,14 @@ rg -q 'attention.banner.action.go_to_session' assets/i18n/en-US.yaml assets/i18n
 rg -q 'session.execution_pill_waiting' assets/i18n/en-US.yaml assets/i18n/zh-CN.yaml
 rg -q 'session.execution_pill_done_unread' assets/i18n/en-US.yaml assets/i18n/zh-CN.yaml
 
+rg -q 'UI-LEFT-RAIL-DEFAULT-54' docs/specs/UI_VISUAL_SYSTEM_SPEC.yaml
+rg -q 'UI-STARTUP-TERMINAL-55' docs/specs/UI_VISUAL_SYSTEM_SPEC.yaml
+rg -q 'left_panel_open_ignores_empty_tab_count' src/ui/app.rs
+rg -q 'horizontal_chips_follow_left_layout_not_empty_tabs' src/ui/app.rs
+rg -q 'startup_avoids_vacuous_welcome_while_hydrating' src/ui/app.rs
+rg -q 'ensure_default_terminal' src/ui/app.rs src/ui/tree_sync.rs
+rg -q 'window_is_tree_hydrating' src/ui/tree_sync.rs src/ui/app.rs
+rg -q 'render_restoring_surface' src/ui/home.rs src/ui/app.rs
+rg -q 'home.restoring' assets/i18n/en-US.yaml assets/i18n/zh-CN.yaml
+
 echo "ui visual system checks passed"

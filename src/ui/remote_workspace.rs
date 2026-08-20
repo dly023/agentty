@@ -536,8 +536,10 @@ impl AgenttyApp {
         cx.notify();
     }
 
-    pub(crate) fn reopen_remote_at_startup(&self, cx: &mut Context<Self>) {
+    pub(crate) fn reopen_remote_at_startup(&mut self, cx: &mut Context<Self>) {
         RemoteLinks::supervise(cx, self.workspace);
+        // ENV-PIN-48: pinned remotes auto-load into the left rail and Connect.
+        self.hydrate_pinned_environments_at_startup(cx);
     }
 
     pub(crate) fn prompt_install_consent(
@@ -1238,7 +1240,8 @@ impl RemoteLinks {
         host: HostId,
         target: RemoteTarget,
     ) -> ManualAttempt {
-        if remote_connect::HostLinks::get(cx, host).is_some() {
+        if remote_connect::HostLinks::get(cx, host).is_some_and(|link| link.client().is_connected())
+        {
             return ManualAttempt::Attached;
         }
 
@@ -1346,6 +1349,14 @@ impl RemoteLinks {
     }
 
     pub(crate) fn disconnect(cx: &mut gpui::App, host: HostId) {
+        let environments: Vec<_> = workspaces_on(cx, host)
+            .into_iter()
+            .filter_map(|(workspace, _)| {
+                Some(crate::core::session::WorkspaceStore::environment_id(
+                    cx, workspace,
+                ))
+            })
+            .collect();
         cx.default_global::<RemoteLinks>().suspended.insert(host);
         RemoteLinks::clear_manual_attempt(cx, host);
         for (workspace, _) in workspaces_on(cx, host) {
@@ -1356,6 +1367,16 @@ impl RemoteLinks {
         }
         remote_connect::HostLinks::remove(cx, host);
         cx.default_global::<RemoteLinks>().machines.remove(&host);
+        for environment in environments {
+            if let Some(cfg) = cx.try_global::<crate::core::config::Config>() {
+                let mut next = cfg.clone();
+                next.environment_rail.remove_sidebar_member(&environment);
+                if next.environment_rail != cfg.environment_rail {
+                    next.save();
+                    cx.set_global(next);
+                }
+            }
+        }
         log::info!("disconnected from a machine at the user's request");
         cx.refresh_windows();
     }
@@ -1905,6 +1926,8 @@ fn refresh_window_agent_sessions(cx: &mut gpui::App, workspace: WorkspaceId) {
         // the session navigator before discovery completes so an empty or
         // slow remote scan cannot leave the newly entered environment hidden.
         app.sidebar_collapsed = false;
+        let environment = crate::core::session::WorkspaceStore::environment_id(cx, workspace);
+        app.append_sidebar_environment(&environment, cx);
         app.update_config(cx, |cfg| {
             cfg.tab_bar_position = crate::core::config::TabBarPosition::Left;
             cfg.sidebar_collapsed = false;
@@ -2565,6 +2588,31 @@ mod tests {
         assert!(prod.contains("defer_until_explicit_connect"));
         assert!(prod.contains("already_connected"));
         assert!(prod.contains("suspended.insert(host)"));
+    }
+
+    #[test]
+    fn begin_manual_attempt_requires_live_hostlinks_connection() {
+        let source = include_str!("remote_workspace.rs");
+        // This file has mid-file #[cfg(test)] blocks; search the Attached gate
+        // near begin_manual_attempt rather than splitting on the first cfg.
+        let gate = source
+            .lines()
+            .skip_while(|line| !line.contains("fn begin_manual_attempt"))
+            .take(25)
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            !gate.is_empty() && gate.contains("fn begin_manual_attempt"),
+            "begin_manual_attempt present"
+        );
+        assert!(
+            gate.contains("is_connected()"),
+            "begin_manual_attempt Attached gate must check is_connected"
+        );
+        assert!(
+            !gate.contains("HostLinks::get(cx, host).is_some()\n"),
+            "HostLinks presence alone must not mean Attached"
+        );
     }
 
     #[gpui::test]

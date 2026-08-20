@@ -74,10 +74,11 @@ rg -q 'menu.copy_resume_command' src/ui/tab_sidebar.rs
 rg -q 'menu.session_details' src/ui/tab_sidebar.rs
 rg -q 'navigator_subtitle_uses_session_context_without_repeating_provider' src/ui/tab_sidebar.rs
 rg -q 'provider_identity_remains_searchable_when_hidden_from_subtitle' src/ui/tab_sidebar.rs
-if rg -n '\.child\(provider\)' src/ui/tab_sidebar.rs; then
-  echo '[session-navigator] visible subtitles must not repeat provider identity' >&2
+if awk 'BEGIN{p=1} /^#\[cfg\(test\)\]/{p=0} p' src/ui/tab_sidebar.rs | rg_consume 'waiting_message\.or\(subtitle\)'; then
+  echo '[session-navigator] sidebar session rows must stay single-line without a subtitle row' >&2
   exit 1
 fi
+rg -q 'session_sidebar_rows_are_single_line_title_only' src/ui/tab_sidebar.rs
 rg -q 'delete_plan_captures_source_and_identity_before_mutation' crates/agentty-core/src/agent_runtime/navigator.rs
 rg -q 'commit_delete_removes_row_and_file_atomically' crates/agentty-core/src/agent_runtime/navigator.rs
 rg -q 'tombstone_prevents_reappearance_in_same_generation' crates/agentty-core/src/agent_runtime/navigator.rs
@@ -550,10 +551,22 @@ fi
 rg -q 'HoverCard::new' src/ui/tab_sidebar.rs
 rg -q 'fn session_hover_sidecar_lead' src/ui/tab_sidebar.rs
 rg -q 'session_hover_sidecar_lead_clears_the_sidebar_split' src/ui/tab_sidebar.rs
+rg -q 'session_hover_sidecar_uses_rendered_panel_width_not_config' src/ui/tab_sidebar.rs
+rg -q 'sidebar_hover_panel_width' src/ui/app.rs src/ui/tab_sidebar.rs
 rg -Fq '.ml(px(sidecar_lead))' src/ui/tab_sidebar.rs
 rg -q 'fn session_hover_allowed' src/ui/tab_sidebar.rs
 rg -q 'session_hover_yields_to_open_context_menu' src/ui/tab_sidebar.rs
 rg -q 'session_hover_delays_stay_in_the_snappy_band' src/ui/tab_sidebar.rs
+rg -q 'session_hover_detail_includes_rich_metadata' src/ui/tab_sidebar.rs
+rg -q 'session_hover_waiting_message' src/ui/tab_sidebar.rs
+rg -q 'session_hover_resume_line' src/ui/tab_sidebar.rs
+rg -q 'session.details_transcript' src/ui/tab_sidebar.rs assets/i18n/en-US.yaml assets/i18n/zh-CN.yaml
+rg -q 'session.details_resume_command' src/ui/tab_sidebar.rs assets/i18n/en-US.yaml assets/i18n/zh-CN.yaml
+rg -q 'session.hover_switch_environment' src/ui/tab_sidebar.rs assets/i18n/en-US.yaml assets/i18n/zh-CN.yaml
+rg -q 'session.hover_unavailable' src/ui/tab_sidebar.rs assets/i18n/en-US.yaml assets/i18n/zh-CN.yaml
+rg -q '\.detail_row\(env_id' src/ui/tab_sidebar.rs
+rg -q 'rail_preview_rows_mount_session_hover_cards' src/ui/tab_sidebar.rs
+rg -q 'detail_row_resolves_from_stashed_navigator' src/ui/environment_navigator_cache.rs
 rg -q 'session_updated_display_uses_local_datetime_formatter' src/ui/tab_sidebar.rs
 rg -q 'format_unix_ms_local_is_readable_not_raw_millis' src/ui/home.rs
 rg -q 'format_session_updated_at' src/ui/tab_sidebar.rs src/ui/home.rs
@@ -564,7 +577,10 @@ if awk 'BEGIN{p=1} /^#\[cfg\(test\)\]/{p=0} p' src/ui/tab_sidebar.rs | rg -n 'mi
 fi
 rg -q 'begin_session_row_context_menu' src/ui/tab_sidebar.rs
 rg -q 'session_row_menu_open' src/ui/app.rs src/ui/tab_sidebar.rs
-rg -Fq 'from_millis(180)' src/ui/tab_sidebar.rs
+if rg -Fq 'from_millis(180)' src/ui/tab_sidebar.rs; then
+  echo '[session-navigator] hover open delay must not remain at 180ms; use SESSION_HOVER_CARD_OPEN_DELAY' >&2
+  exit 1
+fi
 rg -Fq 'from_millis(120)' src/ui/tab_sidebar.rs
 if ! rg -Fq 'session_hover_allowed(self.session_row_menu_open.get())' src/ui/tab_sidebar.rs; then
   echo '[session-navigator] hover card must yield while the row context menu is open' >&2

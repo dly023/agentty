@@ -489,15 +489,34 @@ pub fn daemon_executable() -> anyhow::Result<PathBuf> {
 
     let current_exe = std::env::current_exe()
         .map_err(|e| anyhow::anyhow!("could not locate own executable: {e}"))?;
-    let executable = dedicated_daemon_executable(&current_exe);
-    if !executable.is_file() {
-        anyhow::bail!(
-            "dedicated local runtime is missing at {}; install or build agentty-server beside {}",
-            executable.display(),
-            current_exe.display()
-        );
+    for candidate in sibling_daemon_candidates(&current_exe) {
+        if candidate.is_file() {
+            return Ok(candidate);
+        }
     }
-    Ok(executable)
+    let executable = dedicated_daemon_executable(&current_exe);
+    anyhow::bail!(
+        "dedicated local runtime is missing at {}; install or build agentty-server beside {} \
+         (dev: `cargo build -p agentty-server --locked` or `cargo app`)",
+        executable.display(),
+        current_exe.display()
+    );
+}
+
+fn sibling_daemon_candidates(current_exe: &Path) -> Vec<PathBuf> {
+    let sibling = dedicated_daemon_executable(current_exe);
+    let mut candidates = vec![sibling.clone()];
+    let Some(profile_dir) = sibling.parent() else {
+        return candidates;
+    };
+    if profile_dir.file_name().is_some_and(|name| name == "debug") {
+        if let Some(target_dir) = profile_dir.parent() {
+            if let Some(name) = sibling.file_name() {
+                candidates.push(target_dir.join("release").join(name));
+            }
+        }
+    }
+    candidates
 }
 
 fn daemon_log_display() -> String {
@@ -732,6 +751,19 @@ mod tests {
                 Path::new(r"C:\\Program Files\\Agentty\\agentty-server.exe")
             );
         }
+    }
+
+    #[test]
+    fn sibling_daemon_candidates_include_release_fallback_for_debug_gui() {
+        let gui = Path::new("/repo/target/debug/agentty-app");
+        let candidates = sibling_daemon_candidates(gui);
+        assert_eq!(
+            candidates,
+            vec![
+                PathBuf::from("/repo/target/debug/agentty-server"),
+                PathBuf::from("/repo/target/release/agentty-server"),
+            ]
+        );
     }
 
     #[test]

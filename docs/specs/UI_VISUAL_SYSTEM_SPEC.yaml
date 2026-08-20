@@ -30,13 +30,24 @@ contracts:
       - bare_text_key_hints_on_the_welcome_page
       - unframed_shortcut_list_touching_window_chrome
   - id: UI-TAB-OVERFLOW-05
-    rule: When tabs exceed strip capacity, chips compress from the natural minimum to an explicit floor, and beyond the floor the strip renders a window of chips that always contains the active tab. Hidden tabs are represented by leading and trailing overflow affordances showing the hidden count, and activating an overflow affordance pages the window toward the hidden tabs. Tabs are never silently clipped without an affordance, and all capacity math comes from one pure mapping. Overflow affordances and held-modifier tab-number hints apply only while the horizontal chip strip is rendered (TabBarPosition::Top or zero tabs); when the left Session Navigator rail hides chips, neither overflow counts nor modifier badges may render in the title bar.
+    rule: When tabs exceed strip capacity, chips compress from the natural minimum to an explicit floor, and beyond the floor the strip renders a window of chips that always contains the active tab. Hidden tabs are represented by leading and trailing overflow affordances showing the hidden count, and activating an overflow affordance pages the window toward the hidden tabs. Tabs are never silently clipped without an affordance, and all capacity math comes from one pure mapping. Overflow affordances and held-modifier tab-number hints apply only while the horizontal chip strip is rendered (TabBarPosition::Top); when the left Session Navigator rail is the tab authority (TabBarPosition::Left, expanded), neither overflow counts nor modifier badges may render in the title bar — including when the workspace currently has zero tabs.
     forbidden:
       - silent_tab_clipping_without_overflow_affordance
       - active_tab_outside_the_rendered_chip_window
       - chip_floor_defined_per_callsite
       - overflow_affordances_when_horizontal_chips_hidden
       - modifier_tab_number_hints_when_horizontal_chips_hidden
+  - id: UI-LEFT-RAIL-DEFAULT-54
+    rule: When Config.tab_bar_position is Left and sidebar_collapsed is false, the Session Navigator left rail is visible on first paint and after every subsequent paint, including when the workspace has zero tabs. Zero tabs must not force a horizontal chip strip or hide the left rail. Only an explicit user collapse (sidebar_collapsed true) or TabBarPosition::Top hides the rail.
+    forbidden:
+      - gating_left_rail_on_non_empty_tabs
+      - forcing_horizontal_chips_when_left_layout_has_zero_tabs
+  - id: UI-STARTUP-TERMINAL-55
+    rule: A primary window must not present the vacuous welcome page as the default empty first paint while tree hydration is still priming, or after hydration leaves zero tabs when a terminal can be spawned. While SyncPhase is Unprimed with priming true, the content column shows a restoring surface instead of the welcome logo page. When hydration finishes with an empty tab set (or hydration is not required) and guard_local_spawn would allow a new tab, AgenttyApp::ensure_default_terminal opens one terminal so the first useful paint is a live terminal plus left rail. The welcome page remains only when spawn is blocked (for example disconnected remote without a route) or the first terminal spawn fails.
+    forbidden:
+      - welcome_page_as_default_while_tree_hydrate_priming
+      - empty_hydrated_local_workspace_without_default_terminal
+      - suppressing_ensure_default_terminal_when_spawn_is_allowed
   - id: UI-TITLEBAR-CHROME-06
     rule: The content-column title bar (middle column) anchors the Environment Indicator on the leading edge and a Command Palette icon affordance on the trailing edge — one left, one right. When the left Session Navigator rail is open (TabBarPosition::Left, chips hidden), a New Tab Plus affordance still sits beside the Environment Indicator via the same attach_new_tab_menu path used on the horizontal chip strip — left-rail layout must not hide New Tab. The overflow ellipsis app menu is removed; Settings is a direct icon tile in window chrome (right-panel title bar when that panel owns the trailing chrome, otherwise beside the right-panel toggle). Command Palette and Settings must not be nested together under a "…" dropdown.
     placement:

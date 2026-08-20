@@ -48,7 +48,6 @@ if rg -n 'switch_workspace\(id, window, cx\)' src/ui/remote_workspace.rs; then
   exit 1
 fi
 
-echo 'environment boundary checks passed'
 rg -q 'ENV-DISCONNECT-SURFACE-50' docs/specs/ENVIRONMENT_MODEL_SPEC.yaml
 rg -q 'ENV-EXPLICIT-CONNECT-51' docs/specs/ENVIRONMENT_MODEL_SPEC.yaml
 rg -q 'ENV-SINGLE-WINDOW-RAIL-47' docs/specs/ENVIRONMENT_MODEL_SPEC.yaml
@@ -62,19 +61,125 @@ rg -q 'menu.disconnect' src/ui/tab_strip.rs
 rg -q 'environment_menu_exposes_reconnect_and_disconnect_for_remote' src/ui/tab_strip.rs
 rg -q 'environment_menu_selects_environment_in_current_window' src/ui/tab_strip.rs
 rg -q 'EnvironmentRailPreferences' crates/agentty-core/src/core/config.rs
-rg -q 'render_environment_rail' src/ui/environment_rail.rs src/ui/tab_sidebar.rs
+rg -q 'sidebar_members' crates/agentty-core/src/core/config.rs
 rg -q 'toggle_environment_pin' src/ui/environment_rail.rs src/ui/tab_strip.rs
+rg -q 'hydrate_pinned_environments_at_startup' src/ui/environment_rail.rs
 rg -q 'environment_menu_exposes_environment_pin_toggle' src/ui/tab_strip.rs
-rg -q 'environment_rail_renders_above_session_list' src/ui/tab_sidebar.rs
+rg -q 'ENV-SESSION-FIRST-RAIL-56' docs/specs/ENVIRONMENT_MODEL_SPEC.yaml
+rg -q 'ENV-PIN-48' docs/specs/ENVIRONMENT_MODEL_SPEC.yaml
+rg -q 'environment_rail_is_append_stable_with_member_sections' src/ui/tab_sidebar.rs
+rg -q 'append_stable_rail_builds_local_plus_members_not_catalog' src/ui/environment_rail.rs
+if awk 'BEGIN{p=1} /^#\[cfg\(test\)\]/{p=0} p' src/ui/tab_sidebar.rs | rg -n 'available_hosts\(cx\)' | rg -v 'environment_rail|build_environment'; then
+  :
+fi
+# Full SSH catalog must not drive left-rail membership directly.
+if awk 'BEGIN{p=1} /^#\[cfg\(test\)\]/{p=0} p' src/ui/environment_rail.rs | rg -n 'for host in hosts' ; then
+  echo '[environment] left rail must not iterate the full host catalog as membership' >&2
+  exit 1
+fi
+rg -q 'build_environment_rail_sections' src/ui/environment_rail.rs
+rg -q 'render_environment_rail' src/ui/tab_sidebar.rs src/ui/environment_rail.rs
+rg -q 'environment-rail-current-sessions' src/ui/environment_rail.rs
+rg -q 'let \(before, current_section, after\)' src/ui/environment_rail.rs
+rg -q 'environment_rail_uses_before_current_after_layout' src/ui/environment_rail.rs
+rg -q 'rail_trailing_count' src/ui/environment_rail.rs
+rg -q 'rail_trailing_count_stays_compact' src/ui/environment_rail.rs
+rg -q 'ENV-RAIL-SESSION-CAP-57' docs/specs/ENVIRONMENT_MODEL_SPEC.yaml
+rg -q 'RAIL_SESSION_ROW_HEIGHT' src/ui/environment_rail.rs
+rg -q 'rail_session_layout_plan' src/ui/environment_rail.rs
+rg -q 'rail_session_viewport_slots' src/ui/environment_rail.rs
+# No +N more / show-less under env sessions; viewport scrolls instead of hard omit.
+rail_prod=$(awk 'BEGIN{p=1} /^#\[cfg\(test\)\]/{p=0} p' src/ui/environment_rail.rs)
+if printf '%s\n' "$rail_prod" | rg -n 'preview_overflow|show_less|toggle_rail_session_overflow|rail_session_overflow|rail_visible_session_count' >/dev/null ; then
+  echo '[environment] env session cap must use an internal scroll viewport without +N more' >&2
+  exit 1
+fi
+if ! printf '%s\n' "$rail_prod" | rg -n 'overflow_y_scroll' >/dev/null ; then
+  echo '[environment] env session/preview viewports must overflow_y_scroll' >&2
+  exit 1
+fi
+# Dynamic session viewport layout (ENV-RAIL-SESSION-CAP-57).
+if ! printf '%s\n' "$rail_prod" | rg -n 'rail_session_layout_plan' >/dev/null ; then
+  echo '[environment] rail must compute dynamic session viewport layout' >&2
+  exit 1
+fi
+if ! printf '%s\n' "$rail_prod" | rg -n 'rail_session_viewport_slots' >/dev/null ; then
+  echo '[environment] rail must collect session viewport slots before layout' >&2
+  exit 1
+fi
+if printf '%s\n' "$rail_prod" | rg -n 'RAIL_SESSION_ROW_LIMIT' >/dev/null ; then
+  echo '[environment] fixed row caps are replaced by dynamic layout planning' >&2
+  exit 1
+fi
+if ! printf '%s\n' "$rail_prod" | rg -n 'render_rail_preview_session_unit' >/dev/null ; then
+  echo '[environment] rail preview must delegate to render_rail_preview_session_unit' >&2
+  exit 1
+fi
+if printf '%s\n' "$rail_prod" | rg -n 'render_environment_rail_preview_row' >/dev/null ; then
+  echo '[environment] rail preview must not keep a parallel preview row renderer' >&2
+  exit 1
+fi
+sidebar_prod=$(awk 'BEGIN{p=1} /^#\[cfg\(test\)\]/{p=0} p' src/ui/tab_sidebar.rs)
+if ! printf '%s\n' "$sidebar_prod" | rg -n 'render_rail_preview_session_unit' >/dev/null ; then
+  echo '[environment] tab_sidebar must own canonical rail preview session renderer' >&2
+  exit 1
+fi
+if ! printf '%s\n' "$sidebar_prod" | rg -n 'environment_navigator_cache' >/dev/null ; then
+  echo '[environment] preview hover must resolve rows from EnvironmentNavigatorCache' >&2
+  exit 1
+fi
+if ! printf '%s\n' "$sidebar_prod" | rg -n '\.detail_row\(env_id' >/dev/null ; then
+  echo '[environment] preview hover must call EnvironmentNavigatorCache::detail_row' >&2
+  exit 1
+fi
+if printf '%s\n' "$sidebar_prod" | rg -n 'if preview \|\| !session_hover_allowed' >/dev/null ; then
+  echo '[environment] preview rows must not disable session hover cards' >&2
+  exit 1
+fi
+if ! printf '%s\n' "$sidebar_prod" | rg -n 'rail_preview_select' >/dev/null ; then
+  echo '[environment] session_navigator_row must support rail preview activation mode' >&2
+  exit 1
+fi
+# begin_manual_attempt must require a live HostLinks connection.
+gate=$(sed -n '/pub(crate) fn begin_manual_attempt(/,/fn finish_manual_attempt/p' src/ui/remote_workspace.rs)
+if ! printf '%s\n' "$gate" | rg -n 'is_connected()' >/dev/null ; then
+  echo '[environment] begin_manual_attempt must treat HostLinks as Attached only when connected' >&2
+  exit 1
+fi
+if printf '%s\n' "$gate" | rg -n 'HostLinks::get(cx, host)\.is_some()$' >/dev/null ; then
+  echo '[environment] begin_manual_attempt must not treat HostLinks presence alone as Attached' >&2
+  exit 1
+fi
+# Env headers stay single-line; no dense collapsed subtitle.
+if printf '%s\n' "$rail_prod" | rg -n 'rail_summary|when\(section\.collapsed' >/dev/null ; then
+  echo '[environment] env headers must stay single-line without dense collapsed subtitle' >&2
+  exit 1
+fi
+rg -q 'ENV-RAIL-COLLAPSE-49' docs/specs/ENVIRONMENT_MODEL_SPEC.yaml
+# Only the chevron may toggle collapse — not the identity row.
+if printf '%s\n' "$rail_prod" | rg -n 'if section_for_row\.is_current \{' -A3 | rg 'toggle_environment_rail_collapsed' >/dev/null ; then
+  echo '[environment] clicking current env identity must not toggle collapse' >&2
+  exit 1
+fi
+rg -q 'toggle_environment_rail_collapsed' src/ui/environment_rail.rs
+# Sessions must nest under current; never sibling after a bare rail call.
+if awk 'BEGIN{p=1} /^#\[cfg\(test\)\]/{p=0} p' src/ui/tab_sidebar.rs | rg -n 'render_environment_rail\(window' >/dev/null ; then
+  echo '[environment] sessions must be passed into render_environment_rail for nesting' >&2
+  exit 1
+fi
+# flex_1 session list must not be injected via flat_map between headers.
+if printf '%s\n' "$rail_prod" | rg -n 'flat_map\(\|section\|' >/dev/null ; then
+  echo '[environment] rail must not flat_map sections around a flex_1 session list' >&2
+  exit 1
+fi
 rg -q 'EnvironmentNavigatorCache' src/ui/environment_navigator_cache.rs
 rg -q 'stash_environment_navigator' src/ui/session_navigator.rs src/ui/app.rs
 rg -q 'restore_environment_navigator' src/ui/session_navigator.rs src/ui/app.rs
-rg -q 'environment.rail.session_counts' assets/i18n/en-US.yaml assets/i18n/zh-CN.yaml
 rg -q 'stash_and_take_round_trips_counts' src/ui/environment_navigator_cache.rs
 rg -q 'session_history_is_cleared_when_workspace_scope_changes' src/ui/session_navigator.rs
 rg -q 'ENV-RAIL-TREE-52' docs/specs/ENVIRONMENT_MODEL_SPEC.yaml
-rg -q 'rail_preview_rows_for_section' src/ui/environment_rail.rs
-rg -q 'expanded_non_current_emits_preview_rows' src/ui/environment_rail.rs
-rg -q 'current_environment_never_emits_rail_preview_rows' src/ui/environment_rail.rs
-rg -q 'select_environment' src/ui/environment_rail.rs
-rg -q 'environment-rail-preview' src/ui/environment_rail.rs
+rg -q 'environment.rail.pin' assets/i18n/en-US.yaml assets/i18n/zh-CN.yaml
+rg -q 'TabDragIntent::Merge' src/ui/tab_sidebar.rs
+rg -q 'mergeable_tab_id_for_unit' src/ui/tab_sidebar.rs
+
+echo 'environment boundary checks passed'

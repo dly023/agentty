@@ -202,7 +202,31 @@ impl Reorder {
         intent: TabDragIntent,
         hit_zone: TabDragHitZone,
     ) -> Self {
-        let mut reorder = Self::new(surface, from, rects, axis, gap, grab);
+        Self::new_tab_projected(
+            surface,
+            from,
+            rects.into_iter().map(Some).collect(),
+            axis,
+            gap,
+            grab,
+            source_tab,
+            intent,
+            hit_zone,
+        )
+    }
+
+    pub(crate) fn new_tab_projected(
+        surface: Surface,
+        from: usize,
+        rects: Vec<Option<Bounds<Pixels>>>,
+        axis: Axis,
+        gap: Pixels,
+        grab: Point<Pixels>,
+        source_tab: TabId,
+        intent: TabDragIntent,
+        hit_zone: TabDragHitZone,
+    ) -> Self {
+        let mut reorder = Self::new_projected(surface, from, rects, axis, gap, grab);
         reorder.source_tab = Some(source_tab);
         reorder.tab_intent = Some(intent);
         reorder.tab_hit_zone = Some(hit_zone);

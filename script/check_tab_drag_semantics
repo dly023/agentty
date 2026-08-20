@@ -72,5 +72,14 @@ if "ControlRequest::PaneSplit" not in sync:
     print("[tab-drag] tree sync must retain explicit split support", file=sys.stderr)
     raise SystemExit(1)
 
+require(spec, "left_navigator_icon_merge", "left navigator merge hit zone")
+require(spec, "left_layout_without_navigator_merge_hit_zones", "left layout merge forbidden")
+require(env_spec, "cross_environment_rail_section_merge_or_reorder", "cross-env rail drag forbidden")
+sidebar = Path("src/ui/tab_sidebar.rs").read_text(encoding="utf-8")
+require(sidebar, "TabDragIntent::Merge", "navigator merge intent")
+require(sidebar, "mergeable_tab_id_for_unit", "navigator merge tab resolver")
+require(sidebar, "SESSION_UNIT_", "navigator unit debug selectors")
+require(app, "Surface::Navigator => match order.intent", "navigator merge applies tab split")
+
 print("tab drag semantics checks passed")
 PY

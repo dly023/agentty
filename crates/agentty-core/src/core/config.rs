@@ -237,22 +237,27 @@ pub struct Config {
     #[serde(default = "default_true")]
     pub restore_agent_sessions: bool,
 
-    /// Client UI preferences for the left-rail environment tree (ENV-PIN-48,
-    /// ENV-RAIL-COLLAPSE-49). Distinct from session pin Host state.
+    /// Client UI preferences for left-rail membership, collapse, and pin
+    /// auto-connect (ENV-PIN-48, ENV-SESSION-FIRST-RAIL-56, ENV-RAIL-MEMBERSHIP-53).
+    /// Distinct from session pin Host state.
     #[serde(default)]
     pub environment_rail: EnvironmentRailPreferences,
 }
 
-/// Persisted expand/collapse and pin order for the left environment rail.
+/// Persisted expand/collapse, pin order, and append-stable left-rail members.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(default)]
 pub struct EnvironmentRailPreferences {
-    /// EnvironmentId keys in top-to-bottom pin order.
+    /// EnvironmentId keys in top-to-bottom pin order. Pinned remotes auto-load
+    /// into the left rail and Connect on application open (ENV-PIN-48).
     #[serde(default)]
     pub pinned: Vec<String>,
+    /// Remote EnvironmentId keys appended to the left rail (Local is implicit).
+    /// Grows on Connect / pin; unpinned remotes leave on Disconnect.
+    #[serde(default)]
+    pub sidebar_members: Vec<String>,
     /// Explicit collapse overrides keyed by EnvironmentId. Absent keys use the
-    /// product default: local and pinned environments expanded, unpinned remotes
-    /// collapsed.
+    /// product default: every rail member expanded (ENV-RAIL-COLLAPSE-49).
     #[serde(default)]
     pub collapse_overrides: HashMap<String, bool>,
 }
@@ -268,36 +273,66 @@ impl EnvironmentRailPreferences {
             self.pinned.remove(index);
         } else {
             self.pinned.push(key);
+            self.append_sidebar_member(id);
         }
     }
 
+    pub fn append_sidebar_member(&mut self, id: &crate::core::environment::EnvironmentId) {
+        if id.is_local() {
+            return;
+        }
+        let key = id.as_str().to_string();
+        if !self.sidebar_members.iter().any(|entry| entry == &key) {
+            self.sidebar_members.push(key);
+        }
+    }
+
+    pub fn remove_sidebar_member(&mut self, id: &crate::core::environment::EnvironmentId) {
+        if self.is_pinned(id) {
+            return;
+        }
+        self.sidebar_members.retain(|entry| entry != id.as_str());
+    }
+
+    pub fn is_sidebar_member(&self, id: &crate::core::environment::EnvironmentId) -> bool {
+        id.is_local()
+            || self.is_pinned(id)
+            || self
+                .sidebar_members
+                .iter()
+                .any(|entry| entry == id.as_str())
+    }
+
+    /// Product default: every rail member stays expanded. Switching away from
+    /// an Environment must not fold other sections — density uses dynamic
+    /// ENV-RAIL-SESSION-CAP-57 viewport layout, not a global accordion.
     pub fn default_collapsed(
         &self,
-        id: &crate::core::environment::EnvironmentId,
-        is_remote: bool,
+        _id: &crate::core::environment::EnvironmentId,
+        _is_current: bool,
     ) -> bool {
-        is_remote && !self.is_pinned(id)
+        false
     }
 
     pub fn is_collapsed(
         &self,
         id: &crate::core::environment::EnvironmentId,
-        is_remote: bool,
+        is_current: bool,
     ) -> bool {
         self.collapse_overrides
             .get(id.as_str())
             .copied()
-            .unwrap_or_else(|| self.default_collapsed(id, is_remote))
+            .unwrap_or_else(|| self.default_collapsed(id, is_current))
     }
 
     pub fn set_collapsed(
         &mut self,
         id: &crate::core::environment::EnvironmentId,
-        is_remote: bool,
+        is_current: bool,
         collapsed: bool,
     ) {
         let key = id.as_str().to_string();
-        let default = self.default_collapsed(id, is_remote);
+        let default = self.default_collapsed(id, is_current);
         if collapsed == default {
             self.collapse_overrides.remove(&key);
         } else {
@@ -1370,9 +1405,34 @@ mod tests {
         let remote = crate::core::environment::EnvironmentId::for_remote(
             &crate::core::session::RemoteTarget::direct("dev", "build.example", 22),
         );
-        assert!(prefs.is_collapsed(&remote, true));
+        assert!(
+            !prefs.is_collapsed(&remote, false),
+            "rail members default expanded — switching current must not accordion-collapse others"
+        );
+        assert!(!prefs.is_collapsed(&remote, true));
+        assert!(!prefs.is_sidebar_member(&remote));
         prefs.toggle_pin(&remote);
         assert!(prefs.is_pinned(&remote));
-        assert!(!prefs.is_collapsed(&remote, true));
+        assert!(prefs.is_sidebar_member(&remote));
+        assert!(
+            !prefs.is_collapsed(&remote, false),
+            "pinned remotes stay expanded by the same default"
+        );
+        prefs.set_collapsed(&remote, false, true);
+        assert!(
+            prefs.is_collapsed(&remote, false),
+            "only an explicit chevron collapse folds a section"
+        );
+        assert!(
+            prefs.is_collapsed(&remote, true),
+            "explicit collapse persists when the section becomes current"
+        );
+        prefs.append_sidebar_member(&remote);
+        assert_eq!(prefs.sidebar_members.len(), 1);
+        prefs.remove_sidebar_member(&remote);
+        assert!(
+            prefs.is_sidebar_member(&remote),
+            "pinned remotes stay rail members after remove_sidebar_member"
+        );
     }
 }

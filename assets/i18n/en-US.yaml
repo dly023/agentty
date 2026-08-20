@@ -99,12 +99,7 @@ environment.connecting: Connecting
 environment.disconnected: Disconnected
 environment.disconnected_detail: "{machine} is disconnected — reconnect to continue"
 environment.execution: Execution environment
-environment.rail.connected: Connected
 environment.rail.pin: Pin environment
-environment.rail.preempted: Preempted
-environment.rail.reconnecting: Reconnecting
-environment.rail.preview_overflow: "+{count} more"
-environment.rail.session_counts: "{live} live · {total} sessions"
 environment.rail.unpin: Unpin environment
 environment.local.detail: Local environment
 environment.local.label: This Mac
@@ -125,6 +120,7 @@ home.shortcut.split_down: Split Down
 home.shortcut.split_right: Split Right
 home.shortcut.switch_workspace: Switch Workspace
 home.tagline: A terminal-first agent workspace
+home.restoring: Restoring workspace…
 local_runtime.quit_detail: "{count} local shell(s) are still running. Keep leaves them in the headless runtime; Stop terminates them before Agentty quits."
 local_runtime.quit_keep: Keep Running
 local_runtime.quit_stop: Stop and Quit
@@ -442,6 +438,11 @@ session.details_provider: Provider
 session.details_session_id: Session ID
 session.details_title: Session Details
 session.details_updated: Updated
+session.details_transcript: Transcript
+session.details_resume_command: Resume command
+session.hover_switch_environment: Switch to environment
+session.hover_unavailable: Session details are no longer available.
+session.hover_waiting_message: Waiting for
 session.execution_pill_done_unread: Finished
 session.execution_pill_waiting: Needs input
 session.details_working_directory: Working directory

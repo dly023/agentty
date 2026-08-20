@@ -1749,6 +1749,22 @@ fn owe_rehydration(cx: &mut App, client_ws: WorkspaceId, epoch: u64, adopt: Adop
     }
     state.rehydrate = Some(adopt);
     log::info!("workspace {client_ws}: will pull its layout again once its machine answers");
+    // While waiting to retry, do not strand an empty local window on welcome.
+    if let Some(handle) = crate::ui::windows::WindowRegistry::window_for(cx, client_ws)
+        && let Some(app) =
+            crate::ui::windows::WindowRegistry::app_for(cx, client_ws).and_then(|a| a.upgrade())
+    {
+        let _ = handle.update(cx, move |_, window, cx| {
+            app.update(cx, |app, cx| app.ensure_default_terminal(window, cx));
+        });
+    }
+}
+
+/// True while this window's machine tree hydrate is in flight (UI-STARTUP-TERMINAL-55).
+pub(crate) fn window_is_tree_hydrating(cx: &App, client_ws: WorkspaceId) -> bool {
+    cx.try_global::<TreeSync>()
+        .and_then(|sync| sync.windows.get(&client_ws))
+        .is_some_and(|state| matches!(state.sync, SyncPhase::Unprimed { priming: true, .. }))
 }
 
 fn pull_workspace(
@@ -1822,12 +1838,19 @@ fn finish_hydration(
         return;
     }
     if session.tabs.is_empty() && adopt == Adopt::IfEmpty {
-        if was_dirty
-            && let Some(app) =
-                crate::ui::windows::WindowRegistry::app_for(cx, client_ws).and_then(|a| a.upgrade())
-        {
-            app.update(cx, |app, cx| sync_window(app, cx));
-        }
+        let Some(handle) = crate::ui::windows::WindowRegistry::window_for(cx, client_ws) else {
+            return;
+        };
+        mark_window_informed(cx, client_ws);
+        let _ = handle.update(cx, move |_, window, cx| {
+            app.update(cx, |app, cx| {
+                if was_dirty {
+                    sync_window(app, cx);
+                }
+                // UI-STARTUP-TERMINAL-55: empty tree must not strand the user on welcome.
+                app.ensure_default_terminal(window, cx);
+            });
+        });
         return;
     }
     let Some(handle) = crate::ui::windows::WindowRegistry::window_for(cx, client_ws) else {

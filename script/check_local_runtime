@@ -24,6 +24,9 @@ rg -q 'default_level_for_role' crates/agentty-core/src/core/logfile.rs
 rg -q 'pane_endpoint_without_control_endpoint_is_degraded' crates/agentty-core/src/daemon/spawn.rs
 rg -q 'graceful_shutdown_removes_control_endpoint' crates/agentty-core/src/host/server.rs
 rg -q 'daemon_executable_is_the_headless_sibling' crates/agentty-core/src/daemon/spawn.rs
+rg -q 'ensure_daemon_sibling_built' build.rs
+rg -q 'sibling_daemon_candidates' crates/agentty-core/src/daemon/spawn.rs
+rg -q 'cargo app' .cargo/config.toml build.rs
 rg -q 'server_logging_defaults_to_warnings' crates/agentty-core/src/core/logfile.rs
 rg -q 'server_lifecycle_uses_canonical_dual_endpoint_readiness' crates/agentty-cli/tests/cli_e2e.rs
 rg -q 'zero_resource_runtime_exits_after_grace' crates/agentty-core/src/daemon/lease.rs

@@ -61,6 +61,15 @@ impl EnvironmentNavigatorCache {
             .unwrap_or_default()
     }
 
+    pub(crate) fn detail_row(
+        &self,
+        id: &EnvironmentId,
+        row_id: &agentty_core::agent_runtime::NavigatorRowId,
+    ) -> Option<&NavigatorRow> {
+        self.get(id)
+            .and_then(|entry| entry.navigator.detail_row(row_id))
+    }
+
     pub(crate) fn clear(&mut self) {
         self.entries.clear();
     }
@@ -151,6 +160,35 @@ mod tests {
         let restored = cache.take(&env).expect("cached entry");
         assert_eq!(restored.history.len(), 2);
         assert!(cache.get(&env).is_none());
+    }
+
+    #[test]
+    fn detail_row_resolves_from_stashed_navigator() {
+        let mut navigator = SessionNavigator::default();
+        navigator.refresh(&[history("h1")], &[]);
+        let row_id = navigator.rows()[0].row_id.clone();
+        let env = EnvironmentId::local();
+        let mut cache = EnvironmentNavigatorCache::default();
+        cache.insert(
+            env.clone(),
+            CachedEnvironmentNavigator {
+                navigator,
+                history: vec![history("h1")],
+                history_environment: Some(env.clone()),
+                user_state: Default::default(),
+                user_state_path: None,
+                store_roots: None,
+                alias_environment: Some(env.clone()),
+                scan_error: None,
+                scan_started: true,
+            },
+        );
+        assert_eq!(
+            cache
+                .detail_row(&env, &row_id)
+                .map(|row| row.session_id.as_deref()),
+            Some(Some("h1"))
+        );
     }
 
     #[test]

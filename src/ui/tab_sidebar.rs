@@ -11,7 +11,7 @@ use gpui_component::{
 };
 
 use crate::ui::app::{AgenttyApp, TITLE_BAR_HEIGHT};
-use crate::ui::reorder::{self, Reorder, Surface};
+use crate::ui::reorder::{self, Reorder, Surface, TabDragHitZone, TabDragIntent};
 
 const MIN_SIDEBAR_WIDTH: f32 = 180.;
 
@@ -21,17 +21,23 @@ const MAX_SIDEBAR_WIDTH_RATIO: f32 = 0.5;
 const RESIZE_HANDLE_WIDTH: f32 = 8.;
 /// Snappy open delay (SESSION-HOVER-DETAILS-13). Long enough to ignore
 /// cursor-skim passes, short enough that the detail card feels immediate.
-const SESSION_HOVER_CARD_OPEN_DELAY: std::time::Duration = std::time::Duration::from_millis(180);
+const SESSION_HOVER_CARD_OPEN_DELAY: std::time::Duration = std::time::Duration::from_millis(120);
 /// Close delay keeps the pointer-migration safe region usable without lag.
 const SESSION_HOVER_CARD_CLOSE_DELAY: std::time::Duration = std::time::Duration::from_millis(120);
 const SESSION_HOVER_CARD_GAP: f32 = 8.;
 
+/// Environment rail indents nested session rows under section headers.
+pub(crate) const RAIL_SESSION_INDENT: f32 = 2.0;
+
 /// Lead inset that parks the hover detail card just past the sidebar split
-/// (SESSION-HOVER-DETAILS-13 trailing sidecar).
-fn session_hover_sidecar_lead(sidebar_width: f32) -> f32 {
-    let gutter = session_sidebar_surface_metrics().outer_gutter;
-    let row_width = (sidebar_width - 2. * gutter).max(0.);
-    row_width + SESSION_HOVER_CARD_GAP
+/// (SESSION-HOVER-DETAILS-13 trailing sidecar). Uses the rendered panel width
+/// and nested row insets — not the persisted config width before clamping.
+fn session_hover_sidecar_lead(panel_width: f32) -> f32 {
+    let metrics = session_sidebar_surface_metrics();
+    let left_inset = RAIL_SESSION_INDENT + metrics.unit_outer_pad + metrics.row_pad_x;
+    let right_inset = metrics.unit_outer_pad + metrics.row_pad_x;
+    let trigger_width = (panel_width - left_inset - right_inset).max(0.);
+    trigger_width + SESSION_HOVER_CARD_GAP
 }
 
 /// Hover detail yields to an open row context menu (SESSION-HOVER-DETAILS-13).
@@ -40,38 +46,44 @@ fn session_hover_allowed(context_menu_open: bool) -> bool {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-struct SessionSidebarSurfaceMetrics {
-    outer_gutter: f32,
-    search_height: f32,
-    row_min_height: f32,
-    unit_gap: f32,
-    row_pad_x: f32,
-    row_pad_y: f32,
-    icon_size: f32,
-    icon_glyph: f32,
-    icon_radius: f32,
-    icon_text_gap: f32,
-    title_subtitle_gap: f32,
-    subtitle_size: f32,
-    text_fade_width: f32,
+pub(crate) struct SessionSidebarSurfaceMetrics {
+    pub(crate) outer_gutter: f32,
+    pub(crate) search_height: f32,
+    pub(crate) row_min_height: f32,
+    pub(crate) unit_gap: f32,
+    /// Horizontal pad on each session unit under the Environment rail
+    /// (SESSION-SIDEBAR-ROW-DENSITY-29 nested indent — not a second panel gutter).
+    pub(crate) unit_outer_pad: f32,
+    pub(crate) row_pad_x: f32,
+    pub(crate) row_pad_y: f32,
+    pub(crate) icon_size: f32,
+    pub(crate) icon_glyph: f32,
+    pub(crate) icon_radius: f32,
+    pub(crate) icon_text_gap: f32,
+    pub(crate) title_subtitle_gap: f32,
+    pub(crate) subtitle_size: f32,
+    pub(crate) text_fade_width: f32,
 }
 
-fn session_sidebar_surface_metrics() -> SessionSidebarSurfaceMetrics {
+pub(crate) fn session_sidebar_surface_metrics() -> SessionSidebarSurfaceMetrics {
     SessionSidebarSurfaceMetrics {
-        // Matches right-panel CONTENT_INSET (UI-PANEL-EDGE-GUTTER-08).
+        // Search chrome keeps the shared panel gutter. Nested session units
+        // under the Environment rail use `unit_outer_pad` instead so rail
+        // indent + unit pad + row pad stay in the 6–12px icon inset band.
         outer_gutter: crate::ui::app::panel_content_gutter(),
         search_height: 30.0,
-        row_min_height: 44.0,
-        unit_gap: 2.0,
-        row_pad_x: 4.0,
-        row_pad_y: 6.0,
-        icon_size: 20.0,
-        icon_glyph: 11.0,
-        icon_radius: 5.0,
-        icon_text_gap: 8.0,
-        title_subtitle_gap: 2.0,
-        subtitle_size: 11.0,
-        text_fade_width: 18.0,
+        row_min_height: 28.0,
+        unit_gap: 1.0,
+        unit_outer_pad: 4.0,
+        row_pad_x: 2.0,
+        row_pad_y: 1.0,
+        icon_size: 16.0,
+        icon_glyph: 9.0,
+        icon_radius: 4.0,
+        icon_text_gap: 6.0,
+        title_subtitle_gap: 1.0,
+        subtitle_size: 10.0,
+        text_fade_width: 14.0,
     }
 }
 
@@ -114,6 +126,8 @@ fn session_row_text_fade(selected: bool, cx: &gpui::App) -> gpui::Div {
 }
 
 /// Idle / hover / selected / keyboard-cursor fills from Surfaces.sidebar.
+/// Only selected (or keyboard-cursor) rows use elevated pill chrome; idle rows
+/// rest flat on sidebar.base and gain hover fill on pointer (SESSION-SIDEBAR-ROW-DENSITY-29).
 /// Never theme().muted — contrast floors live on this ladder (POLISH-008).
 pub(crate) fn session_row_surface_fill(
     selected: bool,
@@ -136,7 +150,7 @@ pub(crate) fn session_row_hover_fill(sidebar: &crate::ui::presets::Surface) -> u
 /// Distance from the sidebar edge to the row icon
 /// (outer gutter + row pad; SESSION-SIDEBAR-ROW-DENSITY-29).
 fn session_row_content_inset(metrics: &SessionSidebarSurfaceMetrics) -> f32 {
-    metrics.outer_gutter + metrics.row_pad_x
+    metrics.unit_outer_pad + metrics.row_pad_x
 }
 
 /// Selected / keyboard / idle rows always reserve the same border width
@@ -260,6 +274,10 @@ impl SessionEmptyStateKind {
 
 #[derive(Clone)]
 struct DragSessionUnit;
+#[derive(Clone)]
+struct DragSessionIcon;
+#[derive(Clone)]
+struct DragSessionBody;
 
 impl gpui::Render for DragSessionUnit {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
@@ -267,7 +285,41 @@ impl gpui::Render for DragSessionUnit {
     }
 }
 
+impl gpui::Render for DragSessionIcon {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+    }
+}
+
+impl gpui::Render for DragSessionBody {
+    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+        div()
+    }
+}
+
 impl AgenttyApp {
+    /// Resolve a Navigator unit to a 1-pane live TabId for same-Environment merge.
+    pub(crate) fn mergeable_tab_id_for_unit(
+        &self,
+        unit_index: usize,
+        projection: &crate::ui::session_navigator::SessionViewportProjection,
+    ) -> Option<agentty_core::core::machine::TabId> {
+        let rows = projection.rows_for_unit(unit_index, &self.session_navigator)?;
+        if rows.len() != 1 {
+            return None;
+        }
+        let tab_id = rows[0].carrier.as_ref()?.tab_id.as_ref()?;
+        let tab = self
+            .tabs
+            .iter()
+            .find(|tab| Some(tab.tree_id.get().to_string()) == Some(tab_id.clone()))?;
+        if tab.pane.terminals().len() == 1 && tab.pane.leaves().len() == 1 {
+            Some(tab.tree_id.get())
+        } else {
+            None
+        }
+    }
+
     pub(crate) fn tab_sidebar(
         &mut self,
         window: &mut Window,
@@ -279,8 +331,11 @@ impl AgenttyApp {
         let max_width = (window.viewport_size().width.as_f32() * MAX_SIDEBAR_WIDTH_RATIO)
             .max(MIN_SIDEBAR_WIDTH);
         let width = self.sidebar_width.get().clamp(MIN_SIDEBAR_WIDTH, max_width);
+        self.sidebar_hover_panel_width.set(width);
         let query = self.sidebar_search.read(cx).value().trim().to_lowercase();
+        let search_active = !query.is_empty();
         let projection = self.session_viewport_projection(cx);
+        let current_row_count = projection.len();
         if projection != self.session_viewport_projection {
             let (old_range, new_count) = projection.splice_delta(&self.session_viewport_projection);
             self.session_list_state.splice(old_range, new_count);
@@ -300,13 +355,41 @@ impl AgenttyApp {
             })
             .flatten();
         if let Some(preview) = &preview {
-            reorder::set_pending(
-                &self.reorder,
-                &Surface::Navigator,
-                preview.order.clone(),
-                preview.target,
-                crate::ui::reorder::ReorderIntent::Reorder,
-            );
+            let tab_intent = self.reorder.borrow().as_ref().and_then(|r| r.tab_intent);
+            match tab_intent {
+                Some(crate::ui::reorder::TabDragIntent::Merge) => {
+                    let source_tab = self.reorder.borrow().as_ref().and_then(|r| r.source_tab);
+                    let target_tab = preview.hovered.and_then(|hovered| {
+                        self.mergeable_tab_id_for_unit(hovered, &projection)
+                            .filter(|tab| Some(*tab) != source_tab)
+                    });
+                    reorder::set_tab_pending(
+                        &self.reorder,
+                        &Surface::Navigator,
+                        preview.order.clone(),
+                        preview.target,
+                        target_tab,
+                    );
+                }
+                Some(crate::ui::reorder::TabDragIntent::Reorder) => {
+                    reorder::set_tab_pending(
+                        &self.reorder,
+                        &Surface::Navigator,
+                        preview.order.clone(),
+                        preview.target,
+                        None,
+                    );
+                }
+                None => {
+                    reorder::set_pending(
+                        &self.reorder,
+                        &Surface::Navigator,
+                        preview.order.clone(),
+                        preview.target,
+                        crate::ui::reorder::ReorderIntent::Reorder,
+                    );
+                }
+            }
         }
 
         let list = if projection.is_empty() {
@@ -461,6 +544,16 @@ impl AgenttyApp {
                 }
             });
 
+        let more_below = !projection.is_empty()
+            && crate::ui::scrollbar::list_has_overflow_below(&self.session_list_state);
+        let sessions = crate::ui::scrollbar::with_vertical_scrollbar_overflow(
+            "agent-session-navigator-scrollbar",
+            list,
+            &self.session_list_state,
+            more_below,
+            cx.theme().sidebar,
+        );
+
         div()
             .relative()
             .flex_shrink_0()
@@ -479,24 +572,15 @@ impl AgenttyApp {
                         cx,
                     ))
                     .child(search_bar)
-                    .when_some(self.render_environment_rail(window, cx), |column, rail| {
-                        column.child(rail)
-                    })
-                    .when(!self.environment_rail_current_collapsed(cx), |column| {
-                        column.child({
-                            let more_below = !projection.is_empty()
-                                && crate::ui::scrollbar::list_has_overflow_below(
-                                    &self.session_list_state,
-                                );
-                            crate::ui::scrollbar::with_vertical_scrollbar_overflow(
-                                "agent-session-navigator-scrollbar",
-                                list,
-                                &self.session_list_state,
-                                more_below,
-                                cx.theme().sidebar,
-                            )
-                        })
-                    }),
+                    // ENV-SESSION-FIRST-RAIL-56: sessions nest under the current
+                    // Environment identity row inside the append-stable rail.
+                    .child(self.render_environment_rail(
+                        sessions.into_any_element(),
+                        current_row_count,
+                        search_active,
+                        window,
+                        cx,
+                    )),
             )
             .child(handle)
     }
@@ -529,22 +613,41 @@ impl AgenttyApp {
             .first()
             .map(|row_id| row_id.as_str())
             .unwrap_or("stale");
+        let mergeable_tab = self.mergeable_tab_id_for_unit(unit_index, projection);
         let mut stack = session_unit_stack_surface(grouped, group_selected, cx);
-        for row in rows {
-            stack = stack.child(self.session_navigator_row(row, cx));
+        for (row_index, row) in rows.into_iter().enumerate() {
+            let icon_merge = draggable
+                .then_some(mergeable_tab)
+                .flatten()
+                .filter(|_| row_index == 0 && !grouped);
+            let body_reorder = draggable && icon_merge.is_some();
+            stack = stack.child(self.session_navigator_row(
+                row,
+                unit_index,
+                projection.len(),
+                list_state,
+                icon_merge,
+                body_reorder,
+                cx,
+                None,
+                None,
+                None,
+            ));
         }
         let group = v_flex()
             .id(gpui::SharedString::from(format!(
                 "session-reorder-unit-{unit_key}"
             )))
+            .debug_selector(move || format!("SESSION_UNIT_{unit_index}"))
             .relative()
             .w_full()
-            .px(px(surface_metrics.outer_gutter))
+            .px(px(surface_metrics.unit_outer_pad))
             .pb(px(surface_metrics.unit_gap))
             .child(stack);
         let dragged = preview.is_some_and(|preview| preview.from == unit_index);
+        // Split groups and non-mergeable units keep whole-unit body reorder.
         let group = group
-            .when(draggable, |group| {
+            .when(draggable && (grouped || mergeable_tab.is_none()), |group| {
                 group.on_drag(DragSessionUnit, {
                     let state = self.reorder.clone();
                     let list_state = list_state.clone();
@@ -576,26 +679,76 @@ impl AgenttyApp {
         }
     }
 
+    /// Cached Environment rail preview uses the same row renderer as the live
+    /// Session Navigator (ENV-RAIL-TREE-52); only activation differs.
+    pub(crate) fn render_rail_preview_session_unit(
+        &self,
+        row: agentty_core::agent_runtime::NavigatorRow,
+        unit_index: usize,
+        preview_env_id: agentty_core::core::environment::EnvironmentId,
+        select_target: Option<agentty_core::core::session::RemoteTarget>,
+        preview_selected: Option<&agentty_core::agent_runtime::NavigatorRowId>,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement + use<> {
+        let metrics = session_sidebar_surface_metrics();
+        let stack = session_unit_stack_surface(false, false, cx).child(self.session_navigator_row(
+            row,
+            unit_index,
+            1,
+            &self.session_list_state,
+            None,
+            false,
+            cx,
+            Some(select_target),
+            preview_selected,
+            Some(preview_env_id),
+        ));
+        v_flex()
+            .id(format!("environment-rail-preview-unit-{unit_index}"))
+            .w_full()
+            .px(px(metrics.unit_outer_pad))
+            .pb(px(metrics.unit_gap))
+            .child(stack)
+    }
+
     fn session_navigator_row(
         &self,
         row: agentty_core::agent_runtime::NavigatorRow,
+        unit_index: usize,
+        unit_count: usize,
+        list_state: &gpui::ListState,
+        merge_tab: Option<agentty_core::core::machine::TabId>,
+        body_reorder: bool,
         cx: &mut Context<Self>,
+        rail_preview_select: Option<Option<agentty_core::core::session::RemoteTarget>>,
+        preview_selected: Option<&agentty_core::agent_runtime::NavigatorRowId>,
+        preview_env_id: Option<agentty_core::core::environment::EnvironmentId>,
     ) -> gpui::AnyElement {
+        let preview = rail_preview_select.is_some();
         let title = row.display_title(&crate::core::i18n::current(cx, "session.default_name"));
-        let subtitle = navigator_subtitle(&row);
         let row_id = row.row_id.clone();
         let debug_row_id = row.row_id.clone();
-        let alias_input = self
-            .session_alias_edit
-            .as_ref()
-            .filter(|edit| edit.row_id == row.row_id)
-            .map(|edit| edit.input.clone());
+        let alias_input = if preview {
+            None
+        } else {
+            self.session_alias_edit
+                .as_ref()
+                .filter(|edit| edit.row_id == row.row_id)
+                .map(|edit| edit.input.clone())
+        };
         let edit_row_id = row.row_id.clone();
-        let selected = self
-            .session_navigator
-            .selected()
-            .is_some_and(|selected| selected == &row.row_id);
-        let keyboard_cursor = self.session_keyboard_cursor.current() == Some(&row.row_id);
+        let selected = if preview {
+            preview_selected.is_some_and(|selected| selected == &row.row_id)
+        } else {
+            self.session_navigator
+                .selected()
+                .is_some_and(|selected| selected == &row.row_id)
+        };
+        let keyboard_cursor = if preview {
+            false
+        } else {
+            self.session_keyboard_cursor.current() == Some(&row.row_id)
+        };
         let active = row.lifecycle == agentty_core::agent_runtime::RowLifecycle::Live;
         let execution = row.execution.as_ref();
         let badge = agentty_core::agent_runtime::execution_badge(
@@ -604,15 +757,6 @@ impl AgenttyApp {
             execution.is_some_and(|execution| execution.focused),
             execution.is_some_and(|execution| execution.unread),
         );
-        let waiting_message = agentty_core::agent_runtime::execution_message(
-            execution.map(|execution| &execution.state),
-        )
-        .map(str::to_owned);
-        let detail_color = if waiting_message.is_some() {
-            cx.theme().warning
-        } else {
-            cx.theme().muted_foreground
-        };
         let status_dot = badge.map(|badge| match badge {
             agentty_core::agent_runtime::ExecutionBadge::Restoring
             | agentty_core::agent_runtime::ExecutionBadge::Waiting => cx.theme().warning,
@@ -658,6 +802,9 @@ impl AgenttyApp {
             Some(agentty_core::agent_runtime::ExecutionBadge::CompletedUnread) => cx.theme().accent,
             _ => cx.theme().transparent,
         };
+        let rail_preview_select = rail_preview_select;
+        let preview_select_target = rail_preview_select.clone();
+        let preview_select_for_click = preview_select_target.clone();
         let item = h_flex()
             .id(gpui::SharedString::from(format!(
                 "agent-session-row-{}",
@@ -690,10 +837,22 @@ impl AgenttyApp {
                     return;
                 }
                 cx.stop_propagation();
-                this.activate_navigator_row(row_id.clone(), window, cx);
+                if let Some(select_target) = preview_select_for_click.clone() {
+                    if let Some(target) = select_target {
+                        this.select_environment(Some(target), window, cx);
+                    } else {
+                        this.select_environment(None, window, cx);
+                    }
+                } else {
+                    this.activate_navigator_row(row_id.clone(), window, cx);
+                }
             }))
-            .child(
-                div()
+            .child({
+                let mut icon = div()
+                    .id(gpui::SharedString::from(format!(
+                        "session-unit-icon-{unit_index}"
+                    )))
+                    .debug_selector(move || format!("SESSION_UNIT_{unit_index}_ICON"))
                     .flex_shrink_0()
                     .relative()
                     .child(icon_badge)
@@ -709,69 +868,110 @@ impl AgenttyApp {
                                 .border_color(cx.theme().sidebar)
                                 .bg(dot),
                         )
-                    }),
-            )
-            .child(
-                v_flex()
+                    });
+                if let Some(source_tab) = merge_tab {
+                    let state = self.reorder.clone();
+                    let list_state = list_state.clone();
+                    icon = icon.on_drag(DragSessionIcon, move |_drag, grab, _window, cx| {
+                        cx.stop_propagation();
+                        let rects = (0..unit_count)
+                            .map(|index| list_state.bounds_for_item(index))
+                            .collect();
+                        *state.borrow_mut() = Some(Reorder::new_tab_projected(
+                            Surface::Navigator,
+                            unit_index,
+                            rects,
+                            Axis::Vertical,
+                            px(1.5),
+                            grab,
+                            source_tab,
+                            TabDragIntent::Merge,
+                            TabDragHitZone::Icon,
+                        ));
+                        cx.new(|_| DragSessionIcon)
+                    });
+                }
+                icon
+            })
+            .child({
+                let mut body = h_flex()
+                    .id(gpui::SharedString::from(format!(
+                        "session-unit-body-{unit_index}"
+                    )))
+                    .debug_selector(move || format!("SESSION_UNIT_{unit_index}_BODY"))
                     .flex_1()
                     .min_w_0()
                     .relative()
-                    .overflow_hidden()
-                    .gap(px(metrics.title_subtitle_gap))
-                    .child(match alias_input {
-                        Some(input) => div()
-                            .w_full()
-                            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                            .child(Input::new(&input).appearance(false).xsmall())
-                            .on_key_down(cx.listener(|this, event: &gpui::KeyDownEvent, _, cx| {
-                                if event.keystroke.key == "escape" {
-                                    cx.stop_propagation();
-                                    this.cancel_session_alias_edit(cx);
-                                }
-                            }))
-                            .into_any_element(),
-                        None => div()
-                            .id(gpui::SharedString::from(format!(
-                                "session-alias-label-{}",
-                                edit_row_id.as_str()
-                            )))
-                            .w_full()
-                            .overflow_hidden()
-                            .whitespace_nowrap()
-                            .text_sm()
-                            .on_double_click(cx.listener(move |this, _, window, cx| {
-                                this.begin_session_alias_edit(edit_row_id.clone(), window, cx)
-                            }))
-                            .child(title)
-                            .into_any_element(),
-                    })
-                    .when_some(execution_pill_key, |column, key| {
-                        column.child(
-                            div()
-                                .flex_shrink_0()
-                                .px_1p5()
-                                .py_0p5()
-                                .rounded_sm()
-                                .text_xs()
-                                .font_weight(gpui::FontWeight::MEDIUM)
-                                .text_color(execution_pill_color)
-                                .bg(execution_pill_color.opacity(0.12))
-                                .child(crate::core::i18n::current(cx, key)),
-                        )
-                    })
-                    .when_some(waiting_message.or(subtitle), |column, detail| {
-                        column.child(
-                            div()
-                                .w_full()
-                                .overflow_hidden()
-                                .whitespace_nowrap()
-                                .text_size(px(metrics.subtitle_size))
-                                .text_color(detail_color)
-                                .child(detail),
-                        )
-                    })
-                    .child(session_row_text_fade(selected, cx)),
-            )
+                    .items_center()
+                    .gap(px(4.))
+                    .overflow_hidden();
+                if body_reorder {
+                    if let Some(source_tab) = merge_tab {
+                        let state = self.reorder.clone();
+                        let list_state = list_state.clone();
+                        body = body.on_drag(DragSessionBody, move |_drag, grab, _window, cx| {
+                            cx.stop_propagation();
+                            let rects = (0..unit_count)
+                                .map(|index| list_state.bounds_for_item(index))
+                                .collect();
+                            *state.borrow_mut() = Some(Reorder::new_tab_projected(
+                                Surface::Navigator,
+                                unit_index,
+                                rects,
+                                Axis::Vertical,
+                                px(1.5),
+                                grab,
+                                source_tab,
+                                TabDragIntent::Reorder,
+                                TabDragHitZone::Body,
+                            ));
+                            cx.new(|_| DragSessionBody)
+                        });
+                    }
+                }
+                body.child(match alias_input {
+                    Some(input) => div()
+                        .w_full()
+                        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                        .child(Input::new(&input).appearance(false).xsmall())
+                        .on_key_down(cx.listener(|this, event: &gpui::KeyDownEvent, _, cx| {
+                            if event.keystroke.key == "escape" {
+                                cx.stop_propagation();
+                                this.cancel_session_alias_edit(cx);
+                            }
+                        }))
+                        .into_any_element(),
+                    None => div()
+                        .id(gpui::SharedString::from(format!(
+                            "session-alias-label-{}",
+                            edit_row_id.as_str()
+                        )))
+                        .w_full()
+                        .overflow_hidden()
+                        .whitespace_nowrap()
+                        .text_sm()
+                        .on_double_click(cx.listener(move |this, _, window, cx| {
+                            this.begin_session_alias_edit(edit_row_id.clone(), window, cx)
+                        }))
+                        .child(title)
+                        .into_any_element(),
+                })
+                .when_some(execution_pill_key, |row, key| {
+                    row.child(
+                        div()
+                            .flex_shrink_0()
+                            .px_1p5()
+                            .py_0p5()
+                            .rounded_sm()
+                            .text_xs()
+                            .font_weight(gpui::FontWeight::MEDIUM)
+                            .text_color(execution_pill_color)
+                            .bg(execution_pill_color.opacity(0.12))
+                            .child(crate::core::i18n::current(cx, key)),
+                    )
+                })
+                .child(session_row_text_fade(selected, cx))
+            })
             .when(row.pinned, |item| {
                 item.child(
                     div()
@@ -801,8 +1001,29 @@ impl AgenttyApp {
                         .child(crate::core::i18n::current(cx, "session.restoring")),
                 ),
                 SessionRowHoverAffordance::None => item,
-            })
-            .context_menu({
+            });
+        if !session_hover_allowed(self.session_row_menu_open.get()) {
+            return item.into_any_element();
+        }
+        let hover_row_id = row.row_id.clone();
+        let hover_app = cx.entity().downgrade();
+        let sidecar_lead = session_hover_sidecar_lead(self.sidebar_hover_panel_width.get());
+        let hover_epoch = self.session_hover_epoch.get();
+        let hover_preview_env = preview_env_id.clone();
+        let hover_preview_select = rail_preview_select.clone();
+        if preview {
+            return Self::attach_session_row_hover(
+                item,
+                hover_row_id,
+                hover_app,
+                sidecar_lead,
+                hover_epoch,
+                hover_preview_env,
+                hover_preview_select,
+            );
+        }
+        Self::attach_session_row_hover(
+            item.context_menu({
                 let app = cx.entity().downgrade();
                 let menu_row = row.clone();
                 move |menu, _window, cx| {
@@ -814,15 +1035,26 @@ impl AgenttyApp {
                     }
                     Self::session_row_context_menu(menu, menu_row.clone(), &app, cx)
                 }
-            });
-        if !session_hover_allowed(self.session_row_menu_open.get()) {
-            return item.into_any_element();
-        }
-        let hover_row_id = row.row_id.clone();
-        let hover_app = cx.entity().downgrade();
-        let sidecar_lead = session_hover_sidecar_lead(self.sidebar_width.get());
-        let hover_epoch = self.session_hover_epoch.get();
-        let hover_card = HoverCard::new(gpui::SharedString::from(format!(
+            }),
+            hover_row_id,
+            hover_app,
+            sidecar_lead,
+            hover_epoch,
+            hover_preview_env,
+            hover_preview_select,
+        )
+    }
+
+    fn attach_session_row_hover<T: gpui::IntoElement + 'static>(
+        trigger: T,
+        hover_row_id: agentty_core::agent_runtime::NavigatorRowId,
+        hover_app: gpui::WeakEntity<Self>,
+        sidecar_lead: f32,
+        hover_epoch: u64,
+        hover_preview_env: Option<agentty_core::core::environment::EnvironmentId>,
+        hover_preview_select: Option<Option<agentty_core::core::session::RemoteTarget>>,
+    ) -> gpui::AnyElement {
+        HoverCard::new(gpui::SharedString::from(format!(
             "session-hover-card-{}-{hover_epoch}",
             hover_row_id.as_str()
         )))
@@ -830,20 +1062,39 @@ impl AgenttyApp {
         .ml(px(sidecar_lead))
         .open_delay(SESSION_HOVER_CARD_OPEN_DELAY)
         .close_delay(SESSION_HOVER_CARD_CLOSE_DELAY)
-        .trigger(item)
-        .content(move |_, window, cx| {
-            let row = hover_app.upgrade().and_then(|app| {
-                app.read(cx)
-                    .session_navigator
-                    .detail_row(&hover_row_id)
-                    .cloned()
-            });
-            match row {
-                Some(row) => Self::session_hover_detail_card(row, &hover_app, window, cx),
-                None => div().id("stale-session-hover-card").into_any_element(),
+        .trigger(trigger)
+        .content({
+            let hover_preview_select = hover_preview_select.clone();
+            move |_, window, cx| {
+                let row = hover_app.upgrade().and_then(|app| {
+                    let app = app.read(cx);
+                    if let Some(env_id) = hover_preview_env.as_ref() {
+                        app.environment_navigator_cache
+                            .detail_row(env_id, &hover_row_id)
+                            .cloned()
+                    } else {
+                        app.session_navigator.detail_row(&hover_row_id).cloned()
+                    }
+                });
+                match row {
+                    Some(row) => Self::session_hover_detail_card(
+                        row,
+                        &hover_app,
+                        hover_preview_select.clone(),
+                        window,
+                        cx,
+                    ),
+                    None => div()
+                        .id("stale-session-hover-card")
+                        .w(px(220.))
+                        .text_sm()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(crate::core::i18n::current(cx, "session.hover_unavailable"))
+                        .into_any_element(),
+                }
             }
-        });
-        hover_card.into_any_element()
+        })
+        .into_any_element()
     }
 
     fn begin_session_row_context_menu(&mut self, menu: &Entity<PopupMenu>, cx: &mut Context<Self>) {
@@ -866,6 +1117,7 @@ impl AgenttyApp {
     fn session_hover_detail_card(
         row: agentty_core::agent_runtime::NavigatorRow,
         app: &gpui::WeakEntity<Self>,
+        preview_select: Option<Option<agentty_core::core::session::RemoteTarget>>,
         _window: &mut Window,
         cx: &mut gpui::App,
     ) -> gpui::AnyElement {
@@ -893,6 +1145,9 @@ impl AgenttyApp {
             None => "session.details_history",
         };
         let status = crate::core::i18n::current(cx, status_key).to_string();
+        let waiting_message = session_hover_waiting_message(&row);
+        let resume_command = session_hover_resume_line(&row);
+        let transcript_path = session_hover_transcript_path(&row);
         let metadata_row = |label: &'static str, value: String, cx: &gpui::App| {
             v_flex()
                 .gap_0p5()
@@ -906,26 +1161,74 @@ impl AgenttyApp {
         };
         let row_id = row.row_id.clone();
         let activate_app = app.clone();
+        let activate_preview = preview_select.clone();
         let details = row.clone();
         let details_app = app.clone();
-        v_flex()
+        let preview_row = preview_select.is_some();
+        let pinned = row.pinned;
+        let mut card = v_flex()
             .id(gpui::SharedString::from(format!(
                 "session-hover-detail-{}",
                 row.row_id.as_str()
             )))
-            .w(px(300.))
+            .w(px(320.))
             .gap_3()
             .child(
                 v_flex()
                     .gap_1()
-                    .child(div().font_weight(gpui::FontWeight::SEMIBOLD).child(title))
+                    .child(
+                        h_flex()
+                            .gap_2()
+                            .items_start()
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                                    .child(title),
+                            )
+                            .when(pinned, |header| {
+                                header.child(
+                                    div()
+                                        .flex_shrink_0()
+                                        .px_1p5()
+                                        .py_0p5()
+                                        .rounded_sm()
+                                        .text_xs()
+                                        .text_color(cx.theme().muted_foreground)
+                                        .bg(cx.theme().muted.opacity(0.18))
+                                        .child(crate::core::i18n::current(cx, "menu.pin_session")),
+                                )
+                            }),
+                    )
                     .child(
                         div()
                             .text_xs()
                             .text_color(cx.theme().muted_foreground)
                             .child(status),
                     ),
-            )
+            );
+        if let Some(message) = waiting_message {
+            let warning = cx.theme().warning;
+            card = card.child(
+                div()
+                    .px_2()
+                    .py(px(6.))
+                    .rounded_md()
+                    .bg(warning.opacity(0.12))
+                    .border_1()
+                    .border_color(warning.opacity(0.35))
+                    .child(
+                        v_flex()
+                            .gap_0p5()
+                            .child(div().text_size(px(10.)).text_color(warning).child(
+                                crate::core::i18n::current(cx, "session.hover_waiting_message"),
+                            ))
+                            .child(div().text_xs().child(message)),
+                    ),
+            );
+        }
+        card = card
             .child(metadata_row(
                 "session.details_provider",
                 row.agent.display_name().to_string(),
@@ -940,49 +1243,69 @@ impl AgenttyApp {
                 "session.details_session_id",
                 row.session_id.clone().unwrap_or_else(|| empty.to_string()),
                 cx,
-            ))
-            .child(metadata_row(
-                "session.details_updated",
-                crate::ui::home::format_session_updated_at(row.updated_at_unix_ms, empty),
-                cx,
-            ))
-            .child(
-                h_flex()
-                    .gap_2()
-                    .child(
-                        Button::new(gpui::SharedString::from(format!(
-                            "session-hover-activate-{}",
-                            row.row_id.as_str()
-                        )))
-                        .label(crate::core::i18n::current(
-                            cx,
-                            if row.lifecycle == agentty_core::agent_runtime::RowLifecycle::Live {
-                                "session.details_live"
-                            } else {
-                                "session.resume"
-                            },
-                        ))
-                        .small()
-                        .on_click(move |_, window, cx| {
+            ));
+        if let Some(path) = transcript_path {
+            card = card.child(metadata_row("session.details_transcript", path, cx));
+        }
+        if let Some(command) = resume_command {
+            card = card.child(metadata_row("session.details_resume_command", command, cx));
+        }
+        card.child(metadata_row(
+            "session.details_updated",
+            crate::ui::home::format_session_updated_at(row.updated_at_unix_ms, empty),
+            cx,
+        ))
+        .child(
+            h_flex()
+                .gap_2()
+                .child(
+                    Button::new(gpui::SharedString::from(format!(
+                        "session-hover-activate-{}",
+                        row.row_id.as_str()
+                    )))
+                    .label(crate::core::i18n::current(
+                        cx,
+                        if preview_row {
+                            "session.hover_switch_environment"
+                        } else if row.lifecycle == agentty_core::agent_runtime::RowLifecycle::Live {
+                            "session.details_live"
+                        } else {
+                            "session.resume"
+                        },
+                    ))
+                    .small()
+                    .on_click({
+                        let activate_preview = activate_preview.clone();
+                        move |_, window, cx| {
+                            let select_target = activate_preview.clone();
                             let _ = activate_app.update(cx, |this, cx| {
-                                this.activate_navigator_row(row_id.clone(), window, cx);
+                                if let Some(select_target) = select_target {
+                                    if let Some(target) = select_target {
+                                        this.select_environment(Some(target), window, cx);
+                                    } else {
+                                        this.select_environment(None, window, cx);
+                                    }
+                                } else {
+                                    this.activate_navigator_row(row_id.clone(), window, cx);
+                                }
                             });
-                        }),
-                    )
-                    .child(
-                        Button::new(gpui::SharedString::from(format!(
-                            "session-hover-details-{}",
-                            row.row_id.as_str()
-                        )))
-                        .label(crate::core::i18n::current(cx, "session.details_action"))
-                        .ghost()
-                        .small()
-                        .on_click(move |_, window, cx| {
-                            Self::show_session_details(details.clone(), &details_app, window, cx);
-                        }),
-                    ),
-            )
-            .into_any_element()
+                        }
+                    }),
+                )
+                .child(
+                    Button::new(gpui::SharedString::from(format!(
+                        "session-hover-details-{}",
+                        row.row_id.as_str()
+                    )))
+                    .label(crate::core::i18n::current(cx, "session.details_action"))
+                    .ghost()
+                    .small()
+                    .on_click(move |_, window, cx| {
+                        Self::show_session_details(details.clone(), &details_app, window, cx);
+                    }),
+                ),
+        )
+        .into_any_element()
     }
 
     fn show_session_details(
@@ -1200,6 +1523,47 @@ fn smart_truncate_path(raw: &str, max_segments: usize) -> String {
     format!("{root}…/{}", tail.join("/"))
 }
 
+fn smart_truncate_line(value: &str, max_chars: usize) -> String {
+    if value.chars().count() <= max_chars {
+        return value.to_string();
+    }
+    let prefix: String = value.chars().take(max_chars.saturating_sub(1)).collect();
+    format!("{prefix}…")
+}
+
+pub(crate) fn session_hover_waiting_message(
+    row: &agentty_core::agent_runtime::NavigatorRow,
+) -> Option<String> {
+    row.execution
+        .as_ref()
+        .and_then(|execution| {
+            agentty_core::agent_runtime::execution_message(Some(&execution.state))
+        })
+        .map(str::trim)
+        .filter(|message| !message.is_empty())
+        .map(str::to_owned)
+}
+
+pub(crate) fn session_hover_resume_line(
+    row: &agentty_core::agent_runtime::NavigatorRow,
+) -> Option<String> {
+    row.resume_invocation()
+        .as_ref()
+        .map(agentty_core::agent_runtime::shell_command)
+        .map(|command| smart_truncate_line(command.trim(), 96))
+        .filter(|command| !command.is_empty())
+}
+
+pub(crate) fn session_hover_transcript_path(
+    row: &agentty_core::agent_runtime::NavigatorRow,
+) -> Option<String> {
+    row.source_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|path| !path.is_empty())
+        .map(|path| smart_truncate_path(path, 3))
+}
+
 fn session_delete_hover_fill(danger: gpui::Hsla) -> gpui::Hsla {
     danger.opacity(0.14)
 }
@@ -1244,18 +1608,19 @@ pub(crate) fn live_session_menu_actions(is_live: bool) -> &'static [&'static str
 #[cfg(test)]
 mod tests {
     use super::{
-        AgenttyApp, SESSION_HOVER_CARD_CLOSE_DELAY, SESSION_HOVER_CARD_GAP,
+        AgenttyApp, RAIL_SESSION_INDENT, SESSION_HOVER_CARD_CLOSE_DELAY, SESSION_HOVER_CARD_GAP,
         SESSION_HOVER_CARD_OPEN_DELAY, SessionEmptyStateKind, SessionRowHoverAffordance,
         SessionUnitVisualKind, navigator_search_text, navigator_subtitle,
         session_delete_hover_fill, session_empty_state_kind, session_hover_allowed,
-        session_hover_sidecar_lead, session_row_content_inset, session_row_hover_affordance,
+        session_hover_resume_line, session_hover_sidecar_lead, session_hover_transcript_path,
+        session_hover_waiting_message, session_row_content_inset, session_row_hover_affordance,
         session_row_hover_fill, session_row_reserves_border, session_row_surface_fill,
         session_search_surface, session_sidebar_surface_metrics, session_unit_stack_surface,
         session_unit_visual_kind, smart_truncate_path,
     };
-    use crate::core::cli_agent::CLIAgent;
+    use crate::core::cli_agent::{AgentSessionState, AgentStatus, CLIAgent};
     use agentty_core::agent_runtime::{
-        AgentSessionKey, AgentSessionRecord, NavigatorRow, SessionNavigator,
+        AgentSessionKey, AgentSessionRecord, LiveExecutionState, NavigatorRow, SessionNavigator,
     };
     use gpui::{InteractiveElement as _, ParentElement as _, Styled as _};
     use gpui_component::IconNamed as _;
@@ -1345,7 +1710,10 @@ mod tests {
         assert_ne!(selected, row_hover);
         assert_ne!(selected, cursor);
         assert_ne!(row_hover, cursor);
-        assert_eq!(idle, sidebar.base);
+        assert_eq!(
+            idle, sidebar.base,
+            "idle session rows rest flat on sidebar.base"
+        );
         assert_eq!(selected, sidebar.selected);
         assert_eq!(cursor, sidebar.cursor);
         assert_eq!(row_hover, sidebar.hover);
@@ -1369,35 +1737,96 @@ mod tests {
     }
 
     #[test]
+    fn session_sidebar_rows_are_single_line_title_only() {
+        let source = include_str!("tab_sidebar.rs");
+        let production = source.split("#[cfg(test)]").next().unwrap_or(source);
+        assert!(
+            production.contains("session-unit-body-") && production.contains("h_flex()"),
+            "session row body must be a single horizontal line"
+        );
+        assert!(
+            !production.contains("waiting_message.or(subtitle)"),
+            "sidebar rows must not render a second subtitle line"
+        );
+    }
+
+    #[test]
+    fn rail_preview_rows_mount_session_hover_cards() {
+        let source = include_str!("tab_sidebar.rs");
+        let production = source.split("#[cfg(test)]").next().unwrap_or(source);
+        assert!(
+            production.contains("environment_navigator_cache")
+                && production.contains(".detail_row(env_id")
+                && production.contains("attach_session_row_hover"),
+            "preview rows must resolve hover detail from the cached Environment navigator"
+        );
+        assert!(
+            !production.contains("if preview || !session_hover_allowed"),
+            "preview rows must not disable hover cards"
+        );
+    }
+
+    #[test]
+    fn session_hover_detail_includes_rich_metadata() {
+        let mut row = row();
+        row.source_path = Some("/home/user/.codex/sessions/long/nested/session.jsonl".into());
+        assert_eq!(
+            session_hover_transcript_path(&row).as_deref(),
+            Some("/…/long/nested/session.jsonl")
+        );
+        assert!(session_hover_waiting_message(&row).is_none());
+        row.execution = Some(LiveExecutionState {
+            state: AgentSessionState {
+                status: AgentStatus::Waiting,
+                message: Some("Approve file edit?".into()),
+                ..Default::default()
+            },
+            focused: false,
+            unread: false,
+        });
+        assert_eq!(
+            session_hover_waiting_message(&row).as_deref(),
+            Some("Approve file edit?")
+        );
+        assert!(
+            session_hover_resume_line(&row).is_some_and(|command| command.contains("resume")),
+            "historical rows expose truncated resume command"
+        );
+
+        let source = include_str!("tab_sidebar.rs");
+        let production = source.split("#[cfg(test)]").next().unwrap_or(source);
+        assert!(production.contains("session_hover_waiting_message"));
+        assert!(production.contains("session.details_transcript"));
+        assert!(production.contains("session.details_resume_command"));
+    }
+
+    #[test]
     fn session_sidebar_surface_metrics_are_explicit() {
         let metrics = session_sidebar_surface_metrics();
         let inset = session_row_content_inset(&metrics);
         assert!(
-            (12.0..=16.0).contains(&inset),
-            "content inset must stay in the 12–16px band, got {inset}"
+            (6.0..=12.0).contains(&inset),
+            "nested rail content inset must stay in the 6–12px band, got {inset}"
         );
         assert_eq!(
             metrics.outer_gutter,
             crate::ui::app::panel_content_gutter(),
-            "navigator outer gutter must match the shared panel content gutter"
+            "search chrome still uses the shared panel content gutter"
         );
-        assert!(
-            metrics.row_min_height >= 44.0,
-            "classic sidebar rows need at least 44px of vertical rhythm"
-        );
+        assert_eq!(metrics.unit_outer_pad, 4.0);
         assert_eq!(metrics.search_height, 30.0);
-        assert_eq!(metrics.row_min_height, 44.0);
-        assert_eq!(metrics.unit_gap, 2.0);
-        assert_eq!(metrics.row_pad_x, 4.0);
-        assert_eq!(metrics.row_pad_y, 6.0);
-        assert_eq!(metrics.icon_size, 20.0);
-        assert_eq!(metrics.icon_glyph, 11.0);
-        assert_eq!(metrics.icon_radius, 5.0);
-        assert_eq!(metrics.icon_text_gap, 8.0);
-        assert_eq!(metrics.title_subtitle_gap, 2.0);
-        assert_eq!(metrics.subtitle_size, 11.0);
-        assert_eq!(metrics.text_fade_width, 18.0);
-        assert_eq!(inset, 16.0);
+        assert_eq!(metrics.row_min_height, 28.0);
+        assert_eq!(metrics.unit_gap, 1.0);
+        assert_eq!(metrics.row_pad_x, 2.0);
+        assert_eq!(metrics.row_pad_y, 1.0);
+        assert_eq!(metrics.icon_size, 16.0);
+        assert_eq!(metrics.icon_glyph, 9.0);
+        assert_eq!(metrics.icon_radius, 4.0);
+        assert_eq!(metrics.icon_text_gap, 6.0);
+        assert_eq!(metrics.title_subtitle_gap, 1.0);
+        assert_eq!(metrics.subtitle_size, 10.0);
+        assert_eq!(metrics.text_fade_width, 14.0);
+        assert_eq!(inset, 6.0);
     }
 
     #[test]
@@ -1532,12 +1961,30 @@ mod tests {
 
     #[test]
     fn session_hover_sidecar_lead_clears_the_sidebar_split() {
-        let lead = session_hover_sidecar_lead(240.);
-        let gutter = session_sidebar_surface_metrics().outer_gutter;
-        assert_eq!(lead, 240. - 2. * gutter + SESSION_HOVER_CARD_GAP);
+        let panel = 240.;
+        let metrics = session_sidebar_surface_metrics();
+        let left_inset = RAIL_SESSION_INDENT + metrics.unit_outer_pad + metrics.row_pad_x;
+        let right_inset = metrics.unit_outer_pad + metrics.row_pad_x;
+        let lead = session_hover_sidecar_lead(panel);
+        assert_eq!(
+            lead,
+            panel - left_inset - right_inset + SESSION_HOVER_CARD_GAP
+        );
         assert!(
-            lead > 240. - 2. * gutter,
+            lead > panel - left_inset - right_inset,
             "sidecar lead must clear the row width before the gap"
+        );
+    }
+
+    #[test]
+    fn session_hover_sidecar_uses_rendered_panel_width_not_config() {
+        let config_width = 400.;
+        let panel_width = 240.;
+        let config_lead = session_hover_sidecar_lead(config_width);
+        let panel_lead = session_hover_sidecar_lead(panel_width);
+        assert!(
+            config_lead > panel_lead + 100.,
+            "unclamped config width must not drive sidecar placement when panel is narrower"
         );
     }
 
@@ -1919,14 +2366,43 @@ mod tests {
     }
 
     #[test]
-    fn environment_rail_renders_above_session_list() {
+    fn environment_rail_is_append_stable_with_member_sections() {
         let sidebar = include_str!("tab_sidebar.rs");
         let production = sidebar.split("#[cfg(test)]").next().unwrap_or(sidebar);
-        assert!(production.contains("render_environment_rail"));
-        assert!(production.contains("environment_rail_current_collapsed"));
+        assert!(
+            production.contains("render_environment_rail"),
+            "left sidebar must mount append-stable environment sections"
+        );
+        assert!(
+            production.contains("ENV-SESSION-FIRST-RAIL-56"),
+            "left sidebar must keep the append-stable rail contract"
+        );
+        assert!(
+            production.contains("render_environment_rail(\n                        sessions"),
+            "session list must nest into the rail under the current Environment"
+        );
+        assert!(
+            !production.contains(".child(self.render_environment_rail(window, cx))\n                    .child(sessions)"),
+            "sessions must not render as a sibling above/below the environment rail"
+        );
+        assert!(
+            production.contains("SESSION_UNIT_") && production.contains("TabDragIntent::Merge"),
+            "Left layout must expose navigator icon-Merge hit zones"
+        );
+        assert!(
+            production.contains("mergeable_tab_id_for_unit"),
+            "navigator merge must resolve same-Environment 1+1 live tabs"
+        );
         let rail = include_str!("environment_rail.rs");
         let rail_prod = rail.split("#[cfg(test)]").next().unwrap_or(rail);
-        assert!(rail_prod.contains("environment-rail"));
+        assert!(
+            rail_prod.contains("environment-rail-current-sessions"),
+            "current Environment must own a nested sessions slot"
+        );
+        assert!(
+            rail_prod.contains("let (before, current_section, after)"),
+            "rail must use before/current/after so later env headers stay visible"
+        );
     }
 
     #[test]

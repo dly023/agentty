@@ -34,10 +34,12 @@ contracts:
       - activating_before_click_release
       - drag_release_replays_tab_activation
   - id: WINDOW-SESSION-DRAG-SEMANTICS-08
-    rule: A tab drag carries one typed `TabDragIntent` and one `TabDragHitZone` from pointer-down through release. `TabDragHitZone::Icon` produces `TabDragIntent::Merge` and may split the source into the target's right side only when source and target are distinct tabs in the same Environment, both contain exactly one pane, and the target is not already split (1+1 only); 1+2, 2+1, and 2+2 are rejected fail-closed with both canonical trees unchanged. `TabDragHitZone::Body` produces `TabDragIntent::Reorder` and only changes tab order through the existing apply_tab_order/save_session path. Reorder target indices are interpreted after removing the source and are mapped back to the original target identity through one `target_after_removal` helper before any merge decision, so source-before-target and source-after-target cannot become a false source==target no-op. A cancelled or invalid drop leaves source, target, focus, and persisted order unchanged. Explicit Split commands remain the route for additional pane depth.
+    rule: A tab or Left Session Navigator unit drag carries one typed `TabDragIntent` and one `TabDragHitZone` from pointer-down through release. `TabDragHitZone::Icon` produces `TabDragIntent::Merge` and may split the source into the target's right side only when source and target are distinct live tabs in the same Environment, both contain exactly one pane, and the target is not already split (1+1 only); 1+2, 2+1, and 2+2 are rejected fail-closed with both canonical trees unchanged. When TabBarPosition is Left, Session Navigator rows expose the same icon-Merge / body-Reorder hit zones and commit Merge through the identical `apply_tab_strip_split_right` → tree_sync PaneMove path (not a parallel merge). `TabDragHitZone::Body` produces `TabDragIntent::Reorder` and only changes order through apply_tab_order/save_session (strip) or apply_session_reorder (navigator). Reorder target indices are interpreted after removing the source and are mapped back to the original target identity through one `target_after_removal` helper before any merge decision, so source-before-target and source-after-target cannot become a false source==target no-op. A cancelled or invalid drop leaves source, target, focus, and persisted order unchanged. Explicit Split commands remain the route for additional pane depth.
     hit_zones:
       - icon_merge
       - body_reorder
+      - left_navigator_icon_merge
+      - left_navigator_body_reorder
     forbidden:
       - one_whole_chip_drag_zone_for_both_intents
       - source_before_target_index_aliasing
@@ -45,6 +47,8 @@ contracts:
       - mutating_the_tree_before_capacity_validation
       - split_and_tab_close_non_atomic_commit
       - parallel_tab_order_or_split_persistence
+      - left_layout_without_navigator_merge_hit_zones
+      - cross_environment_navigator_merge
   - id: WINDOW-SESSION-VIEWPORT-PRESERVATION-09
     rule: A SplitRight transition (macOS Command+D) changes the geometry of the existing pane without changing its user-visible terminal state. The old pane's canonical grid `display_offset` and terminal selection range are captured before the resize and remain equal after the split; the new sibling owns an independent initial viewport. The contract is enforced at the TerminalView/RemoteTerminal resize boundary and is exercised end-to-end only through the existing keymap `SplitRight` → `AgenttyApp::run_command(CommandKind::SplitRight)` → `split(Axis::Horizontal)` path. App-level acceptance must observe the original Ready leaf still present, a single right sibling, and the normalized Pane geometry (left half/right half); a test-only direct `Pane::split_node` does not satisfy this contract.
     acceptance:
