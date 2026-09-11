@@ -1,0 +1,10 @@
+#!/bin/sh
+set -eu
+# Verify the real launcher, not the disconnected MachineRail model.
+rg -U -q 'menu.submenu\(\s*t\(L10nKey::TabMenuOtherTerminals\)' src/ui/tab_strip.rs
+rg -q 'this.open_shell\(None, at, window, cx\)' src/ui/tab_strip.rs
+rg -q 'label != default_shell' src/ui/tab_strip.rs
+rg -q 'Self::alternate_shells\(&self.shells, &self.default_shell\)' src/ui/tab_strip.rs
+for locale in en zh ja; do
+    rg -q 'L10nKey::TabMenuOtherTerminals =>' "src/ui/i18n/$locale.rs"
+done

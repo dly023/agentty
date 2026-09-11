@@ -1,0 +1,13 @@
+version: 1
+title: Terminal scrollback affordances
+contracts:
+  - id: TERMINAL-BOTTOM-01
+    rule: >-
+      Each terminal pane shows a theme-native, localized jump-to-bottom button
+      only when its normal-screen display offset is greater than zero. Hide
+      at the bottom and in alternate-screen applications. Clicking uses the
+      existing jump_to_prompt viewport primitive, cancels queued smooth scroll,
+      resets fractional offset and focuses that terminal without sending PTY
+      input. A stale animation callback cannot move the viewport away again.
+      Reuse native Button and ChevronDown icon, keeping existing font sizes.
+      Position inside the pane clear of the scrollbar and input editor.

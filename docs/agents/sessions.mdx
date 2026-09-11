@@ -1,0 +1,111 @@
+---
+title: "Agent sessions"
+description: "Discover history on a machine, Resume a conversation, or Rejoin a verified running session."
+---
+
+Coding agents keep their own conversation history, addressed by a provider and
+session id. Agentty distinguishes that history from the process running it and
+the tab displaying it.
+
+## Discover and manage history
+
+Click the **search icon beside a machine in the left sidebar** to open
+**Session History**. The initial discovery providers are **Codex and Claude**;
+this is narrower than the set of agents recognized by process detection.
+
+The selected machine reads its own provider stores. Remote history comes from
+the remote Host/server, never from your laptop's matching directories. Connect
+the machine before scanning it. A failed or cancelled refresh preserves the
+last complete result and reports the error; it is not an empty successful scan.
+
+Search matches title, directory, provider and session id without rescanning.
+Use Up/Down to select a visible result, Enter to request Resume, and Escape to
+close. Discovery is bounded to recent candidates and may report a limited
+result; it does not promise to list every session ever saved.
+
+| Action | Meaning |
+|---|---|
+| **Resume** | Validate the selected conversation on its owning machine, then start it in a new pane in the current window. |
+| **Rejoin** | Focus or attach to a verified live target session without starting a replacement agent. |
+| **More → Delete / Fork / Convert (Planned)** | Reserved, disabled history-management actions. They do not delete files, fork history or convert providers. |
+
+Resume validates the selected source and working directory again before
+launching. An unavailable source, ownership conflict or stale result can
+prevent the action. Rejoin never falls back to Resume when the process cannot
+be verified. Closing the manager or changing its selection cancels pending
+delivery rather than launching a session later in an unrelated context.
+
+## Exit, retained tabs and Sleep
+
+An agent's `/exit` is not a request to close the tab. Its row and available
+output are retained, and explicit exit does not automatically relaunch it.
+If the enclosing shell is still alive, the pane is not necessarily stopped;
+the presence of a retained row alone does not authorize replacing that shell.
+
+**Sleep** is separate from destructive tab close. Supported stopped-session
+recovery retains the tab and uses an explicit Resume action for a successor
+process. A refused or partially completed multi-pane Sleep must be inspected;
+do not assume every pane stopped or retry blindly. Mixed ordinary-shell
+replacement policy is still being finalized in this development build.
+
+<Note>
+  Native provider and real SSH lifecycle acceptance is still in progress.
+  Retained layout, an available action, and automated fixture coverage are not
+  a guarantee that every provider or remote environment has been validated.
+</Note>
+
+## Resume after a restart
+
+When the server goes away, its processes end. Ordinary startup restoration has
+its own supported-provider and saved-state policy, controlled by
+`restore_agent_sessions`; it is not the same as explicit history Resume.
+Setting `restore_agent_sessions: false` disables automatic agent restoration,
+not a Resume action you explicitly request.
+
+An intentionally exited or sleeping binding is recovery intent, not permission
+to start an agent automatically. Reopening the GUI while the server and pane
+are still alive is attachment, not restoration of a terminated process.
+
+<Note>
+  Hooks provide live provider identity and status. History discovery instead
+  reads supported provider records on the selected machine; it does not require
+  this GUI to have originally launched every conversation it finds.
+  [Installing hooks →](/agents/status)
+</Note>
+
+## Fork a live session
+
+The existing live-pane fork controls below are separate from the disabled
+**Fork (Planned)** action in Session History. They do not implement historical
+session-file management or cross-provider conversion.
+
+Forking branches a running conversation into a second, independent one. The
+original keeps going untouched; both continue separately from the same history.
+
+Right-click a **pane** to fork into a split — the menu offers a placement —
+or right-click the **tab or sidebar row** to open the fork in a new tab.
+
+| Agent | What tty7 runs |
+|---|---|
+| Claude Code | `claude --resume <id> --fork-session` |
+| Codex | `codex fork <id>` |
+| TraeCode | `traecli fork <id>` |
+| Grok | `grok --resume <id> --fork-session` |
+| OpenCode | `opencode --session <id> --fork` |
+| Oh My Pi | `omp --fork <id>` |
+
+It is the agent's own fork command, run in a new pane — nothing is copied by
+tty7 itself.
+
+<Warning>
+  A fork duplicates the whole transcript in the agent's session store, so
+  forking repeatedly costs real disk. A pane on a
+  [remote machine](/remote/workspaces) cannot fork, because the command would
+  run against the local agent.
+</Warning>
+
+## Copy the session id
+
+**Copy Session ID** — in the tab's right-click menu, beside *Copy Working
+Directory*, and in the command palette — puts the agent's native id on the
+clipboard. Paste it into `codex resume`, a bug report, or another tool.

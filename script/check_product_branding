@@ -1,0 +1,18 @@
+#!/bin/sh
+set -eu
+rg -q '^name = "tty7"' Cargo.toml
+rg -q '^name = "tty7-core"' crates/tty7-core/Cargo.toml
+rg -q 'Menu::new\("agentty"\)' src/ui/theme.rs
+rg -q '\.child\("agentty"\)' src/ui/settings.rs
+rg -q 'DEFAULT_TITLE: &str = "agentty"' src/terminal/view.rs
+rg -q 'github.com/l0ng-ai/tty7' src/ui/settings.rs
+ruby script/check_ci_lineage
+ruby script/tests/ci_lineage.rb
+ruby script/check_package_cleanup
+ruby script/tests/package_contract.rb
+ruby script/tests/static_helper_contract.rb
+ruby script/check_build_identity
+ruby script/tests/macos_bundle_metadata.rb
+ruby script/tests/bundled_helpers.rb
+ruby script/check_version_policy
+ruby script/tests/version_policy.rb

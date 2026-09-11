@@ -1,0 +1,30 @@
+#!/bin/sh
+set -eu
+if rg -q 'fn (set_tab_group|spawn_group|regroup_tab|start_group_rename)|SidebarNewGroup|set_regroup\(' src/ui/app.rs src/ui/tab_sidebar.rs src/ui/tab_strip.rs src/ui/reorder.rs; then
+    echo 'obsolete GUI group mutation path remains' >&2
+    exit 1
+fi
+if rg -q 'wt-sidebar-grouping|set_sidebar_grouping' src/ui/settings.rs src/ui/app.rs; then
+    echo 'obsolete directory-group settings mutation remains' >&2
+    exit 1
+fi
+rg -q 'self.render_machine_rail\(' src/ui/tab_sidebar.rs
+rg -q 'for group in self.switcher_groups\(cx\)' src/ui/switcher.rs
+rg -q 'current_rows.take\(\)' src/ui/switcher.rs
+rg -q 'self.machine_launcher_items\(' src/ui/tab_strip.rs
+if rg -q 'sidebar_sections|section_names|fn group_names|struct Section|vec!\[None; self.tabs.len\(\)\]' src/ui/tab_sidebar.rs; then
+    echo 'obsolete section-based render/order scaffolding remains' >&2
+    exit 1
+fi
+rg -q 'Surface::SidebarRows' src/ui/tab_sidebar.rs
+rg -q 'sidebar_drag_rejects_changed_membership' src/ui/reorder.rs
+rg -q 'direct_list_numeric_activation_and_search_bounds' src/ui/tab_sidebar.rs
+rg -q 'direct_list_release_refuses_stale_order' src/ui/tab_sidebar.rs
+rg -q 'self.validate_sidebar_reorder\(window, cx\)' src/ui/app.rs
+if rg -q '\.id\(\("sidebar-group", group_ix\)\)' src/ui/tab_sidebar.rs; then
+    echo 'obsolete directory-group header render path remains' >&2
+    exit 1
+fi
+if sed -n '/fn sidebar_open/,/^    }/p' src/ui/tab_sidebar.rs | rg -q 'tabs.is_empty'; then
+    exit 1
+fi

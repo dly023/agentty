@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+rg -q 'Button::new\("terminal-jump-bottom"\)' src/terminal/view.rs
+rg -q 'this.jump_to_prompt\(\)' src/terminal/view.rs
+rg -q 'self.render_jump_bottom\(cx\)' src/terminal/view.rs
+for locale in en zh ja; do
+    rg -q 'L10nKey::TerminalJumpBottom =>' "src/ui/i18n/$locale.rs"
+done

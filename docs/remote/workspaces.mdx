@@ -1,0 +1,140 @@
+---
+title: "Remote workspaces"
+description: "A remote machine in the sidebar, with target-owned sessions, history and explicit connection controls."
+---
+
+An SSH pane runs one shell on a remote machine. A **managed remote machine** goes
+further: Agentty runs a tty7 server on the far machine, and the workbench points
+at it. Tabs, splits, the file tree, the git panel, the diff overlay, the process
+list — all of it is the remote machine's, rendered here.
+
+The repository stays where it is; using a remote machine does not synchronize
+it to the client. The desktop's workspace entry represents that machine, not
+its login user's home directory. Internal workspace IDs still identify
+target-owned layouts and ownership records.
+
+## Connecting
+
+<Steps>
+  <Step title="Choose an environment">
+    Open the **+** menu to see known machines and connection choices. Saved SSH
+    profiles are separate from currently connected machines. The sidebar and
+    launcher use the same machine identity and connection state.
+  </Step>
+  <Step title="Pick a machine">
+    Connect the selected SSH environment. A shell may initially start in the
+    login user's home directory, such as `/root`; that does not create a ROOT
+    sidebar group. Use `cd` for the session's execution context without changing
+    its machine ownership.
+  </Step>
+  <Step title="Approve the server install, once">
+    The first managed connection asks to install the target's server binary.
+    It shows the exact path, version, size, source, and SHA-256 before you
+    agree. Later upgrades on that machine install silently.
+  </Step>
+  <Step title="Open a session">
+    Expand the machine in the sidebar and select a session. Pin keeps a machine
+    visible without opening a connection. The header's search icon scans that
+    machine's supported agent history for explicit Resume or Rejoin.
+  </Step>
+</Steps>
+
+## What lives on the target
+
+Client preferences such as pins, folds and saved connection choices live on
+this computer. Managed remote layout, pane facts, provider history and
+session-owned state live on the target. Reconnect does not promote a client
+cache into remote truth, and a remote read failure cannot substitute local
+provider files. It is therefore not a client-config-only architecture.
+
+| | |
+|---|---|
+| **What** | A single self-contained `tty7-server` binary |
+| **Where** | `~/.local/share/tty7/bin/tty7-server-c<control>p<protocol>` |
+| **Privileges** | None. No sudo, nothing outside your home directory |
+| **Hosts** | Linux (x86-64 or aarch64) and macOS (Apple Silicon or Intel) |
+
+The Linux binary is linked fully static against musl, so it runs on any
+distribution whatever its glibc vintage. The macOS one links only the libraries
+every Mac already has. The server also maintains its target-owned runtime and
+persistent state; the binary is not the only data involved in a managed session.
+
+The binary is named after the wire dialect it speaks, so a client and a server
+that disagree never quietly half-work — tty7 installs the matching one instead.
+
+On Windows, a WSL distribution is handed the Linux server the installer already
+shipped, so a WSL workspace needs no network access at all.
+
+## Reattaching
+
+Target-owned processes can continue while the client GUI is closed or the
+machine is explicitly disconnected, provided the target server and processes
+remain alive. Reconnect restores access; **Rejoin** requires a verified live
+session and available ownership. A different client cannot silently steal an
+already owned workspace.
+
+A strip along the top of the window says what the connection is doing —
+*connecting*, *reconnecting (attempt 3)*, *disconnected*, or *taken over by
+someone else*. Reconnection is automatic; a workspace another client has claimed
+says so by name rather than fighting over it.
+
+## Deleting a profile
+
+Deleting an SSH profile forgets every local workspace entry that connected
+through it. The confirmation names the profile's endpoint and counts the
+entries going with it, and the profile's keychain credentials go too. Only the
+bookmarks on this computer are touched — the sessions on the remote machine
+keep running, and connecting to that machine again under a new profile brings
+its target-owned sessions back from the machine's own list.
+
+An entry holding a live or in-flight connection is left alone, and parks once
+the link drops: it stops reconnecting on its own, keeps the name of the route
+that made it rather than falling back to an internal id, and its switcher row
+offers **Remove entry**. The sessions behind it are still on the machine,
+waiting for a new profile.
+
+## Keeping the server current
+
+Two dialogs you may meet:
+
+<AccordionGroup>
+  <Accordion title="Update tty7's server on “devbox”?">
+    The machine is serving sessions from a build whose protocol this client
+    cannot speak. tty7 has already installed a matching server, but the one
+    already running is the one your sessions are on. **Update Server** replaces
+    it and **ends every session it is hosting** — including ones this window is
+    not showing. Cancel leaves the machine exactly as it is.
+  </Accordion>
+  <Accordion title="Restart tty7's server on “devbox”?">
+    Every hosted shell on that machine ends. Retained layouts and provider
+    history do not preserve a process; later recovery follows the applicable
+    restore policy and explicit actions.
+  </Accordion>
+</AccordionGroup>
+
+<Warning>
+  Both of these end other people's work if the machine is shared. tty7 spells
+  out what will happen before either one runs — read it.
+</Warning>
+
+## What a remote pane cannot do
+
+- **Fork an agent session.** The fork command would run against the *local*
+  agent, so tty7 does not offer it.
+- **Move very large files through the Files panel.** Drag-and-drop across the
+  link is capped at what one control frame can carry; past that the panel tells
+  you to use [SFTP](/remote/sftp).
+
+## From the CLI
+
+```bash
+tty7 machine ls              # this machine plus every link the server holds
+tty7 -m devbox ls            # route any command to a linked machine
+tty7 -m devbox run -- cargo test
+```
+
+`-m` matches the full link key (`me@devbox:22`) or just the host. It uses a link
+the local server *already* holds — it will not dial a fresh connection, and it
+says so rather than guessing. Connect the environment first.
+
+[CLI overview →](/cli/overview)

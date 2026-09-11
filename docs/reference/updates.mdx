@@ -1,0 +1,130 @@
+---
+title: "Updates"
+description: "The inherited upstream updater, its limits in Agentty, and explicit update controls."
+---
+
+**Settings → About** is where everything lives: the version you are on, the
+channel you follow, and the button that installs what is waiting.
+
+## Agentty development boundary
+
+The current updater still reads **l0ng-ai/tty7** on GitHub and selects `tty7-*`
+update assets. Agentty's packaging scripts emit `agentty-*` distribution files.
+Neither the product rename nor a successful local package build creates an
+Agentty release feed. Stable and Nightly below refer to the inherited upstream
+channels, not published channels for this fork.
+
+Do not treat an upstream update as an update containing Agentty's machine rail
+and history-management changes. Whether a package can actually be installed
+also depends on its assets, the installed updater helper, filesystem access and
+platform validation. A manual release-page fallback still opens upstream.
+
+To disable background checks and automatic downloads in an isolated development
+configuration, use:
+
+```json
+{
+  "check_for_updates": false,
+  "auto_download_updates": false
+}
+```
+
+These flags are not a hard disable of explicit update actions. No runtime
+feed-policy change is implied by this guide, and no user configuration is
+changed automatically. Until an Agentty distribution policy is established,
+use separately verified Agentty artifacts and avoid **Update and relaunch**
+for updating this development fork.
+
+## Inherited updater behavior
+
+<Steps>
+  <Step title="Check">
+    With checking enabled, the updater checks at launch and every six hours
+    after that. `check_for_updates: false` disables automatic checks;
+    **Check now** is a separate explicit action.
+  </Step>
+  <Step title="Download and verify, in the background">
+    A found release is fetched and verified before you are asked to do anything
+    — which turns "spend five minutes downloading" into "press restart".
+    Nothing is ever *installed* without an explicit choice; the staged package
+    waits in Settings.
+
+    `auto_download_updates: false` disables automatic downloads. Package size
+    depends on the actual artifact, not a fixed estimate from upstream.
+  </Step>
+  <Step title="Update and relaunch">
+    A dedicated `tty7-updater` helper verifies the release checksum, the bundle
+    version, and — on macOS — the code-signing requirement, before replacing the
+    installation. If the relaunch fails, it puts the previous copy back.
+  </Step>
+</Steps>
+
+Declining an update defers it rather than retiring it; it comes back later.
+
+## Channels
+
+**Settings → About → Update channel.**
+
+| | |
+|---|---|
+| **Stable** *(default)* | Reads the upstream `/releases/latest` endpoint, which excludes prereleases. |
+| **Nightly** | Reads the upstream rolling `nightly` tag; this does not establish a nightly publishing job or runtime acceptance for Agentty. |
+
+The channel is a property of your **installation**, not something inferred from
+how version numbers sort. Neither feed can hand the other an update, so a
+Nightly is never walked back onto Stable by an update it did not ask for, and an
+installation only changes channel when you change it.
+
+Switching channels invalidates what the old feed produced: the staged package,
+the deferred prompt, and any transfer still in flight.
+
+<Note>
+  A stable release outranks every dated build of its core version, which is how
+  switching back to Stable *graduates* rather than downgrades.
+</Note>
+
+## Platform notes
+
+<AccordionGroup>
+  <Accordion title="macOS">
+    The new GUI reuses a running local server when its wire protocol is
+    compatible, so your shells survive the update. An incompatible server keeps
+    its shells too and raises an explicit keep-or-restart prompt.
+  </Accordion>
+  <Accordion title="Windows">
+    Windows cannot replace a running daemon's image, so the install path stops
+    the service first — and the dialog says so before you agree.
+
+    Recognized all-users installations may require an explicit UAC elevation
+    prompt and an installed updater that supports the elevation protocol.
+    Missing support retains the release-page fallback. This describes the
+    source policy, not completed Windows acceptance for Agentty.
+  </Accordion>
+  <Accordion title="Linux">
+    A supported writable AppImage with the updater helper can be replaced
+    in place. Tarballs and AppImages that cannot safely stage and swap keep
+    manual-package guidance; the updater does not guess how a package manager
+    installed them.
+  </Accordion>
+</AccordionGroup>
+
+## "The background server is still running &lt;build&gt;"
+
+If Settings tells you this, tty7 was updated in place: the app is the new build,
+but your panes are still served by the previous one. Restarting the server picks
+up the new one — **and ends every process running in your panes**, shells,
+agents, and SSH sessions alike.
+
+There is no hurry. Pick a moment when your panes are idle.
+
+## Proxies
+
+Update checks and downloads resolve a proxy from, in order:
+
+1. `http_proxy` in `config.json` — `http://127.0.0.1:7890` or
+   `socks5://127.0.0.1:1080`
+2. The platform system proxy (Windows registry, macOS `SCDynamicStore`)
+3. `HTTP_PROXY` / `HTTPS_PROXY` / `ALL_PROXY`
+
+Programs running in a pane are deliberately unaffected — they inherit their
+proxy from their own environment, as in any other terminal.

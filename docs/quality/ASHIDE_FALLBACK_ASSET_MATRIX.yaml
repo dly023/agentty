@@ -1,0 +1,160 @@
+version: 1
+reviewed: '2026-09-10'
+scope: Reference failure semantics, not a claim that Ashide implementation or Agentty runtime is verified.
+sources:
+  - /Users/admin/ashide/docs/design/session-container-lifecycle-plan.md
+  - /Users/admin/ashide/crates/cli_agent_store/src/source_watcher.rs
+assets:
+  - id: explicit_stop_is_not_daemon_teardown
+    whole_tab_target: SESSION-TAB-SLEEP-24 reuses single-session identity/runtime validation and explicit-stop observer semantics. Full preflight precedes all signaling; partial failure/cancel never rolls back via Resume. Thirteen injected cases, real two-PTY split/output/Resume cycle and quick/full session 63110 passed. Whole-tab GUI, ordinary-shell policy and native/remote acceptance remain required.
+    gui_full_gate: Quick passed 64b6c2 and frozen-source full passed 168da2/91c28e, including three new current-session GPUI control/retention tests. Whole-tab and native/real-remote GUI Sleep-to-Resume remain separate acceptance work.
+    gui_evidence: Three GPUI regressions passed 3b5b24 after missing-action RED f984de and connection guard RED ffd486. A successful stop acknowledgement does not mark the terminal exited; unknown replies retain the view and explicit refresh only reads target state. Exact connection and view/epoch/identity scope protect pending actions. Whole-tab/native/real provider and cold output replay remain required; quick/full pending.
+    output_retirement_full_gate: Quick passed b6a696 and frozen-source full passed f2a304/43f1a6, GUI 1940/core 1352/CLI 138 plus all integration suites. Last bounded frame survives exited carrier retirement with private permissions; sealing prevents stale writer resurrection after explicit deletion. GUI/native replay is not claimed.
+    output_retirement_evidence: Real missing-snapshot RED 58efbf preceded final bounded snapshot capture before carrier removal. Writer sealing/forget regression passed f74f7a; four process tests passed e34ba8 with private file and output assertions. Quick/full pending. This fixes target persistence, not native GUI replay.
+    target_full_gate: Quick passed ea58b6 and frozen-source full passed eb8e9e/e8f2a4, GUI 1940/core 1351/CLI 138 and integration suites. Identity refusal, explicit observed exit and same-tab new-process Resume verified on isolated target. GUI/native and output replay remain open.
+    contract: SESSION-SLEEP-22
+    reference: Distinguish explicit lifecycle intent from loss of runtime observation.
+    invariant: Signaling is not proof of termination; only the target exit observer creates the durable stopped fact. Preserve explicit intent through later disposal, without reclassifying ordinary daemon shutdown.
+    tests: [explicit_sleep_retains_original_slot_and_resumes_again, sleep_rejects_changed_target_before_signaling, natural_pane_exit_clears_runtime_but_keeps_recovery]
+    evidence: Missing-API RED d8064a; first isolated daemon Sleep/Resume cycle passed 68cdfa. Failure guards and full gate pending; UI scope and native acceptance remain open.
+  - id: tracked_use_is_retained_by_the_window
+    explicit_take_back_full_gate: Quick passed 7deb08 and frozen-source full passed f45003/49c928, GUI 1940/core 1349/CLI 138 plus all integration suites. Ordinary and explicit empty-view lifetime cases verified; legacy primitive deletion, mixed real-pane and native acceptance remain open.
+    explicit_take_back_evidence: Window-use RED b0b8cc preceded common tracked takeover handoff. Core same/foreign connection and interrupted-I/O tests passed 9c53bc/6df62d, 45 remote-workspace tests passed 4a24a4. Same identity can yield no takeover-name even across distinct connections; exact target proof determines generation. Ordinary and explicit scope cases share the existing fixture. Quick/full pending; real panes/native acceptance remain open.
+    automatic_use_full_gate: Full passed (24409/7b7afe), GUI 1940/core 1347/CLI 138 and integration suites after clearing regenerable tty7 dev artifacts for ENOSPC. Ordinary auto-use handoff and five scope cases verified with scripted control/empty views; explicit takeover and native/real-pane acceptance remain open.
+    automatic_use_evidence: Ordinary auto-use now transfers to the window or retires off-thread when scope is stale. Explicit disconnect leak reproduced (6dd273) and fixed through the same retirement helper. Final 45 remote-workspace tests, 17 Rejoin tests and quick passed (d425e9/fe3db0/8dae49). Shared scripted peer verifies requests and release completion; real pane/native acceptance and explicit takeover accounting remain open.
+    automatic_scope_full_gate: Full passed (89885/5b0c83), GUI 1938/core 1347/CLI 138 and integration suites. Scope retirement and same-ID entity replacement verified in simulated GPUI; actual tracked auto-use and native acceptance remain open.
+    automatic_scope_evidence: Entity/workspace/epoch now guards automatic completion and refreshes view-specific sent state. Same-ID replacement, stale/current failures, re-acquisition eligibility and old takeover cancellation passed in 43 focused tests (d7779a); quick passed (cd4ae9). Actual tracked auto-use handoff and native close/reopen remain open.
+    automatic_entry_full_gate: Full passed (4002/789e8d), GUI 1936/core 1347/CLI 138 plus source-identity/server suites. No native or complete automatic-use lifetime acceptance claimed.
+    automatic_entry_evidence: Deleted reconnect pre-acquisition and converged on the pump. Connection-only installation and replaced-client/closed-target completion tests passed within 41 remote-workspace tests (bcd69a); quick passed (2510d0). This removes captured-list side effects but does not yet track automatic uses or prove entity/reopen/native acceptance.
+    rejoin_full_gate: Frozen-source full passed (79233/77cd96), GUI 1934/core 1347/CLI 138 plus source-identity/server suites. Automatic attachment, committed Rejoin close/reopen and native acceptance remain open.
+    rejoin_evidence: Tracked Rejoin Ticket and canonical window handoff replace freshness cleanup. Seventeen focused tests and quick passed (498e62/7398e9); shared-user barrier, unknown release no-retry and partial attachment drop ordering covered through isolated control peers. Successful Rejoin close/reopen and native acceptance remain unverified.
+    entity_release_evidence: Raw-removal RED (872a5a) preceded final entity retirement callback; six retained Resume tests and quick/full passed (67112/469f80). Tests keep caller bookmark cleanup separate and retain exactly-once normal-close assertions. Rejoin/automatic migration and native acceptance remain open.
+    reference: Active use versus committed view ownership and final-user cleanup
+    contract: WORKSPACE-USES-21
+    invariant: Each operation owns a distinct transient use ID. A view retains its committed use; replacement registers the new use before retiring the old. Final tracked retirement may release only originally owned, non-untracked target ownership. Duplicates, stale proofs and foreign connections cannot end a later use.
+    tests: [tracked_workspace_uses_release_only_the_last_owned_user, retained_resume_close_window_discards_late_reply, retained_resume_close_window_never_attaches_successor]
+    evidence: Core and paused-window control fixtures passed; fmt/quick/full passed (10581/f66fdc). Scope is original-slot Resume and normal close/adoption, not all entity removal or Rejoin/automatic attachment migration; native acceptance remains separate.
+  - id: connection_proof_is_not_a_view_lifetime
+    legacy_removal_full_gate: Quick passed 633477 and frozen-source full passed cc5be5/02427a, GUI 1940/core 1349/CLI 138 plus integration suites. Initial-proof cleanup is removed, with its failure/race coverage retained on canonical tracked uses. Supersedes pending deletion gates, not native acceptance.
+    legacy_removal_evidence: The initial-proof cleanup API and exclusivity flag are deleted. Four regressions migrated to distinct tracked tokens; static/API RED 11f783/3c2150, pre-deletion tests passed 48380c/ebee92, post-deletion 25 workspace tests passed b3b994. Explicit raw release remains distinct; failed/foreign/late acquisition cannot authorize tracked cleanup. Quick/full pending, no native acceptance claimed.
+    failure_evidence: Paused-peer independent workspace, timeout/late reply, unexpected reply and foreign workspace cases passed in three focused tests (6d94f6), fmt/quick passed (daf958). An ordered Ping/Pong barrier precedes the final no-release assertions. This verifies conservative cancellation safety, not complete active/committed view-use reclamation.
+    cancellation_evidence: Shared ControlClient exclusivity protection now rejects old-operation cleanup after a later acquire or takeover. API RED (0cfa06), two target regressions and Rejoin cancellation passed, quick/full passed (57531/2a0a7d). A conservative safety stage only; reused claims remain until explicit detach/link closure, pending full view-use accounting.
+    reference: Conditional cleanup must preserve subsequently adopted ownership
+    contract: WORKSPACE-PROOF-11
+    invariant: A target connection proof survives same-connection reuse, so an operation's initially fresh claim may no longer be exclusively used when cancellation arrives. Target nonce validation alone does not protect a reopened view. Coordinate active uses across acquisition, GUI commit and release; do not tear down a shared machine link.
+    tests: [reused_workspace_proof_is_not_a_view_lifetime]
+    evidence: Wire regression and target record retention passed (5b8a55), quick/full passed (29774/1bf053). Existing protocol boundary verified, not a client lifetime fix or native acceptance.
+  - id: retained_output_is_not_recovery_authority
+    running_close_evidence: Live-successor readback after CloseWindow never reaches the isolated pane listener; task-release barrier precedes the zero-connection assertion. Eighteen resume_ tests (0ff9d4) and quick (dde75f) passed. No production changes or native/lease-lifetime acceptance claimed.
+    close_evidence: Paused-control CloseWindow regression passed within seventeen resume_ tests (a4360c) and quick (472e27). A closed view remains saved and its late stopped-successor readback is discarded without target deletion or repeated Resume. Test-only; running-successor cancellation, lease release/reopen and native acceptance remain separate.
+    control_evidence: Paused-reply failure (dad100/622e48) led to shared blocking-lane control execution. Full-chain maximized-loss RED (33d604) led to a shared slot-presentation predicate. Layout regression plus seventeen resume tests (be210c), quick and full (22362) passed. Scripted peers now cover old output before reply and successor output/maximized focus afterward; real provider/native and cancellation remain separate.
+    reference: Retained presentation versus confirmed target facts and exact recovery carrier
+    contract: SESSION-RETAINED-UI-20
+    invariant: An exited TerminalView supplies only its screen; exact target binding and unique slot authorize explicit recovery. Preserve the view while the result is unknown and reject stale clicks. The visible maximized pane, not a hidden focused neighbor, owns the notice.
+    tests: [retained_resume_requires_target_exit_and_preserves_output, retained_resume_landing_preserves_maximized_focus]
+    evidence: Missing action RED (0f3282), wrong maximized target RED (46b4eb), sixteen focused tests/quick (688688) and full (38984) passed. Click and controlled landing are separately tested; full retained-view routed control and native acceptance remain open.
+  - id: stopped_resume_ui_reconciles_before_attachment
+    running_control_evidence: Isolated-process mouse-to-control and routed Owned attachment now reach a TerminalView with output in the original tab. UI-thread guard RED (66800a) led to reuse of the existing blocking worker lane. Five focused tests (90bb28) and quick/full (73862) passed. Scripted peers do not prove real provider/SSH/native-window acceptance; cancellation, reconnect and lease-lifetime acceptance remain open.
+    resize_evidence: Final eleven recovery-related tests (ff40b4) and quick/full (75929) passed. Ratio-only edits no longer invalidate a slot; latest same-successor target geometry wins without accepting different identities, axes or neighbors. Native acceptance remains unverified.
+    gate_result: Final ten focused recovery tests (ccc551) and quick/full (84110) passed. Includes actual GPUI mouse interactions and real daemon checked Owned attachment; no installed vendor CLI or native GUI acceptance is claimed.
+    reference: Preflight generation guards, stale continuations and last complete target facts
+    contract: SESSION-STOPPED-UI-19
+    invariant: An early Layout cannot preemptively attach; an early RPC cannot leave the synchronization baseline stale; newer target exit/title facts outrank an older snapshot for the same successor.
+    tests: [stopped_resume_projection_rejects_ambiguous_or_changed_target, stopped_resume_button_holds_original_slot, resume_snapshot_updates_sync_mirror_before_releasing_gui_hold]
+    evidence: Missing core/GUI API REDs preceded implementation. Simulated UI and real target Owned attachment passed; first full (58282) passed. Missing baseline API RED (e58195), then ten resume-related tests passed (f84789). Fresh-facts behavioral RED (6d5c0a) preceded current-facts preference; final tests/gates pending. Native and successful GUI end-to-end acceptance remain separate.
+  - id: stopped_resume_consumes_exact_predecessor
+    process_evidence: Real isolated daemon control-to-PTY tests passed (8af7ea), then all 109 server tests passed (42593). Executable fixture verifies exact launch, immediate exit and persistence-failure registry/OS-process cleanup. Installed vendor CLI and native GUI remain unverified; this extends, not replaces, injected cancellation/source/race coverage below.
+    gate_result: Final quick (43971) and frozen-source full (78706) passed with exit 0. Target transaction/codecs/argv and injected coordinator coverage only; original-slot UI, successful real RPC/provider process and native acceptance remain separate.
+    preflight_verification: First full passed (69395), then source-boundary RED (43564); native-SSH, unknown runtime and foreign identity now reject before reading provider roots. Seven focused tests passed (88554) and quick passed (43971). Final full pending.
+    reference: session-container-lifecycle-plan Preflight, Starting, stale continuation and rollback ownership
+    contract: SESSION-STOPPED-RESUME-18
+    invariant: Target ownership and exact stopped binding gate allocation. A committed old pane cannot be consumed twice. Failure cleans only operation-owned resources and preserves target recovery metadata; transport uncertainty is not failure proof.
+    tests: [stopped_resume_consumes_predecessor_and_preserves_binding, stopped_resume_rejects_before_allocation_and_rolls_back]
+    evidence: Missing API RED (29807), provisional identity RED (94115), six focused tests passed (96204), expanded core passed (68220), quick passed (15130). Concurrent target replacement consumes only one predecessor; pending binding is target-owned metadata rather than runtime proof. Source/spawn coordinator fixtures are injected; successful Resume RPC, process cleanup and native acceptance remain unverified. No reference registry is copied.
+  - id: replacement_is_exact_slot_not_first_match
+    gate_result: Frozen-source full (91438) passed with exit 0. Layout integrity verified; original-slot recovery UI and native acceptance remain separate.
+    reference: session-container-lifecycle-plan exact carrier identity and atomic layout transfer
+    contract: SESSION-SLOT-17
+    invariant: A pane occurrence is unique across the target tree before replacement. A first match or boolean membership must not leave a second reference pointing to a deleted record. Failure preserves the complete previous layout.
+    tests: [pane_replacement_rejects_ambiguous_ownership_atomically, pane_replacement_preserves_exact_slot_and_rejects_stale_targets]
+    evidence: Duplicate-split RED (66384), 48 MachineStore tests passed (8540), static check and quick passed (73160, 14396). Existing owner parsing is extracted and reused; no Ashide relation registry is copied. Full and original-slot recovery acceptance remain separate.
+  - id: retained_binding_outlives_discovery_quota
+    gate_result: Quick (37065) and frozen-source full (77303) passed with exit 0. Original-slot UI, complete resolver coordinator and real remote acceptance remain separate.
+    reference: Cold relation membership versus recent discovery projection
+    contract: SESSION-RESOLVE-16
+    invariant: A retained identity is not removed or made unresolvable merely because it falls outside the recent list. Recovery lookup remains target-owned and rejects ambiguous or incomplete source evidence before effects.
+    tests: [retained_session_resolution_is_not_a_recent_history_lookup, retained_session_resolution_rejects_ambiguous_invalid_and_incomplete_sources, retained_session_resolution_ignores_internal_and_symlink_sources, retained_session_resolution_is_target_owned]
+    evidence: Missing API RED (1967), expanded core tests passed (75628). Uses Agentty's shared walker and source validator, not Ashide's relation framework. Original-slot recovery and native UI acceptance remain separate.
+  - id: cold_layout_does_not_materialize_processes
+    incremental_gate_result: Quick (45864) and frozen-source full (80289) passed with exit 0; native UI acceptance remains separate.
+    incremental_evidence: Incremental target exit RED (33730); 59 tree-sync tests pass (25305), including repeated reconstruction and same-ID cross-machine isolation. Explicit recovery and native restart acceptance remain separate.
+    gate_result: Quick (87481) and frozen-source full (73702) passed with exit 0; native and incremental insertion acceptance remain separate.
+    reference: Cold versus Starting lifecycle and target-owned facts
+    contract: SESSION-COLD-HYDRATION-15
+    invariant: A confirmed stopped target leaf is presentation, not an attachment or spawn request. Client deserialization and absent liveness cannot create that fact.
+    tests: [confirmed_stopped_tree_leaf_is_not_a_spawn_candidate, confirmed_stopped_hydration_preserves_split_without_transport, confirmed_stopped_projection_is_not_client_persistence]
+    evidence: Behavioral RED (70961) preceded implementation; three focused tests passed (2083), with actual GPUI rendered status. Incremental insertion, explicit recovery, Sleep and native restart acceptance remain required.
+  - id: stopped_is_not_unobserved
+    reference: Cold versus remote-disconnected lifecycle facts
+    contract: SESSION-STOP-FACT-14
+    invariant: Ephemeral liveness absence cannot invent confirmed termination; a target-observed terminal state survives reload and cannot be undone by a delayed observation.
+    tests: [confirmed_exit_survives_reload_and_rejects_late_facts, confirmed_exit_is_not_inferred_from_legacy_or_seed]
+    evidence: Behavioral red tests preceded implementation; twelve exit-related tests pass (30963). Cold hydration and native restart acceptance remain separate.
+  - id: child_exit_is_not_container_deletion
+    reference: Cold versus Attached lifecycle and explicit Close separation
+    contract: SESSION-EXIT-RETENTION-13
+    invariant: Natural child exit preserves container identity, split neighbors and final output. Recovery identity is not running-agent state; disconnect is not confirmed process exit.
+    tests: [natural_pane_exit_clears_runtime_but_keeps_recovery, child_exit_keeps_tab_split_and_selection, child_exit_snapshot_distinguishes_disconnection]
+    evidence: Core and GUI red regressions preceded implementation; 115 pane tests passed (1333), expanded exit-related run passed ten GUI and ten core tests (91645). Quick (92650) and frozen-source full (99634) passed. Native/cold restoration acceptance and explicit sleep remain required.
+  - id: native_title_source_epoch_and_parent_watch
+    reference: source_watcher exact-file parent registration, absent-root ancestor and source epoch invalidation
+    contract: SESSION-LIVE-TITLE-12
+    invariant: Index replacement or directory replacement invalidates the target title source; a stale epoch cannot publish. Failure keeps complete prior titles without manufacturing session identity.
+    tests: [live_title_index_create_replace_partial_and_shutdown, live_title_commit_rechecks_epoch_binding_and_stop, live_title_updates_after_exit_and_terminal_stop, live_title_commit_rejects_replaced_binding_after_exit]
+    evidence: Five focused core title tests and two GPUI title tests passed (57091), quick (78417) and frozen-source full (4627) passed. This includes actual post-exit/post-stop index writes and retained identity rejection after replacement. Agentty uses its existing bounded parser and MachineStore facts, not Ashide's discovery framework. Native GUI and full daemon-to-GUI transport acceptance remain required.
+  - id: attach_intent_never_becomes_spawn
+    reference: Exact attachment decisions and preflight/reservation phases
+    contract: SESSION-RECOVERY-03
+    invariant: AttachOnly survives retry and cannot authorize a replacement or launch command, including when the peer explicitly reports the pane missing.
+    tests: [attach_only_never_authorizes_missing_replacement, attach_only_pending_never_delivers_resume_even_if_completion_is_wrong, attach_only_without_identity_cannot_allocate_a_slot]
+    evidence: Target tree-delta caller integrated (8096); full tree adoption also preserves AttachOnly through split recursion, with regression and full gate passing (7995, 54233). Non-resident history caller and native acceptance pending.
+  - id: failed_restore_retains_carrier_and_cancellation_ownership
+    reference: Reserved / Starting cleanup and remote disconnected phases
+    contract: SESSION-RECOVERY-03
+    invariant: Local restore failure retains its retry identity; cancellation owns only newly allocated processes, never a reattached existing pane.
+    tests: [failed_local_restore_retains_retry_identity_without_losing_neighbors, cancelled_attachment_never_kills_existing_pane]
+    evidence: RED to green and full gate passed (33477). Native end-to-end acceptance pending.
+  - id: unknown_attach_is_not_missing
+    reference: Unified decisions, remote disconnected and exact attachment phases
+    contract: SESSION-RECOVERY-03
+    invariant: Transport uncertainty and incomplete replies cannot authorize a replacement process.
+    tests: [incomplete_attach_error_cannot_invent_missing_pane, ordinary_restore_requires_exact_missing_verdict]
+    remaining: Explicit attach-only non-resident Rejoin must also reject confirmed missing panes without replacement.
+  - id: stable_activation_identity
+    reference: P1 action target and layout reorder regression
+    contract: MACHINE-SESSION-02
+    invariant: A captured position cannot replace the selected identity; missing identity cannot select a neighbor.
+    tests: [resident_selection_keeps_identity_after_reorder_and_removal]
+    status: automated_verified
+    evidence: Runnable mismatched-TabId RED (90416), then 48 switcher tests passed (55584). Native GUI acceptance pending.
+  - id: exact_attachment_not_locator
+    reference: Unified decisions and async carrier lifecycle table
+    contract: SESSION-RECOVERY-03
+    invariant: A retained binding or shell locator cannot prove a live provider attachment; ambiguity and disconnection cannot trigger a new agent.
+    tests: [resident_rejoin_rejects_foreign_missing_and_ambiguous_identity, rejoin_requires_a_live_pane]
+    remaining: Non-resident attach and native GUI lifecycle acceptance.
+  - id: stale_continuation_isolation
+    reference: Preflight and Reserved / Starting phases
+    contract: SESSION-RECOVERY-03
+    invariant: Continuations recheck exact target and generation; cancellation cannot consume another operation or remove unrelated rows.
+    tests: [history_resume_wait_cancellation_timeout_and_host_replacement_have_no_pane_effects]
+    remaining: Real cross-machine continuation and two unrelated sessions across window transitions.
+  - id: cold_binding_not_runtime
+    reference: Cold persistence and remote disconnected phases
+    contract: AGENT-BINDING-08
+    invariant: Exit preserves recoverable identity without declaring Attached or issuing automatic Resume; remote facts remain target-owned.
+    tests: [recovery_binding_survives_exit_and_target_store_reload, explicit_exit_is_not_auto_resumable]
+    remaining: Explicit dormant UI and native close/reopen acceptance. Late-title enrichment uses this same retained identity without treating it as runtime; regression/verification tracked under SESSION-LIVE-TITLE-12.
+non_transfers:
+  - Ashide automatic activation strategy does not override Agentty explicit Resume versus Rejoin.
+  - No Ashide registry, relation framework or client-owned remote persistence is copied.

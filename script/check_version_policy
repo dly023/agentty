@@ -1,0 +1,17 @@
+#!/usr/bin/env ruby
+require 'open3'
+require_relative 'lib/version_policy'
+
+begin
+  raise ArgumentError, 'usage: check_version_policy [workspace-root]' if ARGV.length > 1
+  root = File.realpath(ARGV.fetch(0, File.expand_path('..', __dir__)))
+  output, error, status = Open3.capture3('rustup', 'run', 'nightly-2026-07-31',
+    'cargo', 'metadata', '--format-version', '1', '--no-deps', '--locked', '--offline',
+    '--manifest-path', File.join(root, 'Cargo.toml'), chdir: root)
+  raise ArgumentError, "Cargo metadata failed: #{error.strip}" unless status.success?
+  version = VersionPolicy.validate(JSON.parse(output), root)
+  puts "version policy passed: #{version} (resolved workspace packages only)"
+rescue ArgumentError, KeyError, TypeError, SystemCallError, JSON::ParserError => error
+  warn "version policy: #{error.message}"
+  exit 1
+end

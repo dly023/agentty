@@ -1,0 +1,63 @@
+#!/usr/bin/env ruby
+# Reference integrity only, not proof that a named test covers its contract.
+require 'yaml'
+
+root = File.realpath(ARGV.fetch(0, File.expand_path('..', __dir__)))
+errors = []
+begin
+  specs = Dir.glob(File.join(root, 'docs/specs/*.yaml'))
+  raise 'no specification files' if specs.empty?
+  ids = specs.flat_map do |path|
+    doc = YAML.safe_load(File.read(path))
+    doc.fetch('contracts').map { |contract| contract.fetch('id') }
+  end
+  ids.group_by { |id| id }.each { |id, occurrences| errors << "duplicate spec ID: #{id}" if occurrences.length != 1 }
+  matrix = YAML.safe_load(File.read(File.join(root, 'docs/quality/traceability.yaml'))).fetch('requirements')
+  seen = []
+  # Deliberately exclude the archive: historical tests cannot satisfy current claims.
+  rust = Dir.glob(File.join(root, '{src,crates}/**/*.rs')).map { |path| File.read(path) }.join("\n")
+  tests = rust.scan(/#\[(?:gpui::)?test(?:\([^\]]*\))?\]\s*(?:#\[[^\]]*\]\s*)*(?:pub(?:\([^)]*\))?\s+)?(?:async\s+)?fn\s+(\w+)\s*\(/).flatten
+  exists = lambda do |path|
+    candidate = File.expand_path(path, root)
+    File.exist?(candidate) && File.realpath(candidate).start_with?(root + File::SEPARATOR)
+  end
+  %w[AGENTS.md DEVELOPMENT.md docs/README.md].each do |entry|
+    path = File.join(root, entry)
+    unless exists.call(entry) && File.file?(path) && !File.read(path).strip.empty?
+      errors << "missing, empty or foreign engineering entry: #{entry}"
+      next
+    end
+    next if entry == 'AGENTS.md'
+    File.read(path).scan(/!?\[[^\]]*\]\(([^)]+)\)/).flatten.each do |link|
+      target = link.strip.delete_prefix('<').delete_suffix('>')
+      next if target.start_with?('#', 'https://', 'http://')
+      target = target.split('#', 2).first
+      relative = File.join(File.dirname(entry), target)
+      if target.start_with?('/') || target.match?(/\A[A-Za-z][A-Za-z0-9+.-]*:/) || !exists.call(relative)
+        errors << "#{entry}: broken or foreign Markdown link: #{link}"
+      end
+    end
+  end
+  matrix.each do |row|
+    id = row.fetch('id')
+    errors << "duplicate matrix ID: #{id}" if seen.include?(id)
+    seen << id
+    errors << "unknown spec ID: #{id}" unless ids.include?(id)
+    paths = Array(row.fetch('source')) + [row.fetch('static_check')]
+    paths << row['integration_check'].sub(/\A(?:sh|bash|ruby)\s+/, '') if row['integration_check']
+    paths.each { |path| errors << "#{id}: missing or foreign path: #{path}" unless exists.call(path) }
+    names = %w[tests projection_tests gui_tests].flat_map { |key| Array(row[key]) }
+    errors << "#{id}: no test references" if names.empty?
+    names.each do |name|
+      present = name.include?('/') ? exists.call(name) : tests.include?(name)
+      errors << "#{id}: missing current test: #{name}" unless present
+    end
+  end
+rescue StandardError => error
+  errors << "invalid harness documents: #{error.message}"
+end
+unless errors.empty?
+  warn errors.join("\n")
+  exit 1
+end
+puts 'harness references passed (coverage semantics require review)'

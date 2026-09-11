@@ -1,0 +1,99 @@
+version: 1
+contracts:
+  - id: BUNDLED-HELPERS-06
+    rule: >-
+      The existing macOS bundle entry calls check_bundled_remote_helpers before
+      staging or signing. Require a regular executable native server and both
+      regular non-symlink Linux helper assets at their canonical names. Read
+      native --protocol successfully and validate its exact structured source
+      identity through the same parser as macOS metadata. Reuse assert-static.sh
+      for each ELF; verify ELF64 little-endian architecture matches the asset
+      name (x86_64=62, aarch64=183), and the native full build string is embedded
+      with no different source hash marker. Missing tools, inspector failures,
+      missing/wrong files, malformed native replies and mismatches fail before
+      successful bundle validation. Never execute foreign Linux helpers or
+      download/install tools in this checker. Embedded marker matching detects
+      accidental stale/mixed packaging only: it is not an attestation, protocol
+      execution test, signed artifact digest or real Linux runtime acceptance.
+      Shared parser extraction must retain BUILD-IDENTITY-04 checks at both
+      consumers and the parser; mutation tests must reject a bypassed consumer
+      and a weakened hash-format check without editing production files.
+  - id: MACOS-METADATA-05
+    rule: >-
+      macOS CFBundleVersion and CFBundleShortVersionString contain the canonical
+      three-part numeric portion of the Cargo SemVer. TTY7ReleaseVersion retains
+      the full SemVer including prerelease/build metadata; TTY7SourceIdentity
+      retains the exact native server build stamp. A single metadata renderer
+      validates the full version and structured native protocol reply before
+      staging or signing: exactly control/protocol u32 and build string, with
+      literal full-version+source. prefix and 64 lowercase hex characters.
+      Malformed JSON, duplicate keys, wrong types/dialects, version mismatch or
+      incomplete identity fail with no plist output. Existing bundle ID, product
+      name, executable, icon and capabilities remain unchanged. Source identity
+      is diagnostic metadata, not an Apple build-number or automatic update
+      ordering mechanism. A valid plist is not proof of signing/install/launch.
+    references:
+      - https://developer.apple.com/documentation/bundleresources/information-property-list/cfbundleversion
+      - https://developer.apple.com/documentation/bundleresources/information-property-list/cfbundleshortversionstring
+  - id: BUILD-IDENTITY-04
+    rule: >-
+      Release/download versions remain CARGO_PKG_VERSION. RemoteProtocol.build
+      carries version+source.<64 lowercase SHA-256 hex>, computed once by the
+      core build script from a versioned, sorted, length-framed input set:
+      workspace Cargo.toml and Cargo.lock, core/server manifests, core build
+      script and build_support, and all files under core/server src. Hash input
+      paths are workspace-relative with slash separators; absolute checkout
+      paths, Git availability, mtimes, target artifacts and GUI-only sources do
+      not contribute. Missing inputs, symlinks and special files fail closed.
+      Cargo watches the same required input roots, including source directories
+      so additions and removals invalidate the stamp. This is a source identity,
+      not a signed artifact checksum, compiler identity or proof of execution.
+      Protocol compatibility still compares control/protocol, not source hash;
+      no automatic restart, deployment or provider migration is introduced.
+      macOS package identity validation accepts the canonical full hash.
+  - id: PACKAGE-STATIC-03
+    rule: >-
+      The shared static Linux helper gate requires a regular input file,
+      successful file and readelf inspection, a static ELF classification,
+      no PT_INTERP program header and no DT_NEEDED dynamic entry. Tool absence,
+      nonzero exit or malformed non-ELF input must fail closed, including when
+      a failed inspector emitted plausible output. Both classic static ELF and
+      static PIE are allowed. This proves linkage only, not architecture,
+      build identity, protocol compatibility or executable behavior.
+  - id: PRODUCT-BRAND-01
+    development_entry: >-
+      The cargo app alias builds the manifest-declared tty7-server package
+      before running the manifest-declared GUI default binary tty7-app.
+      Both operations retain --locked and forward GUI arguments. A failed
+      server build must not launch the GUI. Product branding must not rename
+      these core build selectors to agentty.
+    rule: >-
+      The GUI product name is agentty. Menus, About, tray, notifications,
+      empty window titles and localized product prose use agentty. The core
+      remains tty7: Rust packages, internal identifiers, CLI/server/updater
+      executable names, wire protocol, paths and upstream attribution are
+      unchanged. Technical references to tty7 commands, server, hooks and
+      theme formats must remain truthful. Existing upstream URLs are retained.
+      Packaging displays agentty but must consume the actual tty7 build outputs.
+      CI, release and nightly server jobs select the real tty7-server Cargo
+      package and stage its tty7-server executable. Published static helper
+      asset names and desktop download patterns match the runtime install
+      asset constants. Product/repository checkout names remain agentty.
+      Renaming this build plumbing does not change workflow permissions,
+      signing credentials, triggers or publication authorization.
+    forbidden:
+      - bulk_core_namespace_rename
+      - rename_config_or_session_storage
+      - hide_upstream_attribution
+  - id: PACKAGE-CLEANUP-02
+    rule: >-
+      Desktop package payloads keep tty7-app, tty7-server and tty7 executable
+      names; agentty remains the application and distribution label. Windows
+      installers must include the native server and both required Linux helpers.
+      Before cleanup, validate the exact supported platform/target/architecture
+      tuple. Before reading new binaries or creating staging/output files,
+      delete only that platform/architecture/format's old stages and final
+      packages, including old versions. Never remove sibling formats or other
+      architectures. macOS and AppImage staging paths include the architecture.
+      The cleanup source gate is mandatory; passing it does not prove signed
+      packaging or installation on a real platform.

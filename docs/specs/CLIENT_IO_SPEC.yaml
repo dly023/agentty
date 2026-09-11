@@ -1,0 +1,49 @@
+version: 1
+title: Client-owned local I/O
+contracts:
+  - id: CLIENT-HOOK-03
+    rule: >-
+      Automatic local hook refresh at GUI launch is allowed only in a release
+      build whose resolved invocation config directory exactly equals the
+      known machine config directory. Different or unknown directories and
+      debug builds return without constructing a Host or reading/writing
+      provider configuration. A secondary --config-dir must not rewrite hooks
+      in the real user home to its temporary executable. Preserve existing
+      default-install refresh, explicit hook management and remote refresh.
+      Reuse config_dir_path and machine_config_dir; do not infer ownership
+      from directory contents or add another writable provider source.
+    verification: >-
+      Inject the refresh callback and test invocation count, including matching
+      and different directories, either missing identity, debug builds and
+      lexical aliases. Rebuild the native artifact before repeating its
+      isolated release launch; old package tests do not prove the new guard.
+  - id: CLIENT-DROP-02
+    rule: >-
+      Desktop source traversal and local copy syscalls belong to core
+      desktop_files, not GUI code. The shared copy primitive reads only
+      explicitly desktop-owned sources and writes destinations through Host;
+      only Local destinations use the local mode-preserving copy syscall.
+      Depth/file limits, replacement staging and rollback remain unchanged.
+      Desktop executable detection also lives at this client boundary; the
+      editor must reject nonlocal targets before calling the local probe.
+      Internal file-tree drags carry source HostId with paths; ExternalPaths
+      is reserved for desktop-origin drops. Copy/upload consumers accept only
+      local internal sources and explicitly reject remote sources before any
+      client path probe or destination write, even if a same-named local file
+      exists. Same-host terminal drops retain quoted path insertion; a foreign
+      Host drag cannot insert a misleading path. Local internal copy/upload
+      and desktop drops reuse existing execution paths. Self-copy and nested
+      directory checks compare local source with destination only on Local;
+      identical lexical paths on separate machines are not the same file.
+      Remote-to-remote copy is not introduced by this safety correction.
+  - id: CLIENT-KEY-01
+    rule: >-
+      Reading client SSH identity files solely to identify a stored passphrase
+      goes through core keychain key_account_from_local_file. Connection,
+      prompt save/delete and profile deletion share this implementation and
+      the existing contents-based fingerprint algorithm. GUI receives only
+      the account identifier, never private-key bytes. Missing or unreadable
+      files return an error and do not invent an account from the path; callers
+      retain their existing skip/report behavior. This is explicitly client
+      credential state, not a target Host file read or remote fallback. Tests
+      use scratch files and an in-memory store, never real keys or OS keychain.

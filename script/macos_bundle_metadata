@@ -1,0 +1,43 @@
+#!/usr/bin/env ruby
+require_relative 'lib/server_protocol_identity'
+
+module MacosBundleMetadata
+  def self.render(version, reply)
+    numeric = ServerProtocolIdentity.numeric_version(version)
+    protocol = ServerProtocolIdentity.parse(reply, version: version)
+    identity = protocol['build']
+
+    # Dynamic fields have passed an ASCII allowlist excluding XML syntax.
+    # Full SemVer/source identity are diagnostic keys, not system build numbers.
+    <<~XML
+      <?xml version="1.0" encoding="UTF-8"?>
+      <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+      <plist version="1.0">
+      <dict>
+          <key>CFBundleName</key><string>Agentty</string>
+          <key>CFBundleDisplayName</key><string>Agentty</string>
+          <key>CFBundleIdentifier</key><string>com.dly023.agentty</string>
+          <key>CFBundleVersion</key><string>#{numeric}</string>
+          <key>CFBundleShortVersionString</key><string>#{numeric}</string>
+          <key>TTY7ReleaseVersion</key><string>#{version}</string>
+          <key>TTY7SourceIdentity</key><string>#{identity}</string>
+          <key>CFBundleExecutable</key><string>tty7-app</string>
+          <key>CFBundleIconFile</key><string>agentty</string>
+          <key>CFBundlePackageType</key><string>APPL</string>
+          <key>NSHighResolutionCapable</key><true/>
+          <key>NSPrincipalClass</key><string>NSApplication</string>
+      </dict>
+      </plist>
+    XML
+  end
+end
+
+if $PROGRAM_NAME == __FILE__
+  abort 'usage: macos_bundle_metadata <Cargo-version> (native protocol JSON on stdin)' unless ARGV.length == 1
+  begin
+    xml = MacosBundleMetadata.render(ARGV.fetch(0), $stdin.read)
+    $stdout.write(xml)
+  rescue JSON::ParserError, ArgumentError
+    abort 'macOS metadata: invalid version or native protocol identity'
+  end
+end

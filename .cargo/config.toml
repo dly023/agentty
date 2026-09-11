@@ -1,0 +1,13 @@
+# `cargo dev` — run the app against a throwaway config directory (`.agentty-dev/`)
+# instead of the real `~/.config/agentty/`, so debugging never clobbers your live
+# config/session/history. Extra args pass through, e.g. `cargo dev -- --foo`.
+[alias]
+dev = "run -- --config-dir .agentty-dev"
+# Build the headless sibling before the GUI so local/remote terminals can spawn.
+app = "!cargo build -p tty7-server --locked && cargo run --bin tty7-app --locked --"
+
+# The gpui fork lives in a fork of the Zed monorepo, and cargo's built-in libgit2
+# fetch reliably times out partway through a clone that size. The git CLI handles
+# it (resumable, packed transfer), and is present on every platform we build on.
+[net]
+git-fetch-with-cli = true

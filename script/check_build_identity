@@ -1,0 +1,15 @@
+#!/usr/bin/env ruby
+root = File.expand_path('..', __dir__)
+required = {
+  'crates/tty7-core/build.rs' => ['source_identity::INPUTS', 'cargo:rerun-if-changed=', 'source_identity::fingerprint', 'cargo:rustc-env=TTY7_SOURCE_SHA256='],
+  'crates/tty7-core/src/daemon/install/mod.rs' => ['build: build_identity().to_string()', 'env!("TTY7_SOURCE_SHA256")'],
+  '.github/scripts/bundle-macos.sh' => ['ruby script/macos_bundle_metadata "$VERSION"'],
+  'script/macos_bundle_metadata' => ["require_relative 'lib/server_protocol_identity'", 'ServerProtocolIdentity.numeric_version(version)', 'ServerProtocolIdentity.parse(reply, version: version)'],
+  'script/lib/check_bundled_remote_helpers.rb' => ["require_relative 'server_protocol_identity'", 'ServerProtocolIdentity.parse(reply)', 'bytes.include?(build.b)', 'hashes == [expected_hash]'],
+  'script/lib/server_protocol_identity.rb' => ['[0-9a-f]{64}', 'numeric_version(match[1])', 'match[1] != version', 'protocol.keys.sort == %w[build control protocol]', 'object_class: UniqueObject', "'duplicate protocol field'"]
+}
+required.each do |path, tokens|
+  text = File.read(File.join(root, path))
+  abort "build identity: missing canonical wiring in #{path}" unless tokens.all? { |token| text.include?(token) }
+end
+puts 'build identity source wiring passed; artifact identity requires runtime verification'

@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+rg -q 'pub machine_rail: MachineRailPreferences' crates/tty7-core/src/core/config.rs
+rg -q 'machine_rail.pinned' src/ui/switcher.rs
+rg -q 'machine_rail.toggle_collapsed' src/ui/switcher.rs
+rg -q 'machine_rail.set_pinned' src/ui/switcher.rs
+rg -q 'row_metrics::AVATAR' src/ui/tab_sidebar.rs
+rg -q 'const AVATAR: f32 = 18' src/ui/tab_sidebar.rs

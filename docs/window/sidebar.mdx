@@ -1,0 +1,93 @@
+---
+title: "The sidebar"
+description: "Machines side by side, with compact session rows and per-machine history."
+---
+
+The left sidebar shows Local and your remote machines together. Expand a
+machine to see its sessions. Each compact row retains its text size while
+showing the title, working context and agent status when available.
+
+<kbd>⌘ B</kbd> shows and hides it. Drag its right edge to resize.
+
+## Organized by machine
+
+Directory and repository headers are no longer the session hierarchy. A remote
+shell starting in `/root` belongs to its machine, not to a ROOT group. `cd`
+changes the session's directory metadata without changing its machine.
+
+- **Pin / Unpin** changes whether a remote machine is kept visible, not whether
+  it is connected. Local remains available.
+- **Collapse / Expand** hides or reveals children without closing sessions.
+  Search can reveal matching children without changing your saved fold state.
+- **Connect / Disconnect** explicitly controls the machine connection.
+  Disconnecting does not stop the remote server or its agents.
+- The header's **search icon** opens that machine's **Session History**.
+  Scanning another machine never reads this computer's provider history as a
+  substitute when the remote source fails.
+
+Selecting a session uses that machine in the current window. If another window
+owns the target, Agentty reports the conflict instead of silently taking it.
+
+## What a row tells you
+
+<CardGroup cols={2}>
+  <Card title="Who is running there" icon="robot">
+    A brand avatar when a coding agent is in the tab, plus a status dot —
+    blue for working, amber for needs-your-input, green for done.
+  </Card>
+  <Card title="Where it is" icon="code-branch">
+    The pane's git branch, refreshed on `cd` and whenever a command finishes.
+  </Card>
+  <Card title="What changed" icon="plus-minus">
+    The working-tree diff as `+N −M`. Click the counts to open the
+    [diff overlay](/git/diffs).
+  </Card>
+  <Card title="Whether you have looked" icon="circle-dot">
+    An unread marker on tabs where a coding agent finished its turn while you
+    were elsewhere. Agent tabs also carry *Mark as Unread* in the right-click
+    menu, once there is a finished turn to mark.
+  </Card>
+</CardGroup>
+
+If you would rather the counts not be clickable, turn off **Settings → Window &
+Tabs → Open diff preview from sidebar counts**. The branch and the numbers stay;
+they simply stop opening the overlay.
+
+## Rearranging
+
+Drag a resident session row to reorder it. There are no directory headers to
+drag and no directory-based regrouping action. Reordering does not move a
+process to another machine.
+
+Drag a row out over the panes instead and it stops being a session of its own:
+it lands as a pane of the tab on screen, wherever the highlight says. Dragging a
+pane the other way — by its grip, onto the sidebar — gives it a row of its own,
+between whichever two the caret lands between. See
+[making one tab a pane of another](/window/tabs-and-splits#making-one-tab-a-pane-of-another).
+
+## Naming
+
+Your explicit name takes priority over automatically discovered labels:
+
+1. a name you set (right-click → **Rename Tab…**)
+2. an available provider title bound to this exact session, including Codex's
+   official session name
+3. the existing terminal title, directory or process fallback, or **Shell 3**
+   when no useful label is available
+
+Codex title updates are observed on the owning machine; they do not require a
+full history scan or rename your tab. A remote title is not read from a local
+same-named file. `tty7 tab ls` keeps the explicit `name` separate from its
+derived `label`.
+
+## The + menu and history manager
+
+The **+** menu uses the same machine list and connection state as the sidebar.
+It exposes one default **New Terminal** action; alternative shells appear under
+**Other Terminals**. Saved SSH profiles are connection choices, not a second
+flat list of supposedly connected machines.
+
+**Session History** uses a searchable list with details and actions beside it.
+Choose **Resume** for a recoverable conversation or **Rejoin** for a verified
+live session. Delete, Fork and Convert in this manager are disabled, planned
+actions. See [agent sessions](/agents/sessions) for the distinction.

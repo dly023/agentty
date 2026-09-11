@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -euo pipefail
+mode=${1:-quick}
+if [[ $# -gt 1 || ( "$mode" != quick && "$mode" != full ) ]]; then
+    echo "usage: $0 [quick|full]" >&2
+    exit 2
+fi
+cd "$(dirname "$0")/.."
+
+ruby script/check_agent_harness
+ruby script/tests/quality_gate_contract.rb
+for check in check_machine_rail_contract check_machine_preferences check_history_manager check_product_branding check_terminal_bottom check_client_credentials check_path_drag; do
+    sh "script/$check"
+done
+bash .github/scripts/check-host-boundary.sh
+
+# rustup run refuses an absent toolchain; it does not install one or change the
+# user's default. Keep this pin aligned with the existing CI toolchain.
+rustup run nightly-2026-07-31 cargo fmt --check
+if [[ "$mode" == full ]]; then
+    rustup run nightly-2026-07-31 cargo test --workspace --locked -- --test-threads=1
+fi
+echo "presubmit ($mode) passed"

@@ -1,0 +1,52 @@
+#!/usr/bin/env ruby
+require 'yaml'
+
+module CiLineage
+  def self.errors(root)
+    manifest = File.read(File.join(root, 'crates/tty7-server/Cargo.toml'))
+    package = manifest.match(/^name = "([^"]+)"/)[1]
+    binary = manifest.match(/\[\[bin\]\]\s+name = "([^"]+)"/)[1]
+    assets = File.read(File.join(root, 'crates/tty7-core/src/daemon/install/asset.rs'))
+      .scan(/^pub const ASSET_LINUX_\w+: &str = "([^"]+)";/).flatten
+    raise 'expected exactly two runtime Linux helper assets' unless assets.size == 2
+    errors = %w[ci release nightly].flat_map do |name|
+      path = File.join(root, ".github/workflows/#{name}.yml")
+      workflow = YAML.load_file(path)
+      steps = workflow.fetch('jobs').fetch('server-musl').fetch('steps')
+      commands = steps.map { |s| s['run'] }.compact.join("\n")
+      errors = []
+      selected = commands.scan(/cargo zigbuild[^\n]* -p ([\w-]+)/).flatten
+      errors << "#{name}: server build must select #{package}" unless selected == [package]
+      errors << "#{name}: metadata gate disagrees with manifest" unless commands.include?("index(\"#{package}\")")
+      outputs = commands.scan(%r{release/([\w-]+)}).flatten.uniq
+      errors << "#{name}: server output must be #{binary}" unless outputs == [binary]
+      staged = if name == 'ci'
+        commands.scan(/asset=([\w-]+)\s*;;/).flatten
+      else
+        workflow.fetch('jobs').fetch('server-musl').fetch('strategy')
+          .fetch('matrix').fetch('include').map { |entry| entry.fetch('asset') }
+      end
+      assets.each { |asset| errors << "#{name}: missing runtime asset #{asset}" unless staged.include?(asset) }
+      errors << "#{name}: unexpected helper asset set" unless staged.sort == assets.sort
+      unless name == 'ci'
+        pattern = workflow.fetch('jobs').fetch('build').fetch('steps')
+          .map { |s| s.dig('with', 'pattern') }.compact
+        errors << "#{name}: desktop helper download pattern is wrong" unless pattern.include?("#{name}-#{binary}-linux-*-musl")
+      end
+      errors
+    end
+    gui = File.read(File.join(root, 'Cargo.toml')).match(/^default-run = "([^"]+)"/)[1]
+    aliases = File.read(File.join(root, '.cargo/config.toml')).scan(/^app = "([^"]+)"$/).flatten
+    expected = "!cargo build -p #{package} --locked && cargo run --bin #{gui} --locked --"
+    errors << 'development: app alias must build the core server before running the GUI with locked dependencies' unless aliases == [expected]
+    errors
+  rescue StandardError => error
+    ["CI lineage check cannot validate inputs: #{error.message}"]
+  end
+end
+
+if $PROGRAM_NAME == __FILE__
+  errors = CiLineage.errors(File.expand_path(ARGV.fetch(0, '..'), __dir__))
+  abort errors.join("\n") unless errors.empty?
+  puts 'CI core lineage passed'
+end

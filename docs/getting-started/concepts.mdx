@@ -1,0 +1,120 @@
+---
+title: "Core concepts"
+description: "Machines, session tabs, panes, and the difference between rejoining a process and resuming a conversation."
+---
+
+Agentty is the desktop workbench; its terminal core, server and CLI retain the
+name `tty7`. A machine, a tab, a running process and an agent conversation have
+different identities and lifetimes.
+
+## Pane
+
+A **pane** is one terminal: one shell (or one program) attached to one PTY. It
+is where a shell or agent runs on the selected machine.
+
+Panes have ids — `%42`, for example. That id is what the
+[CLI](/cli/overview) addresses, and what `$TTY7_PANE` holds inside the pane
+itself. Resuming a stopped session can create a successor pane with a new id;
+the tab and its position can remain the same.
+
+## Tab
+
+A **tab** is a layout of panes. One pane to start with; split it and the tab
+holds two, arranged in rows and columns you can drag around.
+
+Tabs appear in the sidebar (or the top strip, if you move it there). A tab's
+label uses your explicit name first, then an available provider title and the
+existing terminal-title fallbacks. A retained tab is not proof that its process
+is still running.
+
+## Workspace
+
+In the desktop interface, a **workspace means a machine environment**, not a
+project directory. Local and remote machines appear together in the left
+sidebar, with their session tabs underneath. Expand a machine and select a
+session to work with it in the current window.
+
+Pin keeps a remote machine visible without connecting it. Folding hides its
+rows without stopping them. The machine menu exposes explicit connection
+controls, and the search icon on its header opens **Session History**.
+
+A login shell may start in the remote user's home, such as `/root`. That is a
+starting directory, not a permanent group. Running `cd` changes the session's
+working context; it does not move the session to another machine.
+
+The core and CLI still use **workspace IDs** for target-owned tab layouts and
+ownership. Those internal records are not extra directory headings in the
+sidebar. Multiple visible machine entries do not mix their execution contexts.
+
+## The server
+
+Here is the part that matters. **The window does not own your shells — a
+background server does.**
+
+Ordinary Quit closes Agentty without stopping the background server. Processes
+hosted by that server can keep running. Reopening can reattach to surviving
+panes; it does not bring a terminated process back to life. Remote reattachment
+also requires a working connection and available ownership on the target.
+
+This is also why:
+
+- **`tty7` works from any terminal.** The CLI talks to the same server. The GUI
+  does not have to be running at all.
+- **Output is separate from process state.** A retained output tail can be
+  displayed without restarting an agent.
+- **Stopping is explicit.** *Quit and Stop Server…* is different from ordinary
+  Quit; explicitly closing a tab is also different from hiding a window.
+
+<Warning>
+  Restarting the server ends every process in every pane on that machine —
+  shells, agents, and SSH sessions alike. Saved layout or conversation history
+  cannot preserve a process across a server stop or reboot. Recovery depends
+  on the retained state, provider support and applicable restore settings.
+</Warning>
+
+### What survives what
+
+| Action | Process | Tab and recovery |
+|---|---|---|
+| Ordinary GUI Quit | Server-owned processes can keep running | Reopen attaches to surviving panes when available. |
+| Disconnect a managed remote machine | Does not stop its target-owned processes | Reconnect before trying to rejoin. |
+| Agent or shell exits | The exited process has ended | The tab is retained; explicit exit does not automatically Resume it. |
+| Explicitly close a tab | Destructive close is separate from Quit | Do not use it as a sleep or detach action. |
+| Stop the server or reboot its machine | Processes end | Retained layout, output and provider history are not a running process. |
+
+**Rejoin** attaches to a verified live session. **Resume** starts a new process
+for a recoverable provider conversation. Neither operation should be inferred
+from a tab's presence alone. See [agent sessions](/agents/sessions).
+
+## Machines
+
+Everything above exists per **machine**. Your laptop is one; a dev box you
+connect to over SSH is another, with its own server, its own workspaces, and its
+own panes.
+
+The sidebar lists machines together, and the CLI reaches existing machine
+links with `-m`:
+
+```bash
+tty7 -m devbox ls
+```
+
+Remote panes run on the remote machine — the files, the repository, the git
+data, and the process tree are all over there.
+[Remote workspaces →](/remote/workspaces)
+
+## The three environment variables
+
+Every pane exports these, and anything you launch from one inherits them:
+
+| Variable | What it holds |
+|---|---|
+| `TTY7_PANE` | This pane's id — the default target of `tty7 split`, `send`, `capture`, `procs`. |
+| `TTY7_WS` | This pane's workspace id. |
+| `TTY7_CONFIG_DIR` | The config directory, which is how the CLI finds the right server. |
+
+`echo $TTY7_PANE` is the fastest way to tell whether you are inside tty7 at all.
+
+<Card title="Drive it from a script" icon="terminal" href="/cli/overview">
+  Those ids are the whole interface. The CLI page starts there.
+</Card>

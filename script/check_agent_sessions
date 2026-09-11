@@ -1,0 +1,286 @@
+#!/bin/sh
+set -eu
+rg -q 'fn history_title_closed_window_rejects_late_discovery' src/ui/history_manager/title_updates.rs
+rg -q 'fn history_title_failed_refresh_keeps_snapshot_without_subscription' src/ui/history_manager/title_updates.rs
+rg -q 'fn history_title_manager_close_before_ready_retires_late_subscription' src/ui/history_manager/title_updates.rs
+rg -q 'fn history_title_manager_refresh_ignores_retired_stream' src/ui/history_manager/title_updates.rs
+rg -q 'fn history_title_window_close_retires_interest_with_retained_app' src/ui/history_manager/title_updates.rs
+rg -q 'fn history_title_projection_is_atomic_and_metadata_only' src/ui/history_manager/title_updates.rs
+rg -q 'fn history_title_manager_updates_search_without_resuming' src/ui/history_manager/title_updates.rs
+rg -q 'fn history_title_manager_rejects_old_interest_and_replaced_host' src/ui/history_manager/title_updates.rs
+rg -q 'fn history_title_manager_receives_remote_updates_after_discovery' src/ui/history_manager/title_updates.rs
+sed -n '/ControlRequest::TitleWatchOpen { id, snapshot } =>/,/ControlRequest::TitleWatchClose/p' crates/tty7-core/src/host/server.rs | rg -Fq 'h.watch_agent_session_titles'
+sed -n '/fn run_job(/,/fn drop_unsendable_hits(/p' crates/tty7-core/src/host/server.rs | rg -Fq 'retire_request(opening)'
+if rg -q 'fn retire_id\(' crates/tty7-core/src/host/server/title_watches.rs; then
+    echo 'title cleanup must use the captured opening request, not a reused UUID' >&2
+    exit 1
+fi
+rg -q 'fn history_title_delayed_close_does_not_retire_reused_token' crates/tty7-core/src/host/server.rs
+rg -q 'fn history_title_cancelled_close_still_retires_source' crates/tty7-core/src/host/server.rs
+rg -q 'fn history_title_queue_refusal_and_failed_reply_release_reservation' crates/tty7-core/src/host/server.rs
+rg -q 'fn history_title_server_delivers_and_retires_target_source' crates/tty7-core/src/host/server.rs
+rg -q 'fn history_title_server_rejects_late_source_after_close_cancel_or_disconnect' crates/tty7-core/src/host/server.rs
+rg -q 'fn history_title_reservations_reject_late_install_and_foreign_cleanup' crates/tty7-core/src/host/server/title_watches.rs
+rg -q 'fn history_title_reservations_are_bounded_and_disconnect_closed' crates/tty7-core/src/host/server/title_watches.rs
+rg -q 'fn history_title_remote_events_arrive_before_ack_and_close_once' crates/tty7-core/src/host/remote.rs
+rg -q 'fn history_title_remote_registry_coalesces_and_rejects_retired_ids' crates/tty7-core/src/host/remote.rs
+rg -q 'fn history_title_subscription_closes_receivers_before_backend_disposal' crates/tty7-core/src/agent_sessions/live_titles.rs
+rg -q 'fn history_title_local_host_rejects_oversized_interest' crates/tty7-core/src/host/local.rs
+rg -q 'fn history_title_unsupported_host_has_no_local_fallback' crates/tty7-core/src/host/remote.rs
+rg -q 'fn history_title_subscription_without_panes_is_bounded_and_read_only' crates/tty7-core/src/agent_sessions/live_titles.rs
+rg -q 'fn history_title_subscription_rejects_invalid_membership' crates/tty7-core/src/agent_sessions/live_titles.rs
+rg -q 'fn title_source_without_panes_retains_complete_names' crates/tty7-core/src/agent_sessions/live_titles.rs
+rg -q 'struct IndexSource' crates/tty7-core/src/agent_sessions/live_titles.rs
+rg -q 'fn automatic_hook_refresh_requires_machine_config_scope' crates/tty7-core/src/core/agent_hooks.rs
+sed -n '/pub fn refresh_hooks_at_launch(/,/fn home_dir(/p' crates/tty7-core/src/core/agent_hooks.rs | rg -q 'refresh_hooks_in_machine_scope'
+sed -n '/pub fn refresh_hooks_at_launch(/,/fn home_dir(/p' crates/tty7-core/src/core/agent_hooks.rs | rg -Fq 'crate::core::config::config_dir_path().as_deref()'
+sed -n '/pub fn refresh_hooks_at_launch(/,/fn home_dir(/p' crates/tty7-core/src/core/agent_hooks.rs | rg -Fq 'crate::core::config::machine_config_dir().as_deref()'
+rg -q 'fn whole_tab_sleep_button_is_rendered' src/ui/session_recovery.rs
+rg -q 'fn whole_tab_sleep_preserves_cold_stopped_neighbor' src/ui/session_recovery.rs
+rg -q 'fn whole_tab_sleep_late_success_rejects_replaced_connection' src/ui/session_recovery.rs
+rg -q 'fn whole_tab_sleep_late_success_rejects_replaced_entity' src/ui/session_recovery.rs
+rg -q 'fn whole_tab_sleep_late_success_rejects_changed_epoch' src/ui/session_recovery.rs
+rg -q 'fn whole_tab_sleep_failed_acquisition_clears_busy_after_runtime_changes' src/ui/session_recovery.rs
+rg -q 'ControlRequest::SleepTab' src/ui/session_recovery.rs
+sed -n '/fn submit_sleep(/,/fn refresh_sleep(/p' src/ui/session_recovery.rs | rg -q 'ControlRequest::SleepTab'
+sed -n '/fn sleep_entire_tab(/,/fn begin_sleep(/p' src/ui/session_recovery.rs | rg -q 'self.begin_sleep'
+rg -q 'fn sleep_tab_preflights_all_members_before_signaling' crates/tty7-core/src/daemon/server/recovery.rs
+rg -q 'fn sleep_tab_wire_roundtrips_exact_members' crates/tty7-core/src/daemon/control.rs
+rg -q 'ControlRequest::SleepTab' crates/tty7-core/src/host/server.rs
+rg -q 'fn with_tab_sessions' crates/tty7-core/src/core/machine.rs
+rg -q 'fn whole_tab_sleep_preserves_split_and_each_resume_identity' crates/tty7-server/tests/stopped_resume.rs
+rg -q 'FEATURE_STOPPED_OUTPUT' crates/tty7-core/src/daemon/protocol.rs
+rg -q 'fn stopped_output' crates/tty7-core/src/daemon/server/recovery.rs
+rg -q 'fn stopped_output_requires_its_own_peer_feature' src/terminal/remote.rs
+rg -q 'fn stopped_output_missing_link_preserves_resume' src/ui/session_recovery.rs
+rg -q 'fn stopped_output_click_replays_in_original_slot' src/ui/session_recovery.rs
+rg -q 'fn stopped_output_late_response_preserves_stopped_slot' src/ui/session_recovery.rs
+rg -q 'fn stopped_output_replaced_connection_rejects_old_response' src/ui/session_recovery.rs
+rg -q 'fn stopped_output_replaced_entity_rejects_old_response' src/ui/session_recovery.rs
+for snapshot_case in missing corrupt truncated empty oversized; do
+    rg -q "\"$snapshot_case\"" crates/tty7-server/tests/stopped_resume.rs
+done
+rg -q 'fn live_sleep_requires_exact_visible_target' src/ui/session_recovery.rs
+rg -q 'fn render_session_sleep' src/ui/session_recovery.rs
+rg -q 'fn sleep_button_uses_checked_control_and_refresh_never_retries' src/ui/session_recovery.rs
+rg -q 'fn sleep_unknown_reply_preserves_view_until_explicit_refresh' src/ui/session_recovery.rs
+rg -Fq 'ControlRequest::SleepSession' src/ui/session_recovery.rs
+if sed -n '/fn sleep_current_session(/,/fn retained_candidate(/p' src/ui/session_recovery.rs | rg -q 'close_tab_inner|ControlRequest::Spawn|std::fs::|kill_pane'; then
+    echo 'GUI Sleep must preserve the slot and use canonical target control, never destructive close or local fallback' >&2
+    exit 1
+fi
+rg -q 'fn persist_scrollback' crates/tty7-core/src/daemon/pane.rs
+rg -q 'fn retire_exited' crates/tty7-core/src/daemon/server.rs
+rg -q 'fn scrollback_retirement_seals_capture_and_forget' crates/tty7-core/src/daemon/pane.rs
+if rg -q 'scrollback::save' crates/tty7-core/src/daemon/server.rs; then
+    echo 'daemon snapshot writers must share per-pane capture/save coordination' >&2
+    exit 1
+fi
+ruby -e 'abort "pane death callbacks must share the canonical reaper" unless File.read("crates/tty7-core/src/daemon/server.rs").scan("tty7-daemon-pane-reap").length == 1'
+rg -q 'ControlRequest::SleepSession' crates/tty7-core/src/host/server.rs
+rg -q 'fn explicit_sleep_retains_original_slot_and_resumes_again' crates/tty7-server/tests/stopped_resume.rs
+rg -q 'fn sleep_rejects_changed_target_before_signaling' crates/tty7-core/src/daemon/server/recovery.rs
+if rg -q 'release_initial_workspace_claim|exclusive: bool' crates/tty7-core/src/daemon/control.rs crates/tty7-core/src/host/server.rs; then
+    echo 'delete obsolete initial-claim cleanup after migrating its regressions to tracked uses' >&2
+    exit 1
+fi
+rg -q 'fn automatic_attachment_acquires_tracked_use_without_takeover' src/ui/remote_workspace.rs
+rg -q 'acquire_workspace_use' src/ui/remote_workspace.rs
+rg -q 'take_back_workspace_use' src/ui/remote_workspace.rs
+rg -q 'fn tracked_take_back_preserves_shared_and_unknown_consumers' crates/tty7-core/src/host/server.rs
+rg -q 'fn workspace_take_back_interrupted_readback_pins_uncertain_claim' crates/tty7-core/src/daemon/control.rs
+if sed -n '/fn acquire_attachment(/,/^#\[derive/p' src/ui/remote_workspace.rs | rg -q '\.call\('; then
+    echo 'attachment must use canonical tracked acquisition, not raw calls' >&2
+    exit 1
+fi
+rg -q 'retain_workspace_use' src/ui/remote_workspace.rs
+rg -q 'fn automatic_attachment_use_is_retained_or_retired_by_scope' src/ui/remote_workspace.rs
+sed -n '/pub(crate) fn disconnect(/,/^    fn mark(/p' src/ui/remote_workspace.rs | rg -Fq 'retire_workspace_use'
+sed -n '/fn finish_attachment(/,/^fn finish_reclaim(/p' src/ui/remote_workspace.rs | rg -Fq 'session_recovery::release'
+rg -q 'fn automatic_attachment_scope_expires_on_view_retirement' src/ui/remote_workspace.rs
+rg -q 'fn automatic_attachment_scope_refresh_reopens_eligibility' src/ui/remote_workspace.rs
+rg -q 'workspace_view_epoch' src/ui/app.rs
+rg -q 'fn reconnect_leaves_current_workspace_acquisition_to_the_pump' src/ui/remote_workspace.rs
+rg -q 'fn late_attachment_reply_cannot_mark_replacement_connection' src/ui/remote_workspace.rs
+ruby -e 's = File.read("src/ui/remote_workspace.rs"); body = s.split("fn launch_attempt(", 2).fetch(1).split("fn finish_attempt(", 2).fetch(0); abort "reconnect must leave workspace acquisition to the pump" if body.match?(/workspace_attachment_request|WorkspaceAttach|acquire_workspace_use|workspaces_on/)'
+rg -q 'fn retained_resume_dropped_view_retires_use' src/ui/tree_sync.rs
+rg -q 'on_release.*retire_workspace_use' src/ui/app.rs
+rg -q 'fn tracked_workspace_uses_release_only_the_last_owned_user' crates/tty7-core/src/host/server.rs
+rg -q 'fn workspace_claims_progress_independently' crates/tty7-core/src/daemon/control.rs
+rg -q 'fn workspace_claim_uncertainty_prevents_tracked_cleanup' crates/tty7-core/src/daemon/control.rs
+rg -q 'fn client_cancellation_racing_reacquire_preserves_new_claim' crates/tty7-core/src/host/server.rs
+rg -q 'fn client_cancellation_preserves_other_workspace_users' crates/tty7-core/src/host/server.rs
+rg -q 'acquire_workspace_use' src/ui/session_recovery.rs
+rg -q 'finish_workspace_use' src/ui/session_recovery.rs
+rg -q 'acquire_workspace_use' src/ui/history_manager/staging.rs
+rg -q 'finish_workspace_use' src/ui/history_manager/staging.rs
+rg -q 'retain_workspace_use' src/ui/history_manager.rs
+rg -q 'fn rejoin_cleanup_preserves_other_tracked_users' src/ui/history_manager/staging.rs
+if rg -q 'release_initial_workspace_claim|fn release_with' src/ui/history_manager/staging.rs; then
+    echo 'Rejoin must retain and retire tracked uses, not initial claim freshness' >&2
+    exit 1
+fi
+if rg -Uq '\.call\s*\(\s*ControlRequest::WorkspaceReleaseProof' src/ui/session_recovery.rs src/ui/history_manager/staging.rs; then
+    echo 'cancellation must use coordinated workspace-use retirement' >&2
+    exit 1
+fi
+rg -q 'fn reused_workspace_proof_is_not_a_view_lifetime' crates/tty7-core/src/host/server.rs
+rg -q 'fn retained_resume_close_window_never_attaches_successor' src/ui/tree_sync.rs
+rg -q 'fn retained_resume_close_window_discards_late_reply' src/ui/tree_sync.rs
+rg -q 'fn retained_resume_click_attaches_over_control' src/ui/tree_sync.rs
+rg -q 'host_ops::off_thread' src/ui/session_recovery.rs
+rg -q 'fn presents_terminal' src/ui/pane.rs
+rg -q 'slot.presents_terminal' src/ui/tree_sync.rs
+rg -q 'fn retained_resume_requires_target_exit_and_preserves_output' src/ui/session_recovery.rs
+rg -q 'fn resume_retained' src/ui/session_recovery.rs
+rg -q 'fn retained_resume_landing_preserves_maximized_focus' src/ui/app.rs
+rg -q 'retained_view' src/ui/pending_pane.rs
+rg -q 'fn stopped_resume_click_attaches_running_successor_over_control' src/ui/tree_sync.rs
+rg -q 'host_ops::off_thread' src/ui/app.rs
+rg -q 'fn stopped_resume_click_reconciles_exited_successor_over_control' src/ui/tree_sync.rs
+rg -q 'fn stopped_resume_keeps_slot_identity_across_ratio_changes' src/ui/session_recovery.rs
+rg -q 'fn same_slots' src/ui/session_recovery.rs
+rg -q 'candidate.same_slot' src/ui/session_recovery.rs
+rg -q 'fn stopped_resume_projection_rejects_ambiguous_or_changed_target' src/ui/session_recovery.rs
+rg -q 'fn stopped_resume_button_holds_original_slot' src/ui/session_recovery.rs
+rg -q 'ControlRequest::ResumeStoppedSession' src/ui/session_recovery.rs
+rg -q 'PaneAttachExpectation::Owned' crates/tty7-core/src/daemon/pane.rs
+rg -q 'hold_resume_tab' src/ui/tree_sync.rs
+rg -q 'has_resume_pending' src/ui/tree_sync.rs
+rg -q 'accepted_resume_reply' src/ui/session_recovery.rs
+rg -q 'FEATURE_CHECKED_ATTACH' src/ui/session_recovery.rs
+rg -q 'acknowledge_recovery' src/ui/session_recovery.rs
+rg -q 'apply_to_mirror' src/ui/tree_sync.rs
+if rg -q 'run_command_line|ClientMsg::Input|kill_pane|new_tab_with' src/ui/session_recovery.rs; then
+    echo 'stopped UI recovery must reuse the target RPC and guarded attachment' >&2
+    exit 1
+fi
+for case in stopped_resume_rpc_runs_exact_argv_once stopped_resume_rpc_immediate_exit_remains_recoverable stopped_resume_rpc_disk_failure_does_not_leak_a_pane; do
+    rg -q "fn $case\\(" crates/tty7-server/tests/stopped_resume.rs
+done
+rg -q 'ControlRequest::ResumeStoppedSession' crates/tty7-core/src/host/server.rs
+rg -q 'fn resume_stopped_with' crates/tty7-core/src/core/machine.rs
+rg -q 'fn spawn_resume' crates/tty7-core/src/daemon/pane.rs
+rg -q 'DaemonPane::spawn_resume' crates/tty7-core/src/daemon/server/recovery.rs
+rg -q 'with_workspace_proof' crates/tty7-core/src/daemon/server/recovery.rs
+rg -q 'resolve_current_process' crates/tty7-core/src/daemon/server/recovery.rs
+rg -q 'check_stopped_session' crates/tty7-core/src/daemon/server/recovery.rs
+if rg -q 'write_input|run_command_line|ClientMsg::Input|CommandBuilder' crates/tty7-core/src/daemon/server/recovery.rs; then
+    echo 'stopped recovery must use canonical typed PTY launch, never shell input' >&2
+    exit 1
+fi
+test "$(rg -c 'pair.slave.spawn_command' crates/tty7-core/src/daemon/pane.rs)" = 1
+sed -n '/^    fn spawn_config(/,/^    fn over_pty(/p' crates/tty7-core/src/daemon/pane.rs | rg -U -q 'try_clone_reader\(\)\?;[\s\S]*take_writer\(\)\?[\s\S]*spawn_command\(spawn.cmd\)'
+rg -q '^fn unique_pane_owner\(' crates/tty7-core/src/core/machine.rs
+sed -n '/pub(crate) fn with_pane_owner</,/^    pub fn pane(/p' crates/tty7-core/src/core/machine.rs | rg -q 'unique_pane_owner\('
+sed -n '/pub fn pane_replace(/,/^    pub fn note_pane_facts/p' crates/tty7-core/src/core/machine.rs | rg -q 'replace_pane\('
+sed -n '/^fn replace_pane(/,/^fn register_pane(/p' crates/tty7-core/src/core/machine.rs | rg -q 'unique_pane_owner\('
+rg -q 'fn collect_candidates' crates/tty7-core/src/agent_sessions.rs
+scanner=$(sed -n '/^pub fn scan(/,/^struct Metadata {/p' crates/tty7-core/src/agent_sessions.rs)
+printf '%s\n' "$scanner" | rg -q 'collect_candidates\('
+if printf '%s\n' "$scanner" | rg -q 'fs::read_dir'; then
+    echo 'discovery must reuse the canonical bounded candidate walker' >&2
+    exit 1
+fi
+rg -q 'ControlRequest::ResolveAgentSession' crates/tty7-core/src/host/remote.rs
+rg -q 'ControlRequest::ResolveAgentSession' crates/tty7-core/src/host/server.rs
+delta_renderer=$(sed -n '/^    fn build_pane_from_tree(/,/^fn set_gui_ratio(/p' src/ui/tree_sync.rs)
+printf '%s\n' "$delta_renderer" | rg -q 'session_to_pane\('
+if printf '%s\n' "$delta_renderer" | rg -q 'new_terminal_with_restore_policy'; then
+    echo 'incremental tree hydration must reuse canonical session rendering' >&2
+    exit 1
+fi
+rg -q 'SessionPane::Stopped' src/ui/tree_sync.rs
+rg -q 'SessionPane::Stopped' src/ui/app.rs
+rg -q 'PendingState::Stopped' src/ui/pending_pane.rs
+rg -Fq 'session.tabs.iter().all(|tab| tab.pane.is_fully_stopped())' src/ui/app.rs
+rg -q 'observe_terminal_exit\(code\)' crates/tty7-core/src/daemon/pane.rs
+exit_handler=$(sed -n '/^    fn on_child_exited(/,/^    fn cycle_pane(/p' src/ui/app.rs)
+test -n "$exit_handler"
+if printf '%s\n' "$exit_handler" | rg -q 'close_leaf|close_tab|kill_pane|new_tab|run_command'; then
+    echo 'child exit cannot close, kill, or recreate a retained row' >&2
+    exit 1
+fi
+rg -q 'live_titles::start_current' crates/tty7-core/src/daemon/server.rs
+rg -q 'read_codex_titles' crates/tty7-core/src/agent_sessions/live_titles.rs
+rg -q 'provider_title' crates/tty7-core/src/core/tab_view.rs
+rg -q 'fn provider_title_binding' crates/tty7-core/src/core/machine.rs
+rg -q 'provider_title_binding\(' crates/tty7-core/src/agent_sessions/live_titles.rs
+test "$(rg -c 'registry.install_services\(&services\)' crates/tty7-core/src/daemon/server.rs)" = 2
+rg -q 'with_pane_attachment\(' crates/tty7-core/src/daemon/server.rs
+rg -q 'attach_checked_subscriber\(' crates/tty7-core/src/daemon/pane.rs
+rg -q 'ClientMsg::AttachChecked' crates/tty7-core/src/daemon/server.rs
+rg -q 'FEATURE_CHECKED_ATTACH' crates/tty7-core/src/daemon/protocol.rs
+rg -q 'PaneAttachExpectation::Shell' crates/tty7-core/src/daemon/pane.rs
+rg -q 'WorkspaceAttachIfFree' crates/tty7-core/src/host/server.rs
+rg -q 'WorkspaceAttachIfFree' src/ui/remote_workspace.rs
+rg -q 'pub const CONTROL_VERSION: u32 = 18;' crates/tty7-core/src/daemon/control.rs
+rg -q 'WorkspaceAcquired' crates/tty7-core/src/host/server.rs
+rg -q 'fn acquire_attachment' src/ui/remote_workspace.rs
+rg -q 'WorkspaceReleaseProof' crates/tty7-core/src/host/server.rs
+sed -n '/fn pump_attachments(/,/^fn finish_attachment(/p' src/ui/remote_workspace.rs | rg -Fq 'acquire_attachment(&worker, &worker_key, explicit_take_back)'
+sed -n '/fn pump_attachments(/,/^fn finish_attachment(/p' src/ui/remote_workspace.rs | rg -Fq 'finish_attachment('
+sed -n '/fn finish_attachment(/,/^fn finish_reclaim(/p' src/ui/remote_workspace.rs | rg -Fq 'scope.is_current(cx)'
+sed -n '/fn pump_attachments(/,/^fn finish_attachment(/p' src/ui/remote_workspace.rs | rg -Fq 'host_ops::off_thread'
+if rg -q 'fn workspace_attachment_request|fn validate_workspace_attachment_reply' src/ui/remote_workspace.rs; then
+    echo 'automatic attachment must use tracked acquisition, not legacy reply bookkeeping' >&2
+    exit 1
+fi
+sed -n '/fn finish_attachment(/,/^fn finish_reclaim(/p' src/ui/remote_workspace.rs | rg -Fq 'Arc::ptr_eq(current.client(), client)'
+if sed -n '/fn launch_attempt(/,/^fn finish_attempt(/p' src/ui/remote_workspace.rs | rg -q 'ControlRequest::WorkspaceAttach \{'; then
+    echo 'automatic reconnect must not force workspace takeover' >&2
+    exit 1
+fi
+rg -q 'fn nonresident_rejoin_rejects_duplicate_split_leaf' src/ui/history_manager.rs
+rg -q 'ControlRequest::MachineGet' src/ui/history_manager/staging.rs
+rg -q 'resolve_rejoin_workspace' src/ui/switcher.rs
+sed -n '/pub(crate) fn adopt_workspace(/,/^    }/p' src/ui/app.rs | rg -q 'RestorePolicy::AttachOnly'
+rg -q 'RestorePolicy::AttachOnly' src/ui/tree_sync.rs
+rg -q 'finish_local_terminal_attempt\(' src/ui/app.rs
+rg -q 'cleanup_cancelled_attachment\(parts.restored,' src/ui/app.rs
+rg -q 'restoration_attachment\(' src/terminal/view.rs
+rg -q 'attach_restoring_on\(' src/terminal/view.rs
+rg -q 'RestorePolicy::Checked' src/terminal/remote.rs
+rg -q 'staging::prepare' src/ui/history_manager.rs
+rg -Fq 'origin.matches(this)' src/ui/history_manager.rs
+rg -q 'expected_route' src/ui/history_manager.rs
+rg -q 'rejoin_route_spec' src/ui/history_manager.rs
+rg -q 'switch_workspace_prepared' src/ui/history_manager.rs
+rg -q 'install_prepared_snapshot' src/ui/app.rs
+rg -q 'WorkspaceReleaseProof' src/ui/history_manager/staging.rs
+if rg -q 'HistoryAction::Rejoin|activate_rejoin_workspace' src/ui/history_manager.rs src/ui/switcher.rs; then
+    echo 'nonresident Rejoin must not switch before checked staging' >&2
+    exit 1
+fi
+if rg -q 'unwrap_or_else\(\|\| format!\("no such pane' src/terminal/remote.rs; then
+    echo 'partial Attach replies cannot manufacture a missing pane' >&2
+    exit 1
+fi
+if sed -n '/fn switcher_open_tab(/,/^    }/p' src/ui/switcher.rs | rg -q 'index: usize'; then
+    echo 'resident selection must resolve stable TabId, not captured index' >&2
+    exit 1
+fi
+rg -q 'fn rejoin_selected_history' src/ui/history_manager.rs
+if sed -n '/fn rejoin_selected_history(/,/^    }/p' src/ui/history_manager.rs | rg -q 'new_tab|switch_workspace|run_command|write_input|resume_history_session'; then
+    exit 1
+fi
+rg -q 'session_recovery::badge' src/ui/switcher.rs
+rg -q 'session_recovery::badge' src/ui/tab_sidebar.rs
+rg -q 'observe_agent_identity\(' crates/tty7-core/src/daemon/pane.rs
+rg -q 'foreground_provider_replacement_clears_old_session_before_publishing_identity' crates/tty7-core/src/daemon/pane.rs
+rg -q 'session_index.jsonl' crates/tty7-core/src/agent_sessions.rs
+rg -q 'fn read_codex_titles' crates/tty7-core/src/agent_sessions.rs
+rg -q 'fn agent_sessions\(' crates/tty7-core/src/host/mod.rs
+rg -q 'scan_current_process\(' crates/tty7-core/src/host/local.rs
+rg -q 'ControlRequest::AgentSessions' crates/tty7-core/src/host/remote.rs
+rg -q 'h.agent_sessions\(\)' crates/tty7-core/src/host/server.rs
+rg -q 'fn validate_agent_session\(' crates/tty7-core/src/host/mod.rs
+rg -q 'validate_current_process\(' crates/tty7-core/src/host/local.rs
+rg -q 'ControlRequest::ValidateAgentSession' crates/tty7-core/src/host/remote.rs
+rg -q 'h.validate_agent_session\(' crates/tty7-core/src/host/server.rs
+if sed -n '/fn validate_agent_session(/,/^    }/p' crates/tty7-core/src/host/remote.rs | rg -q 'LocalHost|validate_current_process|std::fs'; then
+    exit 1
+fi
+if sed -n '/fn agent_sessions(/,/^    }/p' crates/tty7-core/src/host/remote.rs | rg -q 'LocalHost|scan_current_process|std::fs'; then
+    exit 1
+fi

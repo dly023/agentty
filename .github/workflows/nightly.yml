@@ -1,0 +1,309 @@
+name: Nightly
+
+# Unattended nightly channel: build `main` every night, stamp a pre-release
+# CalVer version (<next-stable>-nightly.<YYYYMMDD>), and publish everything to
+# a single rolling `nightly` prerelease. Stable releases (release.yml) are
+# untouched; the update checker ignores prereleases via /releases/latest.
+
+on:
+  schedule:
+    - cron: "0 18 * * *" # 18:00 UTC = 02:00 Beijing
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+jobs:
+  # Decide whether tonight needs a build, and compute the version once.
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.plan.outputs.build }}
+      version: ${{ steps.plan.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history + tags — needed for the skip check and version math
+
+      - id: plan
+        run: |
+          # Skip when HEAD is already published: last night's nightly points at
+          # it (main hasn't moved) or a stable tag does (tonight would just
+          # rebuild the release under a nightly name).
+          if git tag --points-at HEAD | grep -qE '^(nightly$|v[0-9])'; then
+            echo "nothing new since the last published build — skipping"
+            echo "build=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Nightly version = next stable patch + date suffix. With no vX.Y.Z
+          # tags yet, plan-nightly-version.sh bumps [workspace.package] instead
+          # of emitting a leading-dot version (".1-nightly…") that cargo rejects.
+          VERSION=$(bash .github/scripts/plan-nightly-version.sh)
+          echo "building $VERSION from ${GITHUB_SHA::7}"
+          echo "build=true" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+  # Every desktop artifact embeds both supported static Linux helpers, so the
+  # platform matrix waits for the complete server-musl matrix.
+  build:
+    needs: [plan, server-musl]
+    if: needs.plan.outputs.build == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-14
+            os: macos
+            arch: arm64
+            target: aarch64-apple-darwin
+          - runner: macos-15-intel
+            os: macos
+            arch: x86_64
+            target: x86_64-apple-darwin
+          - runner: windows-latest
+            os: windows
+            arch: x86_64
+            target: x86_64-pc-windows-msvc
+          - runner: ubuntu-latest
+            os: linux
+            arch: x86_64
+            target: x86_64-unknown-linux-gnu
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout agentty
+        uses: actions/checkout@v4
+        with:
+          path: agentty
+
+      # Everything versioned — the binary (CARGO_PKG_VERSION), asset names,
+      # DMG plist, Inno installer — reads Cargo.toml, so stamping it is the only
+      # edit needed. Shared with the server-musl job below, and it fails loudly
+      # if the manifest's shape ever moves the version line out from under it.
+      - name: Stamp nightly version
+        working-directory: agentty
+        shell: bash
+        run: bash .github/scripts/stamp-version.sh "${{ needs.plan.outputs.version }}"
+
+      - name: Install Linux system dependencies
+        if: matrix.os == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config cmake clang libxkbcommon-dev \
+            libxkbcommon-x11-dev libfontconfig1-dev libfreetype6-dev \
+            libwayland-dev libx11-dev libxcb1-dev libzstd-dev libssl-dev \
+            libkrb5-dev libfuse2 file imagemagick
+          echo "LIBGSSAPI_IMPL=mit" >> "$GITHUB_ENV"
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2026-07-31
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: agentty
+
+      - name: Build
+        working-directory: agentty
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Fetch bundled Linux servers
+        uses: actions/download-artifact@v7
+        with:
+          pattern: nightly-tty7-server-linux-*-musl
+          path: agentty/bundled-server
+          merge-multiple: true
+
+      - name: Bundle macOS DMG
+        if: matrix.os == 'macos'
+        working-directory: agentty
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: bash .github/scripts/bundle-macos.sh "${{ matrix.target }}" "${{ matrix.arch }}"
+
+      - name: Package Linux tarball
+        if: matrix.os == 'linux'
+        working-directory: agentty
+        run: bash .github/scripts/bundle-linux.sh "${{ matrix.target }}" "${{ matrix.arch }}"
+
+      - name: Package Linux AppImage
+        if: matrix.os == 'linux'
+        working-directory: agentty
+        run: bash .github/scripts/bundle-appimage.sh "${{ matrix.target }}" "${{ matrix.arch }}"
+
+
+      - name: Package Windows installer + zip
+        if: matrix.os == 'windows'
+        working-directory: agentty
+        shell: pwsh
+        run: '& ./.github/scripts/bundle-windows.ps1 "${{ matrix.target }}" "${{ matrix.arch }}"'
+
+      # Same glob list as release.yml's Release step: the bundle scripts leave
+      # intermediates in dist/ (agentty.app, entitlements.plist, the Windows
+      # staging dir) that must not reach the release assets.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: nightly-${{ matrix.os }}-${{ matrix.arch }}
+          path: |
+            agentty/dist/*.dmg
+            agentty/dist/*.tar.gz
+            agentty/dist/*.zip
+            agentty/dist/*-setup.exe
+            agentty/dist/*.AppImage
+          if-no-files-found: error
+
+  # Mirrors release.yml's server-musl job; keep the two in sync when editing.
+  # Nightly carries the server binaries too so the remote-install path can
+  # be exercised against the rolling channel instead of waiting for a tag.
+  server-musl:
+    needs: plan
+    if: needs.plan.outputs.build == 'true'
+    strategy:
+      fail-fast: false
+      # `target` is the build triple; `asset` is the published filename. Kept
+      # apart for the reason release.yml spells out: the triple's vendor field is
+      # `unknown`, and a download name has no business carrying it.
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            asset: tty7-server-linux-x86_64-musl
+          - target: aarch64-unknown-linux-musl
+            asset: tty7-server-linux-aarch64-musl
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: -C strip=symbols
+    steps:
+      - name: Checkout agentty
+        uses: actions/checkout@v4
+        with:
+          path: agentty
+
+      # Stamped for the same reason the GUI builds are: the server reports
+      # CARGO_PKG_VERSION over the wire during the version handshake, and a
+      # nightly server claiming the last stable version would make that
+      # negotiation lie. The asset *name* is version-free either way.
+      - name: Stamp nightly version
+        working-directory: agentty
+        run: bash .github/scripts/stamp-version.sh "${{ needs.plan.outputs.version }}"
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2026-07-31
+          targets: ${{ matrix.target }}
+
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-zigbuild
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: agentty
+          key: ${{ matrix.target }}
+
+      - name: Require the tty7-server package
+        working-directory: agentty
+        run: |
+          set -euo pipefail
+          cargo metadata --no-deps --format-version 1 \
+            | jq -e '[.packages[].name] | index("tty7-server")' >/dev/null
+
+      # No `--locked` here, matching the rest of nightly: the version stamp above
+      # rewrites Cargo.toml, and cargo has to be free to refresh the root
+      # package's own lock entry.
+      - name: Build static tty7-server
+        working-directory: agentty
+        run: cargo zigbuild --release -p tty7-server --target ${{ matrix.target }}
+
+      - name: Assert the binary is static
+        working-directory: agentty
+        run: bash .github/scripts/assert-static.sh "target/${{ matrix.target }}/release/tty7-server"
+
+      - name: Stage the asset
+        working-directory: agentty
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp "target/${{ matrix.target }}/release/tty7-server" \
+             "dist/${{ matrix.asset }}"
+          chmod +x "dist/${{ matrix.asset }}"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: nightly-${{ matrix.asset }}
+          path: agentty/dist/${{ matrix.asset }}
+          if-no-files-found: error
+
+  # Single publish step after all platforms succeed, so the rolling release is
+  # always complete — a failed platform means tonight's nightly is skipped
+  # entirely and users keep yesterday's, never a partial asset set.
+  publish:
+    needs: [plan, build, server-musl]
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ needs.plan.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+
+      # Same contract as release.yml — see `install::asset`. Written
+      # into dist/ before the upload below so it ships as an asset like any
+      # other, and so the prune step at the end sees it as current.
+      - name: Generate checksums.txt
+        run: |
+          set -euo pipefail
+          cd dist
+          rm -f checksums.txt
+          # Built in $RUNNER_TEMP and moved in: a redirect straight into dist/
+          # creates the file before find walks the directory, so it would hash
+          # itself as a zero-byte entry. `xargs -r` so an empty dist/ fails
+          # instead of hanging on stdin.
+          find . -type f -printf '%P\n' \
+            | LC_ALL=C sort | xargs -r sha256sum > "$RUNNER_TEMP/checksums.txt"
+          [ -s "$RUNNER_TEMP/checksums.txt" ] || { echo "::error::no assets to checksum"; exit 1; }
+          mv "$RUNNER_TEMP/checksums.txt" checksums.txt
+          sha256sum -c checksums.txt
+          cat checksums.txt
+
+      - name: Update rolling nightly release
+        run: |
+          # Move the tag first so the release object follows it to this SHA.
+          git push -f origin "$GITHUB_SHA:refs/tags/nightly"
+
+          TITLE="Nightly $VERSION"
+          NOTES="Automated nightly build of \`main\` @ ${GITHUB_SHA::7} ($(date -u +%F)). Rolling prerelease — assets are replaced every night; for the latest stable release see https://github.com/${GITHUB_REPOSITORY}/releases/latest."
+
+          if gh release view nightly >/dev/null 2>&1; then
+            gh release edit nightly --prerelease --title "$TITLE" --notes "$NOTES"
+          else
+            gh release create nightly --prerelease --title "$TITLE" --notes "$NOTES"
+          fi
+
+          # Upload before deleting: date-suffixed names never collide across
+          # nights, so both sets briefly coexist — if an upload dies midway,
+          # yesterday's complete nightly is still intact.
+          gh release upload nightly dist/* --clobber
+
+          # Now prune the previous night's assets (anything we didn't upload).
+          gh release view nightly --json assets -q '.assets[].name' |
+            while read -r name; do
+              [ -e "dist/$name" ] || gh release delete-asset nightly "$name" -y
+            done

@@ -1,0 +1,12 @@
+#!/bin/sh
+set -eu
+ruby script/tests/desktop_io_boundary.rb
+rg -U -q '\.on_drag\(\s*TreePathDrag' src/ui/file_tree.rs
+if rg -U -q '\.on_drag\(\s*ExternalPaths' src/ui/file_tree.rs; then exit 1; fi
+rg -q 'paths: &TreePathDrag' src/ui/file_tree.rs
+for file in src/terminal/view.rs src/ui/sftp.rs; do
+    rg -q 'paths: &crate::core::path_drag::TreePathDrag' "$file"
+done
+for file in src/ui/file_tree.rs src/ui/sftp.rs; do
+    rg -q 'local_sources\(' "$file"
+done

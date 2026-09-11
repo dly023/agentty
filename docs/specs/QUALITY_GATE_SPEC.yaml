@@ -1,0 +1,66 @@
+version: 1
+title: Canonical local verification entry
+contracts:
+  - id: QUALITY-VERSION-04
+    rule: >-
+      script/check_version_policy is the single CI and local package-version
+      check. Resolve workspace packages with the installed pinned Cargo using
+      metadata --no-deps --locked --offline; do not install a toolchain, fetch
+      dependencies, modify manifests or bump versions. Every workspace member
+      must have the same valid SemVer as the root package. Reuse the existing
+      SemVer validator, not an archived fixed version or a second TOML parser.
+      Missing root/member metadata, duplicate package identities, inconsistent
+      versions, malformed JSON and command failure must return nonzero.
+      This checks resolved package versions, not release artifacts or complete
+      dependency-lock freshness. Quick invokes this checker and isolated
+      success/failure fixtures; CI uses the same checker.
+  - id: QUALITY-NAVIGATION-03
+    rule: >-
+      DEVELOPMENT.md is the canonical development-stage, debt, product-model
+      and version-policy entry required by AGENTS.md. docs/README.md routes
+      engineering readers to current specs, traceability and the development
+      tracker without duplicating changing completion states. Keep archived
+      implementation vocabulary and obsolete fixed package versions out of
+      the current entry; Cargo.toml and the product branding spec define actual
+      package/build identity. The existing check_agent_harness must reject
+      absent, empty or foreign AGENTS.md, DEVELOPMENT.md or docs/README.md,
+      and broken or foreign repository-relative Markdown links in DEVELOPMENT.md
+      and docs/README.md. Verify missing-entry and link failures using isolated
+      fixtures. This navigation check proves references, not product behavior,
+      native UI, Git hooks, branch protection or released artifact correctness.
+  - id: QUALITY-GATE-01
+    routed_fixture_scope: >-
+      The routed real-stdio-server integration fixture must pass --config-dir
+      naming its own TempDir before launching the child; a temporary control
+      socket alone is not state isolation. Assert the argv scope before starting
+      any route thread/process, and verify MachineGet sees only the fixture's
+      preseeded pane-free machine tree. Preserve existing file/RPC assertions.
+      Never rerun an unsafe fixture against default user state to prove RED.
+    host_test_scope: >-
+      The host-boundary scanner excludes a trailing module immediately preceded
+      by cfg(test), whether private, pub or pub(crate). Visibility alone never
+      grants an exemption; forbidden production calls before that module or
+      inside a non-test public module must still fail. Do not expand path or
+      call allowlists to permit isolated test fixture cleanup.
+    rule: >-
+      script/presubmit accepts quick or full only and runs from the repository
+      root independent of caller cwd. Quick runs harness contract/reference
+      validation, its deterministic fixture tests, every existing product
+      source guard, host-boundary checks and rustfmt. Full first runs quick,
+      then all workspace tests with --locked and one test thread because the
+      current WSL timing fixture is not parallel-isolated. No test is ignored
+      or assertion relaxed by the gate. Any missing check or failed command
+      stops the gate and returns nonzero; no success banner follows failure.
+      Use the installed nightly-2026-07-31 via rustup run, without installing a
+      toolchain, changing global settings, deployment or user-config mutation.
+      Passing this gate does not assert manual visual, packaging, remote or
+      lifecycle acceptance, which retain separate evidence requirements.
+  - id: QUALITY-REFERENCES-02
+    rule: >-
+      Every matrix requirement must resolve to exactly one spec contract.
+      Matrix source and static-check paths must exist within this repository.
+      Each listed Rust test must have a corresponding function definition in
+      src or crates, never the historical archive; path-valued shell checks
+      must exist. Duplicate IDs, malformed documents, absent source/check/test
+      and unknown spec IDs fail closed. Existing unresolved references remain
+      failures until real behavior and tests are supplied, not waived.

@@ -1,0 +1,526 @@
+version: 1
+history_title_integration_status: gui_and_package_verified_native_provider_ssh_pending
+requirements:
+  - id: SESSION-HISTORY-TITLE-26
+    current_native_scope: Fresh bb535858 package passed isolated ordinary-shell live GUI quit/reopen and stopped shell exit/reopen identity checks a9dbf9/51f268; tracker history_v18_native_acceptance records exact fixture and process cleanup. This does not prove history-title rendered UI or provider Resume/Rejoin. Native AX/capture permissions remain falsec5e362.
+    current_package: Native arm64 and both Linux helpers rebuilt for control18/source731bc414. DMGbb535858 passed checksum, mounted strict adhoc signature, numeric plist, fresh GUI UUID and matching helper gates448787/32cb68; quick39369 passed470e8a. Canonical artifact hashes/recovery paths live in tracker history_v18_package. This supersedes stale-v17 package notes only; native GUI/provider/SSH acceptance remains required.
+    manager_scan_gate: Final quick45367 passededdcab. Nine title and52 history tests pass with restored production scan guard; full96752 remains the production baseline. Native/provider/SSH acceptance and matching v18 packages remain open.
+    manager_scan_verification: Delayed discovery and error/newly-missing refresh cases passed in final52 history tests68db2c. Removing dismissed scan guard reproduced snapshot mutation665596; restored before final tests. Host capture release provides the late-completion barrier. Production code unchanged from full96752; native/provider/SSH and fresh packages remain separate.
+    manager_scan_tests: [history_title_closed_window_rejects_late_discovery, history_title_failed_refresh_keeps_snapshot_without_subscription]
+    manager_full_gate: Frozen-source full96752 passed6d64b6 with GUI1939/core1370/CLI138 and all integrations; no changed ignored counts. Additional delayed-scan/failure coverage and native/provider/SSH acceptance remain open; existing v17 packages are stale.
+    manager_verification: Seven GPUI title tests passed25eb32 after retained-app window-close RED43867d; quick23212 passed88c2ab. Scripted control sockets prove delayed setup cancellation, refresh retirement and no-pane title/search updates. Full, delayed-scan/failure expansion and native/provider/SSH acceptance remain pending.
+    manager_source: [src/ui/app.rs, src/ui/history_manager.rs, src/ui/history_manager/title_updates.rs, src/ui/i18n/mod.rs, src/ui/i18n/en.rs, src/ui/i18n/zh.rs, src/ui/i18n/ja.rs]
+    manager_tests: [history_title_projection_is_atomic_and_metadata_only, history_title_manager_updates_search_without_resuming, history_title_manager_rejects_old_interest_and_replaced_host, history_title_manager_receives_remote_updates_after_discovery]
+    manager_lifetime_tests: [history_title_manager_close_before_ready_retires_late_subscription, history_title_manager_refresh_ignores_retired_stream, history_title_window_close_retires_interest_with_retained_app]
+    wire_verification: Missing-module RED8483e6/API REDf67b5f, cancelled-close RED94c855 and reused-token RED338817 preceded final wire path. Fourteen focused tests passede652b3; 58 control tests and frozen-source quick/full28237 exited0 (GUI1932/core1370/CLI138 plus integrations). Real socket tests use injected source handles, not actual SSH/provider stores. GUI subscription/selection/alias integration remains required.
+    wire_tests: [history_title_reservations_reject_late_install_and_foreign_cleanup, history_title_reservations_are_bounded_and_disconnect_closed, history_title_remote_events_arrive_before_ack_and_close_once, history_title_remote_registry_coalesces_and_rejects_retired_ids]
+    target_wire_tests: [history_title_server_delivers_and_retires_target_source, history_title_server_rejects_late_source_after_close_cancel_or_disconnect]
+    wire_failure_tests: [history_title_cancelled_close_still_retires_source, history_title_queue_refusal_and_failed_reply_release_reservation, history_title_delayed_close_does_not_retire_reused_token]
+    wire_source: [crates/tty7-core/src/daemon/control.rs, crates/tty7-core/src/host/server.rs, crates/tty7-core/src/host/server/title_watches.rs, crates/tty7-core/src/host/remote.rs]
+    host_boundary_verification: Static RED8a526b and API REDcd3907 preceded canonical Host/LocalHost integration. Five history_title tests and eight source tests passed; frozen-source quick/full74310 exited0. Cloned receivers close before backend lifetime disposal. Remote wire and manager integration remain required.
+    source: [crates/tty7-core/src/agent_sessions/live_titles.rs, crates/tty7-core/src/host/mod.rs, crates/tty7-core/src/host/local.rs, crates/tty7-core/src/host/remote.rs]
+    static_check: script/check_agent_sessions
+    tests: [history_title_subscription_without_panes_is_bounded_and_read_only, history_title_subscription_rejects_invalid_membership, history_title_subscription_closes_receivers_before_backend_disposal, history_title_local_host_rejects_oversized_interest, history_title_unsupported_host_has_no_local_fallback]
+    verification: Real temporary provider records; delayed name, unknown IDs, partial/missing/replaced index, source replacement, slow consumer and joined cancellation. Target-only slice; Host wire and GUI lifecycle tests remain required.
+  - id: MACHINE-ENTRYPOINT-25
+    current_package_live_reopen: DMG2609656f with expected packaged GUI hash passed isolated native launch/normal quit/live reopen. Original daemon64067/shell64079 and workspace/tab/pane IDs survived; windows39428/39441 had same1440x900 geometry. Exact test GUI normal quits and scoped daemon cleanup completed; tracker final_cleanup_native_package owns replay details. AX/capture permission false543cbe; no native mouse/keyboard/visual or vendor/SSH acceptance claimed.
+    guide_followup: Homepage/site metadata, palette guide and both shortcut guides synchronized with retired GUI entrypoints and machine-only scope. Structural/local-link checksdda0f9, negative wording assertions24a5e2 and quick24056 passed. Documentation-only; MDX rendering and remaining installation/update guide audit are open in tracker machine_guide_entrypoint_followup.
+    final_package_gate: Final-cleanup arm64 release47834 and canonical packaging57797 exited0; new DMG2609656f5f02bead0dd0c1147781a15213eb860925c21cf04231cb67d35b613c passed checksum, mounted deep strict signature, plist, matching fresh GUI UUID and helper protocol/static checks. Quick95910 passed. Full18274 remains unchanged-source baseline. Tracker final_cleanup_native_package owns artifact details; actual new-package GUI/provider/SSH runtime acceptance is still separate from previous e51f8d15 lifecycle evidence.
+    final_source_gate: Frozen-source session18274 exited0 a363bd; remote_connect20/switcher44/liveness7 focused tests, quick/full passed with GUI1932/core1355/CLI138 and all source-identity/server suites. Existing ignored counts unchanged. Old dropdown/deletion invalidation helpers absent; active TTL expiry and machine search coverage retained. This supersedes pending cleanup source gates below; DMG e51f8d15 predates final helper removal and native/vendor/SSH acceptance remains separate.
+    final_helper_progress: Static REDa96e8e; direct TTL-expiry/retry test passed9621ed before removal. Old dropdown filter/scorer and manual invalidation removed, four exclusive old UI tests retired. Current search/WSL/liveness regression coverage retained. Focused and quick/full session18274 pending; DMG e51f8d15 predates this hygiene slice.
+    final_helper_plan: Retire unused remote_connect dropdown filter/scorer and PaneLivenessCache invalidate; four removed-dropdown-only tests retire, active WSL and switcher search tests remain. Probe TTL test exercises expiry and retry directly. Focused and quick/full gates required.
+    native_shell_lifecycle: Latest DMG e51f8d1513225f1df8bb823c5bd01254f5fd4d9977ac63250869b1230f13901c launched in isolated config; live GUI quit/reopen retained daemon/shell/tab/pane, and ordinary-shell exit followed by another GUI reopen retained stopped records with no replacement. Tracker machine_only_gui_package owns exact identities and evidence. Test processes and mount retiredc60bb5; installed app intact. xcrun warning independently reproduced by login-shell /usr/bin/true and absent with login=false, not treated as product failure. Native menu/click/screenshot and vendor/SSH acceptance remain open.
+    refreshed_gui_package: Frozen-source native release90499 and canonical packaging23099 passed. Current DMG e51f8d1513225f1df8bb823c5bd01254f5fd4d9977ac63250869b1230f13901c passed checksum/strict signature/plist/helper checks. GUI UUID matches fresh build; unsigned comparison differs only in identified signature-related LINKEDIT vmsize, all other bytes match. Tracker machine_only_gui_package owns details. Native keyboard/menu and real SSH acceptance remain open.
+    current_gate: Frozen-source quick/full37178 exited0, GUI1936/core1355/CLI138 plus all source-identity/server suites passed; ignored counts unchanged. Retired name input and complete GUI delete closure absent. Supersedes pending source gates below only; refreshed package and native acceptance remain separate.
+    name_cleanup_verification: Static RED3e4f12 and pre-removal target-name tests381090 preceded chosen-name/rename/pull-override deletion. Four typed-form-only tests retired; target readback and epoch tests retained. Focused session39067 passed tree_sync65, connection1 and forwarding23; new table tests cover24 local/remote name/reply cases. Quick/full pending; native/package acceptance separate.
+    name_cleanup_plan: Guard complete chosen-name state/rename closure absence. Test machine_prime_names_follow_current_target and machine_hydration_names_follow_current_target plus existing target-name/epoch tests, remote connection no-state and forwarding suites. Retire only four typed-form-only tests; no core/CLI/provider naming change.
+    delete_final_gate: Frozen-source session47887 passed windows13/switcher44/tree_sync67 plus quick/full, GUI1938/core1355/CLI138 and all server suites; existing ignored counts unchanged. Remaining chosen-name input chain, exposed unused ForwardRoute wrapper/import and native/package acceptance are not complete.
+    delete_closure_verification: Static REDac3c1a preceded deletion; source guard passedc648f2. Windows13/switcher44/tree_sync67 tests passed in frozen-source session47887. Two removed-feature-only tests retired, forget-versus-remove assertions retained on canonical fire_workspace_op. Quick/full pending; remaining tree_sync chosen_name input closure and native acceptance remain open.
+    delete_closure_plan: Source guard rejects test-only GUI deletion closure and unused form geometry. Preserve forgetting_a_workspace_never_tells_its_machine against canonical tree operations, all tree_sync ownership/deletion regressions and switcher machine tests; retire two removed-feature-only deletion tests, never ignore them. Focused/full gates required.
+    confirmation_final_gate: Frozen-source locale tests8 and quick/full session44405 passed, exit0 f366ef. GUI1940/core1355/CLI138 plus source-identity and server integration suites passed; ignored counts unchanged. Supersedes pending confirmation gates below only. Native/package acceptance and remaining delete wrapper cleanup are open.
+    confirmation_verification: Static RED033d1b preceded unreachable confirmation/query/standalone-stop and eight-key locale removal. Source guard and format passedbeba06; fourteen windows regressions passed470bb2. Retired only obsolete confirmation-copy test; active Japanese plural coverage retained. Final locale and quick/full gates pending session44405; delete wrapper and native acceptance remain separate.
+    form_verification: Rendered footer RED3acb88 and static form REDd6beb2 preceded form/rename/row-mutation/deferred-create deletion. Final54 machine tests passed6dadfe; quick/full76468 exited0 with GUI1941/core1355/CLI138 plus integration suites and unchanged ignored counts. Six obsolete form-only tests retired; window-registration regression retained on canonical switch_workspace. Old windows.rs confirmation helpers still require cleanup, and native/package acceptance remains open. This supersedes the pending form portion of the earlier action-layer evidence.
+    source: [src/core/actions.rs, src/ui/theme.rs, src/ui/keymap.rs, src/ui/palette.rs, src/ui/app.rs, src/ui/switcher.rs, src/ui/remote_workspace.rs, src/ui/remote_connect.rs, src/terminal/pane_liveness.rs, src/ui/windows.rs, src/ui/tree_sync.rs, src/ui/i18n/mod.rs, src/ui/i18n/en.rs, src/ui/i18n/zh.rs, src/ui/i18n/ja.rs]
+    static_check: script/check_machine_rail_contract
+    tests: [machine_palette_excludes_legacy_workspace_mutations, machine_keymap_rejects_legacy_workspace_mutations, machine_native_menus_exclude_legacy_workspace_mutations, machine_switcher_has_no_workspace_create_footer, machine_connection_after_refusal_does_not_create_workspace, machine_server_replacement_retries_connection_without_create, machine_server_replacement_preserves_absent_or_foreign_intent, machine_prime_names_follow_current_target, machine_hydration_names_follow_current_target]
+    verification: Static missing-test RED633c10, palette behavioral RED73cf34, custom-keymap REDcafdbb and native-menu source RED5c6055 preceded public action-layer deletion. Final machine-filtered51 passed043145 including canonical native menu construction and actual keymap dispatch; frozen-source quick/full80329 exited0 with GUI1945/core1355/CLI138 plus integration suites and unchanged ignored counts. Public obsolete-action source guard passes. Dedicated switcher form/row-menu/pending-create callbacks and rendered-entry coverage remain pending; this is not complete GUI model retirement or native desktop acceptance.
+  - id: CLIENT-HOOK-03
+    full_gate: Frozen-source quick/full session18276 exited0, GUI1942/core1355/CLI138 plus all integration suites and unchanged ignored counts. Source-matched helpers and native DMG rebuilt for identity33b4405eaeb6b9dc46e4b68594734d55cbc1184761b5a952709caba59a036e37. Artifact/evidence-only quick28912 passed1cb1f9; no Rust edits since full18276.
+    source: [crates/tty7-core/src/core/agent_hooks.rs, src/main.rs]
+    static_check: script/check_agent_sessions
+    tests: [automatic_hook_refresh_requires_machine_config_scope]
+    verification: Static RED e31b50 and missing-function RED 427499 preceded guarded canonical startup refresh. All 29 hook tests passed789259; eight scope/build-mode cases prove callback exclusion before Host/provider I/O. Current DMG hash4f6e88c13f3dc7d4a0b08a42f69ad1970e2620f117c50ef205d5ea63b72fb8fb launched with isolated config and redirected stale Claude hook fixture; fixture hash stayed unchanged before launch, after normal quit and after reopen (36a794/a60b78/e63e2b). Ordinary-shell identities survived; test processes stopped and mount ejected. Tracker guarded_native_arm64_package owns details and remaining native/provider acceptance limits.
+  - id: QUALITY-VERSION-04
+    source: [script/check_version_policy, script/lib/version_policy.rb, .github/workflows/ci.yml]
+    static_check: script/check_product_branding
+    tests: [script/tests/version_policy.rb]
+    verification: Two isolated tests/65 assertions passed 9add05; quick passed f3e259. Real pinned offline metadata check also passed with an empty temporary Cargo cache (0d978f). No full Rust rerun or hosted CI execution claimed.
+    evidence: Missing executable RED 34befd preceded implementation. Tests invoke the executable directly and assert exact read-only command flags, future valid versions, inconsistent versions, malformed or missing metadata, duplicate identities and failed Cargo rejection. Current version equality replaces no archived implementation.
+  - id: BUNDLED-HELPERS-06
+    current_v17_gate: Helper fixtures 4 tests/47 assertions and quick passed 61c941. Artifact/evidence-only changes; Rust source unchanged since full 63110. No new full/native/remote execution claim.
+    current_v17_artifacts: Stale marker refusal 06d0b2 preceded sequential offline locked x86_64/aarch64 release builds 25bea1/f2bbd5. Fresh stage passed e1534b, exact bundled-server replacements and SHA256 passed 90fb95. Native control 17/pane 6 and source identity match both ELF markers. Canonical tracker owns hashes; Linux execution, remote deployment and installed desktop acceptance remain unverified.
+    real_static_verification: Actual canonical bundled-helper check and separate assert-static invocations passed for both x86_64/aarch64 ELF files using GNU readelf 2.47.20260726 (98a646). SHA256 and native source identity unchanged. Homebrew keg-only inspector installed, command-scoped PATH only; no Linux execution, signing, installation or remote-session acceptance claimed.
+    real_cross_build: Locked real x86_64/aarch64 release builds passed a68260/827cd7; file architecture and native-matching embedded source marker checked 350968/0e6540. Artifact paths and SHA256 are in the canonical tracker. Actual checker failed ebc269 because static inspector is unavailable; no full ELF check, Linux execution or delivery acceptance claimed.
+    full_gate: Quick 497be7 and frozen-source full a2877f/d078a7 passed. Static fixture/marker and shared parser coverage only; actual Linux helpers, inspectors, runtime, signing and install acceptance remain separate.
+    source: [script/check_bundled_remote_helpers, script/lib/check_bundled_remote_helpers.rb, script/lib/server_protocol_identity.rb, .github/scripts/bundle-macos.sh]
+    static_check: script/check_product_branding
+    tests: [script/tests/bundled_helpers.rb]
+    verification: Four tests/47 assertions passed 249bd1; metadata regression 117 assertions passed 97bbc5; quick passed 497be7. Source bypass mutations cover both consumers and shared hash parsing. Full pending; real ELF artifacts/readelf absent, and static markers are not runtime or attestation evidence.
+    evidence: Missing checker RED 12f78e and moved-parser guard RED 594cdd/23bb52 preceded canonical implementation and inherited checks. Metadata fixture's missing shared module was fixed without changing its expected mock-signing result.
+  - id: QUALITY-NAVIGATION-03
+    source: [DEVELOPMENT.md, docs/README.md, script/check_agent_harness]
+    static_check: script/check_agent_harness
+    tests: [script/tests/quality_gate_contract.rb]
+    verification: Quality fixture suite 9a1945 passed 9 tests/117 assertions, covering missing/empty/foreign/directory entries and broken/foreign links. Repository harness 0744fd and quick b031be passed. No runtime, full Rust rerun or native UI acceptance claimed.
+    evidence: Missing-entry/link RED a55ee4 preceded restoring current navigation and extending the existing harness. Archive product/version statements were not copied; Cargo and domain specs remain their respective authorities.
+  - id: SESSION-OUTPUT-23
+    replacement_full_gate: Quick d12f84 and frozen-source full 83547c/c6c18e passed, GUI 1949/core 1352/CLI 138 and integration suites. Same-instance connection and same-identity entity replacement verified independently of epoch changes. Native cold reopen and real-remote acceptance remain separate; ignored counts unchanged.
+    replacement_tests: [stopped_output_replaced_connection_rejects_old_response, stopped_output_replaced_entity_rejects_old_response]
+    replacement_result: Six stopped_output tests passed 0a102b after static missing coverage RED 12a95b and a corrected test-only path conversion. Exact replacement-client and replacement-entity guards exercised with unchanged epoch and target identity. New entity retains idle Resume without old errors. Quick/full pending; native acceptance separate.
+    gui_full_gate: Quick 12c776 and frozen-source full 356229/4a4471 passed, GUI 1947/core 1352/CLI 138 plus all integration suites. Successful click-to-grid, retained Resume, duplicate suppression and stale epoch refusal verified. Native cold reopen, real remote and further connection/entity cancellation remain separate.
+    gui_success_test: stopped_output_click_replays_in_original_slot
+    gui_stale_test: stopped_output_late_response_preserves_stopped_slot
+    gui_focused_result: Four stopped_output tests passed 72cf73, with paused checked-socket response, disabled duplicate actions, epoch-retirement rejection, same-slot actual grid replay and retained Resume. Static missing coverage REDs e570be/bd37ac and shared fixture API RED 3928e1 precede test implementation. Quick/full pending; native UI and further connection/entity cancellation remain separate.
+    gui_test_support: src/ui/test_control.rs
+    current_gate_result: Quick 626c0b and frozen-source full 6a9c43/633b01 passed, GUI 1945/core 1352/CLI 138 and all integration suites. Supersedes pending existing gates, not successful GUI replay, stale/cancel or native acceptance. Read-only OS automation preflight f56fd3 remains false for accessibility and screen capture.
+    gui_source: [src/ui/app.rs, src/terminal/view.rs, src/ui/i18n/mod.rs, src/ui/i18n/en.rs, src/ui/i18n/zh.rs, src/ui/i18n/ja.rs]
+    snapshot_failure_result: Static RED cc9443 followed by four real isolated daemon tests PASS 06599c. Missing/corrupt/truncated/empty/oversized output is rejected before frames without changing files or facts; restored snapshot reads and Resume succeed. No production changes for these failure tests.
+    snapshot_failure_plan: Existing real-daemon cycle must cover missing/corrupt/truncated/empty/oversized snapshots, zero frames before Error, unchanged target facts and snapshot bytes, then valid reread and Resume.
+    target_verification: Missing Stopped expectation RED 595ab5 followed by real daemon repeated-read and proof/session/cwd/tab refusal PASS 0ba1b1. Snapshot bytes and target facts unchanged; no controller or new launch. GUI/client feature gating, missing/corrupt output and full gate remain pending.
+    source: [crates/tty7-core/src/daemon/protocol.rs, crates/tty7-core/src/daemon/server.rs, crates/tty7-core/src/daemon/server/recovery.rs, crates/tty7-core/src/core/machine.rs, src/terminal/remote.rs, src/ui/session_recovery.rs, src/ui/pending_pane.rs]
+    static_check: script/check_agent_sessions
+    tests: [explicit_sleep_retains_original_slot_and_resumes_again, stopped_output_requires_its_own_peer_feature, stopped_output_missing_link_preserves_resume]
+    verification: Pending stopped-output checked-stream regression, GUI interaction, quick and full gates.
+    evidence: Reuse existing terminal transport and replay format; do not call consuming restored_screen from a preview.
+  - id: SESSION-TAB-SLEEP-24
+    stale_reply_tests: [whole_tab_sleep_late_success_rejects_replaced_connection, whole_tab_sleep_late_success_rejects_replaced_entity, whole_tab_sleep_late_success_rejects_changed_epoch]
+    stale_reply_verification: Static RED 5e8667; three paused-success cases passed d34da8, frozen GUI suite 1942 passed/1 existing ignored and quick passed 35e3ac. Exact connection/entity/epoch guards are independently tested after actual GPUI submission; task client-owner return precedes no-success/no-exit/no-retry assertions and one tracked release. No production change or native/real-SSH acceptance claimed.
+    cold_neighbor_test: whole_tab_sleep_preserves_cold_stopped_neighbor
+    cold_neighbor_verification: Static missing-coverage RED bca9a9; cold case passed a5d2d6, all 11 sleep GUI tests passed d90018 and quick passed 482b13. Canonical stopped PendingPane stays unchanged through actual batch click, already-stopped reply and read-only refresh. Test-only extension; native and real remote acceptance remain pending.
+    gui_full_gate: Frozen-source quick/full session 37796 passed with exit 0 (9aea55); native and real SSH acceptance remain pending.
+    gui_source: [src/ui/session_recovery.rs, src/ui/i18n/mod.rs, src/ui/i18n/en.rs, src/ui/i18n/zh.rs, src/ui/i18n/ja.rs]
+    gui_tests: [whole_tab_sleep_button_is_rendered, whole_tab_sleep_scope_requires_every_member, whole_tab_sleep_reply_rejects_foreign_and_unordered_results, whole_tab_sleep_uses_one_checked_request, whole_tab_sleep_partial_reply_never_retries, whole_tab_sleep_unknown_reply_never_retries, whole_tab_sleep_failed_acquisition_clears_busy_after_runtime_changes]
+    gui_verification: Rendered RED 33edfa and paused-acquisition busy-state RED b098e0 preceded repairs. All 10 sleep-focused GUI tests passed 41dcb2; includes actual GPUI mouse-to-scripted-control accepted/partial/unknown batch replies, no repeated stop, target-only refresh and ownership retirement. No native or real remote acceptance claimed; quick/full pending.
+    full_gate: Four sleep-focused tests passed a52b5c; frozen-source quick/full session 63110 exited 0 with GUI 1931/core 1354/CLI 138 and all server suites. Five stopped_resume tests include real two-PTY whole-tab Sleep and independent original-slot Resume. No GUI/native/remote acceptance claimed.
+    source: [crates/tty7-core/src/daemon/control.rs, crates/tty7-core/src/daemon/server/recovery.rs, crates/tty7-core/src/daemon/pane.rs, crates/tty7-core/src/core/machine.rs, crates/tty7-core/src/host/server.rs, crates/tty7-core/src/daemon/server.rs]
+    static_check: script/check_agent_sessions
+    tests: [sleep_tab_wire_roundtrips_exact_members, sleep_tab_preflights_all_members_before_signaling, whole_tab_sleep_preserves_split_and_each_resume_identity]
+    integration_source: crates/tty7-server/tests/stopped_resume.rs
+    verification: Wire RED 9e9f5c preceded implementation; core tests abbf93 and real two-PTY integration 23a16d passed. Exact full membership, preflight refusal before any signal, partial/cancel results, retained split/output and independent explicit Resume covered. Quick/full pending; GUI, ordinary-shell policy and native/remote acceptance remain required.
+  - id: SESSION-SLEEP-22
+    whole_tab_extension: SESSION-TAB-SLEEP-24
+    gui_full_gate: Quick passed 64b6c2 and frozen-source full passed 168da2/91c28e, GUI 1943/core 1352/CLI 138 plus source-identity/server suites. Supersedes pending current-session GUI gates, not whole-tab/native/real-remote or cold-reopen acceptance.
+    gui_source: [src/ui/session_recovery.rs, src/ui/app.rs, src/ui/i18n/mod.rs, src/ui/i18n/en.rs, src/ui/i18n/zh.rs, src/ui/i18n/ja.rs]
+    gui_test_support: [src/ui/local_link.rs, src/ui/test_control.rs]
+    gui_tests: [live_sleep_requires_exact_visible_target, sleep_button_uses_checked_control_and_refresh_never_retries, sleep_unknown_reply_preserves_view_until_explicit_refresh]
+    gui_verification: Missing-action RED f984de and connection-helper RED ffd486 preceded implementation. Three focused GPUI tests passed 3b5b24, including actual rendered mouse click, checked control sequence, no optimistic exit, unknown outcome, explicit read-only refresh, exact replacement-client rejection and ownership retirement. Quick/full pending; whole-tab, real remote/native and cold-reopen acceptance remain separate.
+    output_retirement_full_gate: Quick passed b6a696 and frozen-source full passed f2a304/43f1a6, GUI 1940/core 1352/CLI 138 and integration suites. Supersedes pending final-output persistence checks; native UI, stopped-view replay and GUI Sleep action remain separate.
+    output_retirement_source: [crates/tty7-core/src/daemon/server.rs, crates/tty7-core/src/daemon/pane.rs]
+    output_retirement_test: explicit_sleep_retains_original_slot_and_resumes_again
+    output_writer_test: scrollback_retirement_seals_capture_and_forget
+    output_retirement_verification: Real missing-snapshot RED 58efbf preceded final snapshot retirement; writer seal/forget test passed f74f7a and four real daemon tests passed e34ba8. Asserts READY output after carrier retirement, mode 0600, original slot/Resume cycle and eventual explicit deletion. Quick/full pending, not GUI replay acceptance.
+    target_full_gate: Quick passed ea58b6 and frozen-source full passed eb8e9e/e8f2a4, GUI 1940/core 1351/CLI 138 plus source-identity/server suites and four stopped-Resume/Sleep process tests. Existing ignored counts unchanged. Supersedes pending target verification, not GUI or native acceptance.
+    source: [crates/tty7-core/src/daemon/control.rs, crates/tty7-core/src/daemon/server/recovery.rs, crates/tty7-core/src/daemon/pane.rs, crates/tty7-core/src/core/machine.rs, crates/tty7-core/src/host/server.rs]
+    static_check: script/check_agent_sessions
+    tests: [explicit_sleep_retains_original_slot_and_resumes_again, sleep_rejects_changed_target_before_signaling, sleep_wire_accepts_only_target_identity, natural_pane_exit_clears_runtime_but_keeps_recovery]
+    verification: First real isolated target Sleep/Resume cycle passed 68cdfa; guards/wire passed 4da8db, exit retention passed adc7ae, four recovery tests passed 966e71. Quick/full pending; GUI action, multi-pane scope and native acceptance remain required.
+    evidence: Missing-API RED d8064a preceded explicit stop latch and canonical target operation. Test fixture revival was correctly refused (701248); live/stopped fixture initialization is now explicit. Normal shutdown behavior remains unchanged.
+  - id: WORKSPACE-USES-21
+    # Whole-tab target support is tracked separately from the existing single-session UI.
+    legacy_removal_full_gate: Quick passed 633477 and frozen-source full passed cc5be5/02427a, GUI 1940/core 1349/CLI 138 plus source-identity/server suites. Obsolete API/state removed; same behavior and ignored counts retained. Native and mixed real-pane acceptance remain separate.
+    legacy_removal_tests: [workspace_claims_progress_independently, workspace_claim_uncertainty_prevents_tracked_cleanup, client_cancellation_racing_reacquire_preserves_new_claim, client_cancellation_preserves_other_workspace_users]
+    legacy_removal_verification: Static RED 11f783 and missing-API RED 3c2150 preceded migration; four migrated regressions passed 48380c/ebee92 before deleting the initial-cleanup API and flag. Post-deletion 25 workspace tests passed b3b994, static passed 1b17c1. Foreign/duplicate rejection, paused unrelated workspace, cancel/reacquire race and timeout/late reply barrier remain asserted. Quick/full pending.
+    explicit_take_back_full_gate: Quick passed 7deb08 and frozen-source full passed f45003/49c928, GUI 1940/core 1349/CLI 138 plus source-identity/server suites. Existing ignored counts unchanged. Supersedes pending explicit-takeover gate notes, not native/real-pane lifetime acceptance.
+    explicit_take_back_source: [crates/tty7-core/src/daemon/control.rs, src/ui/remote_workspace.rs]
+    explicit_take_back_tests: [tracked_take_back_preserves_shared_and_unknown_consumers, automatic_attachment_never_requests_takeover, automatic_attachment_use_is_retained_or_retired_by_scope]
+    explicit_take_back_failure_test: workspace_take_back_interrupted_readback_pins_uncertain_claim
+    explicit_take_back_verification: Implemented after static/API/window-use RED a4083f/9e5651/b0b8cc. Core tracked and interrupted-I/O tests passed 9c53bc/6df62d, 45 remote-workspace tests passed 4a24a4. Covers exact proof, same/foreign identity, malformed proof, raw pinning and twelve commit/stale/disconnect/replaced-connection cases. Quick/full pending; no native or real-pane acceptance claimed.
+    automatic_use_full_gate: Full passed (24409/7b7afe), GUI 1940/core 1347/CLI 138 plus source-identity/server suites. Initial full failed before tests on ENOSPC (90f342); package-scoped dev artifact cleanup (32c43f) preceded unchanged-source retry. Ordinary automatic handoff/stale/disconnect cleanup verified, not explicit takeover or native/real-pane reopen.
+    automatic_use_tests: [automatic_attachment_acquires_tracked_use_without_takeover, automatic_attachment_reply_requires_exact_workspace, automatic_attachment_never_requests_takeover, automatic_attachment_use_is_retained_or_retired_by_scope]
+    automatic_use_verification: Missing API RED (df4d8c), explicit-disconnect leak RED (6dd273), final 45 remote-workspace tests passed (d425e9), 17 Rejoin tests passed (fe3db0), fmt/static and quick passed (8dae49). Isolated control verifies nonpreemptive tracked acquisition, foreign/malformed rejection, last shared use, current-window retention, stale cleanup and disconnect retirement. Full pending; peer lacks pane/tree features, so this is not successful pane reattachment or native close/reopen acceptance.
+    automatic_test_support: src/ui/test_control.rs
+    automatic_scope_full_gate: Frozen-source full passed (89885/5b0c83), GUI 1938/core 1347/CLI 138 plus source-identity/server suites; supersedes pending full for scope guards, not automatic WorkspaceUse handoff or native acceptance.
+    automatic_scope_tests: [automatic_attachment_scope_expires_on_view_retirement, automatic_attachment_scope_refresh_reopens_eligibility]
+    automatic_scope_source: [src/ui/app.rs, src/ui/session_recovery.rs, src/ui/remote_workspace.rs]
+    automatic_scope_verification: Clean missing-API RED (b7d5d2), final 43 remote-workspace tests passed (d7779a), fmt/static and quick passed (63370c/cd4ae9). Tests isolate entity identity from epoch, reject stale failure while allowing current failure, re-enable a replaced view and cancel prior takeover intent. Full pending; direct retirement/simulated registry tests are not native close/reopen or tracked automatic acquisition.
+    automatic_entry_full_gate: Frozen-source full passed (4002/789e8d), GUI 1936/core 1347/CLI 138 plus source-identity/server suites. Supersedes pending gate for single-entry convergence, not tracked automatic uses or native acceptance.
+    automatic_entry_source: src/ui/remote_workspace.rs
+    automatic_entry_test: reconnect_leaves_current_workspace_acquisition_to_the_pump
+    automatic_stale_test: late_attachment_reply_cannot_mark_replacement_connection
+    automatic_entry_verification: Connection-only API RED (dbcd21), guarded completion API RED (e12b7a), final 41 remote-workspace tests passed (bcd69a), quick passed (2510d0). Static guard removes pre-install acquisition and retains request/reply validation at the pump plus exact ControlClient identity. Full pending; automatic WorkspaceUse, full-window/generation races and native acceptance remain incomplete.
+    rejoin_full_gate: Frozen-source full passed (79233/77cd96), GUI 1934/core 1347/CLI 138 plus source-identity/server suites; supersedes pending full below, not native or committed Rejoin close/reopen acceptance.
+    rejoin_source: [src/ui/history_manager/staging.rs, src/ui/history_manager.rs]
+    rejoin_tests: [rejoin_cleanup_preserves_other_tracked_users, rejoin_prepare_cancellation_uses_exact_control_cleanup, rejoin_inflight_cancellation_drops_before_conditional_release]
+    rejoin_verification: Missing release API RED (f3dd76), final seventeen Rejoin tests passed (498e62), core last-use test passed (f6b290), quick passed (7398e9). Ordered Ping proves no release while another tracked user remains; isolated peers verify first/final attachment cancellation drops panes before exact release. Full and successful Rejoin close/reopen acceptance pending.
+    entity_release_test: retained_resume_dropped_view_retires_use
+    entity_release_verification: Raw-removal behavioral RED (872a5a), six retained_resume_ tests passed (3e9cd4), fmt/quick/full passed (67112/469f80), GUI 1933/core 1347/CLI 138 plus source-identity/server suites. Final entity release retires the existing held use; normal CloseWindow still proves exactly one release, closed saved state and absent late effects. Raw-removal fixture does not claim bookmark bookkeeping or native UI acceptance.
+    source: [crates/tty7-core/src/daemon/control.rs, crates/tty7-core/src/host/server.rs, src/ui/app.rs, src/ui/session_recovery.rs, src/ui/tree_sync.rs]
+    static_check: script/check_agent_sessions
+    tests: [tracked_workspace_uses_release_only_the_last_owned_user, retained_resume_close_window_discards_late_reply, retained_resume_close_window_never_attaches_successor, retained_resume_dropped_view_retires_use]
+    verification: Core ownership retirement plus isolated Resume window-close control tests; full gate and native acceptance remain required.
+    evidence: API RED (7c0eb0), core last-use regression passed (09af12), close fixtures required their modeled target to accept exactly one new release (a13a73). Both revised close tests passed (cc8cfe), eighteen resume tests and old exclusivity tests passed (51209f), fmt/quick/full passed (10581/f66fdc), GUI 1932/core 1347/CLI 138 plus source-identity/server suites. Normal close and different-workspace adoption are wired; alternative entity removal, Rejoin/automatic migration, mixed consumers and native reopen remain incomplete.
+  - id: SESSION-RETAINED-UI-20
+    running_close_test: retained_resume_close_window_never_attaches_successor
+    running_close_verification: Missing-test static RED (f83e91), focused live-successor close passed (178eba), eighteen resume_ tests (0ff9d4), fmt and quick (dde75f) passed. Process-owned listener checks zero connections after PendingPane release; closed-window and exact control-sequence assertions are shared with the stopped-successor case. No production changes, new full gate, real provider/native or mid-attachment/lease acceptance claimed.
+    close_test: retained_resume_close_window_discards_late_reply
+    close_verification: Paused-control GPUI CloseWindow test passed (27afa3), final seventeen resume_ tests passed (a4360c), quick passed (472e27). Asserts saved closed view, remaining second window, dropped PendingPane, absent sync baseline, unchanged mirror and exact non-destructive request sequence. Flushes deferred entity destruction rather than weakening the initial timeout assertion. Stopped scripted successor only; running-successor cancellation, native, lease lifetime and reopen remain unverified. No production code changed or new full gate claimed.
+    control_gate_result: Paused reply and retained-view routed attachment passed (d2d437); layout regression and seventeen resume tests passed (be210c). Quick passed and unchanged-source full rerun passed (22362/7706ec), GUI 1930/core 1341/CLI 138 plus source-identity/server suites. Earlier pre-Rust full exit (323c99) diagnostic was not preserved by filtering; cause unconfirmed. No assertion or gate weakened. Native/real provider and cancellation remain unverified.
+    control_test: retained_resume_click_attaches_over_control
+    control_execution_source: src/ui/host_ops.rs
+    source: [src/ui/session_recovery.rs, src/ui/pending_pane.rs, src/ui/pane.rs, src/ui/app.rs, src/ui/tree_sync.rs, src/ui/host_ops.rs, src/terminal/view.rs]
+    static_check: script/check_agent_sessions
+    tests: [retained_resume_requires_target_exit_and_preserves_output, retained_resume_landing_preserves_maximized_focus, retained_resume_click_attaches_over_control, rebuild_preserves_only_present_maximized_view, retained_resume_close_window_discards_late_reply, retained_resume_close_window_never_attaches_successor]
+    verification: GPUI rendered clicks and stale identity refusal, followed by focused and quick/full gates. Native and real remote acceptance remain separate.
+    evidence: Missing rendered action RED (0f3282) and wrong maximized-target RED (46b4eb) preceded fixes. Sixteen resume-related tests and quick passed (688688); frozen-source full passed (38984/23c04d), GUI 1928/core 1341/CLI 138 plus source-identity/server suites. Includes stale identity refusal, retained output/split geometry and canonical landing focus/maximized view. The landing test uses controlled ShellParts; retained-view control-to-attachment and native acceptance remain separate.
+  - id: SESSION-STOPPED-UI-19
+    running_control_test: stopped_resume_click_attaches_running_successor_over_control
+    running_control_evidence: UI-thread guard RED (66800a/4b5c3e) preceded HostOps blocking-lane reuse. Final five focused tests passed (90bb28), quick passed (93748a), frozen-source full passed (73862/4e4819), GUI 1926/core 1341/CLI 138 plus source-identity/server suites. Exact guarded routed attachment and terminal grid output in the original tab are asserted. No installed provider, real SSH or native window proof.
+    attachment_execution_source: [src/ui/host_ops.rs, src/ui/app.rs]
+    control_test: stopped_resume_click_reconciles_exited_successor_over_control
+    resize_gate_result: API RED (e07ca2), final eleven focused tests passed (ff40b4), then quick/full passed (75929). Shared ratio-insensitive slot comparison preserves exact identity, split axis, nesting and neighbor order. Latest target ratios survive reconciliation. Native and complete GUI success-path acceptance remain separate.
+    resize_test: stopped_resume_keeps_slot_identity_across_ratio_changes
+    gate_result: Final quick and frozen-source full (84110) passed; GUI 1923/core 1341/CLI 138, six source identity tests and all server suites. Existing ignored tests unchanged. Baseline RED (e58195), fresh-facts behavioral RED (6d5c0a), ten focused tests passed (ccc551), real target fixtures passed (356039). Supersedes pending gate notes below; successful GUI end-to-end, lease lifecycle and native acceptance remain unverified.
+    baseline_test: resume_snapshot_updates_sync_mirror_before_releasing_gui_hold
+    followup: First full passed (58282); review found that an RPC reply can precede the layout event and leave the diff baseline stale. Add target snapshot acknowledgment before releasing the GUI hold; first full does not verify this follow-up.
+    source: [src/ui/session_recovery.rs, src/ui/pending_pane.rs, src/ui/app.rs, src/ui/host_ops.rs, src/ui/tree_sync.rs, src/terminal/view.rs, src/ui/i18n/mod.rs, src/ui/i18n/en.rs, src/ui/i18n/zh.rs, src/ui/i18n/ja.rs, crates/tty7-core/src/daemon/protocol.rs, crates/tty7-core/src/daemon/pane.rs, crates/tty7-server/tests/stopped_resume.rs]
+    static_check: script/check_agent_sessions
+    tests: [checked_owned_attachment_is_live_and_non_preemptive, stopped_resume_projection_rejects_ambiguous_or_changed_target, stopped_resume_button_holds_original_slot, resume_snapshot_updates_sync_mirror_before_releasing_gui_hold, stopped_resume_rpc_runs_exact_argv_once, stopped_resume_keeps_slot_identity_across_ratio_changes, stopped_resume_click_reconciles_exited_successor_over_control, stopped_resume_click_attaches_running_successor_over_control]
+    control_evidence: Isolated GPUI mouse-to-control test passed (2e85aa), four focused tests passed (bd3896), quick passed (338087), and full GUI package passed 1925 tests with one existing ignored (689780). Covers acquisition, exactly one Resume, target snapshot and proof recheck, same placeholder and TabId, synchronization baseline update and recoverable exited successor. Test peer is scripted; running PTY attachment and native UI are not covered. Workspace full was not rerun for this test-only change.
+    verification: Focused core and simulated GUI tests followed by quick/full; native GUI remains separate.
+    evidence: Missing core API RED (f08852), missing GUI API RED (f7f8c9); initial two GUI/projection tests passed (e2e502), eight checked attachment tests passed (bd1073). Expanded tests, real target Owned attachment and quick/full pending; successful GUI end-to-end and native acceptance remain separate.
+  - id: SESSION-STOPPED-RESUME-18
+    process_gate_result: Final three process tests passed (224178) and final quick passed (ed73fc), superseding the pending deadline-rerun note. Earlier full server-package run (42593) passed 109 tests; workspace full and native GUI were not rerun in this test-only slice.
+    process_tests: [stopped_resume_rpc_runs_exact_argv_once, stopped_resume_rpc_immediate_exit_remains_recoverable, stopped_resume_rpc_disk_failure_does_not_leak_a_pane]
+    process_source: crates/tty7-server/tests/stopped_resume.rs
+    process_verification: Three real daemon/RPC/PTY fixture tests passed (8af7ea), quick passed (956ebd), all 109 server tests passed (42593). Exact argv/cwd, one-shot predecessor, immediate exit and disk-failure registry/OS-process cleanup verified; final output-loop deadline rerun pending. Does not prove installed vendor CLI or native GUI acceptance.
+    gate_result: Final frozen-source full (78706) and quick (43971) passed with exit 0. GUI 1920/core 1340/CLI 138, source identity six and server suites passed; existing ignored tests unchanged. Supersedes earlier pending gate notes; injected coordinator tests still do not prove native UI or real provider execution.
+    preflight_verification: First full passed (69395). Source access RED (43564) preceded canonical preflight/final stopped-slot validation. Seven focused tests passed (88554), quick passed (43971); final full pending. No real remote provider process or native GUI acceptance claimed.
+    source: [crates/tty7-core/src/core/machine.rs, crates/tty7-core/src/daemon/pane.rs, crates/tty7-core/src/daemon/server.rs, crates/tty7-core/src/daemon/server/recovery.rs, crates/tty7-core/src/host/server.rs, crates/tty7-core/src/daemon/control.rs, crates/tty7-server/tests/stopped_resume.rs]
+    static_check: script/check_agent_sessions
+    tests: [stopped_resume_consumes_predecessor_and_preserves_binding, stopped_resume_rejects_before_allocation_and_rolls_back, stopped_resume_launch_uses_argv_not_shell_input_or_restore_preference, stopped_resume_transaction_rechecks_proof_cancel_source_and_slot, stopped_resume_transaction_duplicate_never_reallocates, stopped_resume_rejects_foreign_carriers_before_source_access, stopped_resume_wire_rejects_client_executables_and_roots, stopped_resume_rpc_runs_exact_argv_once, stopped_resume_rpc_immediate_exit_remains_recoverable, stopped_resume_rpc_disk_failure_does_not_leak_a_pane]
+    verification: Isolated core transaction, target authority and typed spawn tests; native GUI and real remote provider acceptance remain separate.
+    evidence: API RED (29807), provisional binding RED (94115), six focused tests passed (96204), expanded core passed 1322 tests/three existing ignored (68220), PTY resource-order static RED (992683) then quick passed (15130). Full pending. Coordinator tests use real control acquisition and injected source/spawn closures, not real provider processes or a successful Resume RPC; native UI and real remote acceptance remain separate.
+  - id: SESSION-SLOT-17
+    live_shell_design: Pending product decision recorded in the spec and tracker. Current with_live_session/Sleep and prompt flags cannot authorize stopped replacement or input-safe shell reuse. This is design evidence, not implementation or acceptance; preserve existing live refusal until the selected behavior has its own contract and tests.
+    gate_result: Quick (14396) and frozen-source full (91438) passed with exit 0; GUI 1920/core 1333/CLI 138 plus source-identity/server suites. Pre-gate pending notes below are superseded. Native original-slot Resume is not claimed.
+    source: [crates/tty7-core/src/core/machine.rs]
+    static_check: script/check_agent_sessions
+    tests: [pane_replacement_rejects_ambiguous_ownership_atomically, pane_replacement_preserves_exact_slot_and_rejects_stale_targets]
+    verification: Isolated MachineStore trees and persistence files; assert no delta or mutation on refusal and exact tab/split preservation on success. Original-slot Resume and native UI acceptance remain separate.
+    evidence: Behavioral duplicate-split RED (66384); 48 MachineStore tests passed (8540), including three ambiguous ownership shapes, unchanged metadata, stale completion and actual persistence obstruction rollback. Session static check (73160) and quick (14396) passed. Full pending; no native UI or original-slot Resume completion claimed.
+  - id: SESSION-RESOLVE-16
+    gate_result: Quick (37065) and frozen-source full (77303) passed with exit 0; 1331 core tests, six source-identity tests, GUI/CLI and server suites. Native original-slot recovery and actual remote provider resolution remain separate.
+    evidence: Missing API RED (1967), three focused tests passed (15538), expanded core passed 1314 tests with three existing ignored (75628). Shared traversal, selected-provider identity/cwd validation, recency independence, malformed/duplicate/internal/symlink refusal and six typed remote reply scenarios covered. Control v14 codec/deadline tests included; quick/full pending. No native UI or actual remote deployment claimed.
+    source: [crates/tty7-core/src/agent_sessions.rs, crates/tty7-core/src/host/mod.rs, crates/tty7-core/src/host/local.rs, crates/tty7-core/src/host/remote.rs, crates/tty7-core/src/host/server.rs, crates/tty7-core/src/daemon/control.rs]
+    static_check: script/check_agent_sessions
+    tests: [retained_session_resolution_is_not_a_recent_history_lookup, retained_session_resolution_rejects_ambiguous_invalid_and_incomplete_sources, retained_session_resolution_ignores_internal_and_symlink_sources, retained_session_resolution_is_target_owned]
+    verification: Scratch provider stores and typed remote peer fixtures; original-slot UI and process ownership acceptance remain separate.
+  - id: SESSION-COLD-HYDRATION-15
+    incremental_tests: [incremental_stopped_hydration_uses_target_facts_and_reuses_views]
+    incremental_gate_result: Quick (45864) and frozen-source full (80289) passed with exit 0; native UI acceptance remains separate.
+    incremental_evidence: Behavioral RED (33730) followed by focused pass (64032) and all 59 tree-sync tests (25305). Direct terminal-creation branch removed; target-only facts feed canonical session renderer. Quick/full pending.
+    incremental_verification: Simulated remote delta insertion and mixed reconstruction; same-numbered Local records cannot supply remote stopped facts.
+    gate_result: Quick (87481) and frozen-source full (73702) passed with exit 0; 1919 GUI, 1327 core and 138 CLI tests plus source-identity/server integrations. Existing ignored tests unchanged. Native acceptance and incremental stopped-leaf insertion remain separate.
+    source: [crates/tty7-core/src/core/session.rs, src/ui/tree_sync.rs, src/ui/app.rs, src/ui/pending_pane.rs, src/ui/home.rs]
+    static_check: script/check_agent_sessions
+    tests: [confirmed_stopped_tree_leaf_is_not_a_spawn_candidate, confirmed_stopped_hydration_preserves_split_without_transport, confirmed_stopped_projection_is_not_client_persistence]
+    verification: Target projection and GPUI hydration with isolated unroutable target; native restart and explicit recovery remain separate.
+    evidence: Two behavioral RED tests (70961); three focused tests passed (2083), including actual GPUI rendered stopped text, tab identity and split retention, generic retry/start suppression and client serialization refusal. Quick/full and native acceptance remain separate.
+  - id: SESSION-STOP-FACT-14
+    full_result: Full (13638) passed with exit 0, confirmed on 2026-09-10.
+    evidence: RED (1742, db1f22), twelve core exit-related tests passed (30963), quick passed (18050); full running (13638). Cold hydration and native acceptance not implemented by this record.
+    source: [crates/tty7-core/src/core/machine.rs, crates/tty7-core/src/daemon/pane.rs]
+    static_check: script/check_agent_sessions
+    tests: [confirmed_exit_survives_reload_and_rejects_late_facts, confirmed_exit_is_not_inferred_from_legacy_or_seed, natural_pane_exit_clears_runtime_but_keeps_recovery]
+    verification: Target death, scratch persisted records and delayed observations; cold hydration and native restart acceptance remain separate.
+  - id: SESSION-EXIT-RETENTION-13
+    source: [crates/tty7-core/src/daemon/pane.rs, src/ui/app.rs, src/ui/pane.rs]
+    static_check: script/check_agent_sessions
+    tests: [natural_pane_exit_clears_runtime_but_keeps_recovery, natural_pane_exit_clears_status_without_detected_provider, child_exit_keeps_tab_split_and_selection, child_exit_snapshot_has_no_automatic_resume_identity, child_exit_snapshot_distinguishes_disconnection]
+    evidence: Core runtime-identity RED (43046, expanded 19403); GPUI RED (98930) proved removed split leaf and stale automatic invocation. 115 pane tests passed (1333), expanded exit-related run passed ten GUI and ten core tests (91645), quick (92650) and frozen-source full (99634) passed with exit 0. Full includes 1917 GUI, 1324 core, 138 CLI and server integration tests. Existing disconnect test now explicitly pins temporary config; no assertion weakened or ignored test changed. Native and cold reopen acceptance remain separate.
+    verification: Isolated daemon death and GPUI lifecycle tests prove retained row identity, no close effects and cleared automatic invocation. Native and cold reopen acceptance remain separate.
+  - id: SESSION-LIVE-TITLE-12
+    late_title_tests: [live_title_updates_after_exit_and_terminal_stop, live_title_commit_rejects_replaced_binding_after_exit, live_title_reaches_exited_tab_only_after_runtime_agrees]
+    late_title_evidence: Core RED (29141) proved rejected post-exit commit and missing filesystem update; GPUI RED (35471) proved exited tab falls back to agentty. Shared target predicate and exited GUI projection implemented; five core/two GUI title tests passed (57091), quick (78417) and frozen-source full (4627) passed with exit 0. Native acceptance remains separate.
+    evidence: Missing-model RED (92508); original target/active-label tests passed (36885, 10719). CLI fixture failure (7037) fixed and 138 CLI tests passed (45852). Retry (75632) rejected edits made during validation; source-frozen full (4627) passed, including six source-stamp tests, 1914 GUI, 138 CLI, 1322 core and server integration suites. No assertion relaxed or ignored test changed. Native and remote full-chain acceptance remain pending.
+    source: [crates/tty7-core/src/agent_sessions/live_titles.rs, crates/tty7-core/src/core/machine.rs, crates/tty7-core/src/core/tab_view.rs, crates/tty7-core/src/daemon/server.rs, src/ui/app.rs]
+    static_check: script/check_agent_sessions
+    tests: [live_title_keeps_alias_and_rejects_replaced_identity, live_title_index_create_replace_partial_and_shutdown, live_title_commit_rechecks_epoch_binding_and_stop, live_title_reaches_active_tab_without_overwriting_user_name]
+    verification: Target-owned data flow and isolated index events; native GUI title changes require separate acceptance.
+  - id: MACOS-METADATA-05
+    source: [script/macos_bundle_metadata, .github/scripts/bundle-macos.sh]
+    static_check: script/check_package_cleanup
+    tests: [script/tests/macos_bundle_metadata.rb]
+    verification: Parse actual generated plist for stable/prerelease/metadata versions; malformed native reply and version fail without output. Native plutil lint where available; signing and installation separate.
+  - id: BUILD-IDENTITY-04
+    evidence: Behavioral RED (39c246), core identity test passed (50154), six hash tests passed (25546), real server protocol test passed (98676), quick passed (21976), full passed with exit 0 (35577). No remote deployment or real package produced.
+    source: [crates/tty7-core/build.rs, crates/tty7-core/build_support/source_identity.rs, crates/tty7-core/src/daemon/install/mod.rs, .github/scripts/bundle-macos.sh]
+    static_check: script/check_build_identity
+    tests: [source_build_identity_is_distinct_from_release_version, crates/tty7-core/tests/source_identity.rs, protocol_reports_compiled_source_identity_without_starting_daemon]
+    verification: Runtime identity shape and unchanged release/dialect semantics; scratch-tree deterministic hashing, mutation and fail-closed inputs. Actual cross-platform artifacts remain separate.
+  - id: PACKAGE-STATIC-03
+    evidence: RED (9d11bb); four tests/12 assertions passed (7c3386), quick passed (15470), full passed with exit 0 (30724). Fixture inspectors only; real ELF and source identity remain unverified.
+    source: [.github/scripts/assert-static.sh]
+    static_check: script/check_product_branding
+    tests: [script/tests/static_helper_contract.rb]
+    verification: Isolated tool fixtures test success and failed inspection without executing helper binaries; real ELF and bundled identity verification remain separate.
+  - id: PACKAGE-CLEANUP-02
+    evidence: RED (78467e), three tests/24 assertions passed (6de895), quick passed (27841), full passed with exit 0 (43495). Actual Unix scripts exercised in disposable missing-input fixtures; Windows source-only. Real packaging/install/signing remain required.
+    source: [.github/scripts/bundle-macos.sh, .github/scripts/bundle-linux.sh, .github/scripts/bundle-appimage.sh, .github/scripts/bundle-windows.ps1, .github/scripts/windows-installer.iss]
+    static_check: script/check_package_cleanup
+    tests: [script/tests/package_contract.rb]
+    package_tests: [test_package_sources_match_core_and_cleanup_contract, test_target_validation_rejects_mismatches_and_path_inputs, test_failed_package_cleans_only_selected_architecture_and_format]
+    verification: Local source and input-validation tests; real platform packaging and install require separate acceptance.
+  - id: WORKSPACE-PROOF-11
+    cancellation_failure_tests: [workspace_claims_progress_independently, workspace_claim_uncertainty_prevents_tracked_cleanup]
+    cancellation_failure_verification: Missing-test static RED (a7d4ad), three focused tests passed (6d94f6), fmt and quick passed (daf958). Scripted peers prove independent ownership progress while a reply is paused, exact timeout Cancel, unexpected/foreign reply refusal and no cleanup after a Ping/Pong barrier following a late reply. Test-only changes; no new full gate, view-use accounting or native acceptance claimed.
+    cancellation_test: client_cancellation_preserves_other_workspace_users
+    cancellation_race_test: client_cancellation_racing_reacquire_preserves_new_claim
+    cancellation_verification: API RED (0cfa06), two target tests including sixteen races passed (b20fab), Rejoin prepare cancellation passed (395a85), frozen-source fmt/quick/full passed (57531/2a0a7d). GUI 1932/core 1344/CLI 138 plus source-identity/server suites. Raw ownership calls participate in per-workspace coordination; Resume and Rejoin cleanup use release_initial_workspace_claim. Full active-use tracking, timeout/independent-workspace fixtures and native acceptance remain incomplete.
+    cancellation_sources: [crates/tty7-core/src/daemon/control.rs, src/ui/session_recovery.rs, src/ui/history_manager/staging.rs]
+    lifetime_test: reused_workspace_proof_is_not_a_view_lifetime
+    lifetime_verification: Static missing-test RED (68a49b), wire regression with pane-record retention passed (5b8a55), fmt/quick/full passed (29774/1bf053), GUI 1932/core 1342/CLI 138 plus source-identity and server suites. Same-connection reuse retains the nonce; original release invalidates reused attachment authority without deleting target records. Characterizes existing semantics; client view-lifetime cleanup remains unimplemented, not proven safe by this test.
+    acquisition_tests: [if_free_acquisition_reports_fresh_and_reused_proof, automatic_attachment_reply_requires_exact_workspace]
+    acquisition_evidence: Target acquisition RED (32056) and GUI reply identity RED (95285); four target tests and two GUI tests passed (80025, 86943), quick/full passed (4009, 35104). Control v13 returns proof and newly_acquired under the canonical handover lock; automatic pump/reconnect validate exact reply workspace before marking success. Checked history hydration and cancellation remain unfinished.
+    evidence: Stale release RED (34173), both expanded proof tests passed (30398), quick/full passed (91216, 35049). Control dialect v12; no real remote upgrade. Pane proof validation and GUI integration remain pending.
+    source: [crates/tty7-core/src/daemon/control.rs, crates/tty7-core/src/host/server.rs, src/ui/remote_workspace.rs, src/ui/i18n]
+    static_check: script/check_agent_sessions
+    tests: [attachment_proof_does_not_release_a_later_attachment, attachment_proof_is_connection_scoped_and_redacted, reused_workspace_proof_is_not_a_view_lifetime]
+    verification: Isolated target RPCs prove lease rotation, idempotent current ownership, foreign/stale refusal and nonce absence from snapshots/debug. Full gate required; checked pane and GUI integration remain separate.
+  - id: PANE-CHECKED-ATTACH-10
+    shell_tests: [checked_attachment_shell_requires_empty_agent_facts]
+    shell_evidence: Shell regression RED (20424), seven focused tests passed (18549), quick/full passed (76492, 11673). Checked-v3 requires explicit Shell or Agent identity; existing v2 shape rejects. GUI guard transport remains pending.
+    evidence: >-
+      Identity-state RED (82773) and authority callback RED (46067) precede
+      checked-v2 proof/layout integration. Six focused tests and quick/full pass
+      (86151, 19185, 12446). Normal/handoff startup shares the same authority;
+      v1 requests reject. GUI checked-attach callers, full split hydration and
+      successful native acceptance remain pending. No remote deployment.
+    source: [crates/tty7-core/src/daemon/protocol.rs, crates/tty7-core/src/daemon/pane.rs, crates/tty7-core/src/daemon/server.rs, crates/tty7-core/src/host/server.rs, crates/tty7-core/src/core/machine.rs]
+    static_check: script/check_agent_sessions
+    tests: [checked_attachment_rejects_changed_or_occupied_pane, checked_attachment_installs_only_matching_live_identity, checked_attach_has_distinct_wire_kind, checked_attach_missing_pane_cannot_spawn, checked_attachment_requires_current_proof_and_unique_layout, checked_attachment_layout_lock_rejects_duplicate_leaves]
+    verification: Pane-state tests prove atomic predicate and zero mutation/replay on rejection; wire roundtrip and isolated server refusal prove distinct dispatch. Workspace lease and native GUI are separate required acceptance.
+  - id: WORKSPACE-OWNERSHIP-09
+    evidence: Target RED (46659), GUI intent RED (73698), alias/Detach RED (16500, 17023), then 46 target tests and GUI intent pass (78330, 77172). Quick/full pass (73120, 36631). Control v11; no remote deployment. Pane-level Rejoin ownership and native UI remain unverified.
+    source: [crates/tty7-core/src/daemon/control.rs, crates/tty7-core/src/host/server.rs, src/ui/remote_workspace.rs]
+    static_check: script/check_agent_sessions
+    tests: [if_free_attachment_preserves_foreign_owner, if_free_attachment_rejects_missing_workspace, if_free_attachment_has_one_concurrent_winner, automatic_attachment_never_requests_takeover]
+    verification: Isolated socket-pair target tests verify refusal without ownership mutation, same-token connection isolation, idempotency and explicit takeover. GUI request selection and full regression are required; native Rejoin acceptance remains separate.
+  - id: CLIENT-DROP-02
+    evidence: Desktop I/O extracted to core; 14 copy tests and 5 editor tests pass (62396, 22914). Quick and full presubmit pass (65605, 42861), including 1888 GUI tests with 1 existing ignored. Source identity and simulated remote same-name rejection remain covered. Cross-window rendered drag and live remote upload remain unverified.
+    source: [src/core/path_drag.rs, src/core/desktop_files.rs, src/ui/code_editor.rs, src/ui/file_tree.rs, src/ui/file_copy.rs, src/ui/sftp.rs, src/terminal/view.rs]
+    static_check: script/check_path_drag
+    tests: [tree_drag_source_identity_survives_same_named_paths, drop_self_comparison_is_machine_scoped, remote_tree_drag_never_copies_a_local_same_named_file, script/tests/desktop_io_boundary.rb]
+    verification: Pure identity tests plus existing copy/terminal tests; simulated GUI remote-source rejection must precede any local lookup.
+  - id: CLIENT-KEY-01
+    evidence: Four keychain tests passed (84111); full GUI passed 1882 tests with 1 existing ignored (60712). Legacy key read exemptions removed, not expanded. Remaining host-boundary failures tracked separately.
+    source: [src/core/keychain.rs, src/ui/ssh_connect.rs, src/ui/ssh_prompt.rs, src/ui/settings.rs]
+    static_check: script/check_client_credentials
+    tests: [local_key_account_uses_contents_and_missing_file_has_no_fallback]
+    verification: Scratch identities with equal content share the canonical account; replacement changes it and missing files fail. Existing credential regressions remain required.
+  - id: TERMINAL-BOTTOM-01
+    source: [src/terminal/view.rs]
+    static_check: script/check_terminal_bottom
+    tests: [jump_bottom_button_uses_existing_viewport_without_terminal_input, jump_bottom_button_click_returns_to_bottom_and_hides]
+    verification: Simulated terminal tests verify visibility, bottom offset, cancelled animation and no socket input; rendered click acceptance separately.
+    evidence: Both viewport and rendered click tests passed (56760); full GUI 1878 passed, 1 existing ignored (67126). No PTY Input frames observed. Manual narrow-pane appearance remains unverified.
+  - id: QUALITY-GATE-01
+    routed_fixture_test: a_routed_connection_reaches_a_real_server
+    routed_fixture_verification: Assert private config argv before launching the routed child, then read back only the private seeded MachineStore. Socket-only scope is insufficient; retain all existing routed file I/O assertions.
+    host_guard_full_gate: Quick 12c776 and full 356229/4a4471 passed with the new 21-assertion boundary regression. No allowlist expansion or ignored-test change.
+    host_guard_result: Quick failure ed2c5a led to regression RED ad0337, which also exposed first-line non-test module exemption. Explicit positive cfg(test) line plus module visibility recognition passes all 21 assertions 1b71f6 and quick 12c776; production calls remain rejected without allowlist additions.
+    host_guard_source: .github/scripts/check-host-boundary.sh
+    host_guard_test: script/tests/quality_gate_contract.rb
+    host_guard_verification: Pending public cfg(test) module scope regression; production-before-test and non-test public modules remain forbidden.
+    source: [script/presubmit]
+    static_check: script/check_agent_harness
+    tests: [script/tests/quality_gate_contract.rb]
+    verification: Fixture runner proves invalid-mode rejection and failure propagation; actual quick/full result recorded separately.
+    evidence: Six runner fixture tests with 37 assertions pass. Real quick and full pass (65605, 42861); full runs workspace Cargo tests with locked dependencies and serial test execution. Earlier reference and GUI I/O failures were fixed without allowlist expansion. Native acceptance is not implied.
+  - id: QUALITY-REFERENCES-02
+    source: [script/check_agent_harness]
+    static_check: script/check_agent_harness
+    tests: [script/tests/quality_gate_contract.rb]
+    verification: Scratch fixtures prove unknown and duplicate IDs, missing source/check/test and archive-only tests fail.
+  - id: AGENT-BINDING-08
+    source: [crates/tty7-core/src/core/machine.rs, crates/tty7-core/src/daemon/pane.rs, crates/tty7-core/src/core/tab_view.rs, src/ui/session_recovery.rs, src/ui/tab_sidebar.rs, src/ui/switcher.rs]
+    static_check: script/check_agent_sessions
+    tests: [recovery_binding_survives_exit_and_target_store_reload, recovery_binding_does_not_inherit_unknown_identity_or_client_seed]
+    projection_tests: [tab_recovery_distinguishes_exited_agent_from_stopped_pane, tab_recovery_uses_bound_pane_liveness_and_defers_to_other_live_agent]
+    gui_tests: [recovery_badge_never_reads_local_mirror_for_remote_or_unknown_workspace]
+    projection_evidence: Two core projection tests passed (38000), GUI authority test passed (66314), full GUI passed 1872 tests with 1 existing ignored (64325). Actual stopped-tab runtime rendering and recovery actions remain unverified; presubmit script is missing.
+    verification: Temporary target MachineStore tests prove persisted identity, separate runtime facts and no seed/cache promotion; UI dormant integration remains required.
+    evidence: Both binding regressions failed before implementation (session 79105) and passed afterwards (session 82557). Full core serial passed 1284 tests with 3 existing ignored (55890); all 138 CLI binary tests passed (23230). Target daemon observer writes the binding through existing MachineStore facts and optional snapshot serialization. GUI and actual daemon-lifecycle acceptance pending.
+  - id: AGENT-IDENTITY-07
+    source: [crates/tty7-core/src/daemon/pane.rs]
+    static_check: script/check_agent_sessions
+    tests: [foreground_provider_replacement_clears_old_session_before_publishing_identity, foreign_provider_hook_cannot_replace_current_session]
+    verification: Target runtime transition test asserts session clearing, message order, no argv inheritance and same-provider preservation.
+    evidence: Both identity regressions failed before implementation; all 110 pane tests passed (session 49949). Full core serial suite passed 1282 tests with 3 existing ignored (session 47648, 39.06s). GUI regression pending. No actual provider processes or stores were modified.
+  - id: SESSION-TITLE-06
+    source_layer_gate: Pane-independent IndexSource extraction uses one existing watcher/parser implementation. Five focused live-title tests160fa3 and frozen-source quick/full60830 passed19a7d5; no-pane delayed names, partial cache preservation and file/directory replacement covered. Does not implement the open-manager subscriber. Core source changed; bundled helper/DMG rebuild remains pending after integration.
+    source_layer_test: title_source_without_panes_retains_complete_names
+    open_manager_gap: Source audit590ddc/7d2e40 confirms open HistoryManager only updates its snapshot on explicit scan, while live_titles skips unbound history identities. Existing tests prove cold title merge and pane-title publication, not prompt history-manager enrichment. Tracker open_history_live_title_gap scopes the missing target metadata interest/subscription, generation/lifetime and search/selection coverage; do not mark whole naming feature complete.
+    source: [crates/tty7-core/src/agent_sessions.rs]
+    static_check: script/check_agent_sessions
+    tests: [codex_native_title_overrides_excerpt_in_append_order, codex_native_title_requires_rollout_and_accepts_header_only, codex_native_title_bad_index_fails_generation, codex_native_title_record_cap_never_publishes_partial_names, codex_native_title_does_not_follow_index_symlink]
+    evidence: All 15 scanner and discovery-adapter tests passed (session 5439). Native index enriches only validated rollout identities; same shared scanner serves LocalHost and RemoteHost. Target-side watcher and alias/UI integration remain pending.
+    verification: Target fixtures prove native-title precedence and fail-closed reads; live watcher and user-alias integration pending.
+  - id: PRODUCT-BRAND-01
+    installation_update_guides: Installation/update guides now distinguish agentty package outputs from inherited l0ng-ai/tty7 feeds and tty7 update asset names, conditional signing, actual toolchain and platform install policy. Structural/wording checksbddd4f and quick52156 passed. Runtime update policy remains pending user choice; no behavior, public URL, configuration or installed artifact changed. Tracker installation_update_guide_audit owns evidence and next action.
+    native_package_verification: Actual arm64 release build passed 9f365c and canonical ad-hoc DMG packaging passed 80f93f. DMG checksum 426bb3, mounted strict signature/plist d6dadb, core executable names and Agentty metadata 844ab4, mounted server/CLI execution ca5609 and helper hash equality verified. Exact artifact/hash tracked under native_arm64_package; installed/native GUI, real SSH and Developer ID/notarization remain unverified.
+    development_source: .cargo/config.toml
+    development_tests: [test_app_alias_executes_core_names_and_forwards_arguments, test_app_alias_does_not_launch_after_build_failure, test_wrong_app_alias_is_rejected]
+    development_verification: Source RED e64f70 and isolated argv RED 2fbfef preceded two selector fixes. Five tests/16 assertions passed b5763f and quick passed 5db49c. Shell execution uses a fake cargo, not a real GUI/daemon; native packaging remains separate.
+    ci_source: [.github/workflows/ci.yml, .github/workflows/release.yml, .github/workflows/nightly.yml]
+    ci_static_check: script/check_ci_lineage
+    ci_tests: [test_current_workflows_use_real_core_outputs, test_wrong_package_and_asset_are_rejected]
+    ci_evidence: Three-workflow naming RED (98ce66), two tests/seven assertions passed (aa0282), actual Cargo metadata checked (ec962b), quick passed (83672), full passed with exit 0 (88045). No remote CI, packaging, signing or publishing performed; platform bundle input names still need repair.
+    source: [src/ui/i18n, src/ui/theme.rs, src/ui/settings.rs, src/ui/tray, src/terminal/view.rs, .github/scripts]
+    static_check: script/check_product_branding
+    tests: [product_branding_preserves_core_lineage]
+    verification: GUI displays agentty while core binaries and storage retain tty7; package runtime verification pending.
+  - id: MACHINE-RAIL-01
+    direct_list_tests: [direct_list_reorder_preserves_other_tabs, direct_list_numeric_activation_and_search_bounds, sidebar_drag_rejects_changed_membership, direct_list_release_refuses_stale_order]
+    direct_list_verification: Static RED 173b67 and behavior RED aabdc8/e9b83d preceded repairs; sidebar 9 tests bb46ae and reorder 12 a70dff passed. Eleven retired section-only tests replaced with five direct-list/identity invariants. Formatting/harness and frozen-source quick/full session 36752 passed with exit 0. No native or real-SSH acceptance claim.
+    obsolete_group_mutation_verification: Static RED 7f3311/detach RED 51c934 preceded deletion; detach 1d2709, sidebar 16/reorder 11, quick and full session 64394 passed. GUI 1937/core 1352/CLI 138 and integration suites; fourteen retired group-only tests replaced by the new pane-identity regression plus retained machine/reorder coverage. No native or full render-scaffolding retirement claim.
+    obsolete_settings_verification: Static RED e77691 and behavior RED c25e28; 46 settings tests passed 0aa85c, quick 7a1b7d and full session 8225 exited 0. Six translation keys and obsolete setter removed; no native interaction or full custom-group-model retirement claimed.
+    obsolete_settings_source: [src/ui/settings.rs, src/ui/app.rs, src/ui/i18n/mod.rs, src/ui/i18n/en.rs, src/ui/i18n/zh.rs, src/ui/i18n/ja.rs]
+    source:
+      - src/ui/switcher.rs
+      - src/core/session.rs
+      - crates/tty7-core/src/core/config.rs
+      - src/ui/tab_sidebar.rs
+      - src/ui/tab_strip.rs
+      - src/ui/app.rs
+      - src/ui/reorder.rs
+      - src/ui/settings.rs
+      - src/ui/i18n/mod.rs
+      - src/ui/i18n/en.rs
+      - src/ui/i18n/zh.rs
+      - src/ui/i18n/ja.rs
+    static_check: script/check_machine_rail_contract
+    tests:
+      - machine_rail_has_one_entry_per_host
+      - machine_settings_retire_directory_grouping
+      - detached_pane_does_not_inherit_legacy_group
+      - machine_preferences_pin_is_idempotent_and_unpin_preserves_folding
+      - machine_preferences_roundtrip_and_legacy_defaults
+      - machine_preferences_search_reveals_without_unfolding
+      - machine_preferences_order_is_local_then_pin_order
+      - machine_connecting_is_explicitly_disconnectable
+      - folding_a_machine_takes_its_rows_off_the_sidebar
+      - a_search_outranks_a_machine_fold
+      - a_machine_fold_hides_the_active_row_too
+    verification: rail shows Local plus pinned/connected remote hosts without duplicate host nodes
+    integration_check: sh script/check_machine_rail_wiring
+    evidence: Pin/fold persistence and actual projection/dedup/no-connect tests pass; source guards pass. Ownership-conflict activation and rendered runtime verification pending.
+  - id: MACHINE-SESSION-02
+    adoption_tests: [stale_remote_listing_cannot_claim_another_windows_mapping]
+    adoption_evidence: Behavioral RED (15511), 50 switcher tests passed (68380), quick passed (59083), full passed with exit 0 (97048). Shared local mapping eligibility precedes actual remote claim; failed entry no longer authorizes tab activation. Native clicks and complete checked remote success remain pending.
+    adoption_source: [src/ui/remote_workspace.rs, src/ui/switcher.rs]
+    window_conflict_tests: [normal_session_click_does_not_change_another_window]
+    window_conflict_evidence: Behavioral RED (93096); all 49 switcher tests passed (45465), quick passed (80615), full passed with exit 0 (60828). Covers mapped foreign-window selection and explicit new-window branch; native focus/toast and adoptable remote rows remain pending.
+    window_conflict_source: [src/ui/switcher.rs, src/ui/i18n/mod.rs, src/ui/i18n/en.rs, src/ui/i18n/zh.rs, src/ui/i18n/ja.rs]
+    evidence: Actual remote machine projection keeps key/label/target stable as pane cwd changes across four directories; focused test passed (35460), full GUI passed (44550).
+    source:
+      - src/ui/switcher.rs
+      - src/ui/tab_sidebar.rs
+    static_check: script/check_machine_rail_contract
+    tests:
+      - machine_identity_never_uses_repo_or_cwd
+      - resident_selection_keeps_identity_after_reorder_and_removal
+    verification: changing a pane cwd changes only its session metadata
+  - id: SESSION-RECOVERY-03
+    prepare_control_tests: [rejoin_prepare_cancellation_uses_exact_control_cleanup]
+    prepare_control_evidence: Four scripted control-wire scenarios passed through production prepare (21143); quick passed (10643). Exact acquisition/release request sequence checked with real ControlClient over Unix sockets; successful pane staging, post-attach replacement and native GUI commit remain unverified.
+    origin_guard_tests: [rejoin_origin_detects_current_window_edits, rejoin_route_preserves_non_ssh_targets]
+    origin_guard_evidence: Reorder behavioral RED (52990), non-SSH route RED (68818), fourteen filtered tests passed (74247; one unrelated path-display test), quick passed (98075), final full passed with exit 0 (35964). Snapshot guard is in the production commit gate. Profile-change coordinator regression and native race acceptance remain required.
+    staging_tests: [rejoin_plan_requires_every_neighbor_to_be_unique_and_live, rejoin_staging_drops_partial_results_before_failure]
+    staging_gui_tests: [prepared_rejoin_commit_consumes_existing_parts_without_attach, prepared_rejoin_incomplete_commit_preserves_current_window]
+    staging_cleanup_tests: [rejoin_cleanup_releases_only_fresh_exact_proof, history_rejoin_cancellation_reaches_background_generation, rejoin_inflight_cancellation_drops_before_conditional_release]
+    inflight_cleanup_evidence: Deterministic first/final in-flight cancellation crossed with fresh/reused ownership passed (62483), quick passed (81794). Uses production stage/release_with and drop-counted fake resources; does not prove full prepare coordinator or real pane transport cleanup. Production behavior unchanged.
+    staging_source: [src/ui/history_manager.rs, src/ui/history_manager/staging.rs, src/ui/app.rs, src/ui/tree_sync.rs, src/ui/switcher.rs]
+    staging_evidence: Neighbor RED (15466); prepared GUI commit and target identity checks exercised (42423, 9621), then filtered tests passed (85623). Quick passed (67685); full passed with exit 0 (28288). Actual history caller uses checked staging and consumes prepared parts; live coordinator and native GUI acceptance remain required.
+    checked_transport_tests: [checked_restore_rejects_missing_guard_and_unsupported_peer, checked_restore_pending_preserves_guards_and_never_resumes]
+    checked_transport_evidence: Behavioral RED (31050), expanded protocol/pending tests passed (75717), split propagation passed (32570), quick/full passed (55368, 90068). Canonical attachment accepts checked guards; actual history acquisition/cancellation integration remains pending.
+    hydration_evidence: Target split policy regression RED (77519) to green (7995); quick/full passed (29146, 54233). Full tree adoption now preserves AttachOnly independently of ordinary startup/reopen policy. Native acceptance and history Rejoin orchestration remain unfinished.
+    attach_only_evidence: Three focused tests pass (67970); quick/full pass (96764, 8096). Tree-delta attachment now uses typed AttachOnly through the shared creation path. Non-resident history orchestration and native acceptance remain incomplete.
+    local_failure_evidence: Both local-retention and cancelled-attachment regressions failed before correction (80749, 31772), then passed (44851). Quick/full passed (69343, 33477). Native retry/close-reopen and non-resident Rejoin still require acceptance.
+    attach_failure_evidence: Truncated error RED (62090), replacement classification RED (2839), 58 terminal remote tests passed (42668), full GUI 1888 passed with 1 existing ignored (55665). Native target recovery and non-resident attach-only integration remain unverified.
+    resident_evidence: Two simulated-daemon resident focus/identity regressions passed (27057); full GUI passed 1874 tests with 1 existing ignored (52598). This proves current-window resident activation only, not non-resident attach or live remote acceptance.
+    source:
+      - src/ui/app.rs
+      - src/terminal/view.rs
+      - src/terminal/remote.rs
+      - crates/tty7-core/src/core/cli_agent.rs
+    static_check: script/check_machine_rail_contract
+    tests:
+      - rejoin_requires_a_live_pane
+      - nonresident_rejoin_requires_unique_live_unoccupied_owner
+      - nonresident_rejoin_rejects_duplicate_split_leaf
+      - attach_only_never_authorizes_missing_replacement
+      - target_tree_split_restore_keeps_attach_only_intent
+      - attach_only_without_identity_cannot_allocate_a_slot
+      - attach_only_pending_never_delivers_resume_even_if_completion_is_wrong
+      - failed_local_restore_retains_retry_identity_without_losing_neighbors
+      - cancelled_attachment_never_kills_existing_pane
+      - incomplete_attach_error_cannot_invent_missing_pane
+      - ordinary_restore_requires_exact_missing_verdict
+      - resident_rejoin_focuses_existing_identity_without_new_tabs
+      - resident_rejoin_rejects_foreign_missing_and_ambiguous_identity
+      - explicit_exit_is_not_auto_resumable
+      - explicit_resume_cannot_reenter_automatic_fallback
+      - history_resume_invocation_is_typed_and_rejects_injection
+      - history_resume_validation_rejects_changed_identity_and_foreign_source
+      - history_resume_validation_is_target_owned
+      - explicit_pending_resume_is_one_shot_and_not_auto_resume
+      - history_resume_foreign_machine_cannot_spawn_locally
+      - history_carrier_unknown_machine_has_no_effects
+      - history_carrier_keeps_current_machine_in_this_window
+      - history_carrier_requires_resolved_host_and_unowned_window
+      - history_resume_wait_cancellation_timeout_and_host_replacement_have_no_pane_effects
+    verification: rejoin attaches and resume creates a provider command only after target validation
+  - id: MACHINE-SCAN-04
+    source:
+      - src/ui/manager_shell.rs
+      - src/ui/history_manager.rs
+      - src/ui/switcher.rs
+      - crates/tty7-core/src/agent_sessions.rs
+      - crates/tty7-core/src/host/server.rs
+    static_check: script/check_machine_rail_contract
+    tests:
+      - agent_sessions_respect_explicit_target_roots
+      - agent_sessions_malformed_source_fails_whole_scan
+      - agent_sessions_filter_internal_and_injected_records
+      - agent_sessions_missing_and_limits_are_explicit
+      - agent_sessions_bounded_head_ignores_only_truncated_tail
+      - agent_sessions_are_returned_only_from_the_peer
+      - agent_sessions_remote_failure_has_no_local_fallback
+      - agent_sessions_do_not_follow_nested_symlinks
+      - agent_sessions_roots_use_target_environment_overrides
+      - scan_failure_preserves_rows
+      - history_manager_stale_cancelled_and_failed_results_preserve_rows
+      - history_manager_missing_provider_preserves_rows
+      - history_manager_offline_open_has_no_pane_effects
+      - history_manager_future_actions_have_no_handlers
+      - manager_shell_fits_small_viewports
+      - manager_shell_preserves_switcher_proportions
+      - history_manager_shell_bounds_follow_viewport
+      - history_search_matches_metadata_without_changing_snapshot
+      - history_search_reconciles_visible_identity
+      - history_manager_search_and_keyboard_use_visible_rows
+      - history_keyboard_scroll_keeps_selection_inside_card
+    verification: requested Codex/Claude scan reads target stores and reports failure without clearing rail state
+    evidence: Target scanner/RPC isolation, source validation, manager generation guards and offline rendering tests pass. Shared manager_shell supplies history and switcher chrome/placement; three focused geometry/render tests passed after a failing small-viewport regression. Search/keyboard shell reuse and cross-machine recovery remain incomplete. Full machine contract is not proven by these focused tests.
+    integration_check: sh script/check_history_manager
+  - id: MACHINE-LAUNCHER-05
+    source:
+      - src/ui/switcher.rs
+      - src/ui/tab_strip.rs
+    static_check: script/check_machine_rail_contract
+    tests:
+      - script/check_terminal_menu
+      - the_new_tab_menu_nests_alternatives_without_repeating_default
+    verification: launcher and rail show the same machines; alternate terminals are nested
+    evidence: Shared machine projection, alternate-terminal submenu and nested saved configurations wired; terminal menu tests pass. Rendered UI and stale menu target verification pending.

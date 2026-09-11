@@ -1,0 +1,48 @@
+#!/usr/bin/env ruby
+module PackageContract
+  def self.errors(root)
+    errors = []
+    %w[macos linux appimage windows].each do |platform|
+      ext = platform == 'windows' ? 'ps1' : 'sh'
+      text = File.read(File.join(root, ".github/scripts/bundle-#{platform}.#{ext}"))
+      errors << "#{platform}: wrong core executable names" if text.match?(/agentty-(app|server)|release\/agentty(?:[".]|$)/)
+      %w[tty7-app tty7-server].each { |name| errors << "#{platform}: missing #{name}" unless text.include?(name) }
+      validator = text.index('bash script/check_package_target')
+      cleanup = text.index(platform == 'windows' ? 'Remove-Item' : 'rm -rf')
+      input = text.index(platform == 'macos' ? 'SERVER_PROTOCOL=' : 'bash script/check_bundled_remote_helpers')
+      unless validator && cleanup && input && validator < cleanup && cleanup < input
+        errors << "#{platform}: require target validation then cleanup before new input"
+      end
+      case platform
+      when 'macos'
+        errors << 'macos: missing canonical metadata renderer' unless text.include?('ruby script/macos_bundle_metadata "$VERSION"')
+        errors << 'macos: duplicate inline plist renderer' if text.include?('<key>CFBundleVersion</key>')
+        metadata = text.index('ruby script/macos_bundle_metadata')
+        stage = text.index('mkdir -p "$APP/Contents/MacOS"')
+        errors << 'macos: validate metadata before staging' unless metadata && stage && cleanup < metadata && metadata < stage
+        %q[APP="dist/macos-${ARCH}/Agentty.app"].then { |s| errors << 'macos: stage not architecture-scoped' unless text.include?(s) }
+        errors << 'macos: missing scoped old-version cleanup' unless text.include?('dist/agentty-*-macos-"${ARCH}".dmg')
+        errors << 'macos: wrong icon source' unless text.include?('cp assets/tty7.icns ')
+      when 'appimage'
+        errors << 'appimage: stage not architecture-scoped' unless text.include?('APPDIR="dist/AppDir-${ARCH}"')
+        errors << 'appimage: missing scoped old-version cleanup' unless text.include?('dist/agentty-*-linux-"${ARCH}".AppImage')
+      when 'linux'
+        errors << 'linux: missing scoped old-version cleanup' unless text.include?('dist/agentty-*-linux-"${ARCH}".tar.gz')
+      when 'windows'
+        errors << 'windows: missing scoped old-version cleanup' unless text.include?('"dist/agentty-*-windows-$Arch.zip", "dist/agentty-*-windows-$Arch-setup.exe"')
+        errors << 'windows: cleanup errors must stop packaging' if text.lines.any? { |line| line.include?('Remove-Item') && line.include?('SilentlyContinue') }
+      end
+    end
+    installer = File.read(File.join(root, '.github/scripts/windows-installer.iss'))
+    errors << 'installer: missing native server' unless installer.include?('Source: "{#StageDir}\\tty7-server.exe"')
+    errors << 'installer: remote helpers cannot be optional' if installer.include?('skipifsourcedoesntexist')
+    errors
+  rescue StandardError => error
+    ["package contract cannot validate inputs: #{error.message}"]
+  end
+end
+if $PROGRAM_NAME == __FILE__
+  errors = PackageContract.errors(File.expand_path('..', __dir__))
+  abort errors.join("\n") unless errors.empty?
+  puts 'package payload/cleanup sources passed; native packaging remains separate'
+end

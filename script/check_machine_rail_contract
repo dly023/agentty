@@ -1,0 +1,76 @@
+#!/bin/sh
+set -eu
+
+test -f docs/specs/MACHINE_RAIL_SPEC.yaml
+test -f docs/quality/traceability.yaml
+if rg -q 'fn (filter_hosts|host_score)\(' src/ui/remote_connect.rs || rg -q 'fn invalidate\(' src/terminal/pane_liveness.rs; then
+    echo 'retire unused dropdown search and delete-only cache invalidation' >&2
+    exit 1
+fi
+rg -q 'fn probes_are_deduplicated_and_then_throttled_by_the_ttl' src/terminal/pane_liveness.rs
+rg -q 'fn searching_a_tab_name_narrows_the_tab_column_to_the_hits' src/ui/switcher.rs
+if rg -q '\bchosen_name\b|fn (name_new_workspace|chosen_name_for|settle_chosen_name|rename_workspace)\(' src/ui/tree_sync.rs; then
+    echo 'retire the old GUI form name intent and its deferred rename closure' >&2
+    exit 1
+fi
+rg -q 'fn machine_prime_names_follow_current_target' src/ui/tree_sync.rs
+rg -q 'fn machine_hydration_names_follow_current_target' src/ui/tree_sync.rs
+if rg -q 'fn teardown\(' src/ui/app.rs; then
+    echo 'retire the unused GUI forward teardown wrapper' >&2
+    exit 1
+fi
+if rg -q 'fn (doomed_pane_ids|stop_workspace_keeping|delete_workspace|scrub_host_snapshots|delete_from_tree|close_window_for)\(' src/ui/windows.rs || rg -q 'fn teardown_workspace_forwards\(' src/ui/app.rs; then
+    echo 'retire the unused GUI workspace delete closure, not just its caller' >&2
+    exit 1
+fi
+if rg -q 'const (FORM_LIST_H|GUTTER|ICON):|fn (hover_fill|glyph_col)\(' src/ui/switcher.rs; then
+    echo 'retire exclusive unused workspace form geometry and rendering helpers' >&2
+    exit 1
+fi
+rg -q 'fn forgetting_a_workspace_never_tells_its_machine' src/ui/windows.rs
+rg -q 'fn a_deletion_nothing_has_open_forgets_the_workspace_here_too' src/ui/tree_sync.rs
+rg -q 'fn a_failed_daemon_change_stops_the_emptied_window_speaking_for_the_machine' src/ui/tree_sync.rs
+if rg -q 'struct PaneCountQuery|fn (pane_count_query|live_pane_count|confirm_and_stop|confirm_and_delete|confirm_destructive|destructive_detail|stop_workspace)\(' src/ui/windows.rs; then
+    echo 'retire unreachable workspace confirmation and exclusive query entrypoints' >&2
+    exit 1
+fi
+if rg -q '\bWindow(Stop|Delete|ThisWorkspace|ConfirmTitle|StopUnreachable|DeleteUnreachable|StopShells|DeleteShells)\b' src/ui/i18n; then
+    echo 'retire exclusive workspace confirmation localization keys' >&2
+    exit 1
+fi
+rg -q 'fn machine_palette_excludes_legacy_workspace_mutations' src/ui/palette.rs
+rg -q 'fn machine_keymap_rejects_legacy_workspace_mutations' src/ui/keymap.rs
+rg -q 'fn machine_native_menus_exclude_legacy_workspace_mutations' src/ui/theme.rs
+rg -q 'fn machine_switcher_has_no_workspace_create_footer' src/ui/switcher.rs
+rg -q 'fn machine_connection_after_refusal_does_not_create_workspace' src/ui/remote_workspace.rs
+rg -q 'fn machine_server_replacement_preserves_absent_or_foreign_intent' src/ui/remote_workspace.rs
+if rg -q 'struct (CreateForm|PendingCreate)|fn switcher_rename|fn switcher_form_create|fn take_create_waiting_on|\.(pending_create|parked_create)' src/ui/switcher.rs src/ui/remote_workspace.rs src/ui/app.rs; then
+    echo 'retire the named-workspace form and its deferred create/rename paths' >&2
+    exit 1
+fi
+# Guard public action registration/dispatch; the switcher form retirement has
+# separate pending coverage and is not proven by these action-layer checks.
+ruby -e '
+paths = %w[src/core/actions.rs src/ui/theme.rs src/ui/keymap.rs src/ui/palette.rs src/ui/app.rs]
+paths.each do |path|
+  source = File.read(path).split(/^#\[cfg\(test\)\]\nmod /, 2).first
+  abort "obsolete workspace action in #{path}" if source.match?(/\b(?:NewWorkspace|RenameWorkspace|StopWorkspace|DeleteWorkspace)\b/)
+end
+'
+sh script/check_machine_rail_wiring
+sh script/check_terminal_menu
+# The full contract cannot pass on UI projection alone. Target discovery and
+# explicit recovery still need production implementations and tests.
+test -f crates/tty7-core/src/agent_sessions.rs
+sh script/check_agent_sessions
+test -f src/ui/history_manager.rs
+rg -q 'resume_history_session' src/ui/app.rs
+rg -q 'MachineSessionWindowOccupied' src/ui/switcher.rs
+rg -q 'remote_workspace_claimable' src/ui/remote_workspace.rs
+rg -q 'remote_workspace_claimable' src/ui/switcher.rs
+rg -Fq 'if this.switcher_open(adopt.clone(), false, window, cx)' src/ui/switcher.rs
+test "$(sed -n '/fn switcher_open_tab(/,/^    }/p' src/ui/switcher.rs | rg -c 'windows::open_at_tab')" = 1
+if sed -n '/fn switcher_open(/,/^    }/p' src/ui/switcher.rs | rg -q 'reveal_workspace'; then
+    echo 'normal switcher click must not reveal another window' >&2
+    exit 1
+fi

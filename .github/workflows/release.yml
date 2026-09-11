@@ -1,0 +1,303 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    # Every desktop distribution embeds both supported static Linux helpers.
+    # Managed SSH target architecture is independent of the local desktop,
+    # therefore all platform builds wait for the complete server-musl matrix.
+    needs: server-musl
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-14
+            os: macos
+            arch: arm64
+            target: aarch64-apple-darwin
+          # macos-13 was retired; macos-15-intel is the remaining hosted x86_64 image.
+          - runner: macos-15-intel
+            os: macos
+            arch: x86_64
+            target: x86_64-apple-darwin
+          - runner: windows-latest
+            os: windows
+            arch: x86_64
+            target: x86_64-pc-windows-msvc
+          - runner: ubuntu-latest
+            os: linux
+            arch: x86_64
+            target: x86_64-unknown-linux-gnu
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout agentty
+        uses: actions/checkout@v4
+        with:
+          path: agentty
+
+      # gpui-component is pulled as a git dependency (see Cargo.toml's patch
+      # section), so no sibling checkout is needed.
+
+      # gpui's Linux backends resolve the x11/wayland/xkb/font dev packages via
+      # pkg-config at build time — the same set the README documents for
+      # building from source on Linux.
+      - name: Install Linux system dependencies
+        if: matrix.os == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config cmake clang libxkbcommon-dev \
+            libxkbcommon-x11-dev libfontconfig1-dev libfreetype6-dev \
+            libwayland-dev libx11-dev libxcb1-dev libzstd-dev libssl-dev \
+            libkrb5-dev libfuse2 file imagemagick
+          echo "LIBGSSAPI_IMPL=mit" >> "$GITHUB_ENV"
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2026-07-31
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: agentty
+
+      # `--locked` because a release must ship the dependency set the tag
+      # recorded, not whatever cargo would re-resolve at build time. Safe here
+      # (unlike nightly) precisely because nothing rewrites Cargo.toml: this is
+      # a plain checkout of the tagged commit.
+      - name: Build
+        working-directory: agentty
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Fetch bundled Linux servers
+        uses: actions/download-artifact@v7
+        with:
+          pattern: release-tty7-server-linux-*-musl
+          path: agentty/bundled-server
+          merge-multiple: true
+      # ---- Packaging: one step per OS ----------------------------------------
+      # macOS gets a signed + notarized drag-to-Applications DMG. Windows gets
+      # an Inno Setup installer plus a portable zip; Linux a tarball — both
+      # unsigned, of the self-contained binary (fonts are embedded via
+      # include_bytes!; the Windows icon is compiled in via build.rs).
+      - name: Bundle macOS DMG
+        if: matrix.os == 'macos'
+        working-directory: agentty
+        env:
+          # macOS code signing — the cert is imported into a throwaway keychain.
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          # Notarization — required for Developer ID builds to pass Gatekeeper.
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: bash .github/scripts/bundle-macos.sh "${{ matrix.target }}" "${{ matrix.arch }}"
+
+      - name: Package Linux tarball
+        if: matrix.os == 'linux'
+        working-directory: agentty
+        run: bash .github/scripts/bundle-linux.sh "${{ matrix.target }}" "${{ matrix.arch }}"
+
+      # AppImage bundles the x11/wayland/xkb/font libs so it runs on Fedora/Arch/
+      # etc., not just Ubuntu. Kept separate from the tarball step so the tarball
+      # still ships even if AppImage tooling changes upstream.
+      - name: Package Linux AppImage
+        if: matrix.os == 'linux'
+        working-directory: agentty
+        run: bash .github/scripts/bundle-appimage.sh "${{ matrix.target }}" "${{ matrix.arch }}"
+
+
+      - name: Package Windows installer + zip
+        if: matrix.os == 'windows'
+        working-directory: agentty
+        shell: pwsh
+        run: '& ./.github/scripts/bundle-windows.ps1 "${{ matrix.target }}" "${{ matrix.arch }}"'
+
+      # Hand the artifacts to the assemble job rather than uploading them to the
+      # release here. Four parallel jobs each publishing their own slice would
+      # make the release "latest" the moment the *first* platform finished — the
+      # in-app update check (src/core/update.rs) reads /releases/latest, so users
+      # would be prompted to download a release that was still missing most of
+      # its assets. Same glob list as before: the bundle scripts leave
+      # intermediates in dist/ (agentty.app, entitlements.plist, the Windows staging
+      # dir) that must not reach the release assets.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-${{ matrix.os }}-${{ matrix.arch }}
+          path: |
+            agentty/dist/*.dmg
+            agentty/dist/*.tar.gz
+            agentty/dist/*.zip
+            agentty/dist/*-setup.exe
+            agentty/dist/*.AppImage
+          if-no-files-found: error
+
+  # The headless server binary remote workspaces install on the far machine
+  # (decision D10). Statically linked against musl so a single binary runs
+  # on any distro whatever its glibc vintage, and shipped as a bare executable
+  # rather than an archive so the client can fetch exactly one file and verify it
+  # against checksums.txt. The asset names are a contract with the installer:
+  # `tty7_core::daemon::install::asset` derives them from `uname -sm`.
+  #
+  # Separate from the `build` matrix above because it shares nothing with it: no
+  # GUI toolchain, no bundling, no code signing, two targets off one runner.
+  server-musl:
+    strategy:
+      fail-fast: false
+      # `target` is the build triple; `asset` is the published filename. They
+      # are deliberately not the same string — the triple's vendor field is
+      # `unknown`, which says nothing to anyone reading the releases page. See
+      # `install::asset::ASSET_X86_64`, which pins these two names as literals.
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-musl
+            asset: tty7-server-linux-x86_64-musl
+          - target: aarch64-unknown-linux-musl
+            asset: tty7-server-linux-aarch64-musl
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: -C strip=symbols
+    steps:
+      - name: Checkout agentty
+        uses: actions/checkout@v4
+        with:
+          path: agentty
+
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2026-07-31
+          targets: ${{ matrix.target }}
+
+      # zig provides the musl sysroot and the C cross-compiler for both targets
+      # from one x86_64 runner — see the same job in ci.yml for why the
+      # alternatives (cross, musl-tools) do not cope with aws-lc-rs' cmake build.
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.16.0
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-zigbuild
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: agentty
+          key: ${{ matrix.target }}
+
+      - name: Require the tty7-server package
+        working-directory: agentty
+        run: |
+          set -euo pipefail
+          cargo metadata --no-deps --format-version 1 \
+            | jq -e '[.packages[].name] | index("tty7-server")' >/dev/null
+
+      # `--locked` for the same reason the GUI build uses it: a release ships the
+      # dependency set the tag recorded. `-p tty7-server` both addresses the
+      # package independently of its path and keeps feature unification off the
+      # GUI's `gssapi` feature, which cannot build under musl.
+      - name: Build static tty7-server
+        working-directory: agentty
+        run: cargo zigbuild --release --locked -p tty7-server --target ${{ matrix.target }}
+
+      - name: Assert the binary is static
+        working-directory: agentty
+        run: bash .github/scripts/assert-static.sh "target/${{ matrix.target }}/release/tty7-server"
+
+      # Flat, version-free asset name — the tag in the download URL carries the
+      # version. See `install::asset` for the contract the client
+      # installer derives this name from.
+      - name: Stage the asset
+        working-directory: agentty
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp "target/${{ matrix.target }}/release/tty7-server" \
+             "dist/${{ matrix.asset }}"
+          chmod +x "dist/${{ matrix.asset }}"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-${{ matrix.asset }}
+          path: agentty/dist/${{ matrix.asset }}
+          if-no-files-found: error
+
+  # Single assembly step, after all four platforms succeed. The release object is
+  # created as a **draft** and left that way: a draft is invisible to both
+  # /releases/latest and the releases page, so nothing can prompt a user to
+  # download a version whose asset set is incomplete or whose notes are still
+  # empty. Publishing is the release skill's job — it verifies the six assets and
+  # writes the body first, then flips the draft. See .claude/skills/release/SKILL.md.
+  draft-release:
+    needs: [build, server-musl]
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+
+      # sha256 over every asset, so the remote-server installer can verify what
+      # it downloaded before writing it to someone else's machine (a mismatch
+      # aborts the install outright). Generated here rather than in
+      # the build jobs because only this job sees the complete asset set, and a
+      # per-job fragment would have to be concatenated in a deterministic order
+      # anyway. GNU coreutils format ("<hex>  <name>"), bare filenames, sorted —
+      # see `install::checksums` for the format the client parses.
+      - name: Generate checksums.txt
+        run: |
+          set -euo pipefail
+          cd dist
+          rm -f checksums.txt
+          # `find -type f` rather than a glob: nested files (should any appear)
+          # would otherwise be silently skipped, leaving an asset unverifiable.
+          #
+          # Built in $RUNNER_TEMP and moved in, rather than redirected straight
+          # into dist/: the `>` redirect creates its target *before* find walks
+          # the directory, so a file written in place would end up hashing
+          # itself as a zero-byte entry — a line that can never verify.
+          #
+          # `xargs -r` — without it an empty dist/ would leave sha256sum reading
+          # stdin and the job would hang rather than fail.
+          find . -type f -printf '%P\n' \
+            | LC_ALL=C sort | xargs -r sha256sum > "$RUNNER_TEMP/checksums.txt"
+          [ -s "$RUNNER_TEMP/checksums.txt" ] || { echo "::error::no assets to checksum"; exit 1; }
+          mv "$RUNNER_TEMP/checksums.txt" checksums.txt
+          sha256sum -c checksums.txt
+          cat checksums.txt
+
+      # Reuse an existing release rather than failing: re-triggering a tag
+      # (force-push after a fixed platform) must top up the same draft. If the
+      # release was already published, --clobber just replaces its assets and it
+      # stays published.
+      #
+      # Existence is probed with `release list`, not `release view`: GitHub's
+      # get-release-by-tag endpoint does not return drafts, so a view-based check
+      # could miss the very draft a previous run left behind and create a second
+      # one (GitHub happily allows duplicate drafts on one tag).
+      - name: Assemble the draft release
+        run: |
+          set -euo pipefail
+          # Captured into a variable, not piped into `grep -q`: -q exits on the
+          # first match, and the resulting SIGPIPE would make `pipefail` report
+          # the pipeline as failed — i.e. "found" would read as "not found".
+          # `release list` includes drafts (cf. its --exclude-drafts flag).
+          EXISTING=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 100 \
+            --json tagName -q '.[].tagName')
+          if grep -Fxq "$GITHUB_REF_NAME" <<<"$EXISTING"; then
+            echo "release $GITHUB_REF_NAME already exists; reusing it"
+          else
+            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+              --draft --title "$GITHUB_REF_NAME" --notes ""
+          fi
+          gh release upload "$GITHUB_REF_NAME" dist/* --clobber --repo "$GITHUB_REPOSITORY"

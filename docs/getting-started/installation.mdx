@@ -1,0 +1,169 @@
+---
+title: "Installation"
+description: "Agentty development packages, upstream distribution boundaries, and source builds."
+---
+
+Agentty is currently a development fork. Use an Agentty artifact supplied with
+its matching build and verification record, or build this checkout. The retained
+[GitHub Releases link](https://github.com/l0ng-ai/tty7/releases) belongs to
+upstream tty7; it is not evidence that the Agentty changes are published there.
+
+The names below are the current packaging outputs, not a claim that every
+platform has been built, signed or runtime-tested. The locally verified macOS
+arm64 DMG is ad-hoc signed, not Developer ID signed or notarized. Check the
+artifact's own verification record before installing it.
+
+<Tabs>
+  <Tab title="macOS">
+    Use the DMG that matches your Mac; the app inside is **Agentty.app**.
+    Installing it is separate from building or verifying the DMG. Keep your
+    existing application and sessions until you have decided how to replace them.
+
+    | Mac | File |
+    |---|---|
+    | Apple silicon (M1 and later) | `agentty-<version>-macos-arm64.dmg` |
+    | Intel | `agentty-<version>-macos-x86_64.dmg` |
+
+    The packaging script uses Developer ID signing and notarization only when
+    the required credentials are supplied. Otherwise it signs ad-hoc. A valid
+    local signature does not establish notarization or Gatekeeper acceptance on
+    another machine; do not disable system protections to turn a failed check
+    into a successful installation.
+
+    <Note>
+      Build-target support and actual OS-version acceptance are different.
+      Consult the current artifact verification record rather than treating an
+      inherited upstream test range as testing of this fork.
+    </Note>
+  </Tab>
+
+  <Tab title="Windows">
+    Two shapes, both x86-64:
+
+    | File | Use it when |
+    |---|---|
+    | `agentty-<version>-windows-x86_64-setup.exe` | A normal install with Start-menu entries and an uninstaller. |
+    | `agentty-<version>-windows-x86_64.zip` | A portable package containing `tty7-app.exe`. |
+
+    The current installer offers an optional desktop shortcut. Do not assume
+    older upstream installer tasks are present in this fork. Windows runtime
+    acceptance remains separate from checking the installer source.
+
+    A portable install can add or remove the same entries itself:
+
+    ```powershell
+    tty7-app.exe --register-explorer-menu
+    tty7-app.exe --unregister-explorer-menu
+    ```
+
+    <Note>
+      Packaging includes both x86-64 and arm64 Linux `tty7-server` helpers for
+      supported remote/WSL targets. Bundling is not proof of execution on those
+      targets. See
+      [Remote workspaces](/remote/workspaces).
+    </Note>
+  </Tab>
+
+  <Tab title="Linux">
+    | File | Use it when |
+    |---|---|
+    | `agentty-<version>-linux-x86_64.AppImage` | Bundles the X11, Wayland, xkb and font libraries; actual distribution compatibility still needs runtime testing. |
+    | `agentty-<version>-linux-x86_64.tar.gz` | An unpacked installation managed manually. |
+
+    ```bash
+    # Replace VERSION with the exact version of your verified artifact.
+    chmod +x ./agentty-VERSION-linux-x86_64.AppImage
+    ./agentty-VERSION-linux-x86_64.AppImage
+    ```
+  </Tab>
+</Tabs>
+
+## The `tty7` command
+
+The packages keep the `tty7` CLI name. With **Install the tty7 command on PATH**
+enabled, the app attempts to expose it on first launch. That lets a script — or a coding agent
+in some other terminal — open panes and read them back.
+
+- **On Unix** it is a symlink into whichever of `/opt/homebrew/bin`,
+  `/usr/local/bin`, `~/.local/bin`, `~/bin`, or `~/.cargo/bin` your PATH already
+  covers.
+- **On Windows** the install directory is appended to your user PATH, and the
+  uninstaller removes it again.
+
+A `tty7` you installed yourself — a `cargo install` build, a package manager's
+copy — is never replaced. To turn the whole thing off, uncheck **Settings →
+Agents → Install the tty7 command on PATH**.
+
+<Tip>
+  Inside a tty7 pane the CLI works regardless of PATH, because panes inherit the
+  app's environment.
+</Tip>
+
+## Updating
+
+The inherited updater still reads upstream tty7 feeds and looks for `tty7-*`
+packages, while this checkout packages Agentty as `agentty-*`. It is not an
+established Agentty update channel. Do not use **Update and relaunch** as a way
+to install this fork's development changes. See [Updates](/reference/updates)
+for the current boundary and settings that disable background checks/downloads.
+
+## Building from source
+
+Use this Agentty checkout, not a fresh clone of the upstream URL expecting it
+to contain the fork's changes. CI and presubmit currently pin
+`nightly-2026-07-31`; there is no checkout-wide `rust-toolchain.toml`, so select
+the toolchain explicitly. Core package and executable names remain `tty7`.
+
+<Tabs>
+  <Tab title="macOS / Windows">
+    ```bash
+    # From the Agentty checkout, with the pinned toolchain already available:
+    cargo +nightly-2026-07-31 build --release --locked \
+      -p tty7 -p tty7-server -p tty7-cli
+    ```
+  </Tab>
+  <Tab title="Linux">
+    gpui resolves its X11/Wayland/font backends through `pkg-config` at build
+    time, so the development packages have to be present:
+
+    ```bash
+    sudo apt-get install -y pkg-config cmake clang \
+      libxkbcommon-dev libxkbcommon-x11-dev \
+      libfontconfig1-dev libfreetype6-dev \
+      libwayland-dev libx11-dev libxcb1-dev \
+      libzstd-dev libssl-dev libkrb5-dev
+    cargo +nightly-2026-07-31 build --release --locked \
+      -p tty7 -p tty7-server -p tty7-cli
+    ```
+  </Tab>
+</Tabs>
+
+<Warning>
+  Compiling does not install or launch the result, package the required remote
+  helpers, or establish an update channel. Running a second GUI against the
+  same configuration can attach to the existing server. Use an isolated test
+  configuration for development; a config override alone does not isolate
+  explicit provider-hook actions. See [First launch](/getting-started/first-launch)
+  and [Troubleshooting](/reference/troubleshooting).
+</Warning>
+
+## Uninstalling
+
+<AccordionGroup>
+  <Accordion title="macOS">
+    Decide whether to stop the background server before removing Agentty.app.
+    **Quit and Stop Server** ends its running shells and agents; ordinary Quit
+    does not. Settings and retained state under `~/.config/tty7` are separate
+    and may be shared with tty7. Keep them unless you explicitly intend to
+    remove that data, and back them up first.
+  </Accordion>
+  <Accordion title="Windows">
+    Use **Add or remove programs**. The uninstaller removes the PATH entry and
+    any Explorer context-menu keys it added. Settings live in
+    `%APPDATA%\tty7`.
+  </Accordion>
+  <Accordion title="Linux">
+    Delete the AppImage or the unpacked directory. Settings live in
+    `~/.config/tty7`.
+  </Accordion>
+</AccordionGroup>

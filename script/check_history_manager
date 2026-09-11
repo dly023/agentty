@@ -1,0 +1,16 @@
+#!/bin/sh
+set -eu
+rg -q 'activate_history_machine\(' src/ui/history_manager.rs
+rg -q 'fn activate_history_machine\(' src/ui/switcher.rs
+for consumer in src/ui/history_manager.rs src/ui/switcher.rs; do
+    rg -q 'manager_shell::card\(' "$consumer"
+    rg -q 'manager_shell::overlay\(' "$consumer"
+    rg -q 'manager_shell::search\(' "$consumer"
+done
+rg -q 'take_resume_command\(' src/ui/app.rs
+rg -q 'explicit_resume: Option<.*ResumeInvocation>' src/ui/pending_pane.rs
+rg -q 'self.render_history_manager\(' src/ui/app.rs
+rg -q 'this.open_history_manager\(' src/ui/switcher.rs
+rg -q 'HostOps::run\(' src/ui/history_manager.rs
+rg -q 'Arc::ptr_eq' src/ui/history_manager.rs
+rg -q 'history_manager_future_actions_have_no_handlers' src/ui/history_manager.rs

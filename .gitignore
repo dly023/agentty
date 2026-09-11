@@ -1,0 +1,48 @@
+/target
+/dist
+.DS_Store
+
+# Locally built / downloaded musl helpers for packaging. CI uploads these as
+# workflow artifacts; never commit platform binaries into the source tree.
+/bundled-server/
+
+# Local pixel baselines (optional screenshots); notes YAML may still be committed.
+/docs/quality/baselines/*.png
+/docs/quality/baselines/*.jpg
+
+# Local dev-tool state — kept out of the repo but retained on disk.
+/CLAUDE.md
+/AGENTS.md
+/AUDIT.md
+.brooks-lint-history.json
+openwiki/.last-update.json
+
+# dev-build throwaway config dirs (`cargo dev`, plus per-branch ones passed as
+# --config-dir so a test run can't disturb a real profile)
+.agentty-dev*/
+
+# Claude Code agent worktrees (transient)
+.claude/worktrees/
+
+# local scratch notes (never committed)
+/todo.md
+
+# repomix generated output
+repomix-output.*
+
+# local freeze-forensics helper — kept on disk, not shipped
+/scripts/diagnose-freeze.sh
+
+# benchmark harness work dir + generated fixtures (scripts/bench/)
+.bench/
+/big.log
+
+# Lavish review artifacts (design surfaces rendered for a single review pass)
+/.lavish/
+
+# Local reference projects used for comparative development; never ship.
+/refs/
+
+# Local historical reference tree used for comparison during development; it is
+# not part of the current Agentty implementation or release source.
+/历史归档/

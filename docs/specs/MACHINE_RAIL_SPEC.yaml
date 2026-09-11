@@ -1,0 +1,1152 @@
+version: 1
+title: Machine rail and recoverable agent sessions
+contracts:
+  - id: SESSION-HISTORY-TITLE-26
+    manager: >-
+      After a current successful discovery commit, HistoryManager starts one
+      Host title interest for that exact snapshot. A rejected/failed scan does
+      not subscribe its candidate. Refresh, replacement and Drop cancel the
+      previous interest before another scan can commit. The source handle is
+      created, retained and disposed in the blocking background lane; only its
+      typed receiver and cancellation signal cross into the UI. Closing before
+      subscription setup completes still retires the late handle off-UI.
+      Every update checks the manager interest UUID, selected Host ID and exact
+      registered Host instance. A disconnected/replaced Host cannot publish names.
+      Update known provider/session pairs only; duplicate, foreign or empty
+      names reject the whole batch without partial mutation. Preserve order,
+      membership, cwd, source locators, explicit tab aliases and action tokens.
+      Recompute search and selected identity using existing manager behavior;
+      a name update never starts, repeats or cancels Resume/Rejoin.
+      Source unavailability retains complete displayed titles and uses a separate
+      localized HistoryTitleUnavailable notice in the existing error style;
+      it does not overwrite discovery or action errors. A subsequent valid name
+      batch clears only that notice. Existing fonts/layout remain unchanged.
+      Existing native UI permission limits remain distinct from GPUI tests.
+      Normal window-close preparation dismisses history work even when another
+      owner retains the app entity. Late scan results cannot restart a dismissed
+      manager; late title messages cannot change it. Dialog close during pending
+      setup and refresh replacement are covered through actual control sockets.
+      Paused discovery completion after window close must release its Host
+      captures without committing rows or starting a title interest. Failed
+      refresh and newly missing provider candidates retain the last complete
+      displayed snapshot and do not open a replacement title subscription.
+    wire: >-
+      Control dialect v18 adds TitleWatchOpen, TitleWatchClose and typed
+      HistoryTitles events. A fresh client subscription UUID is registered
+      before sending Open, so even an event preceding its acknowledgement is
+      retained. Target connections reserve at most 16 subscriptions, including
+      pending validation, in incoming request order before worker dispatch.
+      Close, Cancel and disconnect invalidate that reservation before late
+      validation can install a worker. Cleanup checks the opening request ID;
+      duplicate-token failures cannot retire an earlier successful subscription.
+      Failed reply delivery and late cancellation after an Open reply retire
+      the exact opening request too. Receiver closure signals cancellation
+      without joining source I/O in the connection reader; worker cleanup joins
+      the target source. Link shutdown rejects new reservations and installations.
+      Client delivery is one-slot latest-value coalescing, never an unbounded
+      queue. A queued Close that is later cancelled still retires the already
+      signalled subscription; cancelling the acknowledgement cannot undo Close.
+      Close captures the opening request ID when received, so an old queued
+      Close cannot retire a later reservation even if its UUID is reused.
+      Queue refusal and undeliverable Open replies release their reservation.
+      The client event-sink callback never blocks. Dialect v18 also preserves
+      Unsupported as a typed target error rather than converting it to Other.
+      Unknown subscription IDs are ignored. Open errors preserve their target error, drop client interest
+      and never read local provider stores. Close is idempotent and scoped to
+      this connection. Remote lifetime disposal and connection loss close all
+      cloned receivers; old events cannot revive a removed subscription.
+      An already in-flight wire event may arrive after Close; the retired
+      client UUID and manager-generation guards must reject it.
+    host_boundary: >-
+      Host.watch_agent_session_titles is the sole application-facing subscription
+      entry. LocalHost guards blocking work off the UI thread and delegates to
+      the canonical target factory. Unsupported backends return Unsupported,
+      never consult local stores. One subscription type owns the event receiver
+      and a Send + Sync lifetime guard; disposal closes even cloned receivers
+      before retiring its backend guard exactly once. Remote transport must use
+      this same lifetime type, not a parallel UI-facing subscription API.
+    rule: >-
+      Open history management subscribes to title metadata on its selected Host,
+      including discovered conversations with no pane. The target validates
+      at most 100 distinct snapshot identities/source locators through its
+      canonical validator before opening a source subscription. Reuse IndexSource
+      for source invalidation, bounded parsing and last-complete cache; no full
+      membership scans, client provider roots or target-state writes are allowed.
+      Emit bounded typed title-only snapshots for those identities, never cwd,
+      source, order, liveness, recovery authority or new membership. Unknown index
+      IDs cannot appear and missing names retain the previous complete labels.
+      Client-supplied snapshot titles are not target title facts: never echo
+      them as provider names. Initial source absence emits no new names;
+      retaining an existing display label is the consumer's responsibility.
+      Source failure is distinct from an empty success; partial reads cannot
+      replace names. Revalidate requested sources before changed title publication.
+      One-slot delivery coalesces slow-consumer updates without blocking the
+      source worker or growing an unbounded queue. Closing the subscription
+      cancels its worker; after joined target disposal no further publication
+      is possible. GUI disposal must not join a blocking source reader on the UI
+      thread. Wire subscriptions are connection-owned and bounded, and failed or
+      cancelled opening must release only the operation-owned subscription.
+      Manager generation, exact Host instance and subscription identity guard
+      every delivery. Recompute filtered selection by identity without firing
+      Resume/Rejoin; manual aliases remain above provider names. Closing,
+      refreshing or replacing the manager rejects old deliveries. Real target
+      subscription, remote transport and GUI projection are all required;
+      a target source test alone does not complete this feature.
+  - id: MACHINE-ENTRYPOINT-25
+    rule: >-
+      The machine-only desktop model applies to all entry surfaces, not just
+      the sidebar and plus menu. Remove user-facing NewWorkspace,
+      RenameWorkspace, StopWorkspace and DeleteWorkspace actions from native
+      menus, palette, default/custom keybinding dispatch and window handlers.
+      Remove the dedicated named-workspace create/rename forms, switcher footer
+      create button and workspace row mutation menus once their callers are
+      migrated. Do not leave hidden dispatchable actions, disabled placeholders
+      or renamed aliases that still create project-style workspace groups.
+      Environment connection and profile management reuse existing machine
+      controls; session creation uses the selected Host's canonical new-terminal
+      path. Internal WorkspaceIds, target layout/ownership primitives, history
+      carriers, CLI operations and existing persisted user data remain intact.
+      No startup migration may delete a workspace, stop a process or change an
+      existing name just because its former desktop management action was
+      removed. Explicit tab close, Sleep and machine Disconnect retain their
+      separate scopes. The shared manager presentation shell remains reusable;
+      it cannot be deleted merely because an obsolete business form used it.
+      After an explicitly approved target server replacement, retry a matching
+      current ConnectFlow through connect_to_host without a deferred workspace
+      create. With no matching connection intent, reconnect only existing
+      supervised views through the established restart path; do not dial a
+      different machine, rename a layout or create a session as a side effect.
+      Retire the unreachable windows.rs confirmation entrypoints, their private
+      pane-count query and exclusive localization keys; do not preserve an
+      unused network query as supposed liveness coverage. Retire only the
+      obsolete confirmation-copy test, preserving active machine ownership and
+      localization variant coverage. Remove the test-only GUI delete wrapper
+      and its exclusive kill-list, snapshot scrub, window replacement and
+      forward-teardown helpers. Retire its two feature-only deletion tests;
+      retain the forget-versus-remove invariant against canonical tree operations
+      and all target deletion notification, ownership and failed-rebuild tests.
+      Remove unused form geometry/render helpers instead of preserving them
+      behind test-only compilation or a new compatibility alias.
+      Remove the retired form's chosen-name state, setter, settlement rename
+      and hydration override. Prime and hydrate use authoritative target names,
+      including an absent name, only after their existing generation guards.
+      Failed or superseded results preserve the last complete target snapshot.
+      Generated names for genuinely new internal layouts and target/CLI rename
+      operations remain supported; provider session titles are a separate domain.
+      Retire the unused old host-dropdown filter/scoring helpers and the
+      removed delete action's manual liveness invalidation. Keep current machine
+      and session search, WSL discovery, per-host probe deduplication and TTL
+      refresh. Test TTL expiry directly instead of retaining a dead invalidation
+      method solely for an old test.
+    verification: >-
+      First reproduce obsolete palette entries with the real base_commands
+      projection, then prove their absence while retaining NewTab and SSH
+      profile management. Cover native menu construction, keybinding resolution,
+      retired action dispatch and rendered switcher/footer paths separately.
+      Preserve existing machine connect/cancel, ownership, session activation,
+      history Resume/Rejoin, new-window and layout retention regressions.
+      Static checks reject old entry wiring and retired form helpers across
+      current GUI sources. Full gate and native keyboard/menu acceptance remain
+      required; a single palette test is not complete migration evidence.
+  - id: SESSION-TAB-SLEEP-24
+    status: target_and_gui_implemented_acceptance_pending
+    stale_reply_verification: >-
+      Pause a successful SleepTab reply after target receipt. Independently
+      replace the exact connection with the same daemon instance, replace a
+      member GUI entity with the same pane identity, or change the view epoch.
+      Wait for the old async task to release its client before asserting that
+      no accepted/partial result, exit fact, layout change or retry was applied.
+      The retained workspace use must still retire exactly once.
+    cold_neighbor_verification: >-
+      Exercise the rendered whole-tab action with one live TerminalView and
+      one canonical cold stopped PendingPane. Both exact identities must be
+      submitted once; the reply classifies the cold member as already stopped.
+      Refresh and ownership release preserve both original GUI entities and
+      split order without attaching or resuming the stopped neighbor.
+    gui: >-
+      Multi-pane tabs offer Sleep entire tab alongside current-session Sleep
+      using existing themed controls and unchanged fonts. Capture every ordered
+      pane identity plus exact GUI entity, TabId, Host, target workspace, view
+      epoch and control connection. Include confirmed stopped members but
+      require at least one live ready view. Unknown, unbound, duplicate,
+      foreign and native SSH members disable the whole operation with a reason.
+      Single and whole-tab Sleep share one in-flight coordinator and tracked
+      workspace acquisition; revalidate the complete selection before one
+      SleepTab request. No GUI loop of individual stops is allowed.
+      Preserve views, split and selection during requests and observed exits.
+      Scope remains current through matching live-to-stopped transitions;
+      Acquisition failure or changed runtime eligibility must clear busy for
+      the still-matching scope and leave explicit refresh, not a stuck spinner.
+      replaced members, binding, connection or epoch discard late replies.
+      Validate returned member IDs and execution order before showing accepted,
+      partial or unknown results. Accepted means awaiting observed exit only.
+      Refresh is read-only MachineGet and may rearm only after every unchanged
+      member is confirmed live or stopped; no automatic retry or Resume.
+    rule: >-
+      Whole-tab Sleep preserves every tab/pane/layout/title/output record.
+      Its target-owned operation validates attachment proof, exact ordered
+      pane membership and each recovery identity before any stop. Reuse
+      single-session binding and runtime checks, not a GUI loop of separate
+      unchecked stops. Missing/duplicate/foreign members, unknown runtime,
+      changed binding and native SSH carriers refuse the entire preflight.
+      Confirmed stopped members are retained without signaling. Live members
+      are all runtime-preflighted before the first signal. During execution,
+      stop on cancellation or first runtime failure; return accepted pane IDs,
+      already-stopped IDs and the first failure. Remaining members are not
+      attempted. Acknowledgements do not fabricate exits. Never auto-retry,
+      auto-Resume rollback, close tabs, remove records or scan local sources.
+      Dialect v17 adds SleepTab and its structured reply; older peers refuse
+      at handshake. Existing single-session Sleep remains unchanged.
+    product_boundary: >-
+      Target recoverable-agent support is a prerequisite, not completion of
+      whole-tab UX. Ordinary-shell termination/recovery policy awaits user
+      confirmation; until defined, any unbound shell refuses whole-tab
+      preflight rather than being silently skipped or killed. GUI selection,
+      partial-result presentation and real remote/native acceptance remain
+      required work. Explicit Resume remains per retained session.
+  - id: SESSION-OUTPUT-23
+    gui_success_verification: >-
+      Drive a real GPUI mouse click through tracked control acquisition and a
+      checked pane socket in an isolated process. Assert original tab/pane
+      identity, actual replayed grid text, observed exit and retained Resume.
+      The scripted control peer accepts acquisition and final release only;
+      any Resume, spawn or destructive request fails the test.
+      Pause the checked output response after attachment, retire the window's
+      epoch/use, then release the old response. It must leave the original
+      stopped placeholder intact with Resume and no displayed stale output.
+      Repeat with a replacement control client advertising the same daemon
+      instance, and with a new pending entity at the same tab/pane/session.
+      Neither case changes target identity or window epoch: exact client and
+      entity guards must independently refuse the old result. A new entity's
+      idle status and error presentation must remain untouched.
+    snapshot_failure_verification: >-
+      Exercise missing files, corrupt headers, truncated segments, empty segment
+      lists and over-cap output through the actual checked daemon stream. Each
+      failure returns Error before any output frame, preserves the stopped tree
+      and leaves the damaged or missing file unchanged. Restoring the fixture's
+      original snapshot must permit another identical read and explicit Resume.
+    gui_sequence: >-
+      Idle stopped slots offer View output alongside Resume. While output is
+      loading both actions are disabled. Use the same recovery request generation
+      and tracked acquisition as Resume, but a distinct typed Output action;
+      it cannot fall through to ResumeStoppedSession. A failed read restores idle
+      stopped presentation with localized output-unavailable text and Resume.
+      Successful checked replay lands through the canonical terminal-view path
+      only in the same epoch, connection, target identity and pending entity.
+      Probe stopped-output-v1 before opening the output stream; checked-attach-v4
+      alone is insufficient. No extra spawn policy or fake local stream is used.
+    rule: >-
+      A stopped session offers explicit View output without Resume. Use the
+      existing checked pane transport with a feature-gated Stopped expectation
+      carrying exact provider/session/cwd, proof and tab identity. The target
+      validates durable exit and unique ownership before reading its private
+      final snapshot. Stream the existing Size/Snapshot/Exited frames without
+      a controller, subscriber, process launch, user-state write or snapshot
+      consumption. A missing, invalid, live, changed or foreign target is an
+      error, never a local-file or fresh-process fallback. Repeat reads preserve
+      identical output and recovery authority. GUI preparation uses tracked
+      workspace ownership and the canonical terminal renderer; stale operation,
+      view, connection or target results cannot replace a later view. Failure
+      retains the stopped slot and explicit Resume. Snapshot terminal effects
+      remain suppressed by the existing replay handler. Existing live checked
+      attachment and old-peer refusal semantics stay unchanged.
+  - id: SESSION-SLEEP-22
+    gui_current_session: >-
+      Offer a themed, unchanged-font current-session Sleep action only for the
+      visible focused/maximized live pane with exact target recovery identity
+      and unique tab ownership. Label its single-session scope explicitly; it
+      does not fulfill whole-tab multi-pane Sleep. Capture pane entity, target
+      identity, window epoch and control connection, revalidate after tracked
+      acquisition, then invoke only canonical SleepSession off the UI thread.
+      Preserve all views/output/layout while awaiting target exit. Duplicate
+      clicks cannot submit another stop. Acknowledgement is not stopped state;
+      errors/unknown replies must show localized unknown outcome, not retry or
+      launch fallback. Explicit refresh may read target facts and rearm only
+      the same confirmed live identity. Stale completion cannot affect a closed,
+      replaced or disconnected view. Existing retained Resume owns observed exit.
+    final_output_snapshot: >-
+      Before retiring an exited pane carrier, save its final bounded output
+      through the existing private atomic scrollback format, including when no
+      GUI subscriber is present. Natural exit and last-subscriber detach use
+      the same retirement primitive. Periodic, shutdown and retirement writers
+      serialize capture plus save per pane so an older captured frame cannot
+      replace the final one. Final retirement seals that writer; destructive
+      Kill seals and forgets under the same lock. A retained periodic-writer
+      reference cannot recreate output after explicit deletion.
+      Snapshot failure must not fabricate successful persistence or restart a
+      process; existing best-effort logging and last complete snapshot apply.
+      Persisting the frame is not GUI stopped-view replay or native acceptance.
+    rule: >-
+      Sleep is explicit process termination with retained target tab, pane,
+      layout, recovery binding, title and output, not TabClose or daemon teardown.
+      The canonical SleepSession control operation accepts only attachment proof,
+      TabId, pane ID and expected provider/session/cwd identity. Under attachment
+      handover and target layout ownership, validate unique slot, live local PTY,
+      exact binding and cancellation before signaling. Reject native SSH carriers,
+      unknown/stopped runtime, changed identity and missing services without any
+      Local fallback, provider file scan, input injection or new process.
+      A successful RPC acknowledges the stop request, not observed termination.
+      Only DeathReporter produces the durable exit fact; explicit stop intent
+      must survive subsequent view disposal/daemon cleanup until that report.
+      Keep normal daemon teardown semantics unchanged. Resume remains explicit
+      and uses the stopped-session original-slot path with a new pane identity.
+      Lost replies and incomplete termination require target refresh, never
+      automatic retry, optimistic stopped facts or automatic Resume rollback.
+      Dialect v16 adds this operation; do not silently use an older peer.
+      Whole-tab multi-pane scope and native close/reopen acceptance remain
+      required product work; the current-session action is not whole-tab Sleep.
+  - id: WORKSPACE-USES-21
+    single_retirement_path: >-
+      WorkspaceUse retirement is the only automatic client claim cleanup.
+      Delete initial-claim exclusivity state and its proof-only cleanup API.
+      Preserve independent-workspace progress, cancel-versus-reacquire races,
+      duplicate and foreign token rejection, and timeout/late/foreign reply
+      regressions through tracked acquisition and retirement. Raw claims stay
+      conservatively pinned; explicit target release is not automatic cleanup.
+    explicit_take_back_use: >-
+      Explicit Take Back uses the existing WorkspaceAttach followed by exact
+      WorkspaceAttachmentProof readback under the same per-workspace client
+      gate. It registers a tracked use through the ordinary claim accounting;
+      successful window commit retains it and stale completion retires it.
+      Invalid replies, foreign proofs and uncertain I/O return failure without
+      guessed release or automatic retry. Same-proof untracked consumers remain
+      pinned. A verified new proof may replace old tokens; an unknown raw claim
+      with no recorded proof is not made exclusively owned by same-owner reuse.
+    automatic_tracked_use: >-
+      Ordinary automatic attachment uses ControlClient.acquire_workspace_use
+      on the canonical blocking lane. Only the captured current view may retain
+      the returned token, before any pane relink/hydration. Stale connection,
+      mapping, entity or epoch completion retires that token asynchronously via
+      the existing window-use cleanup helper. Never issue a second acquisition
+      to commit it. Explicit Take Back remains a separate user-requested
+      takeover and is not inferred from automatic refusal. Its successful use
+      follows the same window lifetime as ordinary automatic attachment.
+      Explicit machine disconnect detaches its panes and retires each window's
+      held use before removing the shared host link; retained client references
+      must not leave target ownership pinned by an apparently disconnected UI.
+    automatic_view_scope: >-
+      An automatic attachment belongs to the captured window entity and its
+      current workspace-view epoch, not only a durable workspace ID. Detach or
+      workspace replacement invalidates that epoch even if no use is held.
+      A reopened/replaced view can acquire again; old sent/inflight markers
+      cannot suppress it. A late reply for an old scope cannot end a new scope's
+      acquisition or update its status. Scope refresh cancels old view-specific
+      takeover intent without turning it into automatic takeover. Epochs are
+      transient client state, never remote facts or persisted configuration.
+    automatic_attachment_entry: >-
+      Background reconnect establishes the machine link and synchronizes the
+      listing only. It must not acquire workspaces from the open-window list
+      captured before connection began. The attachment pump is the single
+      automatic acquisition entry and resolves currently open workspaces after
+      installation. Successful acquisition precedes pane relink/hydration;
+      a refused acquisition cannot initiate either. A new connection clears
+      attachment bookkeeping from the old connection. This convergence is a
+      prerequisite, not proof of complete tracked automatic-use lifetime.
+      Late acquisition replies from a replaced or removed control connection
+      cannot mark the current connection attached, clear its pending acquisition,
+      or overwrite its error. A reply for a no-longer-open target mapping cannot
+      relink or hydrate that client workspace.
+    rejoin_use: >-
+      Rejoin prepares under a tracked WorkspaceUse and transfers that same use
+      to the window only after checked layout commit. Failed preparation or
+      rejected UI commit drops all prepared panes before finishing its use.
+      Another tracked consumer keeps the claim alive; the last owned user
+      releases it even if its own acquisition reused the connection proof.
+      Unexpected acquisition replies remain localized as Rejoin unavailable.
+    entity_release: >-
+      Final Tty7App entity release retires any remaining held workspace use via
+      the same blocking-lane retirement helper. Explicit close/adoption may
+      already have taken the use; final release must then do nothing. This
+      backstop handles window removal paths that bypass the CloseWindow action;
+      it must not independently save layouts, remove target tabs or kill panes.
+    rule: >-
+      The canonical ControlClient workspace claim state assigns a distinct
+      transient use token to each tracked acquisition. Completing one token is
+      idempotent and cannot release another token, a replaced proof or another
+      connection. Only the final tracked use may release a claim originally
+      acquired by tracked users; observed untracked or uncertain ownership
+      prevents automatic release. Keep acquire and final release serialized per
+      workspace and use the existing target WorkspaceReleaseProof RPC.
+      Original-slot Resume transfers its token to the current window before
+      submission; a replacement token is registered before retiring the old
+      one. Closing that window ends its use off the UI thread without deleting
+      target layout or killing the committed process. Later target readback
+      after window closure cannot attach or revive the view. Resume, Rejoin and
+      ordinary automatic attachment and explicit takeover share this model.
+      Unknown/raw consumers retain conservative untracked pinning until their
+      own lifecycle is accounted for. No token or proof is persisted.
+  - id: SESSION-RETAINED-UI-20
+    window_close_acceptance: >-
+      Closing a window while an explicit Resume reply is pending detaches the
+      client view, not the target tab. A late successful reply must not recreate
+      the closed window or its synchronization baseline, submit TabClose or
+      WorkspaceRemove, or start a second Resume. Exercise the real CloseWindow
+      action while another registered window remains open. Target lease lifetime
+      and reopen races require separate acceptance; view closure alone does not
+      prove their correctness.
+    running_window_close_acceptance: >-
+      The same closed-window rule applies when target readback confirms a live
+      successor. Keep an isolated pane endpoint listening until the recovery
+      continuation has finished, then assert no pane connection was attempted.
+      Closing the view is not authority to kill an already committed successor.
+    control_acceptance: >-
+      Exercise the retained terminal's rendered Resume action through isolated
+      control and routed pane peers. Pause the accepted request before replying
+      and prove original output and maximized presentation remain; then complete
+      the exact Owned attachment and observe successor output in the same tab.
+      Scripted peers are not installed-provider or native-window acceptance.
+    control_execution: >-
+      Workspace acquisition, Resume, target snapshot/proof readback and
+      conditional release run on the existing HostOps blocking lane. GPUI
+      tasks await results without synchronously waiting on socket replies.
+      A paused reply cannot prevent rendering retained output or handling
+      cancellation. Unknown result and generation/identity checks remain intact.
+    layout_reconciliation: >-
+      Canonical tab rebuilding preserves maximized presentation when the active
+      tab still presents the same TerminalView directly or as retained output;
+      remove it only when that presentation is absent. Rendering and rebuilding
+      use the same slot presentation predicate, not different identity rules.
+    rule: >-
+      A retained TerminalView whose child has exited offers Resume through the
+      existing notice anchor only when the exact client owner, HostId, target
+      workspace, TabId, pane and target-confirmed recovery binding agree.
+      Disconnect alone and a live shell after agent exit do not qualify.
+      Revalidate the captured identity and entity membership at click time.
+      An explicit click wraps the original view as retained output in the
+      canonical stopped PendingPane, preserving the tab, split neighbors,
+      focus and maximized presentation. No new launch implementation is added.
+      Old output remains available while starting, uncertain or failed; only
+      successful landing replaces it. Render and retry must never automatically
+      invoke Resume or use the local source for a remote target. Unknown outcomes
+      keep the existing explicit Refresh behavior. Reuse existing theme, notice
+      and button primitives without reducing fonts. Native acceptance remains
+      separate from simulated GPUI clicks and scripted transports.
+  - id: SESSION-STOPPED-UI-19
+    running_control_acceptance: >-
+      In an isolated test process, exercise the rendered Resume button through
+      control reconciliation, routed Version probe and AttachChecked with exact
+      successor pane, workspace proof, TabId and Owned expectation. A Size/output
+      reply must land a real TerminalView in the same tab. No ordinary Attach,
+      Spawn or shell Input is an acceptable substitute. Use a process-owned
+      temporary endpoint, never the user daemon. Scripted protocol peers do not
+      establish real provider-process or native macOS window acceptance.
+    attachment_execution: >-
+      Pending terminal connection and restore use the existing HostOps blocking
+      worker lane for synchronous socket negotiation, not the GPUI background
+      future pool. Landing remains on the UI thread through the canonical
+      entity-identity checked land_pane path. Do not disable the UI-thread Host
+      guard or create a separate recovery-specific attachment implementation.
+    control_acceptance: >-
+      Exercise actual GPUI mouse input through a framed isolated control peer,
+      including workspace acquisition, ResumeStoppedSession, MachineGet and
+      proof recheck. A successor already confirmed stopped must reuse the
+      original placeholder and TabId, update both mirrors and offer Resume
+      for the successor without opening a PTY. This is the immediate-exit
+      branch, not proof of a running successor's attachment or native UI.
+    rule: >-
+      A retained stopped placeholder offers the existing themed Resume button
+      only for a unique target-owned stopped provider binding. Capture client
+      workspace, HostId, target workspace, TabId, predecessor and exact
+      provider/session/cwd, not a selected row index. Double clicks cannot
+      submit twice; serialize original-slot recovery within one split tab.
+      Acquire the exact workspace non-preemptively on its
+      current control connection, then revalidate slot, mapping, binding and
+      operation generation on the UI thread before submitting the existing
+      ResumeStoppedSession RPC. A removed slot or changed connection cancels
+      before submission and retires its tracked use under WORKSPACE-USES-21;
+      only the final owned use may release the exact target proof.
+      While submitted or uncertain, defer restructuring that tab so an early
+      target delta cannot ordinary-attach the new process. Reconcile against
+      a target MachineGet plus current proof; only the original slot with
+      unchanged neighbors and exact retained identity can become a successor.
+      Split ratios are presentation, not slot identity. Resizing before
+      submission or during reconciliation must not invalidate recovery.
+      Preserve the latest verified target ratios; still reject changed split
+      axes, tree topology, reordered neighbors or a different pane identity.
+      Unknown outcomes offer explicit target-state Refresh (which may reacquire
+      the exact workspace non-preemptively), never automatic Resume
+      or Kill. Failed preflight leaves the original stopped presentation.
+      Attach the successor through Checked attachment with an Owned expectation
+      (checked-attach-v4), meaning live PTY plus exact proof/workspace/tab/pane
+      ownership and an empty controller slot, not provider runtime identity.
+      Existing Shell/Agent Rejoin expectations retain their stricter meaning.
+      Older peers reject without ordinary Attach fallback. Reuse the original
+      PendingPane entity and canonical attachment/landing path; no new tab,
+      raw Input, local-source fallback or client binding write is allowed.
+      Deferred old GUI layouts cannot sync back to the target or be discarded
+      by same-workspace automatic hydration while the outcome is unresolved.
+      Before releasing the hold, acknowledge the verified target tab and pane
+      in both the machine-facts mirror and the synchronization baseline through
+      canonical delta projection. A reply arriving before its layout event
+      cannot cause the next save to emit a second replacement. Refuse an
+      unknown mapping, unprimed baseline or queued/in-flight layout writes.
+      Facts already received for that same successor take precedence over
+      the earlier RPC snapshot, including a newer title or confirmed exit.
+      UI errors and unknown state are localized. This placeholder integration
+      does not complete Ready-view recovery, live-shell Agent exit, Sleep,
+      restart output replay or native GUI acceptance.
+  - id: SESSION-STOPPED-RESUME-18
+    acceptance: >-
+      Exercise ResumeStoppedSession through a real isolated daemon control
+      connection and PTY, with an executable provider fixture and scratch
+      provider store. Verify exact argv/cwd, original-slot replacement,
+      duplicate refusal, immediate process exit and persistence-failure
+      cleanup. Injected transaction tests alone do not prove this boundary.
+      Fixture execution is not acceptance of an installed Codex/Claude CLI
+      or native GUI. Never borrow user configuration or provider sessions.
+    rule: >-
+      ResumeStoppedSession is an explicit target-daemon operation introduced in
+      dialect v15 (current v16 under SESSION-SLEEP-22). It accepts an attachment proof, TabId, predecessor pane ID,
+      retained provider/session/cwd identity and terminal size; it accepts no
+      source root, executable, shell command, successor ID or client binding
+      seed. Require terminal rows and columns in 1..=1000. Before any provider
+      source access, verify current proof, unique slot, confirmed stopped state,
+      supported execution boundary and exact retained binding. Native-SSH,
+      unknown runtime, forged proof or foreign binding cannot even scan this
+      daemon's provider roots. Resolve the exact target source through
+      SESSION-RESOLVE-16. Before allocation,
+      recheck cancellation, current proof, unique slot ownership, confirmed
+      exit and exact target recovery binding before process creation. Unknown
+      or live terminals, native-SSH carriers and changed bindings reject.
+      Hold attachment handover and the MachineStore transaction through final
+      validation, target allocation and replacement. Use a new target pane ID
+      and canonical typed provider argv through the existing PTY spawning
+      primitive, never shell text or Input to an existing terminal. Acquire
+      fallible PTY reader and writer resources before starting the child so a
+      resource setup error cannot strand a process outside recovery cleanup. Replace
+      only that leaf, preserving TabId, order, name, selection and split
+      neighbors; retain the target recovery binding and eligible provider
+      title without asserting provider runtime identity. A target-only
+      resume_pending flag protects this requested binding from same-provider
+      provisional observations lacking a session ID. It is not runtime identity
+      or permission for automatic Resume. A complete or different-provider
+      observation consumes the flag and follows canonical binding replacement;
+      terminal exit clears the flag but retains the recovery candidate. Neither
+      PaneSeed nor a GUI cache may set this flag. A spawn or disk
+      failure retains the original tree and cleans up only this operation's
+      newly allocated process outside layout locks. A provider may have begun
+      execution before a disk failure; cleanup is not a rollback of provider
+      files. A committed predecessor is consumed: duplicate, concurrent and
+      delayed requests cannot launch a second process from that predecessor.
+      Lost replies are unknown outcomes requiring target-tree refresh, not
+      automatic retries, rollback or Kill of the committed successor. Source
+      failure and cancellation before allocation have zero process effects.
+      Missing pane services or older dialects reject without Local, Spawn or
+      ordinary Input fallback. This stopped-terminal path does not authorize
+      replacement of an Agent-exited but still-live shell. UI integration,
+      that live-shell case, explicit Sleep and native acceptance remain
+      separately required parts of the lifecycle delivery.
+  - id: SESSION-SLOT-17
+    live_shell_decision:
+      status: awaiting_product_decision
+      question: Whether explicit original-slot Resume may replace a proven-idle still-live shell, losing shell-local variables and any unsubmitted input, or must preserve that shell process and its input.
+      current_boundary: Existing stopped-session Resume cannot accept a live predecessor. No generic Sleep-then-Resume or raw shell Input fallback is authorized by this pending design.
+      evidence: PaneState stores prompt flags and agent observations, not proof of an empty editable shell line. is_foreground_command returns false for unavailable probes and is not an idle-authority predicate.
+      replacement_candidate: Preserve the original tab/split identity and visible output until target preflight and successor commit succeed. Validate exact ownership/binding and positive runtime idleness, coordinate concurrent input and replacement, clean only operation-owned successor on precommit failure, and retire the exact old shell only after successful commit. This candidate requires product confirmation and a separate implementation contract before coding.
+      preservation_candidate: Keep the existing shell and its pending input. A verified shell-aware delivery mechanism must precede Resume; at_prompt and absence of agent facts do not authorize text injection. Do not silently substitute a new tab or shell termination.
+    rule: >-
+      Canonical pane replacement must resolve exactly one occurrence of the
+      old pane in the target machine tree before changing any record. The
+      occurrence must belong to the requested workspace. Duplicate leaves,
+      including duplicates within one split, across tabs or across workspaces,
+      are ambiguous and reject without persistence or notification. Missing
+      ownership rejects rather than registering an orphan successor. Checked
+      attachment and replacement share one occurrence-based owner resolver;
+      contains() or a first-match search is not ownership proof. Validation
+      and replacement occur under the existing MachineStore transaction lock.
+      Successful replacement preserves TabId, tab name, order, active tab,
+      split axis/ratios and neighboring leaves, replacing only the old pane ID.
+      Existing successor registration checks remain mandatory. This is layout
+      integrity, not permission to resume: explicit original-slot recovery
+      still requires current attachment proof, exact retained binding, target
+      source validation and an operation-scoped materialization transaction.
+      No raw command may be injected into a reused shell merely because it is
+      at a prompt; a prompt can contain unsubmitted user input. Stopped-pane
+      replacement and Agent-exited live-shell handling remain distinct cases.
+  - id: SESSION-RESOLVE-16
+    rule: >-
+      A retained provider/session/cwd identity can be resolved on its target
+      without membership in the recent history list. ResolveAgentSession is
+      a read-only Host operation over control dialect v14; the target derives
+      provider roots from its own environment. Clients cannot choose roots.
+      Validate UUID and cwd input, normalize UUID spelling, and traverse only
+      the requested provider through the same bounded candidate walker used
+      by discovery. Keep the 10000-entry, 16-depth and 10-second limits, but
+      do not apply discovery's 400-candidate or 100-row recency quotas.
+      Parse bounded headers and require exactly one matching UUID. Duplicate
+      UUIDs, even with different cwd, reject rather than selecting a first
+      match. Missing, malformed, timed-out or incomplete traversal returns an
+      error without a partial success. Nested symlinks and internal sessions
+      remain excluded. A match must have the expected cwd and pass canonical
+      target-source validation before returning its HistorySession locator.
+      Title availability and the Codex title index do not gate recovery;
+      existing header title or UUID supplies display metadata only.
+      Remote replies must match requested provider, normalized UUID and cwd;
+      wrong-shaped/foreign replies and remote errors never fall back to Local.
+      This operation cannot allocate panes, write files, send commands, change
+      bindings or assert liveness. UI operation/ownership guards and original
+      slot Resume remain separate required work. Older peers follow explicit
+      dialect mismatch handling, never an automatic upgrade or downgrade.
+  - id: SESSION-COLD-HYDRATION-15
+    rule: >-
+      Incremental tab insertion and restructuring lower newly encountered
+      leaves through the same target-tree projection and session-to-pane
+      renderer as whole-tree hydration, with AttachOnly policy. Existing
+      pane views are reused unchanged, retaining terminal output and focus.
+      Read exit/cwd/shell facts only from the selected machine mirror with a
+      known client mapping. A missing remote mirror or unknown mapping never
+      reads a same-numbered Local pane. Missing or unobserved exit facts stay
+      attachment candidates; insertion cannot turn them into stopped leaves.
+      Target tree projection preserves a confirmed PaneExit as a distinct
+      stopped leaf, including pane identity, cwd and shell. Unknown liveness
+      and legacy records remain ordinary attachment candidates. Stopped
+      leaves retain tab identity, order, name, active selection and split
+      topology. Canonical session-to-pane hydration renders them without
+      opening a transport, attaching, spawning or sending agent commands,
+      even under ordinary ReplaceMissing startup policy. Checked Rejoin
+      cannot consume a stopped leaf as a successfully prepared live pane.
+      The stopped presentation reuses the themed pending-pane surface, shows
+      localized Terminal Stopped text and has no Retry handler or spinner.
+      Generic retry/start cannot transition it to Connecting. Client session
+      deserialization cannot manufacture this target fact; GUI snapshots
+      retain the locator without automatic agent invocation. Target facts
+      must be obtained again on hydration. This rendering step does not
+      implement explicit Sleep, in-place validated Resume or retained output
+      replay across a GUI restart; those remain required lifecycle work.
+  - id: SESSION-STOP-FACT-14
+    rule: >-
+      PaneRecord stores an optional target-observed terminal exit record with
+      its optional exit code. Presence proves termination; missing exit code
+      does not mean missing termination. Natural DeathReporter completion sets
+      this record together with cleared runtime identity and live=false.
+      Daemon teardown, connection loss, missing live observations and loading
+      old snapshots never synthesize a confirmed exit. Existing snapshots
+      without the field remain unknown, not stopped. PaneSeed cannot supply
+      exit records. The target fact survives MachineStore flush/load while
+      ephemeral liveness still resets to false at daemon startup.
+      A confirmed exit is terminal for that pane ID. Late pane observations
+      cannot clear its exit record, revive liveness, replace the retained
+      recovery binding or reinstall foreground agent identity. Metadata such
+      as a late official title may still update through its existing identity
+      checks. A new running process uses the existing new-pane/replacement
+      path and a new pane identity, never resurrects a stopped record.
+      This fact is a prerequisite for cold hydration; storing it alone does
+      not implement the Sleep action or make current startup cold-safe.
+  - id: SESSION-EXIT-RETENTION-13
+    rule: >-
+      A child-exit observation is not an explicit tab-close instruction.
+      Keep the same tab IDs, order, names, split topology, pane views, last
+      terminal output and active selection. This also applies to plain shell
+      exits, so deciding whether a row survives does not race provider facts.
+      Do not enqueue Kill, close a leaf, add an undo entry, spawn, resume or
+      steal focus from another tab in response to ChildExited. Explicit close
+      retains its separate confirmed destructive behavior. Duplicate and late
+      exits for removed views are harmless. Disconnect is not a child exit.
+      A natural target pane death clears foreground agent/session/argv through
+      the canonical provider transition before Exited is published, preserving
+      the existing target recovery binding and title. Publish the corresponding
+      cleared agent and stopped liveness in one MachineStore fact update.
+      Coordinated daemon teardown keeps its existing restart semantics and
+      must not be reclassified as an explicit provider exit. GUI serialization
+      of a confirmed child-exited view cannot carry automatic agent invocation
+      fields even if its peer left stale runtime identity; disconnection alone
+      does not erase recoverable running-agent identity. This row-retention
+      contract is required for, but does not complete, explicit sleep, durable
+      cold hydration or in-place validated Resume.
+  - id: SESSION-LIVE-TITLE-12
+    source_layer: >-
+      Index directory watching, dropped-event repair, epoch-checked bounded
+      parsing and last-complete cache form one title-source primitive independent
+      of MachineStore or pane existence. The pane publisher consumes that source
+      only for its validated bindings. An open history subscriber must reuse
+      the same primitive for discovered identities without creating a pane;
+      source-level no-pane coverage alone does not prove that GUI subscription.
+      Failed or partial reads never replace the source cache. A successful
+      missing index returns no new names; consumers retain prior complete labels.
+    rule: >-
+      A target daemon observes Codex session_index.jsonl changes through its
+      parent directory, including atomic replacement and initially absent
+      roots. Source invalidation triggers the existing bounded title parser,
+      not full history discovery. A changed source epoch during parsing must
+      discard the result. Missing, failed or partial reads do not erase the
+      last complete title. Only an already target-observed Codex session UUID
+      may receive a title; no title creates a pane, session, binding or alias.
+      Native SSH panes cannot read the daemon's local Codex store. Publish a
+      separate provider title with exact session identity through canonical
+      MachineStore PaneFacts; recheck identity and source epoch at commit.
+      Provider/session replacement invalidates the title; user tab names and
+      OSC data remain untouched. GUI and CLI present explicit user names above
+      provider titles, then existing OSC/fallback labels. Target mirrors, never
+      local same-name provider files, supply remote titles. Watching stops with
+      the owning daemon service. No command, Resume or process mutation occurs.
+      The retained target recovery binding remains eligible after provider
+      exit and terminal stop, so a late native name can update that same row.
+      Liveness is never inferred from naming eligibility. A foreground agent
+      with missing or different identity rejects the retained binding; one
+      canonical PaneRecord predicate governs both source selection and commit.
+      Active GUI labels accept an exited binding only when both target facts
+      and terminal reports have no foreground agent or residual session state.
+      A disagreement between those streams withholds the provider name until
+      they converge. No binding is created from a title or a GUI observation.
+  - id: WORKSPACE-PROOF-11
+    cancellation_failure_acceptance: >-
+      A paused ownership reply for one workspace must not prevent an unrelated
+      workspace acquiring over the same connection. Timeout, unexpected reply
+      and a reply carrying a foreign workspace prevent tracked claim cleanup.
+      A late reply cannot restore cleanup eligibility. Verify exact
+      wire requests with isolated peers, including absence of release after an
+      uncertain result through the canonical tracked-use path.
+    cancellation_exclusivity: >-
+      ControlClient serializes ownership-changing calls per target workspace.
+      All automatic cleanup retires distinct tracked uses under WORKSPACE-USES-21;
+      a connection proof alone cannot authorize view retirement. Other active
+      users and unknown/raw claims prevent release. All ownership call entrypoints
+      share coordination; unrelated workspace calls remain independent. A new
+      tracked acquisition may reuse the proof without inheriting another use ID.
+      Explicit target detach/release remains distinct from automatic cleanup.
+    lifetime_boundary: >-
+      AttachmentProof identifies a live control-connection/workspace claim,
+      not an individual GUI view or operation. A second same-connection claim
+      reuses it; releasing the first proof also ends that reused claim. Such a
+      release must preserve the target tab and pane records. Client close and
+      cancellation cleanup therefore require coordinated ownership-use lifetime
+      across Resume, Rejoin and automatic attachment, including their commit
+      interval. A newly_acquired flag alone does not prove the claim remained
+      exclusive until cleanup. Do not implement delayed window release until
+      acquire/commit/release ordering prevents it from invalidating a reopened
+      view. A shared machine link is not disposable workspace ownership.
+    rule: >-
+      Each live workspace attachment has a target-generated random nonce.
+      WorkspaceAttachIfFree returns WorkspaceAcquired with that proof and a
+      newly_acquired flag captured inside the same handover critical section
+      as the claim. Repeating on the same connection returns false and the
+      same proof; first claim or claim after release returns true. A GUI
+      operation may clean up only its newly acquired ownership, or retire a
+      tracked use of ownership acquired by the tracked-use group under
+      WORKSPACE-USES-21; never infer cleanup ownership from a previous snapshot.
+      Automatic attachment must
+      reject replies without the expected workspace-scoped acquisition result.
+      Rejection uses RemoteWorkspaceAttachmentUnexpectedReply in all supported
+      locales; neither the peer payload nor its proof appears in this message.
+      WorkspaceAttachmentProof returns that proof only to its exact holding
+      control connection, not another connection sharing its client token.
+      Repeating attach on the same live connection preserves its nonce;
+      detach/reacquire, takeover and process restart invalidate old proofs.
+      WorkspaceReleaseProof checks workspace, nonce and connection under the
+      canonical handover lock before invoking the shared detach path. Stale
+      cleanup cannot release a replacement attachment. Unknown or foreign
+      proofs fail closed without mutating registry or machine ownership.
+      Proofs are transient wire capabilities; no config, machine snapshot or
+      debug representation may disclose the nonce. Control dialect v13 is
+      required, with no fallback to unconditional detach. Issuing a proof does
+      not itself attach a pane; shared target-state validation and GUI use of
+      the proof remain mandatory for complete nonresident Rejoin.
+  - id: PANE-CHECKED-ATTACH-10
+    rule: >-
+      AttachChecked is a distinct pane-protocol frame carrying the existing
+      pane ID and a guard containing attachment proof, owning TabId and typed
+      explicit Shell or Agent(provider/session identity) expectation. Shell
+      requires no foreground provider and no residual agent session state;
+      it is not permission to skip identity checks. All split neighbors must
+      use checked attachment, including ordinary shells. The daemon shares its actual control Services
+      with the pane registry on normal and handoff startup. Before installing
+      a subscriber it holds the attachment handover lock, validates the proof,
+      then holds the machine layout lock and requires exactly one occurrence
+      of that pane in the specified workspace/tab. It then checks live pane
+      identity under the pane-state lock, retaining the outer locks until
+      installation finishes. Unknown authority, stale proof, moved tab/pane
+      and duplicate leaf ownership reject without running the attach callback.
+      Lock order is handover, machine layout, pane state; pane observations
+      release their state lock before publishing machine facts.
+      The target checks liveness and absence of a controller for both variants;
+      Agent additionally requires nonempty session ID and exact live provider
+      and session under the same pane-state lock used to install the subscriber.
+      A refusal changes no subscriber epoch, clipboard permission or output
+      gate and sends no replay. Success reuses canonical attach/replay and
+      detach semantics; no process is created and no Resume command is sent.
+      Ordinary explicit Attach keeps its existing takeover semantics.
+      Advertise checked-attach-v4 separately; identity-only v1 and v2 payloads must
+      fail decoding. Clients must not downgrade to Attach or Spawn on refusal
+      or unsupported peers. GUI proof acquisition and operation cancellation
+      remain required before full nonresident Rejoin is enabled.
+  - id: WORKSPACE-OWNERSHIP-09
+    rule: >-
+      Automatic GUI attachment and reconnect use WorkspaceAttachIfFree, never
+      the explicit takeover request WorkspaceAttach. Both requests enter the
+      same target attachment primitive. Under its handover lock, IfFree rejects
+      a workspace held by any other connection, including one reusing the same
+      client token, before changing either the tree or the live registry.
+      Repeating IfFree on the same owning connection is idempotent. A refused
+      request sends no Preempted event and does not close the current holder.
+      UUID spelling variants resolve to one canonical attachment key. Detach
+      clears tree ownership only when that exact connection releases the live
+      registry entry; a same-token foreign connection cannot clear it.
+      Explicit Take Back and explicit CLI attachment retain takeover behavior.
+      IfFree rejects malformed or missing workspace IDs without reserving a
+      registry-only ghost. Control dialect v11 prevents older peers from
+      silently treating the new safety requirement as force takeover; no
+      automatic retry through WorkspaceAttach is permitted after rejection.
+      Atomic workspace ownership is necessary but insufficient for Rejoin:
+      pane identity and lease validity must also guard later materialization.
+  - id: AGENT-BINDING-08
+    rule: >-
+      Target-owned PaneRecord stores recovery_binding independently from its
+      current agent facts. Daemon-observed provider/session/cwd facts populate
+      the binding; SESSION-STOPPED-RESUME-18 may transfer that same target-owned
+      binding to its fresh successor after explicit validation. PaneSeed and
+      GUI caches cannot synthesize either binding or pending launch intent.
+      A complete observation records provider, nonempty session ID, cwd and
+      launch argv without live status. Agent exit clears current agent facts
+      but preserves this recovery candidate and its original cwd even if the
+      shell changes directory. A new foreground agent without complete identity
+      clears the old binding except for the explicitly pending same-provider
+      launch in SESSION-STOPPED-RESUME-18; a complete new identity replaces it. The binding
+      persists through MachineStore flush/load and PaneFacts snapshots, never
+      implies a running process and never triggers automatic Resume. Resume
+      still requires target-source validation. Old records missing the optional
+      field load as None; no migration promotes old client-seeded agent facts.
+      Tab projection exposes the bound pane ID, recovery identity and that
+      pane's liveness separately from current agent/status. A live agent in any
+      split takes priority over recovery badges; otherwise a bound pane with a
+      live shell is Agent Exited, and a stopped bound pane is Terminal Stopped.
+      The GUI sidebar and switcher show the same localized text badge without
+      changing existing font sizes or launching/rejoining/resuming anything.
+  - id: AGENT-IDENTITY-07
+    rule: >-
+      A pane foreground-provider replacement invalidates its old live session
+      ID, status and captured argv before publishing the new provider. Clear
+      AgentStatus before Agent so observers never see a new provider paired
+      with an old session. A same-provider observation preserves rich session
+      state and may update captured argv. An empty argv observation for a new
+      provider cannot inherit the old provider's flags. Runtime invalidation
+      is distinct from a future persisted dormant binding; stale live state
+      must not serve as a recovery-intent substitute.
+      A typed hook naming a different provider from the currently known
+      foreground provider cannot mutate that provider's session. Hooks may
+      establish an unknown foreground identity through the same apply_agent
+      transition, but cannot override an already known different provider.
+    forbidden:
+      - new_provider_with_previous_provider_session_id
+      - new_provider_inheriting_previous_provider_argv
+  - id: SESSION-TITLE-06
+    rule: >-
+      Codex target-owned session_index.jsonl enriches discovered rollout
+      identities by canonical session UUID. The last appended nonempty valid
+      thread_name wins, regardless of updated_at ordering. Native title takes
+      precedence over rollout title or first-user-message excerpt. An index
+      entry cannot manufacture a session without a valid non-internal rollout
+      and cwd. Missing index permits excerpt fallback; malformed, unreadable,
+      non-regular or oversized index fails the generation without publishing
+      partial rows. Read at most 32MiB and 10000 nonempty index records under
+      the scan deadline. Unknown identities do not consume returned-row quota.
+      Names are display metadata, never command arguments or session identity.
+      A header-only rollout with a native title remains discoverable and its
+      recovery validation checks identity/cwd, not title availability.
+      User display-name overrides remain above provider titles. Target-side
+      name-source invalidation must eventually update known rows promptly
+      without rescanning membership on every agent turn; watcher integration
+      is required separately from cold discovery.
+    forbidden:
+      - timestamp_order_overriding_native_append_order
+      - title_index_creating_ghost_session
+      - provider_title_overwriting_user_alias
+  - id: MACHINE-RAIL-01
+    direct_session_list: >-
+      Render current-machine tabs directly in canonical tab order without
+      Section, directory-name disambiguation or synthetic empty group keys.
+      Badge numbering and numeric activation share that order even during
+      search; search does not renumber tabs. Hidden rows have no drop bounds.
+      A filtered reorder moves only the selected visible tab relative to a
+      visible anchor, preserving all other tabs and their relative order.
+      Capture the complete ordered TabId list and visible indices as the drag
+      surface. Replaced/reordered tabs or changed search membership invalidate
+      old preview and pending order even if the row count is unchanged.
+      Revalidate the same surface before consuming the final pending order;
+      a change after the last drag frame but before release must also refuse.
+      Retire tests specific to old section names and group ordering; replace
+      them with direct-list permutation, activation and stale-drag tests.
+    obsolete_group_mutation: >-
+      Tab context menus no longer expose create/move/automatic/rename group
+      actions. Retire GUI group creation, rename, regroup landing and cwd-based
+      group inference, including new-tab, fork-to-tab and pane-detach inheritance.
+      Preserve legacy groups already loaded on existing tabs without modifying
+      them; a newly created tab has no legacy group. Pane detach must preserve
+      exact pane identities, leave the original tab and its compatibility data
+      intact, and refuse detaching a sole pane. Keep ordinary tab reorder,
+      merge, machine folding and session identity behavior. Tests whose sole
+      requirement is the retired group feature are replaced by these machine
+      invariants, not ignored. Existing legacy wire/storage compatibility is
+      separate from permission to create new group mutations in the GUI.
+    obsolete_settings: >-
+      Window/Tabs settings must not offer repository, repository-or-folder or
+      flat sidebar grouping. Remove the rendered selector, its search entry,
+      GUI mutation method and unused translations. Preserve legacy config
+      deserialization until the remaining group consumers are retired; no
+      migration may discard existing user data. Search regression must reject
+      the obsolete grouping entry and preserve neighboring window/tab settings.
+      This deletion alone does not retire custom-group tab menu and drag paths.
+    rule: >-
+      The left rail's top-level identity is a Machine/Host. Local is always
+      present. A remote host has at most one local rail entry regardless of
+      how many target-owned legacy WorkspaceIds it contains. Pinning controls
+      local visibility only and never starts transport; connect and disconnect
+      are explicit and disconnect never stops target-owned panes or agents.
+      Machine projection reuses switcher_groups and RemoteLinks authority.
+      Existing target WorkspaceIds remain ownership records, not visible
+      directory/group headings. The rail remains available with zero tabs.
+      Client Config.machine_rail stores ordered pinned RemoteTargets and
+      collapsed machine keys. Local cannot be unpinned. Pin is idempotent,
+      unpin removes only the preference, and neither operation modifies
+      connection state. Pinned targets with no workspace remain visible
+      offline. Local sorts first, then pinned targets in pin order, then
+      other known machines. Search temporarily reveals collapsed children
+      without mutating the saved fold preference.
+      Folding hides every child, including the active session, without
+      changing the active content or removing tabs. Unfolding restores the
+      same row identities. Legacy directory-fold preferences cannot hide
+      machine children. Tests must inspect rendered row bounds as well as
+      persisted preferences.
+    forbidden:
+      - multiple_top_level_entries_for_one_host
+      - pin_implies_transport_connect
+      - disconnect_stops_remote_agent
+  - id: MACHINE-SESSION-02
+    rule: >-
+      Session activation carries stable TabId, never a captured list index.
+      Reordering resident tabs between rendering and clicking must still focus
+      the selected identity. A removed resident target is a no-op and cannot
+      leave a deferred activation that later steals focus. This resident rule
+      does not replace the required current-window cross-machine attach path.
+      For a mapped nonresident workspace, a normal switcher or machine-rail
+      click must not activate another registered GUI window. If another window
+      owns that workspace, keep both windows and their tab selection unchanged
+      and show MachineSessionWindowOccupied through the existing notification UI.
+      An explicitly requested new-window action retains its separate behavior.
+      An adoptable remote listing is not ownership permission. Before creating
+      or reusing a client mapping, resolve all mappings by HostId plus target
+      WorkspaceId and reject duplicate mappings, preemption, or another open
+      or registered window. History carrier selection uses the same predicate.
+      A rejected adoption cannot alter the current machine, client mappings,
+      or enqueue the remote TabId for activation in the current workspace.
+      A selected Machine is the sole content authority. Its rail children are
+      live, dormant, or scanned historical agent sessions. A session cwd and
+      repository are session metadata, never Machine identity or a workspace
+      root. The rail must not render a derived Repo Group as a Machine header.
+    forbidden:
+      - repo_group_rendered_as_machine_identity
+      - workspace_root_inferred_from_login_home
+      - foreign_machine_session_materialized_under_current_host
+  - id: SESSION-RECOVERY-03
+    rule: >-
+      Nonresident Rejoin stages every leaf of the target workspace before any
+      current-window switch. Build a complete target-owned layout plan, acquire
+      IfFree ownership, and use canonical checked terminal attachment off the
+      UI thread. Unknown, dead or multiply referenced neighbors reject the
+      entire plan, including shell neighbors. Partial staging is never shown.
+      Cancel, timeout or failure drops all staged pane connections before
+      conditionally releasing newly acquired workspace ownership. Reused
+      ownership is never released. Before commit recheck target layout,
+      identities, proof, operation generation, origin window, Host and control
+      connection. The origin guard includes ordered tab identities and names,
+      active tab, split topology/ratios and every ready or connecting view
+      identity. A changed origin rejects the staged commit without discarding
+      the user's current layout. Remote route target and secret-free resolved
+      SSH specification must still match the captured staging route; missing
+      resolution or a changed profile rejects rather than relabeling an old
+      connection with a new route. WSL and LocalStdio have typed non-SSH routes
+      and require no SSH specification; absence there is not a resolution error.
+      Commit consumes the already attached ShellParts through the
+      canonical session-to-pane renderer; it must not attach a second time or
+      create a workspace, pane, agent, or replacement from a missing snapshot.
+      This staged commit supersedes switch-before-hydrate for nonresident
+      Rejoin. Ordinary startup and history Resume keep their separate policies.
+      Canonical terminal creation carries a typed RestorePolicy with a
+      Checked variant containing an immutable pane-ID-to-guard map.
+      The map survives split recursion and PendingSpawn retry unchanged.
+      A missing guard rejects before transport. Checked attachment probes the
+      selected pane route for checked-attach-v4 before sending AttachChecked;
+      unsupported or unanswered probes never send ordinary Attach or Spawn.
+      Checked policy suppresses both automatic and explicit Resume delivery.
+      These client primitives do not authorize acquisition or cancellation by
+      themselves; history operation ownership integration remains required.
+      AttachOnly
+      requires an existing pane ID, preserves all Attach errors including
+      confirmed missing, and never enters Spawn or emits a Resume command.
+      The policy survives pending completion and Retry. Applying target-owned
+      layout deltas uses AttachOnly, so observing an existing target pane never
+      manufactures a replacement process. Ordinary creation/restoration keeps
+      ReplaceMissing semantics. Non-resident history Rejoin must reuse this
+      path after target identity and ownership checks, not add a second spawner.
+      Full adoption of a target MachineTree uses AttachOnly recursively for
+      all split leaves, matching layout-delta attachment. It cannot fall back
+      to native SSH launch when no eligible target pane ID remains. Explicit
+      closed-tab reopening and startup from a saved client layout retain their
+      existing ReplaceMissing policy. Hydration does not authorize Resume.
+      Non-resident history Rejoin requests a fresh MachineGet through the
+      selected target control connection. Exactly one live pane with matching
+      provider/session and exactly one unoccupied owning workspace/tab are
+      required; dead, orphaned, multiply owned or externally attached targets
+      fail closed. Repeated references within a single split tree are also
+      ambiguous, even when the owning tab ID is unique. An unoccupied snapshot
+      alone never authorizes takeover: the target must atomically reserve the
+      attachment and guard materialization against ownership replacement.
+      Revalidate operation generation, source window, Host and
+      control connection before selecting that exact carrier in this window.
+      Never reveal/steal another window or substitute a different carrier.
+      After checked staging, require live terminal reports matching the
+      original pane and tab as well as provider/session before focusing.
+      Shared continuation guards enforce cancellation, Host replacement,
+      disconnect and a bounded 20-second UI wait. An in-flight bounded I/O
+      request may finish later only to discard its result and clean up; it
+      cannot commit after the UI deadline. No Resume fallback.
+      A failed Local restoration with an original pane ID retains a Failed
+      PendingPane rather than dropping the leaf/tab. Preserve owner, pane ID,
+      cwd, shell and agent recovery intent; the initial failure schedules no
+      second attempt. Explicit Retry reuses the existing pending completion
+      path. Fresh Local terminal creation without a restore ID retains its
+      existing error semantics. Success keeps the existing ready-pane path.
+      A late completion after its slot was closed may kill only a process
+      created by that operation. A successfully reattached old pane is not
+      owned by the operation and must only detach, never Kill.
+      Ordinary restoration may replace an old pane only after a complete
+      target Attach error explicitly names that exact pane as missing.
+      Silence, EOF, transport failure, malformed/truncated error frames and
+      other refusals preserve the failure and cannot trigger Spawn. A partial
+      error must never be converted into a fabricated no-such-pane response.
+      This permission applies only to ordinary restoration; explicit Rejoin
+      must never replace even a confirmed missing pane.
+      Rejoin attaches only to a still-live target-owned pane. Resume creates a
+      new pane only for a provider session that is recoverable on that target;
+      it uses the provider's canonical typed invocation and cwd. A dormant
+      local binding is recovery intent, never proof that the remote session
+      exists. An explicit provider /exit must not auto-resume.
+      Explicit history Resume validates only the committed row's target source
+      header and cwd (no discovery rescan). Validate UUID/provider/cwd and
+      canonical provider-root containment before any pane or workspace effect.
+      Host.validate_agent_session is the sole validation boundary; remote
+      validation sends ValidateAgentSession over the authenticated control
+      connection and never consults client files. The reply is success or a
+      typed error, never a command supplied by the peer.
+      The UI accepts validation only from the same Host instance and operation
+      generation. It activates a carrier on that machine in the current
+      window, without taking a workspace owned by another window, and waits
+      for authoritative hydration before spawning. A typed canonical invocation
+      is delivered only to the newly created pane, including asynchronous
+      pending-pane completion; the auto-resume preference cannot suppress an
+      explicit action. Failed validation has zero pane effects. Closing the
+      manager or changing target invalidates pending results.
+      PendingSpawn carries explicit Resume as a typed one-shot invocation.
+      Completion consumes it only after the original slot is still present;
+      an already-restored pane consumes it without executing anything. Retry
+      retains the intent only while creation has not succeeded.
+      Consuming explicit Resume also clears its duplicated automatic agent,
+      session ID and launch argv fields; a second completion cannot reissue
+      that explicit command through the automatic-resume fallback, even when
+      automatic restore is enabled. A persisted exited-agent recovery binding
+      remains absent from the SessionPane automatic-launch fields.
+      Cross-machine carrier selection uses the canonical machine projection:
+      reuse the current target carrier or an unowned, non-preempted carrier;
+      never reveal another GUI window or steal another client's workspace.
+      If none is eligible, create a carrier on that target via WorkspaceStore.
+      Await hydration for at most 20 seconds using nonblocking timers. Every
+      continuation checks manager operation UUID, Host instance, connectivity
+      and carrier identity; timeout/cancellation creates no agent pane.
+      Candidate selection fails closed for unresolved client workspace identity
+      or a Host mismatch. WindowRegistry ownership outranks a cached open=false.
+      CLI-created local workspaces may instead be resolved by the target-owned
+      machine mirror; missing client cache alone never grants Local ownership.
+      An adoptable remote listing must also check any existing client mapping
+      for that target workspace, so a stale listing cannot bypass ownership.
+      Resident Rejoin resolves the visible selected provider/session against
+      live terminal reports in the current window on the selected Host. Require
+      a connected Host, non-preempted workspace, connected terminal stream,
+      matching provider/session and a child not exited. Exactly one matching
+      pane is required; ambiguity fails closed. Recheck at click time, activate
+      the existing tab and focus that exact split pane. Never send input, spawn,
+      switch workspace or consult recovery_binding for this resident path.
+      Missing eligibility disables the resident action; non-resident Rejoin
+      remains a separate required attach-only path, not a fallback to Resume.
+    forbidden:
+      - rejoin_spawning_a_new_agent
+      - resume_using_local_provider_fallback
+      - auto_resume_after_explicit_exit
+      - local_dormant_binding_claiming_remote_success
+  - id: MACHINE-SCAN-04
+    rule: >-
+      History scanning is explicitly requested from a Machine rail entry and
+      runs only against that target Host's provider stores. Initial support is
+      Codex and Claude. Scan failure is observable and cannot erase live or
+      dormant rows; untrusted/internal provider records are never shown as
+      resumable user sessions.
+      The entry is Historical Session Management, with discovery and Resume
+      only in the first release. Preserve provider/session/source identity for
+      future operations. File deletion, provider fork and cross-provider
+      conversion are deferred. Reserve a session list plus detail/action area,
+      with Resume as the primary action and a More menu containing disabled
+      Delete, Fork and Convert entries explicitly marked Planned. These
+      reserved entries have no event handlers or side effects and imply no
+      lossless-conversion capability.
+      History management and the machine switcher share a native presentation
+      shell: popover background, border, 10px radius, shadow, centered horizontal
+      placement, responsive top inset and list/detail proportions. Shared shell
+      code owns no workspace, transport, provider or activation logic. At normal
+      size preserve the switcher's 840px width and 340px left column; clamp the
+      shell to available viewport space without imposing an overflowing minimum.
+      Search and keyboard navigation must also converge through reusable UI
+      primitives, independently of the machine/workspace business model.
+      The shared search row uses the existing native Input component. History
+      filtering is case-insensitive over title, cwd, provider and session UUID;
+      whitespace-only input shows all committed rows. Filtering performs no I/O
+      and never changes the committed snapshot. Preserve a visible selection by
+      provider/UUID, otherwise select the first match or none. Query edits and
+      keyboard selection invalidate pending Resume. Up/Down walk visible rows;
+      Enter resumes only the visible selection through the existing validation
+      boundary, Escape closes, and text editing retains native input semantics.
+      Host.agent_sessions is the sole discovery boundary: LocalHost scans
+      target-process provider roots; RemoteHost sends AgentSessions over the
+      authenticated control connection. Remote errors never call LocalHost.
+      The server resolves HOME/USERPROFILE, CODEX_HOME and CLAUDE_CONFIG_DIR;
+      clients cannot supply arbitrary scan roots over this request.
+      AgentSessions was introduced in control dialect v10; the current dialect
+      is v15 and older peers must use the existing
+      explicit mismatch/upgrade flow. No automatic daemon stop or upgrade is
+      introduced by history discovery.
+      Enumerate at most 10000 entries with a 16-level depth cap and a 10-second
+      cooperative deadline. Parse bounded heads (256KiB, 400 complete JSONL
+      lines) of the 400 newest candidate files, returning at most 100 user
+      sessions with an explicit limited flag. These are recent-window results,
+      not a claim to enumerate all history. Exceeding traversal limits,
+      malformed complete records or I/O failure fails the whole generation.
+      UI scan commits are atomic and keyed by host plus a fresh operation UUID.
+      Failed, cancelled, stale and disconnected scans preserve the last complete
+      snapshot. A provider present in a committed snapshot becoming missing
+      is a failure, not permission to drop its rows. Explicit Refresh supersedes
+      the displayed generation; background reads remain bounded by deadlines.
+      Nested symlinks and Claude subagent files are not followed. Missing
+      providers are explicit; both missing is NotFound, not empty success.
+      Session identity is provider plus canonical UUID; retain absolute cwd,
+      target source path and modification time. Unsupported/incomplete rows
+      are not resumable. Never stream full transcripts to the GUI.
+    forbidden:
+      - automatic_cross_host_provider_scan
+      - scan_failure_clearing_existing_rows
+      - internal_provider_record_as_resume_candidate
+  - id: MACHINE-LAUNCHER-05
+    rule: >-
+      The launcher and rail expose the same machine set and connection state.
+      Its first-level terminal action is exactly one default New Terminal for
+      the selected Machine; alternate shells live below Other Terminals,
+      excluding the default shell. Missing inventory still exposes the default
+      action through open_shell(None); no alternate submenu appears when empty.
+      Existing split modifiers remain supported. No new project/directory
+      launcher is introduced. Session rows retain their text
+      size while reducing redundant chrome and whitespace.
+      Active session avatars are 18px, horizontal avatar gap is 6px, vertical
+      row padding is 2px; existing title and metadata font sizes are unchanged.
+      Saved SSH profiles are configuration choices in a submenu, not a second
+      flat list presented as connected machines. Machine menus expose Pin or
+      Unpin and explicit connection controls, never Create Workspace.
+    forbidden:
+      - launcher_machine_state_diverging_from_rail
+      - multiple_primary_new_terminal_actions
+      - compact_session_rows_reducing_text_size
